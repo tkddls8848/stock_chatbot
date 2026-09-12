@@ -9,9 +9,9 @@ from __future__ import annotations
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 
-from telegram_bot.research.candidates import (
-    _build_name_token_frequency,
-    _entry_match_terms,
+from telegram_bot.stocks.naming import (
+    build_name_token_frequency,
+    entry_match_terms,
 )
 
 
@@ -25,7 +25,7 @@ class StockEntityMatcher:
     """전체 종목명 용어를 한 번에 검색하는 compact automaton."""
 
     def __init__(self, stock_entries: list[dict[str, str]]):
-        token_frequency = _build_name_token_frequency(stock_entries)
+        token_frequency = build_name_token_frequency(stock_entries)
         term_codes: dict[str, set[str]] = defaultdict(set)
         ascii_requirements: dict[str, int] = {}
 
@@ -33,7 +33,7 @@ class StockEntityMatcher:
             code = str(entry.get("code") or "").strip()
             if not code:
                 continue
-            terms = _entry_match_terms(entry, token_frequency)
+            terms = entry_match_terms(entry, token_frequency)
             ascii_terms = {term.lower() for term in terms if term.isascii()}
             if ascii_terms:
                 ascii_requirements[code] = min(2, len(ascii_terms))
