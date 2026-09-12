@@ -69,9 +69,15 @@ def research_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def system_menu() -> InlineKeyboardMarkup:
-    """시스템 상태 아래에 붙는 하위 항목. `/system`의 인자를 버튼으로 옮긴 것이다."""
-    return _keyboard([
-        [("📋 기능 카탈로그", "nav:system:features"), ("🧮 뉴스 사전선별", "nav:system:prefilter")],
-        *_back(),
-    ])
+def system_menu(registry) -> InlineKeyboardMarkup:
+    """시스템 상태 아래에 붙는 하위 항목.
+
+    기능별 항목은 각 `FeatureSpec.status_reports`에서 온다. 여기에 기능
+    이름을 적어 두면 그 기능을 끄거나 이름을 바꿀 때 이 파일도 함께
+    고쳐야 한다.
+    """
+    rows = [[("📋 기능 카탈로그", "nav:system:features")]]
+    rows[0].extend(
+        (spec.label, f"nav:system:{spec.name}") for spec in registry.status_reports()
+    )
+    return _keyboard([*rows, *_back()])

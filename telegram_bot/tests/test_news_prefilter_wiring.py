@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 from shared.core.clock import now
+from telegram_bot.features import ALL_FEATURES, build_feature_registry
 from telegram_bot.features.news_prefilter import feature as prefilter_feature
 from telegram_bot.features.news_prefilter.service import RankedCandidate
 from telegram_bot.features.system_admin import handlers as admin
@@ -248,10 +249,23 @@ class _Message:
         self.markups.append(kwargs.get("reply_markup"))
 
 
+def _all_features():
+    return build_feature_registry(feature.key for feature in ALL_FEATURES)
+
+
 def _run_system(bot_data, args):
+    """`/system`은 이제 레지스트리를 통해 기능 상태 화면을 찾는다.
+
+    예전에는 system_admin이 `bot_data['news_prefilter']`를 직접 읽었다.
+    지금은 `FeatureSpec.status_reports` 선언을 거치므로 레지스트리가
+    있어야 한다 — 이 배선 자체가 검사 대상이다.
+    """
     message = _Message()
     update = SimpleNamespace(effective_message=message)
-    context = SimpleNamespace(args=args, bot_data=bot_data)
+    context = SimpleNamespace(
+        args=args,
+        bot_data={"feature_registry": _all_features(), **bot_data},
+    )
     asyncio.run(admin.cmd_system(update, context))
     return message
 
@@ -292,7 +306,7 @@ class _ReportingPrefilter:
 def test_system_prefilter_says_so_when_the_feature_is_off():
     text = _run_system({}, ["prefilter"]).texts[-1]
 
-    assert "news_prefilter" in text
+    assert "꺼져 있습니다" in text
 
 
 def test_system_prefilter_shows_disagreement_and_discrimination():

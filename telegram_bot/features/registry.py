@@ -178,6 +178,20 @@ class FeatureRegistry:
         )
         return "\n".join(lines)
 
+    def status_reports(self):
+        """활성 기능이 선언한 `/system <name>` 화면들."""
+        return [
+            spec
+            for feature in self._enabled_specs
+            for spec in feature.status_reports
+        ]
+
+    def status_report(self, name: str):
+        for spec in self.status_reports():
+            if spec.name == name:
+                return spec
+        return None
+
     def catalog_lines(self) -> list[str]:
         """기능 하나당 헤더 한 줄 + 있는 항목만 들여쓴 하위 줄로 이어진다.
 

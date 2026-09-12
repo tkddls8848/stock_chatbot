@@ -28,7 +28,8 @@ from shared.core.config import (
     NEWS_PREFILTER_TRANSLATED_EVENT_COOLDOWN_HOURS,
 )
 from shared.core.workers import is_burst_active, wait_for_urgent_idle
-from telegram_bot.features.base import FeatureSpec
+from telegram_bot.features.base import FeatureSpec, StatusReportSpec
+from telegram_bot.features.news_prefilter.report import render_prefilter_status
 from telegram_bot.features.news_prefilter.service import NewsPrefilter
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,9 @@ FEATURE = FeatureSpec(
     key="news_prefilter",
     label="로컬 뉴스 사건 메모리·사전선별",
     requires=frozenset({"instruments", "watchlist"}),
+    status_reports=(
+        StatusReportSpec("prefilter", "뉴스 사전선별 섀도 비교", render_prefilter_status),
+    ),
     install_services=_install_services,
     install_jobs=_install_jobs,
     data_files=(

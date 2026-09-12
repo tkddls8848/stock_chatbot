@@ -17,7 +17,7 @@ FEATURE = FeatureSpec(
             "system",
             "시스템 상태",
             cmd_system,
-            usage="[features|prefilter]",
+            usage="[features|<기능 상태>]",
         ),
         CommandSpec("help", "명령어 안내", cmd_help),
     ),

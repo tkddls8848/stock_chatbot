@@ -16,6 +16,9 @@ CallbackHandlerFunc = Callable[
     [Any, ContextTypes.DEFAULT_TYPE, str],
     Awaitable[bool],
 ]
+# bot_data를 받아 완성된 화면 문자열을 돌려준다. 기능이 꺼져 있거나 자료가
+# 없으면 None을 돌려주고 호출한 쪽이 안내 문구를 낸다.
+StatusRenderFunc = Callable[[Any], Awaitable["str | None"]]
 JobInstaller = Callable[[Any, Any], None]
 ServiceInstaller = Callable[[Any], None]
 
@@ -41,6 +44,20 @@ class CallbackSpec:
 
 
 @dataclass(frozen=True)
+class StatusReportSpec:
+    """`/system <name>`에 붙는 기능별 상태 화면.
+
+    기능이 **완성된 문자열**을 돌려준다. 이렇게 두면 `system_admin`이 남의
+    기능의 자료구조를 알 필요가 없어, 관측 항목을 바꿔도 그쪽 파일을 함께
+    고치지 않는다.
+    """
+
+    name: str
+    label: str
+    render: StatusRenderFunc
+
+
+@dataclass(frozen=True)
 class MenuSpec:
     label: str
     callback_data: str
@@ -59,6 +76,7 @@ class FeatureSpec:
     commands: tuple[CommandSpec, ...] = ()
     menus: tuple[MenuSpec, ...] = ()
     callbacks: tuple[CallbackSpec, ...] = ()
+    status_reports: tuple[StatusReportSpec, ...] = ()
     install_services: ServiceInstaller | None = None
     install_jobs: JobInstaller | None = None
     data_files: tuple[str, ...] = ()

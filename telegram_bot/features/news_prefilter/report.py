@@ -70,3 +70,11 @@ def format_prefilter_report(report: dict) -> str:
     )
     lines.extend(f"  • {caveat}" for caveat in SHADOW_CAVEATS)
     return "\n".join(lines)
+
+
+async def render_prefilter_status(bot_data) -> str | None:
+    """`/system prefilter` 진입점. 기능이 꺼져 있으면 None."""
+    prefilter = bot_data.get("news_prefilter")
+    if prefilter is None:
+        return None
+    return format_prefilter_report(await prefilter.report())
