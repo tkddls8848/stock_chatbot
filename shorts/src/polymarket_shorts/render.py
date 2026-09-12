@@ -165,9 +165,9 @@ def _concat_file(frames: Iterable[Path], durations: Iterable[float], target: Pat
 def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
     escaped = path.resolve().as_posix().replace(":", "\\:").replace("'", "\\'")
     style = (
-        f"FontName={font_name},FontSize=18,PrimaryColour=&H00F5F1E8," 
+        f"PlayResX={WIDTH},PlayResY={HEIGHT},FontName={font_name},FontSize=38,PrimaryColour=&H00F5F1E8,"
         "OutlineColour=&H00151512,BorderStyle=1,Outline=3,Shadow=0," 
-        "Alignment=2,MarginV=260"
+        "Alignment=2,MarginV=290,MarginL=90,MarginR=90"
     )
     return f"subtitles='{escaped}':force_style='{style}'"
 
@@ -211,7 +211,7 @@ def render_video(
     _concat_file(frames, scene_durations, concat)
     command = [
         ffmpeg_bin, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-        "-i", str(audio_path), "-vf", _subtitle_filter(subtitle_path),
+        "-i", str(audio_path), "-vf", f"fps=30,{_subtitle_filter(subtitle_path)}",
         "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest",
         "-t", f"{duration:.3f}", "-movflags", "+faststart", str(output_path),

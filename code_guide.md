@@ -153,15 +153,19 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   탐색 슬롯(`NEWS_PREFILTER_EXPLORATION_SLOTS`)으로만 측정된다. 이 한계는
   `telegram_bot/features/news_prefilter/service.py`의 `SHADOW_CAVEATS`에 적어
   두었고 지운 채로 승격하지 않는다.
-- **지금 사전선별에 라벨이 전혀 들어오지 않는다.** `record_outcome`을 부르던
-  유일한 호출자가 삭제된 기사별 번역 경로(`news/delivery.py`)였다. 예약 보고서
-  경로는 기사별 impact를 만들지 않으므로 보정기(calibration)는 빈 관측 위에서
-  돈다 — `/system prefilter`의 AUC·판별력 수치는 과거 라벨이 남아 있는 동안만
-  의미가 있고, 그 뒤로는 갱신되지 않는다. **승격 판단을 이 수치로 하지 않는다.**
-  되살리려면 라벨 공급자를 먼저 붙인다: 3시간 보고서가 고른 헤드라인을 impact
-  라벨로 되먹이는 것이 가장 싼 경로다(추가 LLM 호출 없음). 큐 항목은 이미
-  `prefilter_candidate_id`를 들고 있어 이을 자리는 준비돼 있다
-  (`telegram_bot/tests/test_news_prefilter_wiring.py`가 고정한다).
+- **사전선별의 라벨 공급원은 3시간 보고서 하나뿐이다.** 보고서가 고른
+  `highlights`의 `impact`를 `news/report.py`의 `_log_highlights`가
+  `record_outcome`으로 되먹인다. 보고서가 이미 만든 값이라 **추가 LLM 호출이
+  없다.** 사전선별은 제목만 보고 추측하므로 기사를 실제로 읽고 판정하는
+  누군가가 없으면 자기가 맞았는지 영원히 모른다.
+  **이 선은 한 번 끊긴 적이 있다.** 예전 공급원이 기사별 번역 경로였는데
+  3시간 보고서로 바꾸면서 그 경로가 죽었고, 오류가 나지 않아 13일 동안
+  라벨 0건으로 돌았다(2026-08-30 ~ 09-12). 그래서 둘을 두었다 —
+  `test_news_report.py`가 이 호출을 고정하고, `/system prefilter`는 라벨 0건을
+  "아직 덜 모임"과 구분해 원인을 짚어 준다.
+  **보고서에 오른 기사에만 라벨이 붙는다.** 사전선별이 새로 끌어올렸을 기사의
+  impact는 여전히 관측되지 않으므로, 그 능력은 `active`의 탐색 슬롯으로만
+  측정된다. 승격 판단에서 이 한계를 빼놓지 않는다.
 - **관측 파일은 두 정책이 고르는 기사와 탐색분만 남긴다.** 후보 250건을 전부
   적으면 하루 수만 줄이 쌓이는데 라벨이 붙는 것은 극히 일부라 나머지는 학습에
   쓸 수 없다. 남기지 않는 후보는 주기별 `cycle` 집계 줄로 센다.

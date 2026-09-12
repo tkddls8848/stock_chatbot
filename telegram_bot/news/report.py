@@ -282,10 +282,21 @@ async def _log_highlights(
     result: dict,
     prediction_log: PredictionLog | None,
     news_log: NewsLog | None,
+    prefilter=None,
 ) -> None:
-    """보고서 주요 기사를 기존 뉴스·예측 로그에 남긴다.
+    """보고서 주요 기사를 로그에 남기고 사전선별에 라벨을 되먹인다.
 
     남기지 않으면 /view·/market·signal_scoring이 보고서 근거를 보지 못한다.
+
+    **사전선별은 이 호출이 유일한 라벨 공급원이다.** 사전선별은 제목만 보고
+    추측하므로 자기가 맞았는지 스스로 알 수 없고, 기사를 실제로 읽고 중요도를
+    판정하는 것은 이 보고서 LLM뿐이다. 보고서가 이미 만들어 둔 `impact`를
+    넘기는 것이라 추가 호출이 없다.
+
+    끊긴 적이 있다. 예전 공급원은 기사별 번역 경로였는데 3시간 보고서로
+    바꾸면서 그 경로가 죽었고, 오류가 나지 않아 13일 동안 라벨 0건인 채로
+    돌았다(2026-08-30 ~ 09-12). 이 자리를 옮기거나 지울 때 사전선별의 학습이
+    함께 멈춘다는 것을 기억한다.
     `prediction_log`는 signal_scoring 소유의 선택 의존이다 — news가
     이를 requires로 선언하지 않는 이유는 delivery.py의
     `_confirm_and_log_global_article`과 같다(순환 의존 회피).
@@ -316,6 +327,13 @@ async def _log_highlights(
                         item.get("published_at"),
                         item.get("published_date") or None,
                     ),
+                )
+            candidate_id = str(item.get("prefilter_candidate_id") or "")
+            if prefilter is not None and candidate_id:
+                await prefilter.record_outcome(
+                    candidate_id=candidate_id,
+                    impact=highlight["impact"],
+                    sentiment=highlight["sentiment"],
                 )
         except Exception as e:
             logger.error("[NEWS REPORT] %s 근거 로그 기록 실패: %s", market, e)
@@ -366,6 +384,7 @@ async def _send_news_report(app: Application) -> None:
     tracker: SentNewsTracker = app.bot_data["sent_tracker"]
     prediction_log: PredictionLog | None = app.bot_data.get("prediction_log")
     news_log: NewsLog | None = app.bot_data.get("news_log")
+    prefilter = app.bot_data.get("news_prefilter")
     window = _window_label(opened_at, now())
 
     sections: list[str] = []
@@ -373,7 +392,9 @@ async def _send_news_report(app: Application) -> None:
         result = await _analyze_market(analyzer, market, window, market_items)
         sections.append(format_market_section(market, market_items, result))
         if result is not None:
-            await _log_highlights(market, market_items, result, prediction_log, news_log)
+            await _log_highlights(
+                market, market_items, result, prediction_log, news_log, prefilter
+            )
 
     header = (
         f"🧭 <b>3시간 시장상황 보고서</b>\n{html.escape(window)} · 수집 {len(items)}건"

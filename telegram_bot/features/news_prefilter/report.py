@@ -54,6 +54,15 @@ def format_prefilter_report(report: dict) -> str:
             f"검증 AP {report['model_validation_ap']} "
             f"(기저 {report['model_prevalence']}) · 라벨 {report['model_label_count']}건"
         )
+    elif not report["labeled"]:
+        # 라벨 0건과 '아직 덜 모임'은 원인이 다르다. 0건은 공급이 끊긴
+        # 것이고, 그건 기다려서 해결되지 않는다. 실제로 13일 동안 그 상태로
+        # 돌았는데 화면이 둘을 구분하지 않아 아무도 몰랐다.
+        lines.append(
+            "  ⛔ 라벨이 0건입니다. 학습이 시작될 수 없습니다 — "
+            "3시간 보고서가 highlights를 만들고 있는지, 그 결과가 "
+            "record_outcome으로 돌아오는지 확인하십시오(news/report.py)."
+        )
     else:
         lines.append("  ⏸ 아직 학습된 모델이 없습니다(라벨 120건·5일이 모이면 시작).")
 

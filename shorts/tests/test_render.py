@@ -67,3 +67,7 @@ def test_video_is_capped_to_the_audio_duration(tmp_path, monkeypatch):
     position = captured["command"].index("-t")
     assert captured["command"][position + 1] == "100.000"
     assert duration == 100.0
+    video_filter = captured["command"][captured["command"].index("-vf") + 1]
+    # Expand still frames before drawing subtitles so cues change within a scene.
+    assert video_filter.startswith("fps=30,subtitles=")
+    assert "PlayResX=1080,PlayResY=1920" in video_filter

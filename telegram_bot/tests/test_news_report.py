@@ -15,6 +15,7 @@ from telegram_bot.news.report import (
     group_by_market,
     send_news_report,
 )
+from telegram_bot.news import report as news_report
 from telegram_bot.news.registry import SourceSpec
 from telegram_bot.news.sources import GlobalArticle
 from telegram_bot.state import NewsReportQueue, SentNewsTracker
@@ -738,3 +739,79 @@ def test_display_time_relabels_without_changing_the_value():
     assert display_time("2026-09-05 14:30 KST") == "14:30 UTC +9"
     # 형식이 다르면 손대지 않는다.
     assert display_time("알 수 없음") == "알 수 없음"
+
+
+# ── 사전선별 라벨 공급 ────────────────────────────────
+
+class _RecordingPrefilter:
+    """`record_outcome` 호출만 받아 적는 최소 대역."""
+
+    def __init__(self):
+        self.outcomes = []
+
+    async def record_outcome(self, *, candidate_id, impact, sentiment):
+        self.outcomes.append((candidate_id, impact, sentiment))
+
+
+def _highlight_result():
+    return {
+        "analysis": "분석",
+        "highlights": [
+            {
+                "index": 0,
+                "title": "한국어 제목",
+                "sentiment": 0.4,
+                "impact": "medium",
+                "mentioned_stocks": ["600519"],
+            }
+        ],
+    }
+
+
+def _queued(candidate_id="cand-1"):
+    return [{
+        "article_id": "a1",
+        "source": "gnews",
+        "title": "raw title",
+        "published_at": "2026-09-12 09:00:00",
+        "published_date": "",
+        "prefilter_candidate_id": candidate_id,
+    }]
+
+
+def test_report_highlights_feed_the_prefilter_label():
+    """사전선별의 **유일한** 라벨 공급원이다.
+
+    보고서가 이미 만든 impact를 넘기는 것이라 추가 LLM 호출이 없다. 이 선이
+    끊기면 사전선별은 점수만 쌓고 영원히 학습하지 못한다 — 실제로 13일 동안
+    그 상태였다.
+    """
+    prefilter = _RecordingPrefilter()
+
+    asyncio.run(
+        news_report._log_highlights(
+            "CN", _queued(), _highlight_result(), None, None, prefilter
+        )
+    )
+
+    assert prefilter.outcomes == [("cand-1", "medium", 0.4)]
+
+
+def test_an_article_without_a_candidate_id_is_not_reported_as_a_label():
+    """사전선별이 순위를 매기지 못한 주기의 기사는 이을 곳이 없다."""
+    prefilter = _RecordingPrefilter()
+
+    asyncio.run(
+        news_report._log_highlights(
+            "CN", _queued(candidate_id=""), _highlight_result(), None, None, prefilter
+        )
+    )
+
+    assert prefilter.outcomes == []
+
+
+def test_logging_still_works_when_the_prefilter_is_off():
+    """사전선별은 선택 기능이다. 꺼져 있어도 보고서 근거 로그는 남아야 한다."""
+    asyncio.run(
+        news_report._log_highlights("CN", _queued(), _highlight_result(), None, None, None)
+    )
