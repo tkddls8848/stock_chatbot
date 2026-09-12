@@ -29,6 +29,10 @@ class Scenario:
     generation_id: str
     source_written_at: str
     scenes: tuple[Scene, ...]
+    # 제목·설명이 쓰는 "가장 큰 사실". 여기서 한 번 정해 두면
+    # metadata_for가 데이터를 다시 해석하지 않는다.
+    lead_label: str = ""
+    lead_volume: str = ""
 
     @property
     def narration(self) -> str:
@@ -332,6 +336,8 @@ def build_scenario(
     return Scenario(
         date=production_date.isoformat(),
         generation_id=snapshot.generation_id,
+        lead_label=lead_label,
+        lead_volume=lead_volume,
         source_written_at=str(snapshot.brief.get("written_at") or ""),
         scenes=tuple(scenes),
     )

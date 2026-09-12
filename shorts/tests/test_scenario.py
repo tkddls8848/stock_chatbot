@@ -157,3 +157,23 @@ def test_card_bullets_use_the_label_separator_the_renderer_expects():
         label, separator, value = bullet.partition(" · ")
         assert separator, f"라벨이 없다: {bullet}"
         assert " · " not in value, f"값 안에 구분자가 또 있다: {bullet}"
+
+
+def test_title_is_a_claim_with_a_number_not_a_category_label():
+    """잘되는 경제 쇼츠의 제목은 예외 없이 주장이다.
+
+    실측(슈카월드·부읽남TV 상위 14편): "미국 국채 '6% 금리' 찍히면 한국증시
+    초토화됩니다", "SK하이닉스 '40조 소각' 우리가 오해하는 것". 전부 구체적
+    숫자나 고유명사를 걸고 결과를 말한다. "오늘의 OO 컨센서스"는 분류 라벨이라
+    아무것도 약속하지 않는다.
+    """
+    scenario = build_scenario(
+        _snapshot([_group("macro", "거시·통화", 20_578_090)]),
+        production_date=date(2026, 9, 1),
+    )
+
+    title = metadata_for(scenario)["title"]
+
+    assert "거시·통화" in title
+    assert "20.6M달러" in title
+    assert "오늘의 폴리마켓 컨센서스" not in title

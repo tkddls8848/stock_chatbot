@@ -56,8 +56,16 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
     stamp = scenario.date.replace("-", ".")
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
+    # 잘되는 경제 쇼츠의 제목은 예외 없이 **주장**이다 — 구체적 숫자나 고유명사를
+    # 걸고 그래서 어떻게 되는지를 말한다("미국 국채 6% 금리 찍히면 한국증시
+    # 초토화됩니다"). "오늘의 OO 컨센서스"는 분류 라벨이라 아무것도 약속하지 않는다.
+    headline = (
+        f"지난 24시간 {scenario.lead_label}에 {scenario.lead_volume}가 몰렸습니다"
+        if scenario.lead_label and scenario.lead_volume
+        else "지난 24시간 예측시장에서 돈이 몰린 곳"
+    )
     return {
-        "title": f"오늘의 폴리마켓 컨센서스 | {stamp} #Shorts",
+        "title": f"{headline} | {stamp} #Shorts",
         "description": (
             "경제·금융·지정학 예측시장의 현재 컨센서스를 요약했습니다.\n\n"
             f"오늘 다룬 분야: {', '.join(labels)}\n"
