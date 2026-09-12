@@ -20,13 +20,19 @@
 
 운영 서버는 도쿄의 공유 `medium_3_0` 인스턴스 `orca-host-tokyo`
 (`ap-northeast-1a`, 고정 IP `16.76.30.47`)다. 앱은 전용 `stockbot` 계정의
-`/srv/stock-chatbot`에서 실행한다. 인스턴스·고정 IP·방화벽·자동 스냅샷은
-`C:/Users/PSI/orca/remote_coding/remote-lightsail/terraform`이 관리한다.
+`/srv/stock-chatbot`에서 실행한다.
+
+**인프라 비용 때문에 인스턴스를 공유할 뿐 별개 프로젝트다.** 호스트 자체
+(인스턴스·고정 IP·공인 방화벽·스냅샷·Orca·Tailscale·OS 계정)는 별개 저장소
+`C:/Users/PSI/orca/remote_coding/remote-lightsail`이 소유하고, 앱 운영은 전부
+이 저장소가 소유한다. 호스트 저장소는 우리 경로·포트·권한을 알지 못하므로
+앱 점검은 `infra/scripts/verify-app.sh`로 우리가 직접 한다. 편입 경위와 롤백
+기준은 `infra/merge-plan.md`에 있다.
 
 이 저장소의 `infra/terraform/`은 2026-09-12 이전 독립 인스턴스의 정의이고 state는 이미
 정리됐다. 그 인스턴스·고정 IP·키페어는 2026-09-12에 폐기했으므로 여기서 `apply`나
 `destroy`하지 않는다. 롤백은 스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스를
-만드는 절차이며, 기준은 `remote_coding/remote-lightsail/docs/stock-chatbot-merge-plan.md`다.
+만드는 절차이며, 기준은 `infra/merge-plan.md`다.
 
 ## 1. 접속
 

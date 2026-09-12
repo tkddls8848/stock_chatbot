@@ -1,0 +1,5 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+# 서버 타임존은 UTC 다. 18:00 UTC = 03:00 KST/JST 이며,
+# 19:00 UTC(04:00 KST/JST) Lightsail 자동 스냅샷보다 한 시간 먼저 끝낸다.
+0 18 * * * stockbot umask 0077 && tar czf /var/backups/stock-chatbot/backup-$(date +\%F).tgz -C /srv/stock-chatbot data && find /var/backups/stock-chatbot -maxdepth 1 -name 'backup-*.tgz' -mtime +14 -delete

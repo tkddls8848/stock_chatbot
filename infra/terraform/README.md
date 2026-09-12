@@ -5,7 +5,7 @@
 > 스냅샷은 `C:/Users/PSI/orca/remote_coding/remote-lightsail/terraform`이 소유한다.
 > 기존 `stock-chatbot` 인스턴스·고정 IP·키페어는 2026-09-12에 폐기했고 state도 정리됐으므로
 > 이곳에서 `terraform apply` 또는 `destroy`하지 않는다. 아래 절차는 역사적 기록으로만 읽는다.
-> 롤백이 필요하면 스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스를 만든다.
+> 롤백이 필요하면 스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스를 만든다 (`infra/merge-plan.md`).
 > 앱 유닛은 `infra/systemd/`, 공유 호스트 설치는 `infra/scripts/install-shared-host.sh`를 쓴다.
 
 Lightsail 인프라 생성, 초기화, 서비스 전환 절차를 한곳에 정리한 운영 문서다.

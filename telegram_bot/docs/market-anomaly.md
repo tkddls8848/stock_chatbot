@@ -39,16 +39,24 @@ payload(`markets`·`consensus`·`lookback_days`)와 `web/server.py`의 시장 �
   8-2)이 여기에도 그대로 적용된다.
 - **서버 백필을 2026-08-29에 시작했다.** 첫 배치(80건 상한)로 52창을 채웠다
   (표본: CN 10 · HK 17 · KR 5 · US 20 — 나머지는 "표본 부족"으로 스킵). 한 번에
-  80건까지만 채우도록 설계돼 있어(`BACKFILL_MAX_CALLS_PER_RUN`) **서버 crontab에
-  매일 03:15 KST 실행을 추가했다**(`crontab -l`로 확인 — 이 저장소가 관리하는
-  파일이 아니라 서버 상태이므로 git에는 안 남는다):
+  80건까지만 채우도록 설계돼 있어(`BACKFILL_MAX_CALLS_PER_RUN`) **매일 03:15 KST/JST
+  실행을 걸어 뒀다.** 이 저장소가 관리하는 파일이 아니라 서버 상태이므로 git에는
+  안 남는다 — `/etc/cron.d/stock-chatbot-anomaly-backfill`을 직접 본다.
+  **공유 호스트의 타임존은 UTC라 crontab 시각은 `15 18`이다**(= 03:15 JST):
   ```
-  15 3 * * * cd /home/ubuntu/stock_chatbot && ./venv/bin/python3 -m telegram_bot.market_anomaly_backfill >> /home/ubuntu/stock_chatbot/data/market_sentiment/anomaly_backfill_cron.log 2>&1
+  15 18 * * * stockbot cd /srv/stock-chatbot && ./venv/bin/python app/market_anomaly_backfill.py >> /srv/stock-chatbot/data/market_sentiment/anomaly_backfill_cron.log 2>&1
+  ```
+  2026-09-12 공유 호스트 편입 때 이 job이 같이 넘어오지 않아 하루 걸렀고, 같은 날
+  다시 걸었다. 편입 시점 표본은 **CN 139 · HK 86 · KR 145 · US 188**로 HK만 목표
+  120에 미달이다. 진행 상황은 이렇게 본다:
+  ```bash
+  sudo -u stockbot bash -c 'cd /srv/stock-chatbot && ./venv/bin/python app/market_anomaly_backfill.py --report'
   ```
   로그는 `data/market_sentiment/anomaly_backfill_cron.log`에 쌓인다. 시장당 120표본에
-  도달하고 `--rescore`·`--audit`·`--report`까지 마치면 **이 crontab 줄을 지운다**
-  (`crontab -e`) — 일회성 백필이 매일 도는 채로 남으면 다 채운 뒤에도 이미 있는
-  창을 매번 훑으며(대부분 조회만 하고 끝나지만) 불필요하게 도는 job이 된다.
+  도달하고 `--rescore`·`--audit`·`--report`까지 마치면 **이 cron 파일을 지운다**
+  (`sudo rm /etc/cron.d/stock-chatbot-anomaly-backfill`) — 일회성 백필이 매일 도는
+  채로 남으면 다 채운 뒤에도 이미 있는 창을 매번 훑으며(대부분 조회만 하고 끝나지만)
+  불필요하게 도는 job이 된다.
 - 첫 실행 뒤 품질 미달 창도 시도 표본으로 저장하도록 보완했으므로 다음 실행부터
   G7의 `dense_ratio` 분모가 탈락 창을 포함한다.
 - **G1 최소 표본 120개에 모든 시장이 크게 미달한다.** 시장별로 가장 많은 US도

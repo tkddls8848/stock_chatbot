@@ -1,0 +1,25 @@
+[Unit]
+Description=Stock Chatbot (Telegram)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=stockbot
+Group=stockbot
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+Environment=MPLBACKEND=Agg
+ExecStart=/srv/stock-chatbot/venv/bin/python -m telegram_bot.main
+Restart=on-failure
+RestartSec=10
+MemoryHigh=768M
+MemoryMax=1G
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
