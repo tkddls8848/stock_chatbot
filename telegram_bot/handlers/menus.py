@@ -1,0 +1,77 @@
+"""인라인·하단 메뉴 키보드 생성기.
+
+라우팅(`navigation.py`)에서 분리해 둔다. 기능 핸들러를 import하지 않는 순수
+모듈이라 어느 기능에서 불러도 순환이 생기지 않는다 — `system_admin`이
+`/system` 화면에 메뉴를 붙일 때 navigation을 통째로 끌어오던 고리를 끊는다.
+"""
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+
+
+def _keyboard(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text, callback_data=data) for text, data in row] for row in rows]
+    )
+
+
+def main_menu(registry) -> InlineKeyboardMarkup:
+    grouped: dict[int, list[tuple[str, str]]] = {}
+    for item in registry.menu_specs():
+        grouped.setdefault(item.row, []).append((item.label, item.callback_data))
+    return _keyboard([grouped[row] for row in sorted(grouped)])
+
+
+def persistent_menu(registry) -> ReplyKeyboardMarkup:
+    """채팅 입력창 위에 계속 표시되는 메뉴 진입 버튼."""
+    grouped: dict[int, list[str]] = {0: ["🏠 홈"]}
+    for item in registry.menu_specs():
+        if item.persistent_label:
+            grouped.setdefault(item.persistent_row, []).append(
+                item.persistent_label
+            )
+    return ReplyKeyboardMarkup(
+        [grouped[row] for row in sorted(grouped)],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+async def refresh_persistent_menu(
+    message,
+    registry,
+) -> None:
+    await message.reply_text(
+        "⌨️ 하단 메뉴를 최신 상태로 갱신했습니다.",
+        reply_markup=persistent_menu(registry),
+    )
+
+
+def _back() -> list[list[tuple[str, str]]]:
+    return [[("🏠 처음", "nav:home")]]
+
+
+def market_menu() -> InlineKeyboardMarkup:
+    return _keyboard([
+        [
+            ("7일", "nav:market:sentiment:7"),
+            ("14일", "nav:market:sentiment:14"),
+            ("30일", "nav:market:sentiment:30"),
+        ],
+        *_back(),
+    ])
+
+
+def research_menu() -> InlineKeyboardMarkup:
+    return _keyboard([
+        [("주제 보기", "nav:research:show"), ("분석 실행", "nav:research:run")],
+        [("주제 설정", "nav:research:set"), ("주제 삭제", "nav:research:clear")],
+        *_back(),
+    ])
+
+
+def system_menu() -> InlineKeyboardMarkup:
+    """시스템 상태 아래에 붙는 하위 항목. `/system`의 인자를 버튼으로 옮긴 것이다."""
+    return _keyboard([
+        [("📋 기능 카탈로그", "nav:system:features"), ("🧮 뉴스 사전선별", "nav:system:prefilter")],
+        *_back(),
+    ])

@@ -15,8 +15,6 @@ from telegram.ext import (
 
 from shared.core.access import restricted
 from telegram_bot.features.base import FeatureSpec
-from telegram_bot.handlers.commands import callback_handler
-from telegram_bot.handlers.navigation import handle_menu_text
 
 
 class FeatureConfigurationError(ValueError):
@@ -103,6 +101,12 @@ class FeatureRegistry:
         return self._persistent_callbacks.get(label)
 
     def install_telegram_handlers(self, app: Application) -> None:
+        # 조립 시점에 가져온다. 최상위에서 import하면
+        # features/__init__ -> registry -> navigation 고리가 닫혀,
+        # navigation이 기능 핸들러를 함수 안에서만 부를 수 있게 된다.
+        from telegram_bot.handlers.commands import callback_handler
+        from telegram_bot.handlers.navigation import handle_menu_text
+
         for feature in self._enabled_specs:
             for command in feature.commands:
                 app.add_handler(

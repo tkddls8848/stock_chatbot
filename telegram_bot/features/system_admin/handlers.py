@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from telegram_bot.features.news_prefilter.service import SHADOW_CAVEATS
-from telegram_bot.handlers.navigation import main_menu, persistent_menu, system_menu
+from telegram_bot.handlers.menus import main_menu, persistent_menu, system_menu
 
 logger = logging.getLogger(__name__)
 

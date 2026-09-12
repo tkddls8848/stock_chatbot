@@ -3,82 +3,26 @@
 from types import SimpleNamespace
 
 from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
-    ReplyKeyboardMarkup,
     Update,
 )
 from telegram.ext import ContextTypes
 
-
-def _keyboard(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text, callback_data=data) for text, data in row] for row in rows]
-    )
-
-
-def main_menu(registry) -> InlineKeyboardMarkup:
-    grouped: dict[int, list[tuple[str, str]]] = {}
-    for item in registry.menu_specs():
-        grouped.setdefault(item.row, []).append((item.label, item.callback_data))
-    return _keyboard([grouped[row] for row in sorted(grouped)])
-
-
-def persistent_menu(registry) -> ReplyKeyboardMarkup:
-    """채팅 입력창 위에 계속 표시되는 메뉴 진입 버튼."""
-    grouped: dict[int, list[str]] = {0: ["🏠 홈"]}
-    for item in registry.menu_specs():
-        if item.persistent_label:
-            grouped.setdefault(item.persistent_row, []).append(
-                item.persistent_label
-            )
-    return ReplyKeyboardMarkup(
-        [grouped[row] for row in sorted(grouped)],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-
-
-async def refresh_persistent_menu(
-    message,
-    registry,
-) -> None:
-    await message.reply_text(
-        "⌨️ 하단 메뉴를 최신 상태로 갱신했습니다.",
-        reply_markup=persistent_menu(registry),
-    )
-
-
-def _back() -> list[list[tuple[str, str]]]:
-    return [[("🏠 처음", "nav:home")]]
-
-
-def market_menu() -> InlineKeyboardMarkup:
-    return _keyboard([
-        [
-            ("7일", "nav:market:sentiment:7"),
-            ("14일", "nav:market:sentiment:14"),
-            ("30일", "nav:market:sentiment:30"),
-        ],
-        *_back(),
-    ])
-
-
-def research_menu() -> InlineKeyboardMarkup:
-    return _keyboard([
-        [("주제 보기", "nav:research:show"), ("분석 실행", "nav:research:run")],
-        [("주제 설정", "nav:research:set"), ("주제 삭제", "nav:research:clear")],
-        *_back(),
-    ])
-
-
-def system_menu() -> InlineKeyboardMarkup:
-    """시스템 상태 아래에 붙는 하위 항목. `/system`의 인자를 버튼으로 옮긴 것이다."""
-    return _keyboard([
-        [("📋 기능 카탈로그", "nav:system:features"), ("🧮 뉴스 사전선별", "nav:system:prefilter")],
-        *_back(),
-    ])
+from telegram_bot.briefing.service import cmd_briefing
+from telegram_bot.features.instruments.handlers import cmd_stockdb
+from telegram_bot.features.market_sentiment.handlers import cmd_market
+from telegram_bot.features.system_admin.handlers import cmd_system
+from telegram_bot.handlers.menus import (
+    _back,
+    _keyboard,
+    main_menu,
+    market_menu,
+    persistent_menu,
+    refresh_persistent_menu,
+    research_menu,
+)
+from telegram_bot.research.handlers import cmd_research
+from telegram_bot.watchlist.handlers import cmd_add, cmd_menu
 
 
 def _context(context: ContextTypes.DEFAULT_TYPE, args: list[str]):
@@ -114,7 +58,6 @@ async def _dispatch_primary_menu_action(
         )
         return True
     if action == "watch":
-        from telegram_bot.watchlist.handlers import cmd_menu
         await cmd_menu(update, _context(context, []))
         return True
     if action == "research":
@@ -126,7 +69,6 @@ async def _dispatch_primary_menu_action(
         )
         return True
     if action == "briefing":
-        from telegram_bot.briefing.service import cmd_briefing
         await cmd_briefing(update, _context(context, []))
         return True
     return False
@@ -170,7 +112,6 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=market_menu(),
         )
     elif action.startswith("market:sentiment:"):
-        from telegram_bot.features.market_sentiment.handlers import cmd_market
         await cmd_market(update, _context(context, [action.rsplit(":", 1)[1]]))
     elif action.startswith("research:"):
         command = action.split(":", 1)[1]
@@ -178,16 +119,12 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data["menu_input"] = "research_topic"
             await message.edit_text("저장할 리서치 주제를 입력하세요.", reply_markup=_keyboard(_back()))
         else:
-            from telegram_bot.research.handlers import cmd_research
             await cmd_research(update, _context(context, [command]))
     elif action == "system":
-        from telegram_bot.features.system_admin.handlers import cmd_system
         await cmd_system(update, _context(context, []))
     elif action.startswith("system:"):
-        from telegram_bot.features.system_admin.handlers import cmd_system
         await cmd_system(update, _context(context, [action.split(":", 1)[1]]))
     elif action == "stockdb":
-        from telegram_bot.features.instruments.handlers import cmd_stockdb
         await cmd_stockdb(update, _context(context, ["build"]))
     elif action == "help":
         await message.edit_text(
@@ -243,7 +180,6 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     if context.user_data.get("add_market"):
-        from telegram_bot.watchlist.handlers import cmd_add
         await cmd_add(update, _context(context, [text.strip()]))
         return
 
@@ -251,7 +187,6 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if action is None:
         return
     if action == "research_topic":
-        from telegram_bot.research.handlers import cmd_research
         await cmd_research(update, _context(context, ["set", text.strip()]))
     await message.reply_text(
         "하단 메뉴에서 다음 작업을 선택하세요.",

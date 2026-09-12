@@ -223,8 +223,7 @@ def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):
     브리핑 발송 파이프라인 등)이 필요한 라벨은 그 진입점 함수만 스텁으로 바꿔
     "제대로 된 분기로 갔는가"만 보고, 나머지는 실제 응답 텍스트가 catch-all
     홈 응답과 다른지로 검증한다."""
-    import telegram_bot.briefing.service as briefing_service
-    import telegram_bot.watchlist.handlers as watchlist_handlers
+    from telegram_bot.handlers import navigation
 
     called = {}
 
@@ -234,8 +233,8 @@ def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):
     async def fake_cmd_briefing(update, context):
         called["briefing"] = True
 
-    monkeypatch.setattr(watchlist_handlers, "cmd_menu", fake_cmd_menu)
-    monkeypatch.setattr(briefing_service, "cmd_briefing", fake_cmd_briefing)
+    monkeypatch.setattr(navigation, "cmd_menu", fake_cmd_menu)
+    monkeypatch.setattr(navigation, "cmd_briefing", fake_cmd_briefing)
 
     class Message:
         def __init__(self, text):
@@ -439,14 +438,14 @@ def test_watchlist_add_button_opens_market_selector_directly():
 
 
 def test_inline_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
-    from telegram_bot.briefing import service
+    from telegram_bot.handlers import navigation
 
     seen = []
 
     async def briefing(_update, context):
         seen.append(context.args)
 
-    monkeypatch.setattr(service, "cmd_briefing", briefing)
+    monkeypatch.setattr(navigation, "cmd_briefing", briefing)
     message = SimpleNamespace()
     update = SimpleNamespace(
         effective_message=message,
@@ -465,14 +464,14 @@ def test_inline_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
 
 
 def test_persistent_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
-    from telegram_bot.briefing import service
+    from telegram_bot.handlers import navigation
 
     seen = []
 
     async def briefing(_update, context):
         seen.append(context.args)
 
-    monkeypatch.setattr(service, "cmd_briefing", briefing)
+    monkeypatch.setattr(navigation, "cmd_briefing", briefing)
     message = SimpleNamespace(text="📰 브리핑")
     update = SimpleNamespace(effective_message=message, callback_query=None)
     context = SimpleNamespace(

@@ -351,7 +351,7 @@ def test_menu_button_routes_to_the_prefilter_report(monkeypatch):
     async def fake_cmd_system(update, context):
         seen["args"] = context.args
 
-    monkeypatch.setattr("telegram_bot.features.system_admin.handlers.cmd_system", fake_cmd_system)
+    monkeypatch.setattr("telegram_bot.handlers.navigation.cmd_system", fake_cmd_system)
     update = SimpleNamespace(callback_query=SimpleNamespace(message=_Message()))
     context = SimpleNamespace(
         args=[],
