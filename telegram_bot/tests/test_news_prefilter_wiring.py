@@ -380,3 +380,49 @@ def test_menu_button_routes_to_the_prefilter_report(monkeypatch):
 
     assert handled is True
     assert seen["args"] == ["prefilter"]
+
+
+# ── 거취 판단 ─────────────────────────────────────────
+
+def _verdict(**overrides):
+    from telegram_bot.features.news_prefilter.report import _verdict_lines
+
+    payload = {
+        "labeled": 600, "agree": 50, "latest_only": 25, "prefilter_only": 25,
+        "auc": 0.70, "model_validation_ap": 0.45, "model_prevalence": 0.20,
+    }
+    payload.update(overrides)
+    return " ".join(_verdict_lines(payload))
+
+
+def test_verdict_waits_until_there_are_enough_labels():
+    """표본이 얇을 때 판정하면 잡음으로 기능을 지우거나 올리게 된다."""
+    assert "아직 판단하지 않습니다" in _verdict(labeled=120)
+
+
+def test_verdict_says_drop_when_both_policies_pick_the_same_articles():
+    """불일치가 없으면 바꿔도 같은 기사가 나간다. 코드가 하는 일이 없다."""
+    assert "삭제 기준" in _verdict(agree=100, latest_only=2, prefilter_only=2)
+
+
+def test_verdict_says_drop_when_the_score_is_no_better_than_random():
+    assert "삭제 기준" in _verdict(auc=0.52)
+
+
+def test_verdict_promotes_only_when_every_threshold_is_met():
+    assert "승격 기준을 모두 만족" in _verdict()
+    # AUC만 모자라도 승격하지 않는다.
+    assert "승격 기준을 모두 만족" not in _verdict(auc=0.60)
+    # 기저 대비 향상이 모자라도 승격하지 않는다.
+    assert "승격 기준을 모두 만족" not in _verdict(model_validation_ap=0.25)
+
+
+def test_verdict_allows_one_extension_when_neither_side_is_clear():
+    assert "2주 연장은 한 번만" in _verdict(auc=0.60)
+
+
+def test_verdict_always_shows_the_deadline_and_the_default():
+    """기한과 기본값이 화면에 없으면 '좀 더 보자'로 미뤄진다."""
+    text = _verdict(labeled=0)
+    assert "2026-10-15" in text
+    assert "기본값 삭제" in text

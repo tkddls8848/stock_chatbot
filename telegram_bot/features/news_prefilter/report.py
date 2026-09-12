@@ -8,6 +8,63 @@ dict 모양과 `SHADOW_CAVEATS`를 알고 그렸는데, 그러면 사전선별�
 from telegram_bot.features.news_prefilter.service import SHADOW_CAVEATS
 
 
+# 판단 기준은 code_guide.md의 "사전선별의 거취" 항목에 있다. 여기 숫자를 바꿀
+# 때는 그 문서도 함께 고친다 — 기준이 두 벌이 되면 읽는 사람이 어느 쪽을 믿을지
+# 모른다.
+DECISION_DEADLINE = "2026-10-15"
+MIN_LABELS_TO_DECIDE = 500
+DROP_DISAGREEMENT = 0.10
+DROP_AUC = 0.55
+PROMOTE_DISAGREEMENT = 0.20
+PROMOTE_AUC = 0.65
+PROMOTE_AP_LIFT = 1.5
+
+
+def _verdict_lines(report: dict) -> list[str]:
+    """지금 지표로 올릴지 지울지 판단할 수 있는지, 있다면 어느 쪽인지.
+
+    화면이 판정까지 내놓지 않으면 매번 기준 문서를 열어 손으로 대조하게 되고,
+    그러다 "좀 더 보자"로 미뤄진다. 이 기능이 반년 가까이 shadow에 머문 경위가
+    그것이다.
+    """
+    labeled = report["labeled"]
+    decided = report["agree"] + report["latest_only"] + report["prefilter_only"]
+    disagreement = (
+        (report["latest_only"] + report["prefilter_only"]) / decided if decided else None
+    )
+    auc = report["auc"]
+    ap, base = report["model_validation_ap"], report["model_prevalence"]
+
+    lines = ["", f"<b>거취 판단</b> (기한 {DECISION_DEADLINE}, 기본값 삭제)"]
+    if disagreement is not None:
+        lines.append(f"  불일치율 {disagreement:.0%}")
+    if labeled < MIN_LABELS_TO_DECIDE:
+        lines.append(
+            f"  ⏳ 라벨 {labeled}/{MIN_LABELS_TO_DECIDE}건 — 아직 판단하지 않습니다."
+        )
+        return lines
+
+    drop = (disagreement is not None and disagreement < DROP_DISAGREEMENT) or (
+        auc is not None and auc < DROP_AUC
+    )
+    promote = (
+        disagreement is not None
+        and disagreement >= PROMOTE_DISAGREEMENT
+        and auc is not None
+        and auc >= PROMOTE_AUC
+        and ap is not None
+        and base
+        and float(ap) >= float(base) * PROMOTE_AP_LIFT
+    )
+    if drop:
+        lines.append("  ⛔ <b>삭제 기준에 해당합니다.</b> 기능을 지웁니다.")
+    elif promote:
+        lines.append("  ✅ <b>승격 기준을 모두 만족합니다.</b> active로 올립니다.")
+    else:
+        lines.append("  ◐ 어느 쪽도 아닙니다. 2주 연장은 한 번만 허용합니다.")
+    return lines
+
+
 def format_prefilter_report(report: dict) -> str:
     """두 정책의 불일치와 판별력, CPU 예산을 한 화면에 그린다."""
     mode = report["mode"]
@@ -36,6 +93,7 @@ def format_prefilter_report(report: dict) -> str:
     if not report["latest_only"] and not report["prefilter_only"]:
         lines.append("  두 정책이 같은 기사를 고르고 있어 바꿀 이유가 아직 없습니다.")
 
+    lines.extend(_verdict_lines(report))
     lines.extend(["", "<b>판별력</b>"])
     auc = report["auc"]
     if auc is None:
