@@ -324,10 +324,6 @@ async def translate_article(
         )
 
 
-def is_timeout_error(error: Exception) -> bool:
-    return "timed out" in str(error).lower() or "timeout" in str(error).lower()
-
-
 def normalize_stock_code(raw: Any) -> str:
     """숫자 코드를 시장 규칙에 맞게 0패딩한다(HK 5자리, A주 6자리)."""
     code = str(raw or "").strip()

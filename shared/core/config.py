@@ -99,9 +99,6 @@ TRANSLATION_ENABLED = True
 # 이 값이 곧 한 기사의 최대 지연이다. 다만 잘리면 JSON 파싱이 실패해 그 기사가
 # 통째로 버려지므로, 제목·종목 배열까지 합친 봉투에 여유를 두고 잡았다.
 TRANSLATION_NUM_PREDICT = 768
-# 한 주기에 묶어 처리하는 기사가 늘어난 만큼 번역도 병렬로 돌린다. 소스별
-# 준비 루프는 기사를 순차 처리하므로, 동시 실행 폭은 이 세마포어가 정한다.
-TRANSLATION_CONCURRENCY = 3
 
 # ── Cloudflare Workers AI ─────────────────────────────
 # API 토큰은 .env에만 두고 커밋하지 않는다. 로그·예외에도 남기지 않는다.
@@ -174,10 +171,6 @@ TELEGRAM_MESSAGE_LIMIT = 4096
 # 먼저 걸린다 — 그 안에서 무엇을 고를지가 사전선별과 재탕 차단의 몫이다.
 NEWS_GLOBAL_LIMIT = 4
 # 번역한 기사 중 소스 하나가 실제로 **송출**할 건수. impact가 높은 순으로
-# 고르고 나머지는 텔레그램 메시지에서만 빠진다 — 번역·감성 결과는 그대로
-# news_log·prediction_log에 남아 /view·/market·signal_scoring이 읽는다.
-# 탈락분을 다시 집어 재번역하지 않도록 확정(confirm)까지 마친다.
-NEWS_DIGEST_SEND_LIMIT = 2
 NEWS_DIGEST_MESSAGE_MAX_CHARS = 3500
 # 다이제스트 한 기사의 제목·본문 표시 상한. 프롬프트도 본문을 200자 내외로
 # 지시하지만 그것은 지시일 뿐이라, 모델이 길게 답하는 주기가 섞이면 메시지가
@@ -195,10 +188,6 @@ NEWS_LIVE_MAX_AGE_HOURS = 48
 NEWS_SOURCE_ARTICLE_LIMIT = 250
 
 # 번역 결과가 품질 검사에 걸린 기사는 버리고 다음 후보로 넘어간다. 그 기사는
-# 이미 Neurons를 썼으므로, 한 소스가 한 주기에 몇 건까지 헛돌지 여기서 막는다.
-# 넘어가면 그 주기의 남은 슬롯을 포기한다 — 소스나 모델이 통째로 나쁜 날에
-# scan_limit(=NEWS_GLOBAL_LIMIT × 20)까지 태우는 쪽이 훨씬 비싸다.
-NEWS_TRANSLATION_QUALITY_REJECT_LIMIT = 3
 
 # ── 3시간 시장상황 보고서 ────────────────────────────
 # 매시간 원문만 수집하고 UTC +9 00·03·06…시에 시장별로 한 번씩 LLM을 불러
@@ -273,9 +262,8 @@ NEWS_SOURCE_FAILURE_THRESHOLD = 3
 # 주기가 60분이라 60분 쿨다운은 한 주기도 쉬지 못하고 곧바로 다시 불린다.
 # 연속 실패한 소스는 두 주기를 쉬게 둔다.
 NEWS_SOURCE_COOLDOWN_MINUTES = 120
-# 뉴스 메시지에 감성 점수 표기 여부와, 관심종목 부정 뉴스 경고 기준(-1~0).
+# 뉴스 메시지에 감성 점수 표기 여부.
 NEWS_SENTIMENT_ENABLED = True
-NEWS_NEGATIVE_ALERT_THRESHOLD = -0.6
 # /view 감성 뷰 집계에 사용할 최근 신호 일수.
 VIEW_LOOKBACK_DAYS = 3
 # ── 시황 리서치(/research) ────────────────────────────
@@ -420,9 +408,6 @@ POLYMARKET_WEB_DIR = DATA_DIR / "webpub" / "polymarket"
 POLYMARKET_WEB_LOW_LIQUIDITY = float(
     os.environ.get("POLYMARKET_WEB_LOW_LIQUIDITY", "1000")
 )
-POLYMARKET_WEB_FALLBACK_INTERVAL_SECONDS = 2 * 60 * 60
-POLYMARKET_WEB_MAX_MANIFEST_BYTES = 16 * 1024 * 1024
-POLYMARKET_WEB_MAX_SHARD_BYTES = 16 * 1024 * 1024
 POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS = 900.0
 POLYMARKET_WEB_MAX_DAILY_REQUESTS = 3000
 

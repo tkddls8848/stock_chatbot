@@ -1,38 +1,23 @@
-"""News pipeline data contracts."""
+"""수집 경로가 주고받는 데이터 계약."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from shared.llm.translator import TranslationResult
 from telegram_bot.news.registry import SourceSpec
 from telegram_bot.news.sources import GlobalArticle
 
+
 @dataclass(frozen=True)
 class SourceCandidate:
-    """번역 전 후보 한 건. 주간 번역과 야간 큐가 같은 목록을 본다."""
+    """번역 전 후보 한 건.
+
+    `collect_source_candidates`가 만들고 `collect_report_source`가 큐에 담는다.
+    `prefilter_candidate_id`는 사전선별이 매긴 후보 식별자로, 나중에 라벨을
+    이어 붙일 수 있게 큐 항목까지 따라간다.
+    """
 
     spec: SourceSpec
     article: GlobalArticle
     prefilter_candidate_id: str = ""
     event_id: str = ""
-
-
-@dataclass(frozen=True)
-class PreparedGlobalArticle:
-    spec: SourceSpec
-    article: GlobalArticle
-    text: str
-    translated: TranslationResult
-    prefilter_candidate_id: str = ""
-
-
-@dataclass(frozen=True)
-class PreparedSourceSection:
-    rows: list[PreparedGlobalArticle]
-    text: str
-
-
-# ── 뉴스 수집 함수 ────────────────────────────────────
-
-

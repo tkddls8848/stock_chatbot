@@ -112,36 +112,48 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 - 큐에 담긴 기사는 `SentNewsTracker.reserve` 상태다. 보고서 전송이 전부 실패하면
   큐와 예약을 유지해 다음 실행에서 재시도하고, 전송이 성립한 뒤에만 확정하고
   큐를 비운다. 주요 근거는 `NewsLog`와 `PredictionLog`에 함께 기록한다.
-- 기사별 번역 파이프라인은 수동·레거시 코드로 남아 있지만 뉴스 스케줄러에는
-  연결되지 않는다. 예약 뉴스 비용은 기사 수가 아니라 3시간 보고서의 시장 수에
-  비례한다.
+- **기사별 번역 파이프라인은 삭제했다.** `news/{pipeline,preparation,delivery,
+  selection}.py`는 `fetch_all`을 부르는 호출자가 없는 닫힌 섬이었다. 남겨 두면
+  `send_global_digest`·`prepare_global_source` 같은 이름이 살아 있는 전송처럼
+  보여, "뉴스 전송을 고쳐라"는 지시가 죽은 코드로 간다. 되살릴 일이 생기면
+  git에서 꺼내는 별도 변경이다.
+  예약 뉴스 비용은 기사 수가 아니라 3시간 보고서의 시장 수에 비례한다.
 - **읽는 폭은 `NEWS_SOURCE_ARTICLE_LIMIT`가 정한다.** 소스를 이 깊이까지만 읽으므로
   여기서 잘린 기사는 다음 주기에도 보이지 않는다. 주기가 3배로 길어져 한 주기가
   덮어야 할 시간도 3배다 — 이 값을 내리면 그만큼 사각지대가 생긴다.
   `gnews`는 이 값을 시장 수로, `gnews_us`·`gnews_kr`은 질의 수로 다시 나눠 쓴다.
-- **같은 사건을 두 번 번역하지 않는다.** 사전선별이 번역 전에 세 가지를 후보에서
-  뺀다: 최근 `NEWS_PREFILTER_TRANSLATED_EVENT_COOLDOWN_HOURS` 안에 이미 번역한
-  사건, 이번 주기에 다른 소스가 이미 집은 사건, 같은 소스 안의 같은 사건이다.
+- **같은 사건을 두 번 담지 않는다.** 사전선별이 순위를 매기기 전에 세 가지를
+  후보에서 뺀다: 최근 `NEWS_PREFILTER_TRANSLATED_EVENT_COOLDOWN_HOURS` 안에 이미
+  집은 사건, 이번 주기에 다른 소스가 이미 집은 사건, 같은 소스 안의 같은 사건이다.
   소스 여섯 곳이 같은 발표를 옮겨 적는 것이 한 주기의 가장 흔한 중복이다.
   이것은 **순서를 바꾸는 일이 아니라 빼는 일이라** shadow/active 어느 쪽에서도
   똑같이 돈다 — 두 정책이 걸러진 뒤의 같은 풀에서 고르므로 섀도 비교의 baseline은
   그대로다. 무엇이 왜 빠졌는지는 주기별 `cycle` 관측 줄의 `gated_*`가 센다.
 - **`news_prefilter`는 넓게 읽는 비용을 CPU로 내고 Neurons는 그대로 둔다.**
-  번역 전에 원문 후보를 사건 단위로 묶고 점수를 매겨, 번역 대상을 "최신순
-  상위 N건"에서 "점수 상위 N건"으로 바꾼다. 번역 건수는 `NEWS_GLOBAL_LIMIT`
-  그대로라 **추가 Neurons는 0이다** — 그래서 `NEWS_SOURCE_ARTICLE_LIMIT`을 250까지
-  올릴 수 있다. LLM을 부르지 않고 Aho-Corasick 종목 매칭·simhash 사건 군집·
-  로컬 로지스틱 보정기만 쓴다.
+  원문 후보를 사건 단위로 묶고 점수를 매겨, 큐에 담는 대상을 "최신순 상위 N건"
+  에서 "점수 상위 N건"으로 바꾼다. 담는 건수는
+  `NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT` 그대로라 **추가 Neurons는 0이다** —
+  그래서 `NEWS_SOURCE_ARTICLE_LIMIT`을 250까지 올릴 수 있다. LLM을 부르지 않고
+  Aho-Corasick 종목 매칭·simhash 사건 군집·로컬 로지스틱 보정기만 쓴다.
 - **사전선별은 `shadow`로 시작하고 `/system prefilter`가 승격 근거를 그린다.**
-  shadow는 점수와 관측만 쌓고 번역 순서는 최신순 그대로 둔다. **shadow가
-  답하지 못하는 것이 있다**: 라벨(impact)은 번역된 기사에만 붙고 shadow에서
-  번역되는 것은 최신순 상위뿐이라, 사전선별이 새로 끌어올렸을 기사의 impact는
-  끝내 관측되지 않는다. 따라서 shadow의 AUC는 "최신순이 이미 고른 기사들
+  shadow는 점수와 관측만 쌓고 큐에 담는 순서는 최신순 그대로 둔다. **shadow가
+  답하지 못하는 것이 있다**: 라벨(impact)은 최신순이 이미 고른 기사에만 붙어,
+  사전선별이 새로 끌어올렸을 기사의 impact는 끝내 관측되지 않는다. 따라서 shadow의 AUC는 "최신순이 이미 고른 기사들
   안에서의 순위"이지 "더 나은 기사를 찾아내는 능력"이 아니다. 후자는 `active`의
   탐색 슬롯(`NEWS_PREFILTER_EXPLORATION_SLOTS`)으로만 측정된다. 이 한계는
-  `telegram_bot/features/news_prefilter/service.py`의 `SHADOW_CAVEATS`에 적어 두었고 지운 채로 승격하지 않는다.
+  `telegram_bot/features/news_prefilter/service.py`의 `SHADOW_CAVEATS`에 적어
+  두었고 지운 채로 승격하지 않는다.
+- **지금 사전선별에 라벨이 전혀 들어오지 않는다.** `record_outcome`을 부르던
+  유일한 호출자가 삭제된 기사별 번역 경로(`news/delivery.py`)였다. 예약 보고서
+  경로는 기사별 impact를 만들지 않으므로 보정기(calibration)는 빈 관측 위에서
+  돈다 — `/system prefilter`의 AUC·판별력 수치는 과거 라벨이 남아 있는 동안만
+  의미가 있고, 그 뒤로는 갱신되지 않는다. **승격 판단을 이 수치로 하지 않는다.**
+  되살리려면 라벨 공급자를 먼저 붙인다: 3시간 보고서가 고른 헤드라인을 impact
+  라벨로 되먹이는 것이 가장 싼 경로다(추가 LLM 호출 없음). 큐 항목은 이미
+  `prefilter_candidate_id`를 들고 있어 이을 자리는 준비돼 있다
+  (`telegram_bot/tests/test_news_prefilter_wiring.py`가 고정한다).
 - **관측 파일은 두 정책이 고르는 기사와 탐색분만 남긴다.** 후보 250건을 전부
-  적으면 하루 수만 줄이 쌓이는데 라벨은 번역된 4건에만 붙어 나머지는 학습에
+  적으면 하루 수만 줄이 쌓이는데 라벨이 붙는 것은 극히 일부라 나머지는 학습에
   쓸 수 없다. 남기지 않는 후보는 주기별 `cycle` 집계 줄로 센다.
   적재는 **offset 뒤만 이어 읽는다** — 파일 전체를 dict에 담으면 보존 기간이
   찬 시점에 1GB 인스턴스가 감당하지 못한다(실측: 2일치 221k줄에서 602MB).

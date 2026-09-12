@@ -1,8 +1,12 @@
 """사전선별의 조립과 파이프라인 연결 검증.
 
 단위 동작(점수·사건 군집·학습)은 `test_news_prefilter.py`가 본다. 여기서는
-그 점수가 **실제로 번역 대상을 바꾸는지**, 바꾸지 못할 때 뉴스가 그대로
-나가는지, 라벨이 되돌아오는지, 관리 명령이 그 결과를 여는지를 본다.
+그 점수가 **실제로 큐에 담기는 기사를 바꾸는지**, 바꾸지 못할 때 뉴스가 그대로
+나가는지, 라벨을 이을 식별자가 따라가는지, 관리 명령이 그 결과를 여는지를 본다.
+
+연결은 `collect_report_source`를 통해 본다 — 스케줄러가 매시간 부르는 경로다.
+사전선별이 바꾸는 것은 **큐에 담기는 기사**이지 번역 대상이 아니다: 예약 경로는
+기사별 번역을 하지 않는다.
 
 연결은 `prepare_global_source`를 통해 본다. 이 래퍼 자체는 스케줄러가 부르지
 않지만(`test_news_digest.py` 참고), 사전선별 순서를 실제로 정하는 자리는 그
@@ -20,8 +24,7 @@ from shared.core.clock import now
 from telegram_bot.features.news_prefilter import feature as prefilter_feature
 from telegram_bot.features.news_prefilter.service import RankedCandidate
 from telegram_bot.features.system_admin import handlers as admin
-from shared.llm.translator import TranslationResult
-from telegram_bot.news.pipeline import prepare_global_source
+from telegram_bot.news.report import collect_report_source
 from telegram_bot.news.registry import SourceSpec
 from telegram_bot.news.sources import GlobalArticle
 
@@ -91,15 +94,15 @@ def test_maintenance_job_starts_late_and_never_overlaps(installed):
 
 # ── 파이프라인 연결 ─────────────────────────────────────
 
-class _Translator:
-    """번역된 제목을 그대로 돌려주고 호출 순서를 기록한다."""
+class _Queue:
+    """받은 항목을 그대로 받아 주고 순서를 기록하는 최소 큐 대역."""
 
     def __init__(self):
-        self.seen = []
+        self.items = []
 
-    def translate_article(self, title, content):
-        self.seen.append(title)
-        return TranslationResult(title, content, [], sentiment=0.5, impact="high")
+    async def enqueue(self, items):
+        self.items.extend(items)
+        return items
 
 
 class _Tracker:
@@ -165,88 +168,72 @@ def _articles(count):
     ]
 
 
-def _prepare(prefilter, translator, count=4):
+def _collect(prefilter, count=4):
+    """스케줄러가 부르는 수집 한 주기를 소스 하나에 대해 돌린다."""
     spec = SourceSpec(
         key="gnews_us", label="US", fetch=lambda: _articles(count), market="US"
     )
-    return asyncio.run(
-        prepare_global_source(
-            spec,
-            _Registry(),
-            _Tracker(),
-            translator,
-            asyncio.Semaphore(1),
-            {},
-            prefilter,
-            "cycle-1",
+    queue = _Queue()
+    accepted = asyncio.run(
+        collect_report_source(
+            spec, _Registry(), _Tracker(), queue, {}, prefilter, "cycle-1"
         )
-    ), spec
+    )
+    return queue, accepted
 
 
-def test_prefilter_order_decides_which_articles_are_translated(monkeypatch):
-    """기능의 존재 이유. 번역은 피드 순서가 아니라 사전선별 순서를 따라야 한다."""
-    monkeypatch.setattr("telegram_bot.news.preparation.NEWS_GLOBAL_LIMIT", 2)
-    translator = _Translator()
-
-    rows, _ = _prepare(_Prefilter(), translator)
-
-    # 대역이 순서를 뒤집었으므로 마지막 기사부터 번역된다.
-    assert translator.seen == ["기사 3", "기사 2"]
-    assert len(rows) == 2
+def _titles(queue):
+    return [item["title"] for item in queue.items]
 
 
-def test_translation_count_is_unchanged_by_the_prefilter(monkeypatch):
+def test_prefilter_order_decides_which_articles_are_queued(monkeypatch):
+    """기능의 존재 이유. 큐는 피드 순서가 아니라 사전선별 순서를 따라야 한다."""
+    monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
+
+    queue, accepted = _collect(_Prefilter())
+
+    # 대역이 순서를 뒤집었으므로 마지막 기사부터 담긴다.
+    assert _titles(queue) == ["기사 3", "기사 2"]
+    assert accepted == 2
+
+
+def test_queued_count_is_unchanged_by_the_prefilter(monkeypatch):
     """추가 Neurons가 0이라는 전제. 순서만 바뀌고 건수는 그대로다."""
-    monkeypatch.setattr("telegram_bot.news.preparation.NEWS_GLOBAL_LIMIT", 2)
-    with_prefilter = _Translator()
-    without = _Translator()
+    monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
 
-    _prepare(_Prefilter(), with_prefilter)
-    _prepare(None, without)
+    with_prefilter, _ = _collect(_Prefilter())
+    without, _ = _collect(None)
 
-    assert len(with_prefilter.seen) == len(without.seen) == 2
+    assert len(with_prefilter.items) == len(without.items) == 2
 
 
 def test_a_broken_prefilter_falls_back_to_recency_instead_of_dropping_news(monkeypatch):
     """로컬 보조 기능의 실패가 뉴스를 멈추게 해서는 안 된다."""
-    monkeypatch.setattr("telegram_bot.news.preparation.NEWS_GLOBAL_LIMIT", 2)
-    translator = _Translator()
+    monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
 
-    rows, _ = _prepare(_Prefilter(fail=True), translator)
+    queue, accepted = _collect(_Prefilter(fail=True))
 
-    assert translator.seen == ["기사 0", "기사 1"]
-    assert len(rows) == 2
+    assert _titles(queue) == ["기사 0", "기사 1"]
+    assert accepted == 2
     # 라벨을 이을 수 없으므로 candidate_id는 비운다.
-    assert all(row.prefilter_candidate_id == "" for row in rows)
+    assert all(item["prefilter_candidate_id"] == "" for item in queue.items)
 
 
 def test_candidate_id_rides_along_so_the_label_can_be_joined(monkeypatch):
-    monkeypatch.setattr("telegram_bot.news.preparation.NEWS_GLOBAL_LIMIT", 2)
+    """큐 항목이 후보 식별자를 들고 가야 나중에 라벨을 이어 붙일 수 있다.
 
-    rows, _ = _prepare(_Prefilter(), _Translator())
-
-    assert [row.prefilter_candidate_id for row in rows] == [
-        f"cand-{row.article.article_id}" for row in rows
-    ]
-
-
-def test_archiving_an_unsent_article_still_returns_its_label(monkeypatch):
-    """송출에서 탈락해도 번역·감성은 끝났다. 라벨은 그대로 돌려받아야 한다.
-
-    탈락분을 버리면 하루 라벨의 절반이 사라져 보정기가 굶는다.
+    지금 그 라벨을 되먹이는 호출자는 없다(CLAUDE.md의 라벨 공급 항목). 식별자가
+    큐까지 살아 오는 것만이라도 고정해 두면, 공급자를 붙일 때 저장 형식을 다시
+    설계하지 않아도 된다.
     """
-    monkeypatch.setattr("telegram_bot.news.preparation.NEWS_GLOBAL_LIMIT", 2)
-    from telegram_bot.news.pipeline import archive_unsent_articles
+    monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
 
-    rows, _ = _prepare(_Prefilter(), _Translator())
-    prefilter = _Prefilter()
+    queue, _ = _collect(_Prefilter())
 
-    asyncio.run(archive_unsent_articles(rows, _Tracker(), None, None, prefilter))
-
-    assert [outcome[0] for outcome in prefilter.outcomes] == [
-        row.prefilter_candidate_id for row in rows
+    assert [item["prefilter_candidate_id"] for item in queue.items] == [
+        f"cand-{item['article_id']}" for item in queue.items
     ]
-    assert {outcome[1] for outcome in prefilter.outcomes} == {"high"}
+    assert all(item["prefilter_candidate_id"] for item in queue.items)
 
 
 # ── /system prefilter ─────────────────────────────────
