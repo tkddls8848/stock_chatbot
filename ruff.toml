@@ -1,6 +1,6 @@
 # 설정을 두지 않으면 룰셋이 설치된 ruff 버전에 따라 달라져 같은 코드가 머신마다
 # 다른 결과를 낸다(실측: 설정 없이 155건, 아래 셋으로 0건). 문서가 지시하는
-# `ruff check app tests`가 실제 게이트가 되도록 여기에 고정한다.
+# `ruff check shared telegram_bot web conftest.py`가 실제 게이트가 되도록 고정한다.
 target-version = "py311"
 
 [lint]
@@ -11,4 +11,4 @@ select = ["E4", "E7", "E9", "F", "DTZ"]
 
 [lint.per-file-ignores]
 # 테스트는 호스트 시각을 그대로 써도 무방하다. 강제하면 fixture만 장황해진다.
-"tests/*" = ["DTZ"]
+"*/tests/*" = ["DTZ"]

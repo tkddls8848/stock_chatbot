@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polymarket-shorts"
+version = "0.1.0"
+description = "Daily Korean YouTube Shorts from the Polymarket consensus web API"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31,<3",
+  "Pillow>=10.4,<12",
+  "edge-tts>=7,<8",
+  "python-dotenv>=1,<2",
+  "tzdata>=2024.1; platform_system == 'Windows'",
+  "google-api-python-client>=2.0,<3",
+  "google-auth-oauthlib>=1.2,<2",
+  "google-auth-httplib2>=0.2,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+polymarket-shorts = "polymarket_shorts.cli:main"
+polymarket-shorts-auth = "polymarket_shorts.youtube:auth_main"
+polymarket-shorts-hyperframes = "polymarket_shorts.hyperframes_export:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = ["--basetemp=.test-tmp"]

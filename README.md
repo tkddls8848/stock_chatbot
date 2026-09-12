@@ -9,7 +9,7 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-python app\bot.py
+python -m telegram_bot.main
 ```
 
 `.env`에는 아래 값이 필요합니다.
@@ -30,7 +30,7 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 - 무료 한도는 **하루 10,000 Neurons**이며 UTC 00시(UTC +9 오전 9시)에 리셋됩니다. 리서치 분석은 입력 깊이를 늘린 뒤(뉴스 16건 × 본문 600자, 후보 24개) 1회에 약 400~600 Neurons로 추정되며, 이전의 얕은 입력(6건 × 240자) 기준 실측치는 약 110 Neurons였습니다.
 - 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 3시간마다 시장별로 한 번씩 분석합니다. 따라서 LLM 호출 수는 기사 수가 아니라 보고서에 포함된 시장 수에 비례합니다.
 - 한도가 소진되면 다음 리셋까지 호출을 멈춥니다. 그날 시장상황 보고서와 `/research`는 실패하지만, 브리핑은 지수·헤드라인만 담은 데이터 전용 브리핑으로 자동 전환됩니다.
-- 실사용량은 로그에 그대로 남으며 일일 합계는 UTC 00시(한국시간 오전 9시)를 경계로 셉니다. 로그는 파일이 아니라 표준 오류로 나가므로, 서버에서는 `journalctl -u stock-chatbot | grep neurons=`로, 로컬에서는 `python app\bot.py 2> bot.log`처럼 받아 두고 확인합니다.
+- 실사용량은 로그에 그대로 남으며 일일 합계는 UTC 00시(한국시간 오전 9시)를 경계로 셉니다. 로그는 파일이 아니라 표준 오류로 나가므로, 서버에서는 `journalctl -u stock-chatbot | grep neurons=`로, 로컬에서는 `python -m telegram_bot.main 2> bot.log`처럼 받아 두고 확인합니다.
 - 한도를 넘겨 쓰려면 Workers Paid 플랜에서 초과분이 1,000 Neurons당 $0.011입니다.
 - API 토큰은 `.env`에만 두고 커밋하지 않습니다. 로그와 예외 메시지에는 토큰이 남지 않습니다.
 
@@ -45,7 +45,7 @@ terraform init; terraform apply
 terraform output cutover_commands                     # 전환 절차
 ```
 
-- 실행 절차와 주의점은 [`iac/terraform/README.md`](iac/terraform/README.md)에 있습니다.
+- 실행 절차와 주의점은 [`infra/terraform/README.md`](infra/terraform/README.md)에 있습니다.
 - 부트스트랩은 봇을 **기동하지 않습니다.** 같은 토큰으로 두 프로세스가 텔레그램을 폴링하면 양쪽이 번갈아 죽으므로, 전환은 "로컬 정지 → 서버 기동" 순서로 사람이 진행합니다.
 
 ## 테스트
@@ -72,7 +72,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 ```
 
 폴리마켓 현재 대시보드는 봇과 별개인 systemd one-shot이 2시간마다 굽고, 공개
-웹이 그 산출물을 내보냅니다. 설치·상태·장애 절차는 `docs/server-ops.md` 8절에
+웹이 그 산출물을 내보냅니다. 설치·상태·장애 절차는 `infra/server-ops.md` 8절에
 있습니다. compact manifest 크기는 다음으로 잽니다.
 
 ```powershell
@@ -104,7 +104,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 
 ## 관리 웹 (선택)
 
-봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `app/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
+봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `shared/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
 
 ```env
 WEB_ADMIN_USER=admin
@@ -131,10 +131,30 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 ## 프로젝트 구조
 
+최상위를 프로세스 경계로 나눕니다. `telegram_bot`·`web`은 서로를 import하지 않고 `shared`만 공유합니다. `shorts`는 아예 import하지 않고 공개 웹 API만 HTTP로 읽습니다.
+
+각 도메인이 자기 코드·테스트·계획서를 자기 폴더 안에 담고, 인프라 코드는 전부 `infra/`에 모읍니다. 최상위에 `tests/`·`docs/`·`deploy/`를 따로 두지 않습니다.
+
 ```text
-app/        봇, 명령 처리, 뉴스·LLM·종목 DB·관심 종목 모듈
-prompts/    시장상황·리서치·브리핑 프롬프트
-iac/        Lightsail 배포 Terraform 코드
-tests/      자동화 테스트
-data/       실행 중 생성되는 상태·캐시 데이터, 소유 기능별 하위 디렉토리 (Git 제외)
+shared/           공유 — core(설정·시각·저장·워커), llm(Cloudflare), prompts/, tests/
+telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
+                  + docs/ tests/
+web/              읽기 전용 공개 웹 (8788) + docs/ tests/
+  polymarket/     폴리마켓 화면을 먹이는 순회·줄글 one-shot (봇과 무관)
+shorts/           쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지
+                  + src/ docs/ tests/
+infra/            인프라 코드 — terraform/, systemd/, scripts/, Caddyfile, server-ops.md
+data/             실행 중 생성되는 상태·캐시 데이터, 소유 기능별 하위 디렉토리 (Git 제외)
 ```
+
+저장소 루트가 import root입니다. 진입점은 모두 루트에서 `-m`으로 부릅니다.
+
+> 텔레그램 봇 폴더는 `telegram`으로 지을 수 없습니다. `python-telegram-bot`이 제공하는 최상위 모듈 이름이 `telegram`이라, import root에 같은 이름을 두면 `from telegram import Update`가 전부 이 폴더를 집습니다.
+
+| 프로세스 | 명령 |
+|---|---|
+| 텔레그램 봇(+8787 관리 웹) | `python -m telegram_bot.main` |
+| 공개 웹 8788 | `python -m web.server` |
+| 폴리마켓 순회 one-shot | `python -m web.polymarket.refresh` |
+| 폴리마켓 줄글 one-shot | `python -m web.polymarket.sector_brief` |
+| 쇼츠(별개 venv, `shorts/`에서) | `python -m polymarket_shorts.cli` |

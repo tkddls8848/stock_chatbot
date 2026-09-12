@@ -1,0 +1,24 @@
+[Unit]
+Description=Stock Chatbot public read-only web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stockbot
+Group=stockbot
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+Environment=MPLBACKEND=Agg
+Environment=WEBPUB_HOST=127.0.0.1
+Environment=WEBPUB_PORT=8788
+ExecStart=/srv/stock-chatbot/venv/bin/python -m web.server
+Restart=on-failure
+RestartSec=10
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

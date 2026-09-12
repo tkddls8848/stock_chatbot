@@ -1,0 +1,20 @@
+[Unit]
+Description=Produce one daily Polymarket YouTube Short
+After=network-online.target stock-chatbot-web.service
+Wants=network-online.target
+StartLimitIntervalSec=3h
+StartLimitBurst=8
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/stock_chatbot/shorts
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/ubuntu/stock_chatbot/shorts/.env
+ExecStart=/home/ubuntu/stock_chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
+Nice=10
+CPUWeight=20
+MemoryMax=768M
+TimeoutStartSec=20min
+Restart=on-failure
+RestartSec=15min

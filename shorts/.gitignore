@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.test-tmp/
+output/
+state/
+client_secret.json
+youtube_token.json
+
+# 빌드 산출물과 렌더 결과물. 소스만 추적한다 — 24ea5e5가 저장소에 바이너리가
+# 쌓이는 것을 문제 삼았고, 그 판단은 유효하다.
+*.egg-info/
+*.mp4
+.thumbnails/
+node_modules/
