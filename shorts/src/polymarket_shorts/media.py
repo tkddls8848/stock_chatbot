@@ -17,6 +17,24 @@ from .scenario import Scene
 logger = logging.getLogger(__name__)
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 _ALLOWED_LICENSES = ("cc0", "public domain", "cc by 4", "cc by 3", "cc by 2")
+ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "backgrounds"
+
+
+def background_for(kind: str, visual_query: str, root: Path = ASSET_DIR) -> Path | None:
+    """Select a pre-generated local image without network or generation calls."""
+    filename = (
+        "global-trade.png"
+        if kind == "consensus" and "shipping" in visual_query.lower()
+        else "financial-city.png"
+    )
+    path = root / filename
+    try:
+        with Image.open(path) as image:
+            image.verify()
+        return path
+    except (OSError, ValueError) as exc:
+        logger.warning("로컬 배경을 읽을 수 없어 기본 배경 사용: %s (%s)", path, exc)
+        return None
 
 
 @dataclass(frozen=True)

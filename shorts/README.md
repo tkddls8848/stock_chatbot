@@ -107,6 +107,16 @@ journalctl -u polymarket-shorts -n 100 --no-pager
 
 ## 운영상 주의
 
+배경은 `assets/backgrounds/`에 미리 저장한 GPT Image PNG를 재사용합니다.
+복합·공급망 장면은 `global-trade.png`, 나머지 장면은 `financial-city.png`를 사용합니다.
+생성 방식과 원본 프롬프트는 같은 폴더의 `provenance.json`에 있습니다.
+일일 렌더에는 이미지 API 키나 이미지 생성 비용이 필요하지 않습니다.
+`SHORTS_VISUALS_ENABLED=false`이면 기본 단색 배경을 사용하며, 이미지가 없거나
+손상됐을 때도 경고를 기록하고 단색 배경으로 진행합니다.
+HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합니다.
+새 배경은 ChatGPT/Codex 내장 이미지 생성으로 준비해 위 파일을 교체하면 됩니다.
+이미 생성한 MP4에는 소급 적용되지 않으며 다음 렌더부터 반영됩니다.
+
 - 1분을 넘는 쇼츠는 활성 저작권 클레임이 있으면 전 세계 차단될 수 있으므로 기본 영상에는 배경음악을 넣지 않습니다.
 - 자동 업로드용 Google API 프로젝트가 미검증 상태라면 API로 올린 영상이 비공개로 제한될 수 있습니다.
 - `output/`, `state/`, OAuth 자격증명은 커밋하지 않습니다.

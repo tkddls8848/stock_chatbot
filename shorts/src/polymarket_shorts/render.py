@@ -130,7 +130,7 @@ def render_frame(
 
     draw.text((82, 1750), "예측시장 가격 기반 · 투자 조언 아님", font=small_font, fill=_COLORS["muted"])
     if background_path is not None:
-        draw.text((82, 1698), "VISUAL · WIKIMEDIA COMMONS", font=small_font, fill=_COLORS["muted"])
+        draw.text((82, 1698), "VISUAL · AI 생성 배경", font=small_font, fill=_COLORS["muted"])
     draw.text((900, 1750), f"{index}/{total}", font=small_font, fill=accent, anchor="ra")
     draw.rounded_rectangle((82, 1820, 998, 1832), radius=6, fill="#34322D")
     draw.rounded_rectangle((82, 1820, 82 + int(916 * index / total), 1832), radius=6, fill=accent)

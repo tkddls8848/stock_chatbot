@@ -1,0 +1,13 @@
+{
+  "generator": "Built-in image_gen (no API key)",
+  "assets": [
+    {
+      "file": "financial-city.png",
+      "prompt": "Use case: stylized-concept. Asset type: reusable portrait 9:16 background for NUNCHI Polymarket Korean executive briefing shorts. Create one premium editorial 3D illustration of a global financial city at dusk, architectural silhouettes and a subtle glass globe in lower right, restrained charcoal green #0c1110, warm muted gold #e7bb62 and slate blue. Keep central 70% calm, dark and uncluttered for large data panels and Korean captions added later. Detail concentrated at edges and bottom. Elegant realistic materials, soft cinematic light, no text, letters, numbers, logos, charts, watermark, or identifiable people. Full bleed portrait."
+    },
+    {
+      "file": "global-trade.png",
+      "prompt": "Use case: stylized-concept. Asset type: reusable full bleed portrait 9:16 background for Korean executive economic briefing video. Premium cinematic editorial 3D illustration of global trade: shipping containers and port cranes along the lower edge, a cargo vessel in lower right and distant industrial coast. Charcoal green #0c1110, muted gold #e7bb62 and slate blue. Large calm dark negative space across central 70% and upper region for data panels added by code. Detailed realistic metal and water at edges, understated soft dusk lighting. No text, numbers, labels, logos, charts, watermark or people. Symbolic illustration, not a specific news event."
+    }
+  ]
+}

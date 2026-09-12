@@ -11,6 +11,7 @@ import shutil
 from typing import Any
 
 from .config import PROJECT_DIR, Settings
+from .media import background_for
 from .render import probe_duration
 from .tts import synthesize
 
@@ -118,6 +119,11 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
         str(scene.get("accent") or "gold"), "#e7bb62"
     )
     progress = round(index / total * 100, 2)
+    background = str(scene.get("background_asset") or "")
+    background_markup = (
+        f'<img class="scene-background" src="{html.escape(background, quote=True)}" alt="AI 생성 배경" />'
+        if background else ""
+    )
 
     if kind == "intro":
         body = "".join(
@@ -172,6 +178,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
     return f"""
       <section id="scene-{index}" class="clip scene scene-{kind}" data-start="{start}" data-duration="{duration}" data-track-index="1" style="--accent:{accent}">
         <div class="scene-shell">
+          {background_markup}
           <div class="scene-grid"></div>
           <div class="corner corner-a"></div><div class="corner corner-b"></div>
           <header><span>NUNCHI / POLYMARKET</span><span>{index:02d} / {total:02d}</span></header>
@@ -229,6 +236,7 @@ def _index_html(
     <script src="node_modules/gsap/dist/gsap.min.js"></script>
     <style>
       * {{ box-sizing:border-box; }}
+      .scene-background {{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.55; pointer-events:none; }}
       html,body {{ margin:0; width:1080px; height:1920px; overflow:hidden; background:#0c1110; }}
       body {{ color:#f4f0e7; font-family:"Noto Sans KR","Malgun Gothic",system-ui,sans-serif; }}
       #root {{ position:relative; width:1080px; height:1920px; overflow:hidden; }}
@@ -328,6 +336,16 @@ def export_project(
     cursor = 0.0
     signal_index = 0
     for index, scene in enumerate(scenes, start=1):
+        scene.pop("background_asset", None)
+        background = (
+            background_for(str(scene.get("kind") or ""), str(scene.get("visual_query") or ""))
+            if settings.visuals_enabled else None
+        )
+        if background:
+            target = assets_dir / background.name
+            if target.resolve() != background.resolve():
+                shutil.copy2(background, target)
+            scene["background_asset"] = f"assets/{background.name}"
         if str(scene.get("kind") or "") == "consensus":
             signal_index += 1
         narration = _presentation_narration(scene, signal_index)
@@ -372,8 +390,9 @@ def export_project(
                 "start": round(timed.start, 3),
                 "duration": round(timed.duration, 3),
                 "audio": timed.audio_file,
+                "background": scenes[index].get("background_asset"),
             }
-            for timed in timed_scenes
+            for index, timed in enumerate(timed_scenes)
         ],
     }
     (project_dir / "source-manifest.json").write_text(

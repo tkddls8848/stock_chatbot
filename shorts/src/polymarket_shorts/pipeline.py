@@ -10,6 +10,7 @@ from typing import Any
 
 from .client import PolymarketWebClient
 from .config import Settings
+from .media import background_for
 from .render import find_font, probe_duration, render_video
 from .scenario import Scenario, build_scenario
 from .tts import synthesize
@@ -99,6 +100,10 @@ def produce_daily(
     scenario_path = day_dir / "scenario.json"
     metadata_path = day_dir / "youtube.json"
     metadata = metadata_for(scenario)
+    backgrounds = tuple(
+        background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
+        for scene in scenario.scenes
+    )
 
     with tempfile.TemporaryDirectory(prefix=f".{day}-", dir=settings.output_dir) as raw_work:
         work = Path(raw_work)
@@ -140,9 +145,14 @@ def produce_daily(
             ffmpeg_bin=settings.ffmpeg_bin,
             ffprobe_bin=settings.ffprobe_bin,
             max_duration=settings.max_duration_seconds,
+            background_paths=backgrounds,
         )
 
     scenario_payload = {**scenario.to_dict(), "duration_seconds": round(duration, 3)}
+    scenario_payload["visuals"] = [
+        {"asset": path.name, "source": "GPT Image / built-in", "generated": True}
+        if path else None for path in backgrounds
+    ]
     _write_json(scenario_path, scenario_payload)
     _write_json(metadata_path, metadata)
 
