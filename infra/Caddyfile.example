@@ -1,7 +1,9 @@
 # Caddy는 TLS와 인증을 처리하고, 내부 전용 웹 프로세스에만 프록시한다.
 # 첫 줄을 실제 도메인으로 바꾸고 PASSWORD_HASH를 `caddy hash-password` 출력으로
 # 교체한다. `http://` 접두사는 쓰지 않는다 — 붙이면 자동 HTTPS가 꺼진다.
-# 절차는 ops/server-ops.md 11절.
+# 지시어는 `basicauth`다(`basic_auth`가 아니다) — 공유 호스트의 Caddy는 우분투
+# 기본 저장소판 2.6.2이고, `basic_auth`는 2.8부터다. 2.6에서는 파싱에 실패한다.
+# 절차는 infra/server-ops.md 11절.
 #
 # 면을 나눈다: 시장 컨센서스와 현재 Polymarket 전체 대시보드는 열고,
 # 종목명·액션·confidence가 들어가는 리서치만 잠근다. noindex는 모두에 붙인다 — 열람은 자유롭게 두되
@@ -9,13 +11,14 @@
 # 막으면 크롤러가 noindex를 읽지 못해 URL만 색인에 남을 수 있다.
 example.com {
     # Tailscale Serve가 tailnet IP의 443을 사용하므로 Lightsail 사설 NIC만 바인딩한다.
+    # 이 줄을 빼면 0.0.0.0:443을 잡으려다 EADDRINUSE로 기동하지 못한다.
     bind PRIVATE_IP
     encode zstd gzip
 
     header X-Robots-Tag "noindex, nofollow"
 
     @research path /research /research/* /api/research /api/research/*
-    basic_auth @research {
+    basicauth @research {
         friend PASSWORD_HASH
     }
 
