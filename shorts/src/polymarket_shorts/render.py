@@ -44,6 +44,18 @@ def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(path), size=size)
 
 
+# ── YouTube Shorts 안전 영역 ────────────────────────────
+# 세로 1080x1920에서 플레이어 UI가 프레임을 덮는다. 위 ~180px은 검색·내비게이션,
+# 아래 ~350px은 채널명·제목·음원 바, 오른쪽 ~192px은 좋아요·댓글·공유 버튼 줄이다.
+# 그 밖에 그린 것은 실제 재생 화면에서 보이지 않는다 — 예전에는 고지문·출처·
+# 페이지 번호·진행바가 전부 아래 220px 안에 있어 넷 다 가려져 있었다.
+SAFE_TOP = 200
+SAFE_BOTTOM = HEIGHT - 380          # 1540. 이 아래는 Shorts UI 구역
+PANEL_BOTTOM_MAX = SAFE_BOTTOM - 240  # 1300. 그 아래는 자막 자리
+FOOTER_Y = SAFE_BOTTOM - 70           # 1470. 자막(~1420) 아래, UI 위
+SAFE_LEFT = 82
+SAFE_RIGHT = WIDTH - 200
+
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, width: int) -> list[str]:
     lines: list[str] = []
     for paragraph in text.splitlines() or [""]:
@@ -82,8 +94,8 @@ def render_frame(
     draw = ImageDraw.Draw(image)
     accent = _COLORS.get(scene.accent, _COLORS["gold"])
     draw.rectangle((0, 0, 22, HEIGHT), fill=accent)
-    draw.rectangle((22, 0, WIDTH, 470), fill="#151512A0")
-    draw.rectangle((22, 1570, WIDTH, HEIGHT), fill="#151512C8")
+    draw.rectangle((22, 0, WIDTH, 560), fill="#151512A0")
+    draw.rectangle((22, SAFE_BOTTOM - 60, WIDTH, HEIGHT), fill="#151512C8")
 
     brand_font = _font(font_path, 34)
     kicker_font = _font(font_path, 34)
@@ -91,19 +103,34 @@ def render_frame(
     body_font = _font(font_path, 42 if scene.kind == "consensus" else 48)
     label_font = _font(font_path, 27)
     small_font = _font(font_path, 28)
-    draw.text((82, 76), "NUNCHI · POLYMARKET", font=brand_font, fill=_COLORS["muted"])
-    draw.text((82, 205), scene.kicker, font=kicker_font, fill=accent)
+    draw.text((SAFE_LEFT, SAFE_TOP), "NUNCHI · POLYMARKET", font=brand_font, fill=_COLORS["muted"])
+    draw.text((SAFE_LEFT, SAFE_TOP + 74), scene.kicker, font=kicker_font, fill=accent)
 
-    title_lines = _wrap(draw, scene.title, title_font, 900)
-    y = 285
+    title_lines = _wrap(draw, scene.title, title_font, SAFE_RIGHT - SAFE_LEFT)
+    y = SAFE_TOP + 152
     for line in title_lines[:3]:
         draw.text((82, y), line, font=title_font, fill=_COLORS["ink"])
         y += 102
     panel_top = y + 36
+    bullets = scene.bullets or tuple(scene.body.splitlines())
+    bullets = bullets[:4]
+
+    # 먼저 줄 수를 세어 패널 높이를 정한다. 높이를 고정하면 내용이 적은 카드에서
+    # 아래 3분의 1이 빈 채로 남는다.
+    label_font_h, body_font_h, measured = 42, 62, 0
+    layout: list[tuple[str, list[str]]] = []
+    for bullet in bullets:
+        label, separator, value = bullet.partition(" · ")
+        lines = _wrap(draw, value if separator else bullet, body_font, SAFE_RIGHT - 142)[:3]
+        layout.append((label if separator else "", lines))
+        measured += (label_font_h if separator else 0) + body_font_h * len(lines)
+    measured += 38 * max(0, len(layout) - 1)
+    panel_bottom = min(PANEL_BOTTOM_MAX, panel_top + measured + 150)
+
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     overlay_draw.rounded_rectangle(
-        (82, panel_top, 998, 1500),
+        (SAFE_LEFT, panel_top, WIDTH - 82, panel_bottom),
         radius=42,
         fill=(28, 27, 24, 225),
         outline=(92, 87, 77, 255),
@@ -111,29 +138,30 @@ def render_frame(
     )
     image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(image)
-    bullets = scene.bullets or tuple(scene.body.splitlines())
-    body_y = y + 105
-    for bullet_index, bullet in enumerate(bullets[:4]):
-        label, separator, value = bullet.partition(" · ")
-        if separator:
+    body_y = panel_top + 75
+    for bullet_index, (label, lines) in enumerate(layout):
+        if label:
             draw.text((142, body_y), label.upper(), font=label_font, fill=accent)
-            body_y += 42
-            display = value
-        else:
-            display = bullet
-        wrapped = _wrap(draw, display, body_font, 765)
+            body_y += label_font_h
         draw.ellipse((112, body_y + 18, 126, body_y + 32), fill=accent)
-        for line in wrapped[:3]:
+        for line in lines:
             draw.text((142, body_y), line, font=body_font, fill=_COLORS["ink"])
-            body_y += 62
-        body_y += 38 if bullet_index < len(bullets) - 1 else 0
+            body_y += body_font_h
+        body_y += 38 if bullet_index < len(layout) - 1 else 0
 
-    draw.text((82, 1750), "예측시장 가격 기반 · 투자 조언 아님", font=small_font, fill=_COLORS["muted"])
+    # 아래 넷은 예전에 y 1698~1832에 있었다 — 전부 Shorts UI에 덮여 보이지 않았다.
+    footer_y = FOOTER_Y
+    draw.rounded_rectangle((SAFE_LEFT, footer_y, WIDTH - 82, footer_y + 12), radius=6, fill="#34322D")
+    draw.rounded_rectangle(
+        (SAFE_LEFT, footer_y, SAFE_LEFT + int((WIDTH - 164) * index / total), footer_y + 12),
+        radius=6,
+        fill=accent,
+    )
+    source = "예측시장 가격 기반 · 투자 조언 아님"
     if background_path is not None:
-        draw.text((82, 1698), "VISUAL · AI 생성 배경", font=small_font, fill=_COLORS["muted"])
-    draw.text((900, 1750), f"{index}/{total}", font=small_font, fill=accent, anchor="ra")
-    draw.rounded_rectangle((82, 1820, 998, 1832), radius=6, fill="#34322D")
-    draw.rounded_rectangle((82, 1820, 82 + int(916 * index / total), 1832), radius=6, fill=accent)
+        source += " · AI 생성 배경"
+    draw.text((SAFE_LEFT, footer_y + 34), source, font=small_font, fill=_COLORS["muted"])
+    draw.text((SAFE_RIGHT, footer_y + 34), f"{index}/{total}", font=small_font, fill=accent, anchor="ra")
     image.save(path, "PNG", optimize=True)
 
 
@@ -167,7 +195,10 @@ def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
     style = (
         f"PlayResX={WIDTH},PlayResY={HEIGHT},FontName={font_name},FontSize=38,PrimaryColour=&H00F5F1E8,"
         "OutlineColour=&H00151512,BorderStyle=1,Outline=3,Shadow=0," 
-        "Alignment=2,MarginV=290,MarginL=90,MarginR=90"
+        # MarginV는 아래 가장자리로부터의 거리다. 290이면 Shorts UI(약 350px) 안에
+        # 들어가 자막이 채널명·제목 바에 가린다. 500이면 baseline이 ~1420으로,
+        # 패널(<=1300)과 푸터(1470) 사이에 놓인다.
+        "Alignment=2,MarginV=500,MarginL=110,MarginR=230"
     )
     return f"subtitles='{escaped}':force_style='{style}'"
 

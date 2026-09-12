@@ -250,9 +250,15 @@ def build_scenario(
     accounting = snapshot.summary.get("accounting") or {}
     event_count = int(accounting.get("open_event_count") or 0)
     total_volume = _money(sum(float(g.get("volume24hr") or 0) for g in groups))
+    # 첫 3초가 이탈을 가른다. 분류("오늘의 브리핑입니다")가 아니라 가장 큰
+    # 숫자로 연다 — 어느 분야에 돈이 몰렸는지가 이 영상에서 가장 센 사실이다.
+    lead = groups[0]
+    lead_label = str(lead.get("label") or "시장")
+    lead_volume = _money(lead.get("volume24hr"))
     intro = (
-        f"오늘의 예측시장 브리핑입니다. 열린 이벤트 {event_count:,}개, "
-        f"24시간 거래량 {total_volume}입니다. 분야 {len(groups)}곳을 차례로 보겠습니다."
+        f"지난 24시간, {lead_label}에 {lead_volume}가 걸렸습니다. "
+        f"열린 이벤트 {event_count:,}개 가운데 거래가 몰린 분야 {len(groups)}곳을 "
+        "차례로 보겠습니다."
     )
     outro = (
         "숫자가 움직이면 판단도 바뀝니다. 확률은 베팅 가격이 암시하는 값이며 "
@@ -270,9 +276,9 @@ def build_scenario(
             body="분야별로\n건수와 거래량\n그리고 무엇에 걸고 있는지",
             narration=intro,
             bullets=(
-                f"열린 이벤트 {event_count:,}건",
-                f"24시간 거래량 {total_volume}",
-                f"분야 {len(groups)}곳",
+                f"24시간 거래량 · {total_volume}",
+                f"열린 이벤트 · {event_count:,}건",
+                f"거래가 몰린 분야 · {lead_label}",
             ),
             visual_query="financial market overview skyline",
         )
