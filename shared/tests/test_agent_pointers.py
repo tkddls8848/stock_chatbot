@@ -1,9 +1,9 @@
 """에이전트 지침 포인터가 서로 갈라지지 않는다.
 
-도구마다 자동으로 읽는 파일이 달라(`CLAUDE.md`·`AGENTS.md`·
-`.github/copilot-instructions.md`) 포인터를 여러 개 둘 수밖에 없다. 그런데
-규칙을 각 파일에 옮겨 적으면 기준이 다시 여러 벌이 된다 — 그걸 없애려고
-`code_guide.md`로 합친 것이므로, 포인터는 **내용이 완전히 같아야** 한다.
+Claude Code는 `CLAUDE.md`를, Codex·Cursor 계열은 `AGENTS.md`를 자동으로 읽는다.
+그래서 포인터가 둘이다. 규칙을 각 파일에 옮겨 적으면 기준이 다시 여러 벌이
+되는데, 그걸 없애려고 `code_guide.md`로 합친 것이므로 포인터는 **내용이
+완전히 같아야** 한다.
 """
 
 from pathlib import Path
@@ -13,7 +13,6 @@ STANDARD = ROOT / "code_guide.md"
 POINTERS = (
     ROOT / "CLAUDE.md",
     ROOT / "AGENTS.md",
-    ROOT / ".github" / "copilot-instructions.md",
 )
 
 
