@@ -106,7 +106,7 @@ def recent_usage(previous: dict[str, Any], *, hours: int = BUDGET_WINDOW_HOURS) 
         if not isinstance(sample, dict):
             continue
         stamp = _iso(str(sample.get("at", "")))
-        # 저장된 값에 오프셋이 없을 수 있다(CLAUDE.md의 시각 규칙).
+        # 저장된 값에 오프셋이 없을 수 있다(code_guide.md의 시각 규칙).
         if stamp is None or ensure_jst(stamp) < cutoff:
             continue
         samples.append(sample)

@@ -223,7 +223,7 @@ def test_a_broken_prefilter_falls_back_to_recency_instead_of_dropping_news(monke
 def test_candidate_id_rides_along_so_the_label_can_be_joined(monkeypatch):
     """큐 항목이 후보 식별자를 들고 가야 나중에 라벨을 이어 붙일 수 있다.
 
-    지금 그 라벨을 되먹이는 호출자는 없다(CLAUDE.md의 라벨 공급 항목). 식별자가
+    지금 그 라벨을 되먹이는 호출자는 없다(code_guide.md의 라벨 공급 항목). 식별자가
     큐까지 살아 오는 것만이라도 고정해 두면, 공급자를 붙일 때 저장 형식을 다시
     설계하지 않아도 된다.
     """

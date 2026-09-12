@@ -760,12 +760,12 @@ shared/core/config.py        현재 웹에 필요한 literal·env만 유지
 infra/Caddyfile.example  공개 읽기 정책
 infra/server-ops.md        설치·상태·장애·철수 절차 교체
 README.md                 keyset smoke와 현재 웹 설명으로 교체
-CLAUDE.md                 과거 승격·90일·Telegram 가정 제거, 현재 계획서명 수정
+code_guide.md                 과거 승격·90일·Telegram 가정 제거, 현재 계획서명 수정
 web/tests/test_webpub.py  페이지·API 회귀
 web/tests/test_polymarket_smoke.py  events keyset·offset 실제 프로브
 ```
 
-`CLAUDE.md`의 현재 Polymarket 승격, `/polymarket` 명령, 90일 이력,
+`code_guide.md`의 현재 Polymarket 승격, `/polymarket` 명령, 90일 이력,
 `polymarket_rules.py` allowlist 설명은 6단계 완료 시점의 사실과 충돌하므로 함께
 교체한다. 계획서 목록도 `web/docs/polymarket-dashboard.md`로 바꾼다.
 
@@ -927,7 +927,7 @@ POLYMARKET_RETENTION_DAYS
 
 - 10-3의 code·config·test를 이동 또는 삭제한다.
 - 기존 데이터는 백업 후 런타임에서 분리한다.
-- `README.md`, `.env.example`, `CLAUDE.md`, `infra/server-ops.md`를 현재 구조로
+- `README.md`, `.env.example`, `code_guide.md`, `infra/server-ops.md`를 현재 구조로
   교체한다.
 - 전체 ruff·pytest와 Telegram 메뉴 회귀를 실행한다.
 
@@ -935,7 +935,7 @@ POLYMARKET_RETENTION_DAYS
 
 - Telegram Polymarket command·menu·callback·job·state가 없다.
 - history·backfill·chart·promotion gate와 죽은 config가 import되지 않는다.
-- `CLAUDE.md`가 과거 90일/승격 가정을 설명하거나 삭제된 계획서를 가리키지 않는다.
+- `code_guide.md`가 과거 90일/승격 가정을 설명하거나 삭제된 계획서를 가리키지 않는다.
 - `/market`, 뉴스, research 기능이 회귀 없이 통과한다.
 - 웹 대시보드가 Polymarket의 유일한 사용자 화면이다.
 
@@ -1048,6 +1048,6 @@ POLYMARKET_RETENTION_DAYS
 - Polymarket Telegram command·menu·callback·job·state와 죽은 config가 없다.
 - 봇을 중지해도 Polymarket 갱신과 웹 열람이 동작한다.
 - 기존 시장 감성·이상 탐지·뉴스·research 기능은 회귀 없이 유지된다.
-- `.env.example`, `README.md`, `CLAUDE.md`, `infra/server-ops.md`가 현재 구조와 맞다.
+- `.env.example`, `README.md`, `code_guide.md`, `infra/server-ops.md`가 현재 구조와 맞다.
 
 완료 뒤 이 계획서는 삭제하고 구현 이력은 git이 맡는다.
