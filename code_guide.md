@@ -5,7 +5,7 @@
 도메인별 `docs/` 계획서)는 절차와 계획만 담고 기준을 새로 정하지 않는다.
 
 > **에이전트는 포인터를 통해 이 문서에 닿는다.** 도구마다 자동으로 읽는 파일이
-> 달라서(`CLAUDE.md`·`AGENTS.md`·`GEMINI.md`·`.github/copilot-instructions.md`)
+> 달라서(`CLAUDE.md`·`AGENTS.md`·`.github/copilot-instructions.md`)
 > 각각 "`code_guide.md`를 읽어라"만 적힌 포인터를 두었다. **규칙을 포인터에
 > 옮겨 적지 않는다** — 두 벌이 되면 갈라지고, 그게 이 문서를 하나로 합친
 > 이유다. 포인터를 고칠 일은 실행 명령이 바뀔 때뿐이다.
