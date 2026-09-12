@@ -114,7 +114,7 @@ def test_menu_jobs_suppress_chat_status(monkeypatch):
         "nav:research:run",
         "nav:market:sentiment:7",
         "nav:briefing",
-        "nav:market:anomaly:30",
+        "nav:market:sentiment:30",
     ):
         update = SimpleNamespace(
             effective_chat=SimpleNamespace(id=123),
@@ -209,9 +209,9 @@ def test_persistent_market_button_opens_the_markets_hub_not_the_admin_menu():
     assert message.replies, "📊 시장 produced no reply"
     text, markup = message.replies[-1]
     assert "<b>관리</b>" not in text
-    assert "<b>시장 화면</b>" in text
+    assert "<b>국가별 뉴스 감성</b>" in text
     buttons = {button.callback_data for row in markup.inline_keyboard for button in row}
-    assert {"nav:market:sentiment", "nav:market:anomaly"} <= buttons
+    assert {"nav:market:sentiment:7", "nav:market:sentiment:30"} <= buttons
     # 폴리마켓은 공개 웹으로 철수했다. 텔레그램 허브로 되살아나면 안 된다.
     assert not any("polymarket" in str(data) for data in buttons)
 

@@ -936,7 +936,7 @@ POLYMARKET_RETENTION_DAYS
 - Telegram Polymarket command·menu·callback·job·state가 없다.
 - history·backfill·chart·promotion gate와 죽은 config가 import되지 않는다.
 - `CLAUDE.md`가 과거 90일/승격 가정을 설명하거나 삭제된 계획서를 가리키지 않는다.
-- `/market`, `/anomaly`, 뉴스, research 기능이 회귀 없이 통과한다.
+- `/market`, 뉴스, research 기능이 회귀 없이 통과한다.
 - 웹 대시보드가 Polymarket의 유일한 사용자 화면이다.
 
 ---

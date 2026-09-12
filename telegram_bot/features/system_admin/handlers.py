@@ -5,17 +5,8 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from shared.core.config import (
-    MARKET_ANOMALY_BACKFILL_FILE,
-    MARKET_ANOMALY_COLLECTION_ENABLED,
-    MARKET_ANOMALY_ENABLED,
-    MARKET_CHART_MARKETS,
-)
-from telegram_bot.features.market_sentiment.window import recent_session_windows
 from telegram_bot.features.news_prefilter.service import SHADOW_CAVEATS
 from telegram_bot.handlers.navigation import main_menu, persistent_menu, system_menu
-from telegram_bot.state import OvernightToneStore
-from shared.core.clock import now
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +40,6 @@ def _format_system_status(source_lines: list[str] | None = None) -> str:
         f"{sources_part}\n\n"
         "제어:\n"
         "  /system features — 기능 카탈로그\n"
-        "  /system anomaly — 전일 움직임·당일 센티먼트 파일럿\n"
         "  /system prefilter — 뉴스 사전선별 섀도 비교"
     )
 
@@ -118,108 +108,6 @@ def _format_prefilter_report(report: dict) -> str:
     return "\n".join(lines)
 
 
-def _anomaly_backfill_store() -> OvernightToneStore | None:
-    if not MARKET_ANOMALY_BACKFILL_FILE.exists():
-        return None
-    return OvernightToneStore(MARKET_ANOMALY_BACKFILL_FILE, retention_days=400)
-
-
-async def _format_anomaly_report(live_store, backfill_store) -> str:
-    reports = (
-        await backfill_store.gate_report(set(MARKET_CHART_MARKETS))
-        if backfill_store is not None
-        else {}
-    )
-    lines = [
-        "<b>시장 아노말리 파일럿</b>",
-        f"새 /market 화면: {'켜짐' if MARKET_ANOMALY_ENABLED else '꺼짐'}",
-        f"라이브 관측 수집: {'켜짐' if MARKET_ANOMALY_COLLECTION_ENABLED else '꺼짐'}",
-        "정의: 전날 시장 움직임 ↔ 당일 개장 전 센티먼트 일치·불일치",
-        "",
-    ]
-    for market in sorted(MARKET_CHART_MARKETS):
-        report = reports.get(market)
-        live_coverage = 0
-        if live_store is not None:
-            expected = recent_session_windows(market, now(), 7)
-            live_coverage = sum(
-                [
-                    await live_store.contains(market, window.price_session)
-                    for window in expected
-                ]
-            )
-        lines.append(f"<b>{market}</b>  라이브 {live_coverage}/7")
-        if report is None:
-            lines.append("  ⏸ 백필 없음")
-            continue
-        gates = {
-            "G0": bool(report.get("g0")),
-            "G1": bool(report.get("g1")),
-            "G2": bool(report.get("g2")),
-            "G3": bool(report.get("g3")),
-            "G5": live_coverage >= 6,
-            "G6": bool(report.get("g6")),
-            "G7": bool(report.get("g7")),
-        }
-        gate_text = " · ".join(
-            f"{'✅' if passed else '❌'}{name}" for name, passed in gates.items()
-        )
-        lines.append(f"  {gate_text}")
-        lines.append(
-            "  표본 {samples}·평가 {evaluation} · 개선 {improvement} · "
-            "rho {rho} · extreme {extreme}".format(
-                samples=report["samples"],
-                evaluation=report["evaluation_samples"],
-                improvement=(
-                    f"{report['improvement']:.1%}"
-                    if report["improvement"] is not None
-                    else "-"
-                ),
-                rho=(
-                    f"{report['spearman']:.2f}"
-                    if report["spearman"] is not None
-                    else "-"
-                ),
-                extreme=(
-                    f"{report['extreme_ratio']:.1%}"
-                    if report["extreme_ratio"] is not None
-                    else "-"
-                ),
-            )
-        )
-        g4 = report.get("g4") or {}
-        lines.append(
-            "  G4 관찰: 이상 {extreme}개 다음 수익률 중앙값 {extreme_median} · "
-            "정상 {normal}개 {normal_median} · 부호검정 p={pvalue}".format(
-                extreme=g4.get("extreme_samples", 0),
-                extreme_median=(
-                    f"{g4['extreme_next_return_median']:+.2f}%"
-                    if g4.get("extreme_next_return_median") is not None
-                    else "-"
-                ),
-                normal=g4.get("normal_samples", 0),
-                normal_median=(
-                    f"{g4['normal_next_return_median']:+.2f}%"
-                    if g4.get("normal_next_return_median") is not None
-                    else "-"
-                ),
-                pvalue=(
-                    f"{g4['sign_pvalue']:.3f}"
-                    if g4.get("sign_pvalue") is not None
-                    else "-"
-                ),
-            )
-        )
-    lines.extend(
-        [
-            "",
-            "백필: app/에서 python -m bot.market_anomaly_backfill",
-            "G0·G6·G7과 라이브 G5 전에는 MARKET_ANOMALY_ENABLED=false를 유지합니다.",
-        ]
-    )
-    return "\n".join(lines)
-
-
 async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
@@ -240,20 +128,6 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    if command == "anomaly":
-        live_store = context.bot_data.get("overnight_tone_store")
-        backfill_store = _anomaly_backfill_store()
-        if live_store is None and backfill_store is None:
-            await message.reply_text(
-                "시장 아노말리 수집이 꺼져 있고 백필 결과도 없습니다.",
-            )
-            return
-        await message.reply_text(
-            await _format_anomaly_report(live_store, backfill_store),
-            parse_mode="HTML",
-        )
-        return
-
     if command == "prefilter":
         prefilter = context.bot_data.get("news_prefilter")
         if prefilter is None:
@@ -269,7 +143,7 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if command:
         await message.reply_text(
-            "알 수 없는 항목입니다. 사용법: /system [features|prefilter|anomaly]",
+            "알 수 없는 항목입니다. 사용법: /system [features|prefilter]",
             parse_mode="HTML",
         )
         return

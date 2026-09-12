@@ -336,12 +336,10 @@ NEWS_SOURCE_MARKETS = {
     "gnews_kr": "KR",
     "mk-stock": "KR",
 }
-# market_sentiment 두 화면(감성·아노말리)이 기본 조회 일수와 대상 시장
-# 집합으로 공유한다 — 접두사가 "CHART"라 /market 전용처럼 보이지만
-# 아니다(cmd_market·cmd_anomaly 둘 다 참조).
+# /market(cmd_market)의 기본 조회 일수와 대상 시장 집합.
 MARKET_CHART_LOOKBACK_DAYS = 7
 MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR"})
-# 아래 셋은 그 이름대로 /market(cmd_market)의 일별 감성 다이제스트 전용이다.
+# 아래는 일별 감성 다이제스트 전용이다.
 MARKET_CHART_MIN_ARTICLES = 6
 MARKET_CHART_MIN_DAYS = 3
 MARKET_CHART_BACKFILL_DAYS_PER_REQUEST = 7
@@ -366,33 +364,6 @@ MARKET_DIGEST_TIMEOUT = 60
 # 78일이 오차 0, 최대 2였지만 35~40건에서는 5까지 벌어졌다. 상한을 40으로
 # 올리면서 0.1(35건 → 허용 4)로는 정상 응답이 탈락했다.
 MARKET_DIGEST_COUNT_TOLERANCE_RATIO = 0.2
-
-# ── 전일 움직임 ↔ 당일 개장 전 센티먼트 아노말리 ─────────
-# /market을 대체하지 않는다 — `/anomaly` 명령·메뉴로 따로 뜬다(2026-08-29).
-# G0·G6·G7 게이트는 아직 통과 전이라(표본도 기준의 20% 수준) 화면에는 미검증
-# 표시(a=검증대기)가 그대로 남는다. 검증 전 파일럿 노출을 감수하기로 한 결정이다.
-MARKET_ANOMALY_ENABLED = True
-# G5 라이브 수집 기간에만 명시적으로 켠다(뉴스·LLM 할당량 사용). 끌 때는
-# 이 리터럴을 false로 바꾸고 커밋한다.
-MARKET_ANOMALY_COLLECTION_ENABLED = True
-MARKET_ANOMALY_FILE = DATA_DIR / "market_sentiment" / "overnight_tone.json"
-MARKET_ANOMALY_BACKFILL_FILE = (
-    DATA_DIR / "market_sentiment" / "anomaly_backfill.json"
-)
-MARKET_ANOMALY_PROMPT_FILE = PROMPT_DIR / "overnight_tone_ko.txt"
-MARKET_ANOMALY_RETENTION_DAYS = 180
-MARKET_ANOMALY_MIN_ARTICLES = 8
-MARKET_ANOMALY_MIN_SOURCES = 4
-MARKET_ANOMALY_MAX_HEADLINES = 40
-MARKET_ANOMALY_BACKFILL_MAX_CALLS_PER_RUN = 80
-MARKET_ANOMALY_JOB_MINUTE = "5,35"
-MARKET_ANOMALY_INDEX_TICKERS = {
-    "KR": "^KS11",
-    "CN": "000001.SS",
-    "HK": "^HSI",
-    "US": "^GSPC",
-}
-
 
 # ── 현재 Polymarket 전체 웹 대시보드 ───────────────────────────────────────
 # 텔레그램·봇 scheduler와 독립된 systemd one-shot이 현재 열린 event를 읽는다.

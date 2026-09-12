@@ -12,7 +12,6 @@
 | `infra/terraform/README.md` | 인스턴스 생성, 부트스트랩, 최초 전환(cutover), 삭제 |
 | **이 문서** | 접속, 상태 확인, 배포 갱신, 설정 변경, 실측, 판정, 백업·복구, 장애 대응 |
 | `telegram_bot/docs/actor-potus.md` | `market_actor`·`potus_feed` 계획 (앞으로 만들 것) |
-| `telegram_bot/docs/market-anomaly.md` | 시장 감성 이상 탐지 계획 (앞으로 만들 것) |
 
 ---
 

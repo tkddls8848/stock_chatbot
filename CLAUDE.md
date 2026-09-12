@@ -66,7 +66,6 @@ telegram_bot/          텔레그램 봇 프로세스
   state/               발송·뉴스·시장 감성 상태
   watchlist/           관심종목 상태
   webadmin/            관리 웹 대시보드(터널 전용, 8787) — 봇과 같은 프로세스다
-  market_anomaly_backfill.py  수동 one-shot 백필
   docs/  tests/
 
 web/                   읽기 전용 공개 웹(별도 프로세스, 8788)
@@ -291,9 +290,9 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   지우지 않는다. 인스턴스 생성·최초 전환·삭제는 `infra/terraform/README.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 넷이다: `telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령 게시물
-  추적), `telegram_bot/docs/market-anomaly.md`(시장 감성을 추세에서 이상 탐지로 바꾸기),
-  `web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹 대시보드로),
+  현재 계획서는 셋이다: `telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  게시물 추적), `web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
+  대시보드로),
   `web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
   이동 추적). 뒤 둘은 앞이 전제이지만 파일을 나눴다 — 대시보드 계획서가 먼저
   끝나 지워져도 줄글 계획은 남아야 한다.

@@ -54,31 +54,12 @@ def _back() -> list[list[tuple[str, str]]]:
     return [[("🏠 처음", "nav:home")]]
 
 
-def markets_hub_menu() -> InlineKeyboardMarkup:
-    """`📊 시장` 진입점 — 감성과 이상 화면 중 하나를 고른다."""
-    return _keyboard([
-        [("📊 국가별 감성", "nav:market:sentiment"), ("🧭 시장 이상", "nav:market:anomaly")],
-        *_back(),
-    ])
-
-
 def market_menu() -> InlineKeyboardMarkup:
     return _keyboard([
         [
             ("7일", "nav:market:sentiment:7"),
             ("14일", "nav:market:sentiment:14"),
             ("30일", "nav:market:sentiment:30"),
-        ],
-        *_back(),
-    ])
-
-
-def anomaly_menu() -> InlineKeyboardMarkup:
-    return _keyboard([
-        [
-            ("7일", "nav:market:anomaly:7"),
-            ("14일", "nav:market:anomaly:14"),
-            ("30일", "nav:market:anomaly:30"),
         ],
         *_back(),
     ])
@@ -96,7 +77,6 @@ def system_menu() -> InlineKeyboardMarkup:
     """시스템 상태 아래에 붙는 하위 항목. `/system`의 인자를 버튼으로 옮긴 것이다."""
     return _keyboard([
         [("📋 기능 카탈로그", "nav:system:features"), ("🧮 뉴스 사전선별", "nav:system:prefilter")],
-        [("🧭 아노말리 게이트", "nav:system:anomaly")],
         *_back(),
     ])
 
@@ -128,9 +108,9 @@ async def _dispatch_primary_menu_action(
     if action == "market":
         send = message.edit_text if edit_message else message.reply_text
         await send(
-            "<b>시장 화면</b>\n무엇을 볼까요?",
+            "<b>국가별 뉴스 감성</b>\n조회 기간을 선택하세요.",
             parse_mode="HTML",
-            reply_markup=markets_hub_menu(),
+            reply_markup=market_menu(),
         )
         return True
     if action == "watch":
@@ -192,15 +172,6 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     elif action.startswith("market:sentiment:"):
         from telegram_bot.features.market_sentiment.handlers import cmd_market
         await cmd_market(update, _context(context, [action.rsplit(":", 1)[1]]))
-    elif action == "market:anomaly":
-        await message.edit_text(
-            "<b>시장 서술 이상(파일럿)</b>\n조회 기간을 선택하세요.",
-            parse_mode="HTML",
-            reply_markup=anomaly_menu(),
-        )
-    elif action.startswith("market:anomaly:"):
-        from telegram_bot.features.market_sentiment.handlers import cmd_anomaly
-        await cmd_anomaly(update, _context(context, [action.rsplit(":", 1)[1]]))
     elif action.startswith("research:"):
         command = action.split(":", 1)[1]
         if command == "set":

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from io import BytesIO
 
-import numpy as np
 
 
 MARKET_LABELS = {
@@ -91,127 +90,6 @@ def render_market_chart(
 
     image = BytesIO()
     image.name = "market_sentiment.png"
-    fig.savefig(image, format="png", dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    image.seek(0)
-    return image
-
-
-def render_anomaly_chart(
-    scored: dict[str, list],
-    lookback_days: int,
-    residual_markets: set[str],
-) -> BytesIO:
-    """Render ranking, return-vs-tone scatter, and rolling anomaly strength."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-    from scipy.stats import theilslopes
-
-    fig = plt.figure(figsize=(12, 8))
-    grid = fig.add_gridspec(2, 2, height_ratios=[1.15, 1.0])
-    ranking_ax = fig.add_subplot(grid[0, 0])
-    scatter_ax = fig.add_subplot(grid[0, 1])
-    rolling_ax = fig.add_subplot(grid[1, :])
-    fig.patch.set_facecolor("#f8fafc")
-    for axis in (ranking_ax, scatter_ax, rolling_ax):
-        axis.set_facecolor("#f8fafc")
-
-    ranking = []
-    for market, points in scored.items():
-        recent = [
-            point.anomaly_score
-            for point in points[-lookback_days:]
-            if market in residual_markets and point.anomaly_score is not None
-        ]
-        ranking.append((market, float(np.median(recent)) if recent else 0.0))
-    ranking.sort(key=lambda item: item[1], reverse=True)
-    labels = [market_label(market) for market, _ in ranking]
-    values = [value for _, value in ranking]
-    colors = ["#16a34a" if value > 0 else "#dc2626" if value < 0 else "#64748b" for value in values]
-    ranking_ax.barh(labels, values, color=colors, height=0.58)
-    ranking_ax.axvline(0, color="#94a3b8", linewidth=0.9)
-    ranking_ax.set_title(f"Median anomaly score ({lookback_days} sessions)")
-    ranking_ax.set_xlabel("GLOOM ← robust score → HOPE")
-    ranking_ax.invert_yaxis()
-
-    alignment_colors = {
-        "HOPE": "#16a34a",
-        "GLOOM": "#dc2626",
-        "ALIGNED": "#2563eb",
-        "QUIET": "#94a3b8",
-    }
-    for market, points in sorted(scored.items()):
-        visible = points[-60:]
-        x = [point.price_return for point in visible]
-        y = [point.tone for point in visible]
-        scatter_ax.scatter(
-            x,
-            y,
-            s=22,
-            alpha=0.55,
-            color=[alignment_colors[point.alignment] for point in visible],
-            label=market_label(market),
-        )
-        if market in residual_markets and len(visible) >= 3:
-            slope, intercept, _, _ = theilslopes(y, x)
-            line_x = np.asarray([min(x), max(x)])
-            scatter_ax.plot(line_x, intercept + slope * line_x, linewidth=1.3)
-        if visible:
-            scatter_ax.annotate(
-                market,
-                (visible[-1].price_return, visible[-1].tone),
-                xytext=(4, 4),
-                textcoords="offset points",
-                fontsize=8,
-            )
-    scatter_ax.axhline(0, color="#94a3b8", linewidth=0.8)
-    scatter_ax.axvline(0, color="#94a3b8", linewidth=0.8)
-    scatter_ax.set_title("Previous-session return vs pre-open tone")
-    scatter_ax.set_xlabel("Previous close-to-close return (%)")
-    scatter_ax.set_ylabel("Pre-open tone (-1..+1)")
-    scatter_ax.grid(alpha=0.15)
-
-    dates = sorted(
-        {
-            point.sentiment_for_session
-            for market, points in scored.items()
-            if market in residual_markets
-            for point in points
-            if point.anomaly_score is not None
-        }
-    )
-    daily = {
-        day: [
-            point.anomaly_score
-            for market, points in scored.items()
-            if market in residual_markets
-            for point in points
-            if point.sentiment_for_session == day and point.anomaly_score is not None
-        ]
-        for day in dates
-    }
-    parsed_dates = [datetime.fromisoformat(day) for day in dates]
-    base = [float(np.median(daily[day])) for day in dates]
-    for window, color in ((7, "#0f766e"), (14, "#7c3aed"), (30, "#ea580c")):
-        values = [
-            float(np.median(base[max(0, index - window + 1) : index + 1]))
-            for index in range(len(base))
-        ]
-        rolling_ax.plot(parsed_dates, values, label=f"{window} session", color=color)
-    rolling_ax.axhline(0, color="#94a3b8", linewidth=0.8)
-    rolling_ax.set_title("Rolling median anomaly strength across markets")
-    rolling_ax.set_ylabel("robust score")
-    rolling_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
-    rolling_ax.tick_params(axis="x", rotation=45)
-    rolling_ax.legend(frameon=False)
-    rolling_ax.grid(axis="y", alpha=0.2)
-    fig.tight_layout()
-
-    image = BytesIO()
-    image.name = "market_anomaly.png"
     fig.savefig(image, format="png", dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     image.seek(0)

@@ -140,7 +140,7 @@ def test_registry_resolves_menu_ownership_and_persistent_labels():
     assert registry.menu_owner("nav:market") == "market_sentiment"
     assert registry.menu_owner("nav:market:sentiment") == "market_sentiment"
     assert registry.menu_owner("nav:market:sentiment:30") == "market_sentiment"
-    assert registry.menu_owner("nav:market:anomaly:14") == "market_sentiment"
+    assert registry.menu_owner("nav:market:sentiment:14") == "market_sentiment"
     assert registry.menu_owner("nav:marketplace") is None
     assert registry.persistent_callback("📊 시장") == "nav:market"
     assert registry.persistent_callback("없는 메뉴") is None

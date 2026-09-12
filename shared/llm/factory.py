@@ -23,7 +23,6 @@ from shared.core.config import (
     MARKET_DIGEST_NUM_PREDICT,
     MARKET_DIGEST_PROMPT_FILE,
     MARKET_DIGEST_TIMEOUT,
-    MARKET_ANOMALY_PROMPT_FILE,
     NEWS_REPORT_HIGHLIGHT_RATIO,
     NEWS_REPORT_MAX_HIGHLIGHTS,
     NEWS_REPORT_MIN_HIGHLIGHTS,
@@ -47,7 +46,6 @@ from shared.llm.briefing_writer import BriefingWriter
 from shared.llm.market_digest import MarketDigestAnalyzer
 from shared.llm.market_view import MarketViewAnalyzer
 from shared.llm.news_report import NewsReportAnalyzer
-from shared.llm.overnight_tone import OvernightToneAnalyzer
 from shared.llm.polymarket_brief import PolymarketBriefAnalyzer
 from shared.llm.translator import TranslationService
 
@@ -111,19 +109,6 @@ def build_market_digest_analyzer() -> MarketDigestAnalyzer:
         prompt_file=MARKET_DIGEST_PROMPT_FILE,
         num_predict=MARKET_DIGEST_NUM_PREDICT,
         count_tolerance_ratio=MARKET_DIGEST_COUNT_TOLERANCE_RATIO,
-    )
-
-
-def build_overnight_tone_analyzer() -> OvernightToneAnalyzer:
-    return OvernightToneAnalyzer(
-        backend=build_backend(
-            "overnight_tone",
-            model=CLOUDFLARE_MODEL,
-            timeout=MARKET_DIGEST_TIMEOUT,
-        ),
-        prompt_file=MARKET_ANOMALY_PROMPT_FILE,
-        model_id=CLOUDFLARE_MODEL,
-        num_predict=384,
     )
 
 

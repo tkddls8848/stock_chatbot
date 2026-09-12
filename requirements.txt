@@ -1,8 +1,6 @@
 python-telegram-bot>=21.10
 akshare
 pandas
-scipy>=1.14,<2
-exchange-calendars==4.13.2
 hanja
 opencc-python-reimplemented
 apscheduler==3.10.4   # 4.x는 API 비호환이라 고정한다. 올리려면 스케줄러 조립을 다시 쓴다.
