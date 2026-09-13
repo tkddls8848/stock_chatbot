@@ -347,8 +347,8 @@ telegram_bot/features/market_actor/
 | Neurons | **0** | 문장은 템플릿이다. 모델은 의도를 지어내고, 그러면 A-8이 무너진다 |
 | CPU | 하루 1회. 패턴 수에 선형이지만 특징량은 1회 | 사전선별 예산(3.6h) 밖의 여유 안. 실측 후 다시 본다 |
 
-지켜야 하는 기존 규약: 시각은 `shared/core/clock.py`의 `now()`·`today()`만(ruff `DTZ`),
-저장은 `shared/core/storage.py`의 원자적 쓰기만, 저장 실패를 로그로 삼키지 않는다,
+지켜야 하는 기존 규약: 시각은 `telegram_bot/core/clock.py`의 `now()`·`today()`만(ruff `DTZ`),
+저장은 `telegram_bot/core/storage.py`의 원자적 쓰기만, 저장 실패를 로그로 삼키지 않는다,
 텔레그램 문자열은 **절단 뒤 escape**(뒤집으면 `&amp;`가 끊겨 메시지가 거부된다),
 **패턴 하나의 실패가 나머지 패턴을 막지 않도록 패턴 단위로 격리한다**(뉴스 소스 격리와
 같다 — 패턴이 늘수록 이 격리의 값이 커진다).
@@ -555,7 +555,7 @@ Polymarket과 같은 자리다: **`market_sentiment`가 읽는 외부 소스**�
 즉시 경로는 애초에 Neurons를 쓰지 않는다. 한국어 요약이 필요한 것은 07시 묶음뿐이고
 거기서 **하루 1회** 호출한다. 야간 다이제스트의 시장별 호출에 끼워 넣지 않는다 —
 그쪽 응답 envelope은 뉴스 헤드라인 형식으로 고정돼 있고, 필드를 늘리면 기존 검증이
-느슨해진다. 별도 프롬프트(`shared/prompts/potus_digest_ko.txt`)로 한 번 부르는 쪽이 싸고 안전하다.
+느슨해진다. 별도 프롬프트(`telegram_bot/prompts/potus_digest_ko.txt`)로 한 번 부르는 쪽이 싸고 안전하다.
 
 발송 상한: **주간 tier 1은 하루 4건.** 넘으면 이후는 07시 묶음으로 내린다. 발언이
 쏟아지는 날에 알림이 스무 개 오면 그날은 아무것도 안 읽힌다. 07시 묶음 자체는
@@ -634,7 +634,7 @@ telegram_bot/features/market_sentiment/
   potus_rules.py   태그 키워드, 방향 allowlist, 태그별 프록시 자산
 telegram_bot/state/
   potus_feed.py    마지막 id, 발송 이력(= 큐), 검증 로그(JSONL)
-shared/prompts/
+telegram_bot/prompts/
   potus_digest_ko.txt   07시 묶음 요약 프롬프트
 ```
 

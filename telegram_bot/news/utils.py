@@ -13,13 +13,13 @@ from typing import Any, Callable, TypeVar
 
 import pandas as pd
 
-from shared.core.clock import JST as _JST
-from shared.core.config import (
+from telegram_bot.core.clock import JST as _JST
+from telegram_bot.core.config import (
     NEWS_DIGEST_ARTICLE_MAX_CHARS,
     NEWS_DIGEST_TITLE_MAX_CHARS,
     NEWS_SENTIMENT_ENABLED,
 )
-from shared.llm.translator import TranslationResult, TranslationService
+from telegram_bot.llm.translator import TranslationResult, TranslationService
 
 T = TypeVar("T")
 # 기사 시각의 소스 타임존. 중국 뉴스·시세 제공처는 현지 시각(CST)을 준다.

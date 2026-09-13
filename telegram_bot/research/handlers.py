@@ -3,15 +3,15 @@ import html
 import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from shared.core.config import RESEARCH_DISCOVERY_RESERVED_SLOTS, RESEARCH_MAX_CANDIDATES, TELEGRAM_MESSAGE_LIMIT
-from shared.core.menu_status import set_menu_button_text
-from shared.core.workers import burst_job, run_non_urgent, wait_for_urgent_idle
-from shared.llm.market_view import MarketViewError
+from telegram_bot.core.config import RESEARCH_DISCOVERY_RESERVED_SLOTS, RESEARCH_MAX_CANDIDATES, TELEGRAM_MESSAGE_LIMIT
+from telegram_bot.core.menu_status import set_menu_button_text
+from telegram_bot.core.workers import burst_job, run_non_urgent, wait_for_urgent_idle
+from telegram_bot.llm.market_view import MarketViewError
 from telegram_bot.news.utils import chunk_message_items
 from telegram_bot.research.candidates import build_research_candidate_universe
 from telegram_bot.research.discovery import collect_extra_candidates

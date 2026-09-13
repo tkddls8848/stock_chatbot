@@ -4,7 +4,7 @@ import json
 import sys
 from datetime import timedelta
 
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 
 from telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
 from telegram_bot.news.sources import GlobalArticle

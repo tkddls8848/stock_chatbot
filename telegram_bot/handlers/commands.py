@@ -12,7 +12,7 @@ from telegram import MenuButtonCommands, Update
 from telegram.error import NetworkError
 from telegram.ext import Application, ContextTypes
 
-from shared.core.config import TELEGRAM_CHAT_ID
+from telegram_bot.core.config import TELEGRAM_CHAT_ID
 from telegram_bot.handlers.navigation import handle_menu_callback, persistent_menu
 
 logger = logging.getLogger(__name__)

@@ -15,8 +15,8 @@ import statistics
 import time
 from typing import Any, Iterator
 
-from shared.core.clock import ensure_jst, now
-from shared.core.config import (
+from web.core.clock import ensure_jst, now
+from web.core.config import (
     POLYMARKET_BASE_URL,
     POLYMARKET_PROXY_URL,
     POLYMARKET_TIMEOUT,
@@ -25,7 +25,7 @@ from shared.core.config import (
     POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS,
     POLYMARKET_WEB_MAX_DAILY_REQUESTS,
 )
-from shared.core.storage import write_json_atomic
+from web.core.storage import write_json_atomic
 from web.polymarket.dashboard.client import EventsClient
 from web.polymarket.dashboard.models import normalize_event
 from web.polymarket.dashboard.storage import write_generation

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from shared.core.clock import today as kst_today
+from telegram_bot.core.clock import today as kst_today
 from telegram_bot.state.market_digest import MarketDigestStore, digest_key
 
 

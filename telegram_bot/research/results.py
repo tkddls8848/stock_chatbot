@@ -5,8 +5,8 @@ from __future__ import annotations
 import html
 from typing import Any, Protocol
 
-from shared.core.config import TELEGRAM_MESSAGE_LIMIT
-from shared.core.telegram_html import truncate_html
+from telegram_bot.core.config import TELEGRAM_MESSAGE_LIMIT
+from telegram_bot.core.telegram_html import truncate_html
 _MAX_WATCH_LINES = 10
 _MAX_RISK_LINES = 8
 

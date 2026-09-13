@@ -6,7 +6,7 @@
 
 import logging
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     BRIEFING_LLM_ENABLED,
     BRIEFING_NUM_PREDICT,
     BRIEFING_PROMPT_FILE,
@@ -29,9 +29,6 @@ from shared.core.config import (
     NEWS_REPORT_NUM_PREDICT,
     NEWS_REPORT_PROMPT_FILE,
     NEWS_REPORT_TIMEOUT,
-    POLYMARKET_BRIEF_NUM_PREDICT,
-    POLYMARKET_BRIEF_PROMPT_FILE,
-    POLYMARKET_BRIEF_TIMEOUT,
     PROMPT_DIR,
     RESEARCH_ANALYSIS_NUM_PREDICT,
     RESEARCH_ANALYSIS_PROMPT_FILE,
@@ -41,13 +38,12 @@ from shared.core.config import (
     TRANSLATION_ENABLED,
     TRANSLATION_NUM_PREDICT,
 )
-from shared.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
-from shared.llm.briefing_writer import BriefingWriter
-from shared.llm.market_digest import MarketDigestAnalyzer
-from shared.llm.market_view import MarketViewAnalyzer
-from shared.llm.news_report import NewsReportAnalyzer
-from shared.llm.polymarket_brief import PolymarketBriefAnalyzer
-from shared.llm.translator import TranslationService
+from telegram_bot.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
+from telegram_bot.llm.briefing_writer import BriefingWriter
+from telegram_bot.llm.market_digest import MarketDigestAnalyzer
+from telegram_bot.llm.market_view import MarketViewAnalyzer
+from telegram_bot.llm.news_report import NewsReportAnalyzer
+from telegram_bot.llm.translator import TranslationService
 
 logger = logging.getLogger(__name__)
 
@@ -124,18 +120,6 @@ def build_news_report_analyzer() -> NewsReportAnalyzer:
         max_highlights=NEWS_REPORT_MAX_HIGHLIGHTS,
         min_highlights=NEWS_REPORT_MIN_HIGHLIGHTS,
         highlight_ratio=NEWS_REPORT_HIGHLIGHT_RATIO,
-    )
-
-
-def build_polymarket_brief_analyzer() -> PolymarketBriefAnalyzer:
-    return PolymarketBriefAnalyzer(
-        backend=build_backend(
-            "polymarket_brief",
-            model=CLOUDFLARE_MODEL,
-            timeout=POLYMARKET_BRIEF_TIMEOUT,
-        ),
-        prompt_file=POLYMARKET_BRIEF_PROMPT_FILE,
-        num_predict=POLYMARKET_BRIEF_NUM_PREDICT,
     )
 
 

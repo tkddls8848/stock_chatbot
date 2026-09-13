@@ -18,8 +18,8 @@ from pathlib import Path
 import statistics
 from typing import Any
 
-from shared.core.clock import now
-from shared.core.config import (
+from web.core.clock import now
+from web.core.config import (
     POLYMARKET_BRIEF_FILE,
     POLYMARKET_BRIEF_MIN_EVENTS,
     POLYMARKET_BRIEF_MIN_EVENTS_BY_GROUP,
@@ -27,8 +27,8 @@ from shared.core.config import (
     POLYMARKET_BRIEF_QUIET_HOURS,
     POLYMARKET_WEB_DIR,
 )
-from shared.core.storage import write_json_atomic
-from shared.llm import PolymarketBriefError, build_polymarket_brief_analyzer
+from web.core.storage import write_json_atomic
+from web.llm import PolymarketBriefError, build_polymarket_brief_analyzer
 from web.polymarket.dashboard.taxonomy import assign_brief_group, brief_groups
 
 logger = logging.getLogger(__name__)

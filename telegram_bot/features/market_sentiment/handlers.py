@@ -10,7 +10,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     MARKET_CHART_BACKFILL_DAYS_PER_REQUEST,
     MARKET_CHART_MARKETS,
     MARKET_CHART_LOOKBACK_DAYS,
@@ -21,8 +21,8 @@ from shared.core.config import (
     MARKET_DIGEST_MIN_ARTICLES,
     NEWS_MARKET_BACKFILL_QUERIES,
 )
-from shared.core.menu_status import set_menu_button_text
-from shared.core.workers import burst_job, run_non_urgent
+from telegram_bot.core.menu_status import set_menu_button_text
+from telegram_bot.core.workers import burst_job, run_non_urgent
 from telegram_bot.features.market_sentiment.chart import (
     market_label,
     render_market_chart,

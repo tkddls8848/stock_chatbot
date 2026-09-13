@@ -9,12 +9,12 @@ import html
 import logging
 from datetime import datetime
 
-from shared.core.clock import now as clock_now
+from telegram_bot.core.clock import now as clock_now
 
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     BRIEFING_MARKET_CLOSE_HOUR,
     BRIEFING_MARKET_CLOSE_MINUTE,
     BRIEFING_MARKET_OPEN_HOUR,
@@ -23,9 +23,9 @@ from shared.core.config import (
     TELEGRAM_CHAT_ID,
     TELEGRAM_MESSAGE_LIMIT,
 )
-from shared.core.menu_status import set_menu_button_text
-from shared.core.telegram_html import truncate_html
-from shared.core.workers import run_non_urgent, wait_for_urgent_idle
+from telegram_bot.core.menu_status import set_menu_button_text
+from telegram_bot.core.telegram_html import truncate_html
+from telegram_bot.core.workers import run_non_urgent, wait_for_urgent_idle
 from telegram_bot.research.news import collect_global_market_news_items
 from telegram_bot.state.news_log import aggregate_sentiment_by_code
 from telegram_bot.stocks.quotes import format_quant_summary

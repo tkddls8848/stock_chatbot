@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 from telegram_bot.features import ALL_FEATURES, build_feature_registry
 from telegram_bot.features.news_prefilter import feature as prefilter_feature
 from telegram_bot.features.news_prefilter.service import RankedCandidate

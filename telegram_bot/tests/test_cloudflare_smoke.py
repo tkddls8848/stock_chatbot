@@ -17,7 +17,7 @@ import re
 
 import pytest
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     CLOUDFLARE_ACCOUNT_ID,
     CLOUDFLARE_AI_BASE_URL,
     CLOUDFLARE_API_TOKEN,
@@ -26,8 +26,8 @@ from shared.core.config import (
     PROMPT_DIR,
     TRANSLATION_NUM_PREDICT,
 )
-from shared.llm.backends import CloudflareWorkersAIBackend
-from shared.llm.translator import TranslationService
+from telegram_bot.llm.backends import CloudflareWorkersAIBackend
+from telegram_bot.llm.translator import TranslationService
 
 pytestmark = [
     pytest.mark.cloudflare_smoke,

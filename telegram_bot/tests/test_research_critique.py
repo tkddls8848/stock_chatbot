@@ -1,7 +1,7 @@
 """리서치 결과의 마켓 뷰 반론(view_critique) 파싱·렌더링 검증."""
 import json
 
-from shared.llm.market_view import MarketViewAnalyzer
+from telegram_bot.llm.market_view import MarketViewAnalyzer
 from telegram_bot.research.results import format_result_sections
 
 

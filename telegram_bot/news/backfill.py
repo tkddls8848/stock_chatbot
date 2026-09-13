@@ -15,9 +15,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date
-from shared.core.clock import today as clock_today
+from telegram_bot.core.clock import today as clock_today
 
-from shared.llm.market_digest import MarketDigestAnalyzer, MarketDigestError
+from telegram_bot.llm.market_digest import MarketDigestAnalyzer, MarketDigestError
 from telegram_bot.news.sources import fetch_google_news_history
 from telegram_bot.news.utils import filter_articles_for_jst_day
 from telegram_bot.state import MarketDigestStore

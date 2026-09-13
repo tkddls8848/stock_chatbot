@@ -91,7 +91,7 @@ NEWS_PREFILTER_OBSERVATION_FILE = DATA_DIR / "news_prefilter" / "observations.js
 NEWS_PREFILTER_MODEL_FILE = DATA_DIR / "news_prefilter" / "model.json"
 NEWS_PREFILTER_CPU_STATE_FILE = DATA_DIR / "news_prefilter" / "cpu_budget.json"
 RUNTIME_LOCK_FILE = DATA_DIR / "runtime" / "bot.lock"
-PROMPT_DIR        = BASE_DIR / "shared" / "prompts"
+PROMPT_DIR        = Path(__file__).resolve().parents[1] / "prompts"
 
 # ── 번역 ──────────────────────────────────────────────
 TRANSLATION_ENABLED = True

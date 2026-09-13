@@ -1,11 +1,11 @@
 """시장 리서치 기능 선언."""
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     RESEARCH_HISTORY_LIMIT,
     RESEARCH_STATE_FILE,
 )
 from telegram_bot.features.base import CallbackSpec, CommandSpec, FeatureSpec, MenuSpec
-from shared.llm import build_market_view_analyzer
+from telegram_bot.llm import build_market_view_analyzer
 from telegram_bot.research.handlers import cmd_research, handle_research_callback
 from telegram_bot.research.news import collect_global_market_news_items
 from telegram_bot.research.state import MarketViewManager

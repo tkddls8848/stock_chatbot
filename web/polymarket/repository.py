@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from shared.core.clock import now
+from web.core.clock import now
 from web.polymarket.dashboard.storage import read_detail
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "data" / "webpub" / "polymarket"

@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from shared.llm.backends import LLMBackend
+from telegram_bot.llm.backends import LLMBackend
 
 logger = logging.getLogger(__name__)
 

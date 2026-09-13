@@ -210,15 +210,15 @@ event는 `id`로 조인한다. 양쪽에 다 있는 것만 이동을 계산한�
 
 이 정규화가 3-3이 요구한 부호 안정 값과 같다. 이동 계산도 이 값을 쓴다.
 
-프롬프트 파일은 `shared/prompts/polymarket_brief_ko.txt`(그룹)와
-`shared/prompts/polymarket_brief_overview_ko.txt`(종합) 둘이다.
+프롬프트 파일은 `web/prompts/polymarket_brief_ko.txt`(그룹)와
+`web/prompts/polymarket_brief_overview_ko.txt`(종합) 둘이다.
 
 **모델에게 URL을 받아 적게 하지 않는다.** event 링크가 필요하면 `slug`로 파이썬
 쪽에서 만든다.
 
 ## 5. 산출물
 
-`data/webpub/polymarket/sector_brief.json`. `shared/core/storage.py`의 원자적 쓰기만
+`data/webpub/polymarket/sector_brief.json`. `web/core/storage.py`의 원자적 쓰기만
 쓴다.
 
 ```json
@@ -275,7 +275,7 @@ timer는 늘리지 않는다. refresh가 **성공했을 때만** 줄글이 돈�
 시각에는 LLM을 부르지 않고 `state: "skipped_quiet_hours"`로 종료한다. refresh는
 03시에도 계속 돌아 확률 숫자는 미장 마감 직전 구간을 놓치지 않는다.
 
-시각 판단은 `shared/core/clock.py`의 `now()`만 쓴다.
+시각 판단은 `web/core/clock.py`의 `now()`만 쓴다.
 
 **왜 refresh 안에 넣지 않나**: LLM 실패가 generation 승격을 막으면 안 된다.
 지금 refresh는 실패하면 `current.json`을 안 바꾸는데, 거기에 LLM을 넣으면
@@ -322,7 +322,7 @@ Cloudflare가 죽은 날 확률 숫자까지 멈춘다.
 
 ## 10. 설정
 
-`shared/core/config.py`의 리터럴 상수. 운영자가 조정하는 값이 아니므로 env가 아니다.
+`web/core/config.py`의 리터럴 상수. 운영자가 조정하는 값이 아니므로 env가 아니다.
 
 ```text
 POLYMARKET_BRIEF_FILE
@@ -410,8 +410,8 @@ LLM은 mock한다. 실제 호출은 opt-in 스모크에만 둔다.
 남은 분량에서 개별 사례를 고릅니다. 실패 시 이전 overview와 paragraph를 함께
 이어받으며 stale로 표시합니다. 기존 API에서는 제한적인 집계 요약으로 호환합니다.
 
-서버에 변경된 `shared/llm/polymarket_brief.py`, `web/polymarket/sector_brief.py`,
-`shared/prompts/polymarket_brief_ko.txt`를 배포한 뒤
+서버에 변경된 `web/llm/polymarket_brief.py`, `web/polymarket/sector_brief.py`,
+`web/prompts/polymarket_brief_ko.txt`를 배포한 뒤
 `sudo systemctl restart stock-chatbot-polymarket-brief.service`로 브리프를 다시 만듭니다.
 새 overview는 다음 API 응답부터 제공됩니다. 코드 변경만으로 기존 영상이나
 이미 저장된 시나리오가 자동 수정되지는 않습니다. 쇼츠는 새 시나리오로 생성합니다.

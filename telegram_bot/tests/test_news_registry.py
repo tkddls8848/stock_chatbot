@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 from telegram_bot.news.registry import NewsSourceRegistry, build_source_specs
 
 

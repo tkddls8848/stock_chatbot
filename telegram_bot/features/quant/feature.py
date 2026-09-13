@@ -1,6 +1,6 @@
 """시세·자금흐름·섹터 정량 컨텍스트 기능 선언."""
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     QUANT_CACHE_TTL_MINUTES,
     QUANT_FAILURE_COOLDOWN_MINUTES,
     QUANT_SECTOR_TOP_N,

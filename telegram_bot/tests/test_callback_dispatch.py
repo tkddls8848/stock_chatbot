@@ -2,7 +2,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from shared.core.config import VIEW_LOOKBACK_DAYS
+from telegram_bot.core.config import VIEW_LOOKBACK_DAYS
 from telegram_bot.features import ALL_FEATURES, build_feature_registry
 from telegram_bot.features.base import CallbackSpec, FeatureSpec
 from telegram_bot.features.registry import FeatureRegistry

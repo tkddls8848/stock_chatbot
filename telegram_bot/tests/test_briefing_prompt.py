@@ -1,4 +1,4 @@
-from shared.core.config import BRIEFING_PROMPT_FILE
+from telegram_bot.core.config import BRIEFING_PROMPT_FILE
 
 
 def test_briefing_prompt_supports_all_automatic_session_kinds():

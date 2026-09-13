@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from shared.core.workers import run_non_urgent
+from telegram_bot.core.workers import run_non_urgent
 from telegram_bot.stocks import StockDatabase
 
 logger = logging.getLogger(__name__)

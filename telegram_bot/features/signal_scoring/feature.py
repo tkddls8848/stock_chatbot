@@ -1,6 +1,6 @@
 """종목 감성 뷰 기능 선언."""
 
-from shared.core.config import PREDICTION_LOG_FILE
+from telegram_bot.core.config import PREDICTION_LOG_FILE
 from telegram_bot.features.base import CallbackSpec, CommandSpec, FeatureSpec
 from telegram_bot.features.signal_scoring.handlers import cmd_view, handle_view_callback
 from telegram_bot.state import PredictionLog

@@ -15,8 +15,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import now, today
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.clock import now, today
+from telegram_bot.core.storage import write_json_atomic
 
 logger = logging.getLogger(__name__)
 

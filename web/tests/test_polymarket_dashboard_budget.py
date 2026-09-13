@@ -16,8 +16,8 @@ from datetime import timedelta
 
 import pytest
 
-from shared.core.clock import now
-from shared.core.config import (
+from web.core.clock import now
+from web.core.config import (
     POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS,
     POLYMARKET_WEB_MAX_DAILY_REQUESTS,
 )

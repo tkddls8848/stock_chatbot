@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.llm.market_view import MarketViewAnalyzer, MarketViewError
+from telegram_bot.llm.market_view import MarketViewAnalyzer, MarketViewError
 from telegram_bot.research import handlers
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Iterable
 
-from shared.core.storage import write_json_atomic
+from web.core.storage import write_json_atomic
 
 logger = logging.getLogger(__name__)
 

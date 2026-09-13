@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from shared.core.access import restricted
+from telegram_bot.core.access import restricted
 from telegram_bot.features.base import FeatureSpec
 
 

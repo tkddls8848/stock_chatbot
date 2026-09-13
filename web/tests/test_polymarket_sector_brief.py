@@ -35,7 +35,7 @@ class _Analyzer:
         self.calls = []
 
     def analyze(self, group_label, totals, events):
-        from shared.llm import PolymarketBriefError
+        from web.llm import PolymarketBriefError
 
         self.calls.append((group_label, totals, events))
         if self._fail_all or group_label in self._fail_labels:
@@ -242,7 +242,7 @@ def test_composite_has_a_much_lower_bar_than_the_other_groups(tmp_path):
 
 
 def test_the_shipped_override_lets_a_two_event_composite_through():
-    from shared.core.config import (
+    from web.core.config import (
         POLYMARKET_BRIEF_MIN_EVENTS,
         POLYMARKET_BRIEF_MIN_EVENTS_BY_GROUP,
     )
@@ -304,7 +304,7 @@ def test_quiet_hours_skip_the_model_without_touching_the_file(tmp_path, monkeypa
     """야간에는 줄글만 멈춘다. 직전 파일을 건드리지 않아 화면은 그것을 계속 본다."""
     from datetime import datetime
 
-    from shared.core.clock import JST
+    from web.core.clock import JST
 
     root = tmp_path / "polymarket"
     target = tmp_path / "brief.json"
@@ -328,7 +328,7 @@ def test_quiet_hours_skip_the_model_without_touching_the_file(tmp_path, monkeypa
 def test_outside_quiet_hours_the_run_proceeds(tmp_path, monkeypatch):
     from datetime import datetime
 
-    from shared.core.clock import JST
+    from web.core.clock import JST
 
     root = tmp_path / "polymarket"
     _write_current(root, [_event(i, ["stocks"]) for i in range(12)])
@@ -347,7 +347,7 @@ def test_outside_quiet_hours_the_run_proceeds(tmp_path, monkeypatch):
 
 def test_the_shipped_quiet_hours_skip_only_0300():
     """06시를 거르면 기상 후 첫 화면이 미장 마감 전 상태가 된다."""
-    from shared.core.config import POLYMARKET_BRIEF_QUIET_HOURS
+    from web.core.config import POLYMARKET_BRIEF_QUIET_HOURS
 
     assert set(POLYMARKET_BRIEF_QUIET_HOURS) == {3}
 
@@ -378,7 +378,7 @@ def test_previous_probabilities_are_stored_for_the_next_run(tmp_path):
 # 돌려줬다(2026-09-01). 검증은 여기서 직접 한다.
 
 def _analyzer(tmp_path, raw):
-    from shared.llm.polymarket_brief import PolymarketBriefAnalyzer
+    from web.llm.polymarket_brief import PolymarketBriefAnalyzer
 
     prompt = tmp_path / "p.txt"
     prompt.write_text("prompt", encoding="utf-8")
@@ -423,7 +423,7 @@ def test_a_fenced_paragraph_is_unwrapped(tmp_path):
     ],
 )
 def test_bad_responses_are_rejected(tmp_path, raw):
-    from shared.llm import PolymarketBriefError
+    from web.llm import PolymarketBriefError
 
     analyzer = _analyzer(tmp_path, raw)
 
@@ -432,7 +432,7 @@ def test_bad_responses_are_rejected(tmp_path, raw):
 
 
 def test_a_paragraph_that_echoes_an_event_title_is_rejected(tmp_path):
-    from shared.llm import PolymarketBriefError
+    from web.llm import PolymarketBriefError
 
     title = "Will the Fed cut rates before December 2027?"
     analyzer = _analyzer(tmp_path, "가" * 80 + title + "가" * 80)
@@ -442,7 +442,7 @@ def test_a_paragraph_that_echoes_an_event_title_is_rejected(tmp_path):
 
 
 def test_an_empty_group_never_reaches_the_backend(tmp_path):
-    from shared.llm import PolymarketBriefError
+    from web.llm import PolymarketBriefError
 
     analyzer = _analyzer(tmp_path, "가" * 100)
 
@@ -451,7 +451,7 @@ def test_an_empty_group_never_reaches_the_backend(tmp_path):
 
 
 def test_overview_must_precede_individual_probabilities(tmp_path):
-    from shared.llm import PolymarketBriefError
+    from web.llm import PolymarketBriefError
     raw = "전체적으로 서로 다른 정책 질문의 전망이 섞여 있어 하나의 방향으로 묶기 어렵다. 상위 질문에서 참여자들은 정책 변경 가능성을 25%로 보고 있다."
     assert _analyzer(tmp_path, raw).analyze("거시·통화", {"event_count": 20}, [{"title": "t"}]) == raw
     with pytest.raises(PolymarketBriefError, match="overview"):
@@ -476,7 +476,7 @@ def test_build_exposes_overview_as_first_sentence(tmp_path):
     "전체적으로 베팅에 대한 참여자들의 판단이 갈린다.",
 ])
 def test_editorial_violations_get_exactly_one_correction(tmp_path, opening):
-    from shared.llm.polymarket_brief import PolymarketBriefAnalyzer
+    from web.llm.polymarket_brief import PolymarketBriefAnalyzer
     good = "전체적으로 질문별 전망의 차이가 커 하나의 정책 방향으로 묶기 어렵다. 상위 질문에서 시장 참여자들은 정책 변경 가능성을 낮게 보고 있다."
     calls = []
     class Backend:
@@ -493,7 +493,7 @@ def test_editorial_violations_get_exactly_one_correction(tmp_path, opening):
 
 
 def test_invalid_correction_is_not_accepted(tmp_path):
-    from shared.llm import PolymarketBriefError
+    from web.llm import PolymarketBriefError
     raw = "전체적으로 기업과 암호자산 관련 이벤트에 대한 예측이 주를 이룬다. 상위 질문에서는 여러 기업과 자산에 대한 질문이 포함되어 있다."
     with pytest.raises(PolymarketBriefError, match="전체 요약"):
         _analyzer(tmp_path, raw).analyze("주식", {"event_count": 20}, [{"title": "t"}])

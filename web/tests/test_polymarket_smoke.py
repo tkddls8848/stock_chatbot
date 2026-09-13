@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from shared.core.config import POLYMARKET_BASE_URL, POLYMARKET_PROXY_URL, POLYMARKET_TIMEOUT
+from web.core.config import POLYMARKET_BASE_URL, POLYMARKET_PROXY_URL, POLYMARKET_TIMEOUT
 from web.polymarket.dashboard.client import EventsClient
 from web.polymarket.dashboard.models import normalize_event
 from web.polymarket.dashboard.transport import build_session

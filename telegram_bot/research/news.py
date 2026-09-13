@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import Any
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     NEWS_LIVE_MAX_AGE_HOURS,
     NEWS_SOURCE_FETCH_TIMEOUT_SECONDS,
     RESEARCH_NEWS_CONTENT_MAX_CHARS,

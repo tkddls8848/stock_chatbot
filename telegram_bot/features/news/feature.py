@@ -1,8 +1,8 @@
 """뉴스 수집과 3시간 시장상황 보고서 기능 선언."""
 
-from shared.core.clock import JST, now
+from telegram_bot.core.clock import JST, now
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     NEWS_COLLECTION_INTERVAL_MINUTES,
     NEWS_GLOBAL_SOURCE_KEYS,
     NEWS_LOG_FILE,
@@ -19,7 +19,7 @@ from shared.core.config import (
     SENT_NEWS_RETENTION_DAYS,
 )
 from telegram_bot.features.base import FeatureSpec
-from shared.llm import build_news_report_analyzer
+from telegram_bot.llm import build_news_report_analyzer
 from telegram_bot.news import NewsSourceRegistry, build_source_specs
 from telegram_bot.news.report import (
     collect_report_articles,

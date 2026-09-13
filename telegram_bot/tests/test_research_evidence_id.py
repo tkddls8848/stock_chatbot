@@ -7,7 +7,7 @@
 import json
 
 
-from shared.llm.market_view import MarketViewAnalyzer
+from telegram_bot.llm.market_view import MarketViewAnalyzer
 
 
 def _news_items() -> list[dict]:

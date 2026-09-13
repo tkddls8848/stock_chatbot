@@ -4,8 +4,8 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from shared.core.clock import ensure_jst, now
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.clock import ensure_jst, now
+from telegram_bot.core.storage import write_json_atomic
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-PROMPT = Path(__file__).resolve().parents[2] / "shared" / "prompts" / "market_research_ko.txt"
+PROMPT = Path(__file__).resolve().parents[2] / "telegram_bot" / "prompts" / "market_research_ko.txt"
 
 
 def test_research_prompt_requires_diverse_but_grounded_hypotheses():

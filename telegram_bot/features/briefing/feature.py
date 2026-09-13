@@ -8,7 +8,7 @@ from telegram_bot.briefing import (
     send_evening_briefing,
     send_morning_briefing,
 )
-from shared.core.config import (
+from telegram_bot.core.config import (
     BRIEFING_EVENING_ENABLED,
     BRIEFING_EVENING_HOUR,
     BRIEFING_EVENING_MINUTE,
@@ -17,7 +17,7 @@ from shared.core.config import (
     BRIEFING_MORNING_MINUTE,
 )
 from telegram_bot.features.base import CommandSpec, FeatureSpec, MenuSpec
-from shared.llm import build_briefing_writer
+from telegram_bot.llm import build_briefing_writer
 
 logger = logging.getLogger(__name__)
 

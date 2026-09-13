@@ -8,7 +8,8 @@
 - `system_admin`이 `news_prefilter`의 `report()` dict 모양을 알고 화면을 그렸다.
   관측 항목을 하나 추가하려면 남의 기능 파일을 함께 고쳐야 했다.
 
-기능이 공유해야 하는 것은 **공용 계층**(`shared/`, `telegram_bot/stocks`,
+기능이 공유해야 하는 것은 **같은 모듈 안의 공용 계층**(`telegram_bot/core`,
+`telegram_bot/llm`, `telegram_bot/stocks`,
 `telegram_bot/state`, `telegram_bot/news`, `telegram_bot/handlers`)에 두거나,
 `FeatureSpec` 선언(`status_reports` 등)을 통해 레지스트리가 중개한다.
 """

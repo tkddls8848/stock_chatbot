@@ -8,7 +8,7 @@
 
 import logging
 from datetime import date, datetime
-from shared.core.clock import today
+from telegram_bot.core.clock import today
 
 import akshare as ak
 import pandas as pd

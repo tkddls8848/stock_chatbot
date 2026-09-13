@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from shared.llm.market_digest import MarketDigestAnalyzer, MarketDigestError
+from telegram_bot.llm.market_digest import MarketDigestAnalyzer, MarketDigestError
 
-PROMPT = Path(__file__).resolve().parents[2] / "shared" / "prompts" / "market_digest_ko.txt"
+PROMPT = Path(__file__).resolve().parents[2] / "telegram_bot" / "prompts" / "market_digest_ko.txt"
 
 
 class BackendStub:

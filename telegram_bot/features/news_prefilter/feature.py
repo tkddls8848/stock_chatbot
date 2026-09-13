@@ -6,8 +6,8 @@ import logging
 import os
 from datetime import timedelta
 
-from shared.core.clock import now
-from shared.core.config import (
+from telegram_bot.core.clock import now
+from telegram_bot.core.config import (
     NEWS_GLOBAL_LIMIT,
     NEWS_PREFILTER_CALIBRATION_DAILY_BUDGET_SECONDS,
     NEWS_PREFILTER_CPU_STATE_FILE,
@@ -27,7 +27,7 @@ from shared.core.config import (
     NEWS_PREFILTER_TARGET_CPU_UTILIZATION,
     NEWS_PREFILTER_TRANSLATED_EVENT_COOLDOWN_HOURS,
 )
-from shared.core.workers import is_burst_active, wait_for_urgent_idle
+from telegram_bot.core.workers import is_burst_active, wait_for_urgent_idle
 from telegram_bot.features.base import FeatureSpec, StatusReportSpec
 from telegram_bot.features.news_prefilter.report import render_prefilter_status
 from telegram_bot.features.news_prefilter.service import NewsPrefilter

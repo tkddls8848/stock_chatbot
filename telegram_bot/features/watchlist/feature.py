@@ -1,6 +1,6 @@
 """관심종목 관리 기능 선언."""
 
-from shared.core.config import WATCHLIST_EVENTS_FILE, WATCHLIST_FILE
+from telegram_bot.core.config import WATCHLIST_EVENTS_FILE, WATCHLIST_FILE
 from telegram_bot.features.base import CallbackSpec, CommandSpec, FeatureSpec, MenuSpec
 from telegram_bot.watchlist import (
     WatchlistEventLog,

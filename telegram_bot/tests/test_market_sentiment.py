@@ -2,7 +2,7 @@ import asyncio
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from shared.core.clock import today as kst_today
+from telegram_bot.core.clock import today as kst_today
 from telegram_bot.state.market_digest import market_history_gaps
 from telegram_bot.features.market_sentiment import handlers as commands
 from telegram_bot.features.market_sentiment.chart import _trend_series

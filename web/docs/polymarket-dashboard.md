@@ -707,7 +707,7 @@ POLYMARKET_PROXY_URL=
 POLYMARKET_WEB_LOW_LIQUIDITY=1000
 ```
 
-timeout과 파일 경로처럼 운영 중 조정하지 않는 값은 `shared/core/config.py`의 literal
+timeout과 파일 경로처럼 운영 중 조정하지 않는 값은 `web/core/config.py`의 literal
 상수로 둔다.
 
 ### 9-2. 실제 주기로 freshness를 판정한다
@@ -755,7 +755,7 @@ infra/systemd/stock-chatbot-polymarket-refresh.timer
 ```text
 web/server.py             /polymarket와 /api/polymarket/*
 web/pages.py       nav와 공통 shell
-shared/core/config.py        현재 웹에 필요한 literal·env만 유지
+web/core/config.py           현재 웹에 필요한 literal·env만 유지
 .env.example              POLYMARKET_WEB_LOW_LIQUIDITY와 proxy
 infra/Caddyfile.example  공개 읽기 정책
 infra/server-ops.md        설치·상태·장애·철수 절차 교체

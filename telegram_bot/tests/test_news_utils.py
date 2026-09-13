@@ -7,7 +7,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     NEWS_DIGEST_ARTICLE_MAX_CHARS,
     NEWS_DIGEST_TITLE_MAX_CHARS,
 )

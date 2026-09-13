@@ -11,13 +11,13 @@
 
 import asyncio
 import json
-from shared.core.clock import today as kst_today
+from telegram_bot.core.clock import today as kst_today
 from types import SimpleNamespace
 
 import pytest
 
-from shared.core import storage
-from shared.core.storage import write_json_atomic
+from telegram_bot.core import storage
+from telegram_bot.core.storage import write_json_atomic
 from telegram_bot.state.market_digest import MarketDigestStore
 from telegram_bot.watchlist.manager import WatchlistManager
 

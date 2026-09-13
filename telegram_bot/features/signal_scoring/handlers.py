@@ -6,7 +6,7 @@ from typing import Any, Mapping
 from telegram import Message, Update
 from telegram.ext import ContextTypes
 
-from shared.core.config import VIEW_LOOKBACK_DAYS
+from telegram_bot.core.config import VIEW_LOOKBACK_DAYS
 from telegram_bot.news.utils import normalize_stock_code
 from telegram_bot.state import PredictionLog, aggregate_stock_views
 from telegram_bot.stocks import StockDatabase

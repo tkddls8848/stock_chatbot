@@ -8,7 +8,7 @@
 import re
 from collections import Counter
 
-from shared.core.config import STOCK_NAME_TOKEN_MAX_FREQUENCY
+from telegram_bot.core.config import STOCK_NAME_TOKEN_MAX_FREQUENCY
 
 _NAME_TOKEN_STOPWORDS = {
     "inc", "corp", "corporation", "incorporated", "company", "ltd", "limited",

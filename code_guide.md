@@ -21,15 +21,15 @@
 .\venv\Scripts\python.exe -m telegram_bot.main
 .\venv\Scripts\python.exe -m pytest -q
 .\venv\Scripts\python.exe -m pytest -q shorts/tests   # 루트 pytest에 안 잡힌다
-.\venv\Scripts\python.exe -m ruff check shared telegram_bot web conftest.py
+.\venv\Scripts\python.exe -m ruff check telegram_bot web conftest.py tests
 ```
 
 - Python 3.11+, `requirements.txt`, 개발 도구는 `requirements-dev.txt`.
 - **저장소 루트가 import root다.** 모든 명령을 루트에서 돌린다. 내부 import는
-  `from shared.core...`, `from telegram_bot.news...`, `from web.polymarket...`
+  `from telegram_bot.core...`, `from telegram_bot.news...`, `from web.polymarket...`
   형식이다.
 - 진입점은 넷이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
-  `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: shared`가 난다.
+  `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: telegram_bot`이 난다.
   | 프로세스 | 명령 |
   |---|---|
   | 텔레그램 봇(+8787 관리 웹) | `python -m telegram_bot.main` |
@@ -49,25 +49,28 @@
 
 ## 구조
 
-최상위는 **도메인 넷과 인프라 하나**다. `telegram_bot`·`web`은 서로를 import하지
-않고 `shared`만 공유한다. 유일한 예외가 `web/export.py`로, 봇이 산출물을 굽는 쪽이라
-봇에서 지연 import한다 — 방향은 봇 → 웹 한쪽뿐이고 웹은 봇을 부르지 않는다.
-`shorts`는 파이썬 import 자체를 하지 않고 공개 웹의 API만 HTTP로 읽는다.
+최상위는 **도메인 넷과 인프라 하나**다. **도메인끼리는 아무것도 공유하지 않는다** —
+`telegram_bot`·`web`은 서로를 import하지 않고, 둘 사이에 놓인 공용 패키지도 없다.
+각자 자기 `core/`(설정·시각·저장)와 `llm/`(Cloudflare 백엔드·분석기)을 갖는다.
+유일한 예외가 `web/export.py`로, 봇이 산출물을 굽는 쪽이라 봇에서 지연 import한다 —
+방향은 봇 → 웹 한쪽뿐이고 웹은 봇을 부르지 않는다. `shorts`는 파이썬 import 자체를
+하지 않고 공개 웹의 API만 HTTP로 읽는다.
 
 **도메인은 자기 코드·테스트·계획서를 자기 폴더 안에 둔다. 인프라 코드는 전부
-`infra/`에 있다.** 최상위에 `tests/`·`docs/`를 따로 두지 않고, 도메인 안에
-`deploy/`를 두지도 않는다 — systemd 유닛·Caddy·terraform·호스트 스크립트는 넷이
-한 인스턴스에 얹히는 문제라 한곳에서 봐야 순서와 의존을 읽을 수 있다.
+`infra/`에 있다.** 도메인 안에 `deploy/`를 두지 않는다 — systemd 유닛·Caddy·
+terraform·호스트 스크립트는 넷이 한 인스턴스에 얹히는 문제라 한곳에서 봐야 순서와
+의존을 읽을 수 있다. 최상위 `tests/`에는 **어느 도메인의 것도 아닌 저장소 자체의
+검사**만 둔다(현재는 에이전트 포인터 동기화 하나뿐이다). 도메인 코드를 검사하는
+테스트를 여기 두지 않는다.
 
 ```text
-shared/                공유. 어느 도메인에도 속하지 않는다
-  core/                설정, 시각, 원자적 저장, 워커
-  llm/                 Cloudflare 백엔드와 분석기
-  prompts/             모델 프롬프트 — 읽는 쪽이 shared/llm이라 여기 둔다
-  tests/               shared 테스트
+tests/                 저장소 자체의 검사. 도메인 테스트는 여기 두지 않는다
 
 telegram_bot/          텔레그램 봇 프로세스
   main.py              조립, Telegram 앱, 스케줄러 — `python -m telegram_bot.main`
+  core/                이 프로세스의 설정·시각·원자적 저장·워커
+  llm/                 이 프로세스의 Cloudflare 백엔드와 분석기
+  prompts/             이 프로세스가 읽는 모델 프롬프트
   features/            기능 등록과 명령 핸들러
   handlers/            콜백 라우팅, 메뉴 구성, 인라인 네비게이션
   news/                소스, 매시간 수집, 3시간 시장상황 보고서, 감성
@@ -81,6 +84,9 @@ telegram_bot/          텔레그램 봇 프로세스
 
 web/                   읽기 전용 공개 웹(별도 프로세스, 8788)
   server.py            FastAPI 라우트, `GET`만 — `python -m web.server`
+  core/                이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
+  llm/                 줄글 브리프용 Cloudflare 백엔드와 분석기
+  prompts/             줄글 브리프 프롬프트
   pages.py             화면(정적 HTML·CSS, 기동 시 1회 조립)
   export.py            봇이 부르는 산출물 굽기 — 유일한 봇 → 웹 방향 의존
   polymarket/          폴리마켓 화면을 먹이는 파이프라인. 봇과 무관한 one-shot이라
@@ -315,16 +321,42 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 - `system_admin`이 `news_prefilter`의 `report()` dict 모양을 알고 화면을 그렸다.
   관측 항목 하나를 추가하려면 남의 기능 파일을 함께 고쳐야 했다.
 
+### 공용 계층은 모듈 안에서만 만든다
+
+**모듈 경계를 넘는 공용 계층을 두지 않는다.** 최상위 모듈(`telegram_bot`, `web`,
+`shorts`)은 필요한 것을 **각자 자기 안에 구현한다.** 공유는 그 모듈 안에서만 한다
+— `telegram_bot/core`는 봇의 것이고 `web/core`는 웹의 것이며, 이름이 같아도 서로
+다른 파일이다.
+
+이유는 장애 전파다. **한 모듈의 사정으로 고친 파일이 다른 모듈을 멈추면 안 된다.**
+예전 `shared/core/config.py`가 정확히 그랬다. 최상단에서
+`os.environ["TELEGRAM_BOT_TOKEN"]`을 읽었기 때문에, **텔레그램 토큰이 비면 봇과
+아무 상관 없는 공개 웹(8788)도 기동하지 못했다.** 같은 파일이 봇의 기능 플래그로
+Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순회 one-shot까지
+끌어내렸다. 공용 계층 하나가 프로세스 둘의 기동 조건을 묶어 버린 것이다.
+
+**그래서 중복을 감수한다.** `telegram_bot/llm/backends.py`와 `web/llm/backends.py`는
+지금 내용이 같다. 한쪽 버그를 고치면 다른 쪽에 따로 옮겨야 하고 **그 비용은
+의도한 것이다** — 옮길지 말지를 그때 판단할 수 있다는 뜻이고, 반대쪽은 판단 없이
+끌려간다. 옮길 때는 두 벌 다 고치고 양쪽 테스트를 돌린다.
+
+기존 규칙과 부딪히는 지점을 분명히 해 둔다. **모듈 경계에서는 중복 회피가 아니라
+격리가 이긴다.** 아래 기능 간 규칙은 그대로다 — 한 모듈 **안에서는** 복제하지
+말고 소유자를 옮긴다.
+
+### 기능 간(한 모듈 안)에는 여전히 소유자를 옮긴다
+
 **기능이 무언가를 공유해야 하면 복제하지 말고 둘 중 하나를 쓴다.**
 
 | 방법 | 쓸 때 | 실제 예 |
 |---|---|---|
-| 소유자를 **공용 계층**으로 옮긴다 | 그 지식이 특정 기능의 것이 아닐 때 | 종목명 토큰화 → `telegram_bot/stocks/naming.py` |
+| 소유자를 **같은 모듈의 공용 계층**으로 옮긴다 | 그 지식이 특정 기능의 것이 아닐 때 | 종목명 토큰화 → `telegram_bot/stocks/naming.py` |
 | **`FeatureSpec` 선언**으로 레지스트리가 중개한다 | 기능이 앱에 무언가를 기여할 때 | `/system` 화면 → `status_reports` |
 
-**결합 제거와 중복 회피가 부딪히면 결합 제거가 우선이다.** 단 복제로 풀지 않고
-소유자 이전으로 푼다. 같은 코드를 두 벌 두면 한쪽 버그 수정이 다른 쪽에 가지
-않아, 막으려던 문제가 형태만 바꿔 돌아온다.
+**한 모듈 안에서 결합 제거와 중복 회피가 부딪히면 결합 제거가 우선이다.** 단
+복제로 풀지 않고 소유자 이전으로 푼다. 같은 모듈 안에 같은 코드를 두 벌 두면
+한쪽 버그 수정이 다른 쪽에 가지 않아, 막으려던 문제가 형태만 바꿔 돌아온다.
+모듈 **밖으로** 옮기는 선택지는 없다 — 그게 위에서 지운 공용 계층이다.
 
 **공용 계층은 자기 사정으로만 바뀌어야 한다.** 어떤 기능 때문에 공용 파일을
 고치고 있다면 소유자가 잘못된 것이다. 커밋 이력으로 잴 수 있다 — 그 파일이
@@ -332,7 +364,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 
 ## 그 밖의 확정 규칙
 
-- 환경 변수는 `shared/core/config.py`에서만 읽고 `.env.example`에 현재 키를 기록한다.
+- 환경 변수는 각 모듈의 `core/config.py`에서만 읽고 `.env.example`에 현재 키를 기록한다.
+  (`telegram_bot/core/config.py`, `web/core/config.py`. `shorts`는 자기 `config.py`.)
   운영자가 조정하지 않는 설정은 같은 모듈의 리터럴 상수로 둔다.
 - **배경 CPU 작업(보정)은 예산 안에서만 돈다. 매 주기 필수인 foreground
   작업은 고정 슬라이스로 재지 않는다.** `run_prefilter_maintenance`는 직전
@@ -346,7 +379,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   않는다. Lightsail 크레딧 잔량을 API로 읽지 못해도 평시를 baseline 아래로
   유지해 충전하고 요청 시에는 저장된 크레딧을 쓸 수 있는 구조다.
 - 상태 파일은 `data/<feature>/`에 둔다. 설정은 상태 파일에 저장하지 않는다.
-- **상태 파일은 `shared/core/storage.py`의 원자적 쓰기로만 저장한다.** 대상 파일을 직접
+- **상태 파일은 그 모듈의 `core/storage.py`가 주는 원자적 쓰기로만 저장한다.** 대상 파일을 직접
   열어 쓰면 그 순간 내용이 비고, 실패하면 잘린 JSON이 남아 다음 기동이 상태를
   통째로 잃는다. 저장 실패를 로그로 삼키지 않는다 — 호출자가 반환값으로 판단하는
   것(스냅숏을 남겼는가, 관심종목이 저장됐는가)이 있어서, 실패를 성공으로 보고하면
@@ -387,13 +420,13 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   지운다.** 종류를 섞지 않는다: 절차서에 할 일을
   적으면 끝난 일이 남고, 계획서에 절차를 적으면 계획을 지울 때 절차까지 사라진다.
 - 모듈은 한 책임을 유지하되 한두 함수만 담는 무의미한 파일 분할은 피한다.
-- **시각은 `shared/core/clock.py`의 `now()`·`today()`만 쓴다.** `datetime.now()`·`date.today()`는
+- **시각은 그 모듈의 `core/clock.py`가 주는 `now()`·`today()`만 쓴다.** `datetime.now()`·`date.today()`는
   호스트 타임존을 따라가서 서버를 다른 타임존에 올리면 `/market`의 하루 경계와 보존
   기간이 통째로 밀린다. ruff의 `DTZ` 규칙이 이걸 막는다(테스트는 예외).
   저장된 타임스탬프를 `now()`와 비교할 때는 `ensure_jst()`로 감싼다 — aware 전환
   이전에 쓴 `data/` 파일에는 오프셋이 없어 그냥 비교하면 TypeError로 죽는다.
   예외는 셋뿐이다: Cloudflare 할당량 리셋은 UTC 00시 기준이고
-  (`shared/llm/backends.py`), 기사 시각은 소스 타임존을 `telegram_bot/news/utils.py`가 UTC +9로 변환하며,
+  (`telegram_bot/llm/backends.py`·`web/llm/backends.py`), 기사 시각은 소스 타임존을 `telegram_bot/news/utils.py`가 UTC +9로 변환하며,
   사전선별의 하루 CPU 예산도 Neurons와 같은 UTC 00시에 리셋한다
   (`telegram_bot/features/news_prefilter/service.py`) — 두 예산의 경계를 맞춰 두면 한쪽이
   소진된 날을 다른 쪽 로그와 같은 일자로 읽을 수 있다.

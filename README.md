@@ -104,7 +104,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 
 ## 관리 웹 (선택)
 
-봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `shared/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
+봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `telegram_bot/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
 
 ```env
 WEB_ADMIN_USER=admin
@@ -131,12 +131,12 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 ## 프로젝트 구조
 
-최상위를 프로세스 경계로 나눕니다. `telegram_bot`·`web`은 서로를 import하지 않고 `shared`만 공유합니다. `shorts`는 아예 import하지 않고 공개 웹 API만 HTTP로 읽습니다.
+최상위를 프로세스 경계로 나눕니다. `telegram_bot`·`web`은 서로를 import하지 않고, 둘 사이에 놓인 공용 패키지도 없습니다 — 설정·시각·저장·LLM을 각자 자기 `core/`·`llm/`에 갖습니다. `shorts`는 아예 import하지 않고 공개 웹 API만 HTTP로 읽습니다.
 
 각 도메인이 자기 코드·테스트·계획서를 자기 폴더 안에 담고, 인프라 코드는 전부 `infra/`에 모읍니다. 최상위에 `tests/`·`docs/`·`deploy/`를 따로 두지 않습니다.
 
 ```text
-shared/           공유 — core(설정·시각·저장·워커), llm(Cloudflare), prompts/, tests/
+tests/            저장소 자체의 검사(에이전트 포인터 동기화)
 telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
                   + docs/ tests/
 web/              읽기 전용 공개 웹 (8788) + docs/ tests/

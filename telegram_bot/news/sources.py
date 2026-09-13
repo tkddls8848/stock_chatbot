@@ -16,7 +16,7 @@ import requests
 import requests.exceptions
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from shared.core.config import NEWS_SOURCE_ARTICLE_LIMIT
+from telegram_bot.core.config import NEWS_SOURCE_ARTICLE_LIMIT
 
 def retry_on_network(func):
     # AkShare 1.18+는 curl_cffi로 요청을 보내므로 curl_cffi 예외도 재시도 대상에

@@ -2,8 +2,8 @@
 
 import logging
 
-from shared.core.config import STOCK_DB_FILE
-from shared.core.workers import run_non_urgent
+from telegram_bot.core.config import STOCK_DB_FILE
+from telegram_bot.core.workers import run_non_urgent
 from telegram_bot.features.base import CommandSpec, FeatureSpec, MenuSpec
 from telegram_bot.features.instruments.handlers import cmd_stockdb
 from telegram_bot.stocks import StockDatabase

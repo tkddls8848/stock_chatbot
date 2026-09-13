@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import ensure_jst, now
+from telegram_bot.core.clock import ensure_jst, now
 
 logger = logging.getLogger(__name__)
 

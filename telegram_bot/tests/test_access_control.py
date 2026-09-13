@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.core import access
+from telegram_bot.core import access
 import telegram_bot.handlers.commands as commands
-from shared.core.menu_status import set_menu_button_text
+from telegram_bot.core.menu_status import set_menu_button_text
 from telegram_bot.features import ALL_FEATURES, build_feature_registry
 from telegram_bot.handlers.navigation import (
     handle_menu_callback,
@@ -32,7 +32,7 @@ def test_empty_allowlist_blocks_everyone(monkeypatch):
 
 
 def test_config_refuses_to_start_without_a_usable_allowlist(monkeypatch):
-    from shared.core import config
+    from telegram_bot.core import config
 
     for raw in ("", "   ", ",,", "abc", "abc, 12x"):
         monkeypatch.setenv("ALLOWED_CHAT_IDS", raw)
@@ -41,7 +41,7 @@ def test_config_refuses_to_start_without_a_usable_allowlist(monkeypatch):
 
 
 def test_config_keeps_valid_ids_and_drops_invalid_ones(monkeypatch):
-    from shared.core import config
+    from telegram_bot.core import config
 
     monkeypatch.setenv("ALLOWED_CHAT_IDS", " 111 , oops , -222 ")
     assert config._parse_allowed_chat_ids() == frozenset({111, -222})

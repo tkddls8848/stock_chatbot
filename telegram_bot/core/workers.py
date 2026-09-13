@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from functools import partial, wraps
 from typing import Any, Callable
 
-from shared.core.config import NON_URGENT_DEFER_TIMEOUT_SECONDS, NON_URGENT_WORKER_COUNT
+from telegram_bot.core.config import NON_URGENT_DEFER_TIMEOUT_SECONDS, NON_URGENT_WORKER_COUNT
 
 logger = logging.getLogger(__name__)
 

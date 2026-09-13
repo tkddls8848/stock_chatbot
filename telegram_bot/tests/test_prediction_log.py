@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import timedelta
 
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 from telegram_bot.state.prediction_log import PredictionLog, aggregate_stock_views
 
 

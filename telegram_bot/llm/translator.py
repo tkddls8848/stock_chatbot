@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from shared.llm.backends import LLMBackend
+from telegram_bot.llm.backends import LLMBackend
 
 
 _RAW_EXCERPT_CHARS = 200

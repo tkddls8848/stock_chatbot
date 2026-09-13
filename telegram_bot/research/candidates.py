@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Any
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     STOCK_NAME_TOKEN_MAX_FREQUENCY,
 )
 from telegram_bot.stocks import StockDatabase

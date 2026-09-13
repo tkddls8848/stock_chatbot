@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import ensure_jst, now
-from shared.core.storage import write_json_atomic
-from shared.core.workers import run_non_urgent
+from telegram_bot.core.clock import ensure_jst, now
+from telegram_bot.core.storage import write_json_atomic
+from telegram_bot.core.workers import run_non_urgent
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 from functools import partial
 from typing import Callable
 

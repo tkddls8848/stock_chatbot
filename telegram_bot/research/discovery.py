@@ -12,7 +12,7 @@
 import logging
 from typing import Any
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     RESEARCH_KR_CANDIDATE_LIMIT,
     RESEARCH_KR_CANDIDATES_ENABLED,
     RESEARCH_KR_MIN_TRADING_VALUE,

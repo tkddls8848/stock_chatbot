@@ -1,6 +1,6 @@
 import html
 
-from shared.core.telegram_html import truncate_html
+from telegram_bot.core.telegram_html import truncate_html
 
 
 def test_truncate_html_keeps_short_markup():

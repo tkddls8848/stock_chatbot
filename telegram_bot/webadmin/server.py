@@ -19,7 +19,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     NEWS_LOG_FILE,
     PREDICTION_LOG_FILE,
     RESEARCH_STATE_FILE,

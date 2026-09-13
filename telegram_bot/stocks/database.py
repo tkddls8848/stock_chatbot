@@ -7,7 +7,7 @@ import json
 import logging
 from pathlib import Path
 
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.storage import write_json_atomic
 from telegram_bot.stocks.sources import (
     _classify_market,
     _fetch_a_code_name,

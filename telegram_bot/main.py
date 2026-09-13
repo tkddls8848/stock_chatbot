@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     FEATURES_ENABLED,
     RUNTIME_LOCK_FILE,
     TELEGRAM_BOT_TOKEN,

@@ -12,8 +12,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import now
-from shared.core.storage import write_bytes_atomic, write_json_atomic
+from web.core.clock import now
+from web.core.storage import write_bytes_atomic, write_json_atomic
 
 logger = logging.getLogger(__name__)
 

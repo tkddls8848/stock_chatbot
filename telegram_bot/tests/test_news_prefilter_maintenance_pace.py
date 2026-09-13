@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from shared.core import workers
-from shared.core.config import (
+from telegram_bot.core import workers
+from telegram_bot.core.config import (
     NEWS_PREFILTER_LIGHTSAIL_VCPUS,
     NEWS_PREFILTER_MAINTENANCE_INTERVAL_MINUTES,
     NEWS_PREFILTER_TARGET_CPU_UTILIZATION,

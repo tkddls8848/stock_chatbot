@@ -11,12 +11,12 @@ from datetime import datetime, timezone
 import pytest
 import requests
 
-from shared.llm.backends import (
+from telegram_bot.llm.backends import (
     CloudflareWorkersAIBackend,
     LLMBackendError,
     ResilientBackend,
 )
-from shared.llm.translator import (
+from telegram_bot.llm.translator import (
     TranslationError,
     TranslationQualityError,
     TranslationService,
@@ -160,7 +160,7 @@ def test_logs_usage_with_neurons(caplog):
             },
         )
     )
-    with caplog.at_level(logging.INFO, logger="shared.llm.backends"):
+    with caplog.at_level(logging.INFO, logger="telegram_bot.llm.backends"):
         _cloudflare(session).generate(**GENERATE_KWARGS)
 
     assert "input_tokens=710" in caplog.text
@@ -171,7 +171,7 @@ def test_logs_usage_with_neurons(caplog):
 
 def test_logs_unknown_usage_when_absent(caplog):
     session = _FakeSession(_chat_completion("{}"))
-    with caplog.at_level(logging.INFO, logger="shared.llm.backends"):
+    with caplog.at_level(logging.INFO, logger="telegram_bot.llm.backends"):
         _cloudflare(session).generate(**GENERATE_KWARGS)
 
     assert "usage=unknown" in caplog.text
@@ -302,7 +302,7 @@ def test_never_leaks_api_token(caplog):
             },
         )
     )
-    with caplog.at_level(logging.DEBUG, logger="shared.llm.backends"):
+    with caplog.at_level(logging.DEBUG, logger="telegram_bot.llm.backends"):
         with pytest.raises(LLMBackendError) as excinfo:
             _cloudflare(session).generate(**GENERATE_KWARGS)
 

@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from shared.core.clock import JST
+from telegram_bot.core.clock import JST
 from telegram_bot.features.news import feature as news_feature
-from shared.llm.news_report import NewsReportAnalyzer, NewsReportError
+from telegram_bot.llm.news_report import NewsReportAnalyzer, NewsReportError
 from telegram_bot.news.report import (
     collect_report_source,
     format_market_section,
@@ -123,7 +123,7 @@ def _analyzer(tmp_path, payload=None, error=None, max_highlights=8):
 
 
 def _prompt_file():
-    from shared.core.config import NEWS_REPORT_PROMPT_FILE
+    from telegram_bot.core.config import NEWS_REPORT_PROMPT_FILE
 
     return NEWS_REPORT_PROMPT_FILE
 
@@ -585,7 +585,7 @@ def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
 
 def test_initial_collection_runs_after_telegram_startup_delay(monkeypatch):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from shared.core.clock import now
+    from telegram_bot.core.clock import now
 
     async def exercise():
         collected = asyncio.Event()

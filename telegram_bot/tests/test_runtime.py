@@ -10,8 +10,8 @@ from telegram_bot import main as bot_main
 from telegram_bot.main import _acquire_single_instance_lock
 from telegram_bot.research.state import MarketViewManager
 from telegram_bot.watchlist.manager import WatchlistManager
-from shared.core import workers
-from shared.llm.market_view import MarketViewAnalyzer
+from telegram_bot.core import workers
+from telegram_bot.llm.market_view import MarketViewAnalyzer
 
 
 def test_second_instance_returns_none_instead_of_raising(tmp_path):

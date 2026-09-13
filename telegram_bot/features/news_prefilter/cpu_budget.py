@@ -7,8 +7,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shared.core.clock import now
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.clock import now
+from telegram_bot.core.storage import write_json_atomic
 
 
 class DailyCpuBudget:

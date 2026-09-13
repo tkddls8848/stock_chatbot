@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from telegram_bot.briefing import service as briefing_service
-from shared.core.clock import JST
+from telegram_bot.core.clock import JST
 from telegram_bot.research import handlers as research_handlers
 
 

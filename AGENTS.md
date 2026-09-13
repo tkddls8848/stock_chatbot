@@ -11,12 +11,13 @@
 python -m telegram_bot.main        # 봇 (저장소 루트에서)
 python -m pytest -q                # 테스트
 python -m pytest -q shorts/tests   # 쇼츠는 루트 pytest에 안 잡힌다
-python -m ruff check shared telegram_bot web conftest.py
+python -m ruff check telegram_bot web conftest.py tests
 ```
 
 - 저장소 루트가 import root다. 진입점은 전부 루트에서 `-m`으로 부른다.
 - **기능은 다른 기능을 import하지 않는다.** `telegram_bot/tests/test_feature_isolation.py`가 강제한다.
-- 시각은 `shared/core/clock.py`의 `now()`·`today()`만 쓴다(ruff `DTZ`가 막는다).
-- 상태 파일은 `shared/core/storage.py`의 원자적 쓰기로만 저장한다.
+- 시각은 그 모듈의 `core/clock.py`가 주는 `now()`·`today()`만 쓴다(ruff `DTZ`가 막는다).
+- 상태 파일은 그 모듈의 `core/storage.py`가 주는 원자적 쓰기로만 저장한다.
+- **모듈 경계를 넘는 공용 계층을 만들지 않는다.** 공유는 모듈 안에서만 한다.
 
 나머지는 `code_guide.md`에 있다.

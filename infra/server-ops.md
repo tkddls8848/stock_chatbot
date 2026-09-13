@@ -136,7 +136,8 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 
 **`.env`는 비밀값·자격증명만 갖는다**(토큰, 비밀번호, 프록시 URL, chat id).
 그 외 모든 설정 — 기능 켜기/끄기, 수량·주기 같은 튜닝값 — 은
-`shared/core/config.py`의 리터럴 상수다(2026-08-23 정리). 값을 바꾸려면 코드를
+각 모듈 `core/config.py`(`telegram_bot/core/config.py`·`web/core/config.py`)의
+리터럴 상수다(2026-08-23 정리, 2026-09-13 모듈별 분리). 값을 바꾸려면 코드를
 고치고 git에 커밋한다 — 서버 `.env`를 직접 고치던 예전 방식은 무엇을 언제
 왜 바꿨는지가 서버에만 남고 git 이력에는 없었다.
 
@@ -421,7 +422,7 @@ sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
 |---|---|---|
 | tar 백업 cron | 매일 03:00 JST, 14일 보관 | `/var/backups/stock-chatbot/backup-YYYY-MM-DD.tgz` |
 | Lightsail 자동 스냅샷 | 매일 04:00 JST (19:00 UTC) | 콘솔 |
-| 원자적 쓰기 | 매 저장 | `shared/core/storage.py` (임시파일 → fsync → `os.replace`) |
+| 원자적 쓰기 | 매 저장 | 각 모듈 `core/storage.py` (임시파일 → fsync → `os.replace`) |
 
 ```bash
 ls -la ~/backup-*.tgz | tail -5                      # 백업이 실제로 도는지
@@ -457,7 +458,7 @@ journalctl -u stock-chatbot -n 80 --no-pager
 |---|---|---|
 | `ConfigurationError` + 허용 목록 | `ALLOWED_CHAT_IDS`가 비었다 | 5절 |
 | `Conflict: terminated by other getUpdates` | 로컬 봇이 같이 켜져 있다 | 한쪽을 끈다 |
-| `ModuleNotFoundError: shared` | `WorkingDirectory`가 저장소 루트가 아니다 | 유닛 파일 확인 |
+| `ModuleNotFoundError: telegram_bot`·`web` | `WorkingDirectory`가 저장소 루트가 아니다 | 유닛 파일 확인 |
 | `No module named pytest` | 부트스트랩은 실행 의존성만 깐다 | `pip install -r requirements-dev.txt` |
 | 차트 관련 실패 | `MPLBACKEND=Agg`가 없다 | 유닛 파일 확인 |
 

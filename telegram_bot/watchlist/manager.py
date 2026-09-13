@@ -3,7 +3,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.storage import write_json_atomic
 
 
 class WatchlistManager:

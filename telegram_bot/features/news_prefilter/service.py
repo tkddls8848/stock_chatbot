@@ -19,8 +19,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import now
-from shared.core.storage import write_json_atomic
+from telegram_bot.core.clock import now
+from telegram_bot.core.storage import write_json_atomic
 from telegram_bot.features.news_prefilter.cpu_budget import DailyCpuBudget
 from telegram_bot.features.news_prefilter.learning import (
     PENDING_CANDIDATE_LIMIT as _PENDING_CANDIDATE_LIMIT,

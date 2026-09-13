@@ -4,8 +4,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from shared.core.clock import now
-from shared.llm.backends import LLMBackend, LLMBackendError
+from telegram_bot.core.clock import now
+from telegram_bot.llm.backends import LLMBackend, LLMBackendError
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from telegram import Update
 from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     ALLOWED_CHAT_IDS,
     TELEGRAM_STATUS_MAX_ATTEMPTS,
     TELEGRAM_STATUS_RETRY_DELAY_SECONDS,

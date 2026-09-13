@@ -110,7 +110,7 @@ def test_every_enabled_subset_that_passes_can_install_services():
 
 
 def test_default_feature_set_satisfies_its_own_dependencies():
-    from shared.core.config import FEATURES_ENABLED
+    from telegram_bot.core.config import FEATURES_ENABLED
 
     build_feature_registry(FEATURES_ENABLED)
 

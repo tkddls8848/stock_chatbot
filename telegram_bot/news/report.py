@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from telegram import Bot
 from telegram.ext import Application
 
-from shared.core.clock import JST, now
-from shared.core.config import (
+from telegram_bot.core.clock import JST, now
+from telegram_bot.core.config import (
     NEWS_DIGEST_MESSAGE_MAX_CHARS,
     NEWS_REPORT_INTERVAL_HOURS,
     NEWS_REPORT_MAX_HEADLINES,
@@ -22,8 +22,8 @@ from shared.core.config import (
     NEWS_SOURCE_MARKETS,
     TELEGRAM_CHAT_ID,
 )
-from shared.core.workers import burst_job, run_non_urgent
-from shared.llm.news_report import NewsReportAnalyzer, NewsReportError
+from telegram_bot.core.workers import burst_job, run_non_urgent
+from telegram_bot.llm.news_report import NewsReportAnalyzer, NewsReportError
 from telegram_bot.news.collection import collect_source_candidates
 from telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
 from telegram_bot.news.utils import (

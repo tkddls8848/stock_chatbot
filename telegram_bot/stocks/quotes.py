@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from datetime import timedelta
-from shared.core.clock import now
+from telegram_bot.core.clock import now
 from typing import Any, Callable
 
 import akshare as ak

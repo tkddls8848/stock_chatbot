@@ -2,13 +2,13 @@
 
 import asyncio
 
-from shared.core.config import (
+from telegram_bot.core.config import (
     MARKET_DIGEST_FILE,
     MARKET_DIGEST_RETENTION_DAYS,
 )
 from telegram_bot.features.base import CommandSpec, FeatureSpec, MenuSpec
 from telegram_bot.features.market_sentiment.handlers import cmd_market
-from shared.llm import build_market_digest_analyzer
+from telegram_bot.llm import build_market_digest_analyzer
 from telegram_bot.state import MarketDigestStore
 
 

@@ -1,11 +1,11 @@
 # 설정을 두지 않으면 룰셋이 설치된 ruff 버전에 따라 달라져 같은 코드가 머신마다
 # 다른 결과를 낸다(실측: 설정 없이 155건, 아래 셋으로 0건). 문서가 지시하는
-# `ruff check shared telegram_bot web conftest.py`가 실제 게이트가 되도록 고정한다.
+# `ruff check telegram_bot web conftest.py tests`가 실제 게이트가 되도록 고정한다.
 target-version = "py311"
 
 [lint]
 # DTZ: 앱의 "지금"은 항상 KST여야 한다. `datetime.now()`·`date.today()`는 호스트
-# 타임존을 따라가므로 금지하고 `core/clock.py`의 now()·today()를 쓴다. 이 규칙이
+# 타임존을 따라가므로 금지하고 각 모듈의 `core/clock.py`가 주는 now()·today()를 쓴다. 이 규칙이
 # 없으면 규약이 조용히 되돌아간다.
 select = ["E4", "E7", "E9", "F", "DTZ"]
 

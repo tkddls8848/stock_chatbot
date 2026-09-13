@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from shared.llm.translator import TranslationError, TranslationService
+from telegram_bot.llm.translator import TranslationError, TranslationService
 from telegram_bot.news.utils import normalize_stock_code
 
 

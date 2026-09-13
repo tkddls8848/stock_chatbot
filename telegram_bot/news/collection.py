@@ -7,7 +7,7 @@ import logging
 
 import requests
 
-from shared.core.config import NEWS_LIVE_MAX_AGE_HOURS, NEWS_SOURCE_FETCH_TIMEOUT_SECONDS
+from telegram_bot.core.config import NEWS_LIVE_MAX_AGE_HOURS, NEWS_SOURCE_FETCH_TIMEOUT_SECONDS
 from telegram_bot.news.models import SourceCandidate
 from telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
 from telegram_bot.news.sources import GlobalArticle
