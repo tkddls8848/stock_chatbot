@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import date, datetime
 import json
 import logging
@@ -12,12 +12,80 @@ from .client import PolymarketWebClient
 from .config import Settings
 from .media import background_for
 from .render import find_font, probe_duration, render_video
-from .scenario import Scenario, build_scenario
-from .tts import synthesize
-from .youtube import upload_video
+from .review import write_json, write_review
+from .scenario import Scenario, Scene, build_scenario
+from .tts import SCENE_PAUSE_SECONDS, synthesize, synthesize_sections
 
 
 logger = logging.getLogger(__name__)
+
+
+def produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
+    """확정된 제작 원고만 렌더한다. 원자료 재조회·재요약을 하지 않는다."""
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    rows = plan.get("scenes", [])
+    sectors = {row.get("sector_key") for row in rows if row.get("kind") == "consensus"}
+    if (plan.get("schema_version") != 1 or len(rows) != 7
+            or sectors != {"macro", "geopolitics", "general", "composite", "equities"}
+            or rows[0].get("kind") != "intro" or rows[-1].get("kind") != "outro"):
+        raise ValueError("제작 원고는 도입·5개 분야·마무리를 포함해야 합니다")
+    for row in rows:
+        if not str(row.get("narration", "")).strip() or not row.get("evidence"):
+            raise ValueError("모든 장면에 내레이션과 입력 근거가 필요합니다")
+    if not (str(plan.get("title", "")).strip()
+            and str(plan.get("description", "")).strip() and plan.get("tags")):
+        raise ValueError("제작 원고에 게시 제목·설명·태그가 필요합니다")
+    names = {field.name for field in fields(Scene)}
+    scenario = Scenario(
+        date=plan["date"], generation_id=plan["generation_id"],
+        source_written_at=plan["source_written_at"],
+        scenes=tuple(Scene(**{k: v for k, v in row.items() if k in names}) for row in rows),
+    )
+    result = produce_revision(scenario, editorial_metadata(plan, scenario), plan_path.parent, settings)
+    production = _read_json(plan_path.parent / "production.json")
+    production["source_plan"] = str(plan_path)
+    write_json(plan_path.parent / "production.json", production)
+    return result
+
+
+def produce_revision(
+    scenario: Scenario, metadata: dict[str, Any], target: Path, settings: Settings,
+) -> ProductionResult:
+    """고정된 시나리오를 장면별 음성과 함께 렌더하고 새 검수를 요구한다."""
+    work = target / "media"
+    work.mkdir(parents=True, exist_ok=True)
+    audio, subtitles, timings = synthesize_sections(
+        [scene.narration for scene in scenario.scenes], work_dir=work,
+        voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
+    )
+    backgrounds = tuple(
+        background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
+        for scene in scenario.scenes
+    )
+    video = target / f"nunchi-editorial-{scenario.date}.mp4"
+    duration = render_video(
+        scenario, audio_path=audio, subtitle_path=subtitles, output_path=video,
+        work_dir=work, font_path=find_font(settings.font_file),
+        ffmpeg_bin=settings.ffmpeg_bin, ffprobe_bin=settings.ffprobe_bin,
+        max_duration=settings.max_duration_seconds, background_paths=backgrounds,
+        audio_scene_durations=timings,
+    )
+    script = write_review(
+        target, scenario=scenario, metadata=metadata, video=video,
+        duration=duration, timezone=settings.timezone,
+    )
+    write_json(target / "scenario.json", scenario.to_dict())
+    write_json(target / "production.json", {
+        "title": metadata["title"], "generation_id": scenario.generation_id,
+        "duration_seconds": duration, "voice": settings.tts_voice, "rate": settings.tts_rate,
+        "scene_audio_seconds_including_pause": timings,
+        "pause_seconds": SCENE_PAUSE_SECONDS,
+        "audio": str(audio), "subtitles": str(subtitles), "video": str(video),
+    })
+    return ProductionResult(
+        status="pending_review", date=scenario.date,
+        video_path=str(video), review_path=str(script),
+    )
 
 
 @dataclass(frozen=True)
@@ -25,17 +93,7 @@ class ProductionResult:
     status: str
     date: str
     video_path: str | None = None
-    youtube_id: str | None = None
-
-
-def _faster_rate(rate: str, actual: float, target: float) -> str:
-    """실측 길이가 상한을 넘을 때 필요한 만큼만 TTS 속도를 높인다."""
-    try:
-        base = int(rate.rstrip("%"))
-    except ValueError:
-        base = 0
-    required = round(((1 + base / 100) * actual / target - 1) * 100) + 2
-    return f"{max(-50, min(35, required)):+d}%"
+    review_path: str | None = None
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -46,21 +104,21 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+def editorial_metadata(plan: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
+    """게시 문구의 원본은 제작 원고다. 검수 피드백은 원고를 고쳐 반영한다."""
+    return {
+        "title": f"{plan['title']} | {scenario.date.replace('-', '.')} #Shorts",
+        "description": plan["description"],
+        "tags": list(plan["tags"]),
+    }
 
 
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
     stamp = scenario.date.replace("-", ".")
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
-    # 잘되는 경제 쇼츠의 제목은 예외 없이 **주장**이다 — 구체적 숫자나 고유명사를
-    # 걸고 그래서 어떻게 되는지를 말한다("미국 국채 6% 금리 찍히면 한국증시
-    # 초토화됩니다"). "오늘의 OO 컨센서스"는 분류 라벨이라 아무것도 약속하지 않는다.
+    # A concrete question promises an explanation without mistaking turnover for inflows.
     headline = (
-        f"지난 24시간 {scenario.lead_label}에 {scenario.lead_volume}가 몰렸습니다"
+        f"{scenario.lead_label} {scenario.lead_volume} 거래, 전망도 확실할까?"
         if scenario.lead_label and scenario.lead_volume
         else "지난 24시간 예측시장에서 돈이 몰린 곳"
     )
@@ -81,7 +139,6 @@ def produce_daily(
     *,
     production_date: date | None = None,
     force: bool = False,
-    upload: bool | None = None,
 ) -> ProductionResult:
     today = production_date or datetime.now(settings.timezone).date()
     day = today.isoformat()
@@ -92,7 +149,7 @@ def produce_daily(
             status="already_produced",
             date=day,
             video_path=previous.get("video_path"),
-            youtube_id=previous.get("youtube_id"),
+            review_path=previous.get("review_path"),
         )
 
     snapshot = PolymarketWebClient(settings.web_url).snapshot()
@@ -106,7 +163,6 @@ def produce_daily(
     day_dir.mkdir(parents=True, exist_ok=True)
     video_path = day_dir / f"polymarket-{day}.mp4"
     scenario_path = day_dir / "scenario.json"
-    metadata_path = day_dir / "youtube.json"
     metadata = metadata_for(scenario)
     backgrounds = tuple(
         background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
@@ -126,22 +182,9 @@ def produce_daily(
         )
         measured = probe_duration(audio, ffprobe_bin=settings.ffprobe_bin)
         if measured > settings.max_duration_seconds:
-            adjusted_rate = _faster_rate(
-                settings.tts_rate,
-                measured,
-                settings.max_duration_seconds - 2,
-            )
             logger.info(
-                "내레이션 %.1f초가 상한을 넘어 TTS 속도를 %s로 한 번 조정합니다",
+                "내레이션 %.1f초가 목표 길이를 넘지만 원래 속도와 전체 음성을 유지합니다",
                 measured,
-                adjusted_rate,
-            )
-            synthesize(
-                scenario.narration,
-                audio_path=audio,
-                subtitle_path=subtitles,
-                voice=settings.tts_voice,
-                rate=adjusted_rate,
             )
         duration = render_video(
             scenario,
@@ -161,34 +204,28 @@ def produce_daily(
         {"asset": path.name, "source": "GPT Image / built-in", "generated": True}
         if path else None for path in backgrounds
     ]
-    _write_json(scenario_path, scenario_payload)
-    _write_json(metadata_path, metadata)
-
-    should_upload = settings.upload_enabled if upload is None else upload
-    youtube_id = None
-    if should_upload:
-        youtube_id = upload_video(
-            video_path,
-            metadata,
-            token_file=settings.youtube_token_file,
-            client_secret_file=settings.youtube_client_secret_file,
-            privacy=settings.youtube_privacy,
-        )
+    write_json(scenario_path, scenario_payload)
+    # 게시 문구와 멘트는 review.md 한 장에서 검수한다.
+    script = write_review(
+        day_dir, scenario=scenario, metadata=metadata, video=video_path,
+        duration=duration, timezone=settings.timezone,
+    )
 
     days = state.setdefault("days", {})
     days[day] = {
         "generation_id": scenario.generation_id,
         "produced_at": datetime.now(settings.timezone).isoformat(),
         "video_path": str(video_path),
-        "youtube_id": youtube_id,
+        "review_path": str(script),
         "duration_seconds": round(duration, 3),
     }
     # 상태 파일이 끝없이 커지지 않도록 최근 90일만 보존한다.
     state["days"] = dict(sorted(days.items())[-90:])
-    _write_json(settings.state_file, state)
+    write_json(settings.state_file, state)
+    # 생성 직후에는 review.md로 자연어 검수를 이어간다.
     return ProductionResult(
-        status="uploaded" if youtube_id else "produced",
+        status="pending_review",
         date=day,
         video_path=str(video_path),
-        youtube_id=youtube_id,
+        review_path=str(script),
     )

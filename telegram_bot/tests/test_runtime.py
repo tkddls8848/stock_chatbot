@@ -1,5 +1,4 @@
 import asyncio
-import itertools
 import json
 import threading
 from types import SimpleNamespace
@@ -111,25 +110,32 @@ def test_main_releases_instance_lock_when_startup_fails(monkeypatch):
     assert lock.closed
 
 
-def test_non_urgent_workers_are_selected_round_robin(monkeypatch):
-    monkeypatch.setattr(
-        workers,
-        "_NON_URGENT_EXECUTOR_SEQUENCE",
-        itertools.count(),
-    )
+def test_blocked_non_urgent_job_does_not_block_later_analysis():
+    """종목 수집이 멈춰도 워커 수보다 많은 후속 분석을 계속 처리한다."""
+    release = threading.Event()
 
-    async def collect_thread_names():
-        return [
-            await workers.run_non_urgent(lambda: threading.current_thread().name)
-            for _ in range(len(workers._NON_URGENT_EXECUTORS) * 2)
-        ]
+    async def exercise():
+        loop = asyncio.get_running_loop()
+        started = asyncio.Event()
 
-    names = asyncio.run(collect_thread_names())
-    expected = [
-        f"non-urgent-{index + 1}_0"
-        for index in range(len(workers._NON_URGENT_EXECUTORS))
-    ] * 2
-    assert names == expected
+        def blocked_fetch():
+            loop.call_soon_threadsafe(started.set)
+            release.wait()
+
+        blocked = asyncio.create_task(workers.run_non_urgent(blocked_fetch))
+        try:
+            await asyncio.wait_for(started.wait(), timeout=2)
+            for index in range(workers.NON_URGENT_WORKER_COUNT * 2):
+                result = await asyncio.wait_for(
+                    workers.run_non_urgent(lambda value=index: value), timeout=2
+                )
+                assert result == index
+            assert not blocked.done()
+        finally:
+            release.set()
+            await blocked
+
+    asyncio.run(exercise())
 
 
 def test_analysis_request_passes_prompt_and_output_budget():

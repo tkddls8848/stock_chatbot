@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -583,6 +583,31 @@ def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
     assert jobs["market_situation_report"]["timezone"] is JST
 
 
+def test_initial_collection_runs_after_telegram_startup_delay(monkeypatch):
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from shared.core.clock import now
+
+    async def exercise():
+        collected = asyncio.Event()
+
+        async def collect(_app):
+            collected.set()
+
+        monkeypatch.setattr(news_feature, "run_news_collection", collect)
+        monkeypatch.setattr(news_feature, "now", lambda: now() - timedelta(seconds=3))
+        scheduler = AsyncIOScheduler()
+        news_feature._install_jobs(scheduler, object())
+        scheduler.remove_job("market_situation_report")
+        scheduler.start()
+        try:
+            await asyncio.wait_for(collected.wait(), timeout=2)
+        finally:
+            scheduler.shutdown(wait=False)
+            await asyncio.sleep(0)
+
+    asyncio.run(exercise())
+
+
 def test_report_prompt_requires_market_inference_instead_of_article_translation():
     prompt = _prompt_file().read_text(encoding="utf-8")
 
@@ -815,3 +840,39 @@ def test_logging_still_works_when_the_prefilter_is_off():
     asyncio.run(
         news_report._log_highlights("CN", _queued(), _highlight_result(), None, None, None)
     )
+
+
+def test_learning_evaluations_are_bounded_and_do_not_change_highlights(tmp_path):
+    payload = _payload(indexes=(0,))
+    payload["evaluations"] = [
+        {"index": 0, "impact": "low"},
+        {"index": 1, "impact": "low"},
+        {"index": 1, "impact": "high"},
+        {"index": 99, "impact": "low"},
+        {"index": True, "impact": "low"},
+        {"index": 2, "impact": "unknown"},
+    ]
+    result = _analyzer(tmp_path, payload)._parse(
+        json.dumps(payload), valid_indexes={0, 1, 2}, limit=3,
+    )
+    assert result["evaluations"] == [{"index": 1, "impact": "low"}]
+    assert len(result["highlights"]) == 1
+
+
+def test_unselected_evaluation_only_feeds_learning():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    prefilter = SimpleNamespace(record_outcome=AsyncMock())
+    prediction_log = SimpleNamespace(record=AsyncMock())
+    news_log = SimpleNamespace(record=AsyncMock())
+    result = {"analysis": "분석", "highlights": [],
+              "evaluations": [{"index": 0, "impact": "low"}]}
+    asyncio.run(news_report._log_highlights(
+        "CN", _queued(), result, prediction_log, news_log, prefilter,
+    ))
+    prefilter.record_outcome.assert_awaited_once_with(
+        candidate_id="cand-1", impact="low", sentiment=None, selected=False,
+    )
+    prediction_log.record.assert_not_awaited()
+    news_log.record.assert_not_awaited()

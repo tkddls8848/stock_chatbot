@@ -8,7 +8,7 @@ Claude Code는 `CLAUDE.md`를, Codex·Cursor 계열은 `AGENTS.md`를 자동으�
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 STANDARD = ROOT / "code_guide.md"
 POINTERS = (
     ROOT / "CLAUDE.md",

@@ -39,7 +39,7 @@ _SPACE_RE = re.compile(r"\s+")
 _TAG_RE = re.compile(r"<[^>]+>")
 # 섀도 비교가 답하지 못하는 것. 지운 채로 active에 올리지 않는다.
 SHADOW_CAVEATS = (
-    "라벨은 번역된 기사에만 붙는다. shadow에서 번역되는 것은 최신순 상위뿐이라"
+    "라벨은 보고서 근거와 무작위 평가 표본에 붙는다. shadow의 입력은 최신순 상위뿐이라"
     " 사전선별이 새로 끌어올린 기사의 impact는 끝내 관측되지 않는다.",
     "따라서 판별력 수치는 '최신순이 이미 고른 기사들 안에서의 순위'이지"
     " '더 나은 기사를 찾아내는 능력'이 아니다."
@@ -614,6 +614,7 @@ class NewsPrefilter:
         candidate_id: str,
         impact: str,
         sentiment: float | None,
+        selected: bool = True,
     ) -> None:
         if not candidate_id:
             return
@@ -625,11 +626,12 @@ class NewsPrefilter:
             "sentiment": sentiment,
         }
         async with self._lock:
-            await asyncio.to_thread(self._record_outcome_sync, payload, candidate_id)
+            await asyncio.to_thread(self._record_outcome_sync, payload, candidate_id, selected)
 
-    def _record_outcome_sync(self, payload: dict[str, Any], candidate_id: str) -> None:
+    def _record_outcome_sync(self, payload: dict[str, Any], candidate_id: str, selected: bool = True) -> None:
         self._append_observations([payload])
-        self._mark_event_translated(candidate_id)
+        if selected:
+            self._mark_event_translated(candidate_id)
 
     def _report_sync(self) -> dict[str, Any]:
         """관측 파일을 한 번 훑어 섀도 비교 지표를 만든다."""

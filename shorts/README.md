@@ -13,9 +13,10 @@
 
 - `polymarket-YYYY-MM-DD.mp4`: 1080×1920, H.264/AAC 세로 영상
 - `scenario.json`: 사용한 generation, 장면, 전체 내레이션과 실제 길이
-- `youtube.json`: 제목, 설명, 태그
+- `review.md`: 검수용 한 장 — 게시 제목·설명·태그와 장면별 멘트·화면 문구
+- `review.json`: 검수 상태·영상 정보·제목/설명/태그
 
-영상은 인트로, 최대 3개 컨센서스 분야, 고지문 순서입니다. `복합(경제·지정학)`을 우선 보존하고 나머지는 24시간 거래량 상위 분야를 사용합니다. 긴 단락은 문장 경계에서 줄여 `SHORTS_MAX_DURATION_SECONDS`(기본 119초, 허용 30~119) 안에 맞춥니다. 첫 TTS가 상한을 넘으면 필요한 만큼만 발화 속도를 한 번 높여 다시 만들고, 그래도 넘으면 업로드하지 않습니다.
+영상은 인트로, 거래량 순 최대 5개 분야, 고지문 순서입니다. 완성과 음성 보존이 길이보다 우선입니다. `SHORTS_MAX_DURATION_SECONDS`는 기본 180초의 참고 목표이며, 초과해도 자동 배속이나 생성 중단을 하지 않습니다. 기본 발화 속도는 +0%입니다. FFmpeg 영상은 단일 음성을 유지하고 끝에 0.6초 여유를 둡니다. HyperFrames는 장면별 음성 실측 길이에 장면 사이 호흡을 더해 전환합니다. 플랫폼의 Shorts 분류 조건과 제작 목표는 별개이므로 긴 완성본은 게시 전 확인합니다.
 
 ## 설치
 
@@ -33,7 +34,7 @@ cp .env.example .env
 Windows PowerShell에서는 다음처럼 준비합니다.
 
 ```powershell
-cd C:\Users\tkddl\orca\stock_chatbot\shorts
+cd C:\Users\PSI\orca\stock_chatbot\shorts
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 winget install --id Gyan.FFmpeg -e
@@ -45,31 +46,76 @@ FFmpeg 설치 직후에는 새 PowerShell 창을 열어야 `ffmpeg`와 `ffprobe`
 로컬 영상 생성 테스트:
 
 ```bash
-.venv/bin/python -m polymarket_shorts.cli --no-upload
+.venv/bin/python -m polymarket_shorts.cli
 ```
 
 같은 한국 날짜에 다시 실행하면 `already_produced`로 끝납니다. 입력이나 디자인을 바꾸고 다시 만들 때만 `--force`를 사용합니다.
 
 ```bash
-.venv/bin/python -m polymarket_shorts.cli --force --no-upload
+.venv/bin/python -m polymarket_shorts.cli --force
 ```
 
-## YouTube 연결
+## 자연어 검수와 편집
 
-Google Cloud에서 YouTube Data API v3를 활성화하고 데스크톱 OAuth 클라이언트를 만든 뒤 JSON을 `client_secret.json`으로 저장합니다. 최초 인증은 브라우저를 사용할 수 있는 로컬 컴퓨터에서 실행합니다.
+로컬 PowerShell에서 영상 생성 → 원고·영상 확인 → 자연어 수정 → 재렌더 → 검수 완료로 진행합니다.
+수정본과 검수 기록은 로컬에 저장합니다. 필요한 외부 설정은 자연어 편집용 Cloudflare 계정 ID와
+Workers AI API 토큰입니다. `shorts/.env.example`을 참고해 `shorts/.env`에 채웁니다.
+기존 `.env`는 덮어쓰지 말고 필요한 키만 추가하세요.
 
-```bash
-.venv/bin/polymarket-shorts-auth
+```dotenv
+CLOUDFLARE_ACCOUNT_ID=계정_ID
+CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
+SHORTS_EDITOR_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
 ```
 
-생성된 `youtube_token.json`을 서버의 이 프로젝트 폴더에 안전하게 복사합니다. 두 파일은 `.gitignore` 대상입니다. `.env`에서 아래 값을 바꾸면 자동 업로드가 켜집니다.
+저장소 루트에서 실행합니다.
 
-```env
-SHORTS_UPLOAD_ENABLED=true
-SHORTS_YOUTUBE_PRIVACY=private
+```powershell
+cd C:\Users\PSI\orca\stock_chatbot
+.\venv\Scripts\python.exe -m pip install -e ./shorts
+$env:PYTHONPATH='shorts/src'
+
+# 오늘 영상 생성 후 자연어 검수 시작
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --interactive
+
+# 기존 산출물 폴더에서 검수 이어가기
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --workflow shorts/output/2026-09-13
+
+# 제작 원고로 생성한 직후 검수
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan shorts/output/editorial-2026-09-13/editorial.json --interactive
 ```
 
-처음에는 `private`로 며칠 검수한 뒤 `unlisted` 또는 `public`으로 전환하는 편이 안전합니다. 합성 음성을 사용하므로 업로드 메타데이터의 `containsSyntheticMedia`는 `true`로 전송합니다.
+대화에는 원고와 MP4의 로컬 링크가 표시됩니다. 영상을 열어 본 뒤 수정할 내용을 입력합니다.
+
+```text
+쇼츠> 첫 멘트를 질문형으로 바꾸고 두 번째 장면 설명을 쉽게 줄여줘
+쇼츠> 목소리를 10% 느리게 해줘
+쇼츠> 보기
+쇼츠> 완료
+```
+
+- `보기`: 현재 원고와 영상 경로 확인
+- 자연어 입력: 수정 요청을 반영하고 음성·자막·영상을 다시 생성
+- `완료` 또는 `검수 완료`: 현재 완성본의 검수 완료를 기록하고 종료
+- `종료`: 검수 대기 상태를 보존하고 나중에 이어가기
+
+지원 편집은 멘트·화면 문구·제목/설명/태그, 중간 장면 삭제·순서 변경,
+발화 속도(-30%~+50%), 저장된 무역/금융 도시 배경 선택과 강조색 변경입니다.
+새 이미지·음악 생성이나 임의의 영상 효과는 지원하지 않습니다.
+
+수정본은 `revisions/<ID>/`에 MP4·원고·음성·자막과 `edit.json`(요청·수정 내용)을
+보존합니다. `workflow.json`이 최신 완성본을 가리키므로 같은 원본 폴더의 `--workflow`로
+이어집니다. 완료한 영상도 다시 수정하면 검수 대기로 돌아갑니다.
+렌더 실패 시 이전 완성본은 남습니다. 최초 `editorial.json`은 덮어쓰지 않습니다.
+
+검수 원고만 출력하려면 다음 명령을 사용합니다.
+
+```powershell
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --review shorts/output/2026-09-13
+```
+
+`review.md`만 직접 수정해도 영상에는 반영되지 않습니다. 대화형 편집을 사용하거나
+제작 원고를 수정하고 `--plan`으로 다시 렌더하세요.
 
 ## 하루 한 번 실행
 
@@ -93,6 +139,26 @@ journalctl -u polymarket-shorts -n 100 --no-pager
 
 ## 제작 흐름
 
+### 검수한 제작 원고로 렌더하기
+
+일관된 영상 연출 기준은 `prompts/editorial_ko.txt`에 있습니다. 원자료 snapshot과
+필요한 질문 상세를 고정한 뒤 이 프롬프트로 `editorial.json`을 정제·검수합니다.
+이번 원고 정제는 Codex 세션에서 수행했으며, CLI가 LLM에 자동 정제를 요청하지는 않습니다.
+`editorial.json`에는 전체 내레이션, 화면 문구, 장면 목적, 근거, 검수 결과를 구분합니다.
+
+```powershell
+$env:PYTHONPATH='shorts/src'
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan shorts/output/editorial-2026-09-13/editorial.json
+```
+
+`--plan`은 원자료를 다시 가져오거나 문장을 재요약하지 않습니다. 원고 폴더에 MP4와
+`production.json`·`review.md`를 만들고 `media/`에 원본 음성·합성 WAV·자막을 보존합니다.
+장면마다 음성을 PCM으로 디코딩해 말은 한 샘플도 지우지 않고, edge-tts가 문단 앞뒤에
+붙인 무음만 걷어낸 뒤 장면 사이에 1.01초 호흡을 둡니다 — 이 값은 edge-tts가 문장
+사이에 스스로 두는 무음과 같은 박자입니다. 걷어내지 않으면 문단 사이만 1.73초로
+벌어져, 말이 잘린 것이 아닌데도 소리를 껐다 켠 것처럼 들립니다.
+동일한 실측 길이가 화면 전환에도 사용됩니다. 게시 상태·서버 설정은 변경하지 않습니다.
+
 ```text
 기존 웹 앱 API
   → generation·freshness 검증
@@ -100,12 +166,35 @@ journalctl -u polymarket-shorts -n 100 --no-pager
   → 3분 이하 시나리오 구성
   → Edge TTS 음성·VTT 자막
   → Pillow 세로 장면 + FFmpeg 렌더링
-  → MP4·시나리오·메타데이터 저장
-  → 선택적으로 YouTube Data API 업로드
+  → MP4·시나리오·검수 원고 저장
   → 날짜별 상태 기록(하루 중복 방지)
+  → 원고·영상 확인 → 자연어 수정 → 재렌더 → 로컬 검수 완료
 ```
 
 ## 운영상 주의
+
+### 쇼츠 연출과 대본
+
+2026-09-13 기준, 슈카월드·부읽남TV의 공개 쇼츠 목록과 Planet Money 제작진 인터뷰를 참고했습니다.
+국내 두 채널은 구체적인 사건·숫자와 시청자의 질문을 제목에서 연결하고, Planet Money는
+일상적인 말과 사례로 경제 개념을 설명합니다. 공개 제목·조회수와 제작진 설명을 참고한
+편집 판단이며, 영상 전체를 시청해 측정한 유지율 분석이나 성공의 인과관계 검증은 아닙니다.
+
+- [슈카월드 표본](https://tenb.io/yt/channel/@syukaworld): 공개 목록 중 쇼츠 18개. 오해·질문을 앞세우는 제목을 참고했습니다.
+- [부읽남TV 표본](https://tenb.io/yt/channel/@buiknam_tv): 공개 목록 중 쇼츠 19개. 숫자와 시청자의 이해관계를 연결하는 구성을 참고했습니다. 과장된 확신 표현은 채택하지 않았습니다.
+- [Planet Money 제작진 인터뷰](https://www.linkinbio.news/p/lets-talk-about-brands-on-tiktok): 짧은 세로 영상에 맞춘 설명과 독립적인 스토리 구성.
+- [Planet Money의 공개 성과 사례](https://www.nationalpublicmedia.com/insights/articles/planet-money-tiktok-builds-awareness-among-young-audiences/): 2023년 SVB 영상 170만 회 이상 사례. TikTok 사례이며 YouTube 성과와 동일시하지 않습니다.
+
+현재 영상은 질문으로 시작해 선정 분야 안의 거래 비중과 질문 비중을 비교합니다.
+각 분야는 큰 거래량 숫자 → 완결된 설명 문장 순서로 전환합니다. 숫자는 화면에 남기고
+내레이션은 구체적인 주제에 집중합니다. 오래되거나 실패한 요약은 읽지 않습니다.
+저장된 배경만 천천히 움직이며 글자는 고정합니다. 장면 시작은 TTS 자막 시각에 맞추고,
+긴 자막은 구절로 나눕니다(구절 안의 시간은 원래 문장 구간에서 길이 비례로 배분).
+화면 아래쪽 순서는 본문 패널 → 고지문·출처 → 자막이고 자막이 가장 아래입니다.
+자막의 아래 끝은 y=1540 — Shorts 플레이어의 채널명·제목 바(아래 약 380px)에
+가리지 않는 가장 아래입니다. 진행 상태바는 그 자리를 비우려고 헤더의 페이지 번호
+옆(y=677)으로 올라갔습니다.
+MP4 옆의 `.timeline.json`에서 장면과 숫자·해석 화면의 시각을 확인할 수 있습니다.
 
 배경은 `assets/backgrounds/`에 미리 저장한 GPT Image PNG를 재사용합니다.
 복합·공급망 장면은 `global-trade.png`, 나머지 장면은 `financial-city.png`를 사용합니다.
@@ -118,6 +207,5 @@ HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합
 이미 생성한 MP4에는 소급 적용되지 않으며 다음 렌더부터 반영됩니다.
 
 - 1분을 넘는 쇼츠는 활성 저작권 클레임이 있으면 전 세계 차단될 수 있으므로 기본 영상에는 배경음악을 넣지 않습니다.
-- 자동 업로드용 Google API 프로젝트가 미검증 상태라면 API로 올린 영상이 비공개로 제한될 수 있습니다.
-- `output/`, `state/`, OAuth 자격증명은 커밋하지 않습니다.
+- `output/`, `state/`, API 비밀값은 커밋하지 않습니다.
 - 테스트: `.venv/bin/python -m pytest -q`

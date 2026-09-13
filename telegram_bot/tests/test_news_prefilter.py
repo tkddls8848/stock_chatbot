@@ -323,6 +323,18 @@ def test_report_auc_is_undefined_without_both_labels(tmp_path):
     assert report["auc"] is None
 
 
+def test_learning_only_outcome_does_not_mark_event_selected():
+    from unittest.mock import Mock
+
+    service = NewsPrefilter.__new__(NewsPrefilter)
+    service._append_observations = Mock()
+    service._mark_event_translated = Mock()
+    payload = {"type": "outcome", "candidate_id": "sample", "impact": "low"}
+    service._record_outcome_sync(payload, "sample", selected=False)
+    service._append_observations.assert_called_once_with([payload])
+    service._mark_event_translated.assert_not_called()
+
+
 def test_rank_auc_treats_ties_as_random():
     """모델이 없어 점수가 모두 같으면 0.5여야 한다."""
     assert _rank_auc([(1.0, 1), (1.0, 0), (1.0, 1), (1.0, 0)]) == 0.5

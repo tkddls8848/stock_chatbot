@@ -5,32 +5,58 @@ from dataclasses import asdict
 from datetime import date
 import json
 import logging
+from pathlib import Path
 
 from .config import Settings
-from .pipeline import produce_daily
+from .pipeline import produce_daily, produce_editorial
+from .review import ReviewError, read_script
+
+
+_GATES = ("plan", "review", "workflow")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="하루 한 편 Polymarket 컨센서스 쇼츠 제작")
     parser.add_argument("--date", help="제작일 YYYY-MM-DD, 기본값은 한국 날짜")
     parser.add_argument("--force", action="store_true", help="오늘 산출물이 있어도 다시 제작")
-    parser.add_argument("--upload", action="store_true", help="환경 설정과 무관하게 업로드")
-    parser.add_argument("--no-upload", action="store_true", help="환경 설정과 무관하게 업로드 안 함")
+    parser.add_argument("--plan", type=Path, help="정제·검수된 editorial.json을 재요약 없이 영상화")
+    parser.add_argument("--review", type=Path, metavar="DIR", help="산출물 폴더의 검수 원고를 출력")
+    parser.add_argument("--workflow", type=Path, metavar="DIR", help="기존 산출물을 자연어로 검수하고 수정")
+    parser.add_argument("--interactive", action="store_true", help="영상 생성 후 대화형 검수·편집 시작")
     args = parser.parse_args()
-    if args.upload and args.no_upload:
-        parser.error("--upload와 --no-upload는 함께 쓸 수 없습니다")
+    chosen = [name for name in _GATES if getattr(args, name)]
+    if len(chosen) > 1:
+        parser.error("--plan, --review, --workflow는 한 번에 하나만 씁니다")
+    if chosen and (args.date or args.force):
+        parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
+    if args.interactive and chosen and chosen != ["plan"]:
+        parser.error("--interactive는 일일 제작 또는 --plan과 함께 씁니다")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = Settings.from_env()
-    upload = True if args.upload else False if args.no_upload else None
-    result = produce_daily(
-        settings,
-        production_date=date.fromisoformat(args.date) if args.date else None,
-        force=args.force,
-        upload=upload,
-    )
-    print(json.dumps(asdict(result), ensure_ascii=False))
+    try:
+        if args.workflow:
+            from .workflow import interact
+            interact(args.workflow, settings)
+            return
+        if args.review:
+            print(read_script(args.review.resolve()))
+            return
+        if args.plan:
+            payload = asdict(produce_editorial(args.plan.resolve(), settings))
+        else:
+            payload = asdict(produce_daily(
+                settings,
+                production_date=date.fromisoformat(args.date) if args.date else None,
+                force=args.force,
+            ))
+        if args.interactive and payload.get("video_path"):
+            from .workflow import interact
+            interact(Path(payload["video_path"]).parent, settings)
+            return
+    except ReviewError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(json.dumps(payload, ensure_ascii=False))
 
 
 if __name__ == "__main__":
     main()
-

@@ -9,7 +9,7 @@ def test_daily_state_prevents_a_second_production(tmp_path):
     state_file = tmp_path / "state" / "published.json"
     state_file.parent.mkdir(parents=True)
     state_file.write_text(
-        '{"days":{"2026-09-01":{"video_path":"already.mp4","youtube_id":"abc"}}}',
+        '{"days":{"2026-09-01":{"video_path":"already.mp4","review_path":"review.md"}}}',
         encoding="utf-8",
     )
     settings = replace(
@@ -22,4 +22,15 @@ def test_daily_state_prevents_a_second_production(tmp_path):
 
     assert result.status == "already_produced"
     assert result.video_path == "already.mp4"
-    assert result.youtube_id == "abc"
+    assert result.review_path == "review.md"
+
+
+def test_editorial_rejects_missing_sectors_before_generating_audio(tmp_path):
+    import json
+    import pytest
+    from polymarket_shorts.pipeline import produce_editorial
+
+    plan = tmp_path / "editorial.json"
+    plan.write_text(json.dumps({"schema_version": 1, "scenes": []}), encoding="utf-8")
+    with pytest.raises(ValueError, match="5개 분야"):
+        produce_editorial(plan, Settings.from_env())

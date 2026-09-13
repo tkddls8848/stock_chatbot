@@ -21,6 +21,11 @@ class Scene:
     accent: str = "gold"
     bullets: tuple[str, ...] = ()
     visual_query: str = "business strategy presentation"
+    metric: str = ""
+    metric_label: str = ""
+    takeaway: str = ""
+    volume_share: float = 0.0
+    source_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,11 +50,13 @@ class Scenario:
             "source_written_at": self.source_written_at,
             "scenes": [asdict(scene) for scene in self.scenes],
             "narration": self.narration,
+            "lead_label": self.lead_label,
+            "lead_volume": self.lead_volume,
         }
 
 
 def _sentences(text: str) -> list[str]:
-    return [part.strip() for part in re.split(r"(?<=[.!?])\s*", text.strip()) if part.strip()]
+    return [part.strip() for part in re.split(r"(?<=[.!?])\s+|(?<=[.!?])(?=[가-힣A-Z])", text.strip()) if part.strip()]
 
 
 def _clip_at_clause(text: str, limit: int) -> str:
@@ -114,18 +121,22 @@ def _sector_cards(brief: dict[str, Any], maximum: int) -> list[dict[str, Any]]:
 
 
 def _card_summary(group: dict[str, Any], limit: int) -> str:
-    """카드에 실을 '배팅 내용 정리' 한 토막.
-
-    `overview`는 웹이 뽑아 둔 첫 문장(정성 요약)이다. 없으면 단락 첫 문장을
-    쓰고, 그것도 없으면 요약이 준비되지 않았다고 밝힌다 — 지어내지 않는다.
-    """
-    text = str(group.get("overview") or "").strip()
-    if not text:
-        sentences = _sentences(str(group.get("paragraph") or ""))
-        text = sentences[0] if sentences else ""
-    if not text:
-        return "요약을 준비하지 못했습니다."
-    return _end_sentence(to_polite_text(clip_at_sentence(text, limit)))
+    """최신 단락에서 고유명사·수치가 있는 완결된 문장을 우선한다."""
+    if group.get("stale") or group.get("status") != "ok":
+        return "최신 요약을 준비하지 못했습니다. 거래 규모만 확인합니다."
+    sentences = _sentences(str(group.get("paragraph") or group.get("overview") or ""))
+    # A whole, specific sentence beats a truncated generic overview. Preserve decimal values.
+    sentences = [s for s in sentences if len(s) <= max(150, limit) and not s.endswith("…")]
+    if not sentences:
+        return "구체적인 요약을 준비하지 못했습니다."
+    def score(text: str) -> int:
+        concrete = bool(re.search(r"\d+(?:\.\d+)?%", text))
+        named = sum(word in text for word in ("연준", "OPEC", "Hormuz", "호르무즈", "중국", "미국", "OpenAI", "Anthropic"))
+        generic = text.startswith(("전체적으로", "이러한", "주요 이슈 중"))
+        return 4 * concrete + 2 * named + 2 * bool(re.search(r"\d+월", text)) - 3 * generic
+    text = max(sentences, key=score)
+    text = text.replace("Strait of Hormuz", "호르무즈 해협")
+    return _end_sentence(to_polite_text(text))
 
 
 # ── 어조 ────────────────────────────────────────────────
@@ -242,102 +253,80 @@ def build_scenario(
     target_chars: int = 760,
     max_groups: int = 5,
 ) -> Scenario:
-    """다섯 분야를 카드 한 장씩으로 만든다.
-
-    각 카드는 웹의 컨센서스 화면이 보여 주는 것과 같은 셋을 싣는다 —
-    열린 이벤트 건수, 24시간 거래량, 그리고 그 분야의 배팅 내용 요약.
-    """
+    """Question → evidence → interpretation; keep every sector and its source status."""
     groups = _sector_cards(snapshot.brief, max_groups)
     if not groups:
         raise ValueError("영상에 사용할 분야 카드가 없습니다")
-
-    accounting = snapshot.summary.get("accounting") or {}
-    event_count = int(accounting.get("open_event_count") or 0)
-    total_volume = _money(sum(float(g.get("volume24hr") or 0) for g in groups))
-    # 첫 3초가 이탈을 가른다. 분류("오늘의 브리핑입니다")가 아니라 가장 큰
-    # 숫자로 연다 — 어느 분야에 돈이 몰렸는지가 이 영상에서 가장 센 사실이다.
+    total_volume = sum(float(g.get("volume24hr") or 0) for g in groups)
     lead = groups[0]
-    lead_label = str(lead.get("label") or "시장")
+    lead_label = str(lead["label"])
     lead_volume = _money(lead.get("volume24hr"))
+    share = float(lead.get("volume24hr") or 0) / total_volume if total_volume else 0
+    share_text = f"{share:.0%}"
+    total_events = sum(int(g.get("event_count") or 0) for g in groups)
+    event_share = int(lead.get("event_count") or 0) / total_events if total_events else 0
     intro = (
-        f"지난 24시간, {lead_label}에 {lead_volume}가 걸렸습니다. "
-        f"열린 이벤트 {event_count:,}개 가운데 거래가 몰린 분야 {len(groups)}곳을 "
-        "차례로 보겠습니다."
+        f"거래가 많으면, 전망도 확실할까요? "
+        f"{lead_label}는 오늘 다루는 분야 질문의 {event_share:.0%}인데, 거래는 {share_text}입니다."
     )
-    outro = (
-        "숫자가 움직이면 판단도 바뀝니다. 확률은 베팅 가격이 암시하는 값이며 "
-        "사실 확정이나 투자 조언이 아닙니다."
-    )
-    # 카드 한 장의 고정 문구(분야명·건수·거래량·합의 분포)가 대략 60자다.
-    fixed = len(intro) + len(outro) + sum(60 + len(str(g.get("label") or "")) for g in groups)
-    summary_budget = max(55, (target_chars - fixed) // len(groups))
-
-    scenes: list[Scene] = [
-        Scene(
-            kind="intro",
-            title="오늘의 예측시장 컨센서스",
-            kicker=f"TODAY'S BRIEF · {production_date:%Y.%m.%d}",
-            body="분야별로\n건수와 거래량\n그리고 무엇에 걸고 있는지",
-            narration=intro,
-            bullets=(
-                f"24시간 거래량 · {total_volume}",
-                f"열린 이벤트 · {event_count:,}건",
-                f"거래가 몰린 분야 · {lead_label}",
-            ),
-            visual_query="financial market overview skyline",
-        )
-    ]
-    accents = ("gold", "blue", "red")
-    total = len(groups)
+    scenes = [Scene(
+        kind="intro", title="돈이 몰리면\n정답일까요?",
+        kicker=f"MARKET BRIEF / {production_date:%m.%d}",
+        body=f"{lead_label}에 집중된 거래", narration=intro,
+        bullets=(f"24시간 거래량 · {lead_volume}", f"거래 비중 · {share_text}"),
+        metric=share_text, metric_label=f"선정 {len(groups)}개 분야 중 {lead_label} 거래 비중",
+        takeaway=f"질문 비중 {event_share:.0%} / 거래 비중 {share_text}\n관심이 한쪽으로 쏠렸습니다" if share > event_share else "거래 규모와 예측 확률은 다릅니다",
+        volume_share=share, source_note="Polymarket / 24시간 거래량",
+    )]
     for index, group in enumerate(groups):
+        label = str(group["label"])
         key = str(group.get("key") or "")
-        label = str(group.get("label") or "시장")
         count = int(group.get("event_count") or 0)
         volume = _money(group.get("volume24hr"))
-        probability = group.get("probability") or {}
-        strong = int(probability.get("strong") or 0)
-        tight = int(probability.get("tight") or 0)
-        summary = _card_summary(group, summary_budget)
-        scenes.append(
-            Scene(
-                kind="consensus",
-                title=label,
-                kicker=f"SECTOR {index + 1} / {total} · 24H 거래량 순",
-                body=(
-                    f"이벤트 {count:,}건 · 24시간 {volume}\n"
-                    f"강한 합의 {strong} · 경합 {tight}\n{summary}"
-                ),
-                narration=(
-                    f"{label}. 이벤트 {count:,}건에 24시간 거래량 {volume}입니다. "
-                    f"강한 합의 {strong}건, 경합 {tight}건입니다. {summary}"
-                ),
-                accent=accents[index % len(accents)],
-                bullets=(
-                    f"이벤트 · {count:,}건",
-                    f"24시간 거래량 · {volume}",
-                    f"합의 · 강한 {strong}건 / 경합 {tight}건",
-                    f"무엇에 걸고 있나 · {summary}",
-                ),
-                visual_query=_VISUAL_QUERIES.get(key, "business strategy meeting"),
-            )
-        )
-    scenes.append(
-        Scene(
-            kind="outro",
-            title="숫자가 움직이면 판단도 바뀝니다",
-            kicker="WHAT TO WATCH",
-            body="확률의 방향 전환\n거래량이 쏠린 분야\n내일 같은 기준으로 재점검",
-            narration=outro,
-            accent="blue",
-            bullets=("확률의 방향 전환", "거래량이 쏠린 분야", "내일 같은 기준으로 재점검"),
-            visual_query="financial data review desk",
-        )
-    )
+        summary = _card_summary(group, max(90, target_chars // max(1, len(groups))))
+        valid = group.get("status") == "ok" and not group.get("stale")
+        strong = int((group.get("probability") or {}).get("strong") or 0)
+        tight = int((group.get("probability") or {}).get("tight") or 0)
+        if index == 0 and valid and tight:
+            summary = f"하지만 {count}개 질문 중 {tight}개는 경합입니다. " + summary
+        # Domain-specific questions guide attention without asserting a causal forecast.
+        watch = {
+            "macro": "금리의 방향보다\n결정 시점을 확인",
+            "geopolitics": "외교·분쟁 전망은\n최신성부터 확인",
+            "composite": "해상 운송과 원가,\n무엇이 바뀔까?",
+            "equities": "시장 전체와\n개별 기업은 다릅니다",
+            "general": "서로 다른 질문을\n하나로 묶지 않기",
+        }.get(key, "질문별 조건을 확인하세요")
+        if not valid:
+            watch = "요약 갱신 대기\n방향 판단은 보류"
+        scenes.append(Scene(
+            kind="consensus", title=label,
+            kicker=f"{index + 1:02d} / MONEY & MEANING",
+            body=summary, narration=f"{label}. {summary}",
+            accent=("gold", "blue", "red")[index % 3],
+            bullets=(
+                f"이벤트 · {count:,}건",
+                f"24시간 거래량 · {volume}",
+                f"합의 · 강한 {strong}건 / 경합 {tight}건",
+                f"무엇에 걸고 있나 · {summary}",
+            ),
+            visual_query=_VISUAL_QUERIES.get(key, "business strategy meeting"),
+            metric=volume.replace("달러", ""), metric_label="24시간 거래량 / USD",
+            takeaway=watch, volume_share=float(group.get("volume24hr") or 0) / total_volume if total_volume else 0,
+            source_note="최신 요약" if valid else "요약 갱신 대기 / 수치만 표시",
+        ))
+    scenes.append(Scene(
+        kind="outro", title="돈의 크기보다\n질문의 조건",
+        kicker="ONE THING TO REMEMBER",
+        body="거래량은 관심의 크기입니다. 확률은 질문별 가격입니다.",
+        narration="거래량은 관심의 크기이지 정답의 보증이 아닙니다. "
+                  "확률을 볼 땐 질문과 마감일을 함께 확인하세요. 투자 조언은 아닙니다.",
+        accent="blue", bullets=("질문 · 무엇이 일어나야 하나", "기한 · 언제까지인가"),
+        metric="조건", metric_label="확률을 읽기 전에",
+        takeaway="질문 → 마감일 → 확률", source_note="예측시장 가격 / 사실 확정 아님",
+    ))
     return Scenario(
-        date=production_date.isoformat(),
-        generation_id=snapshot.generation_id,
-        lead_label=lead_label,
-        lead_volume=lead_volume,
+        date=production_date.isoformat(), generation_id=snapshot.generation_id,
         source_written_at=str(snapshot.brief.get("written_at") or ""),
-        scenes=tuple(scenes),
+        scenes=tuple(scenes), lead_label=lead_label, lead_volume=lead_volume,
     )

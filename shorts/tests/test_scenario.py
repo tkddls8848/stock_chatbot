@@ -1,7 +1,7 @@
 from datetime import date
 
 from polymarket_shorts.client import Snapshot
-from polymarket_shorts.pipeline import _faster_rate, metadata_for
+from polymarket_shorts.pipeline import metadata_for
 from polymarket_shorts.scenario import build_scenario, clip_at_sentence
 
 
@@ -110,8 +110,8 @@ def test_each_card_carries_the_event_count_and_24h_volume():
     )
 
     card = next(s for s in scenario.scenes if s.kind == "consensus")
-    assert "20건" in card.narration
-    assert "20.6M달러" in card.narration
+    assert any("20건" in b for b in card.bullets)
+    assert card.metric == "20.6M"
     assert any("이벤트" in bullet for bullet in card.bullets)
     assert any("24시간 거래량" in bullet for bullet in card.bullets)
 
@@ -129,8 +129,29 @@ def test_youtube_metadata_has_disclaimer_and_shorts_marker():
     assert len(metadata["title"]) <= 100
 
 
-def test_tts_rate_is_increased_only_as_much_as_needed():
-    assert _faster_rate("-4%", actual=190, target=177) == "+5%"
+def test_specific_sentence_preserves_decimal_and_subject_without_ellipsis():
+    group = _group("composite", "복합", 100, "전체적으로 전망이 분산되어 있다. 호르무즈 해협 정상화 가능성은 20.5%로 낮게 나타난다.")
+    scenario = build_scenario(_snapshot([group]), production_date=date(2026, 9, 1))
+    card = scenario.scenes[1]
+    assert "호르무즈 해협 정상화 가능성은 20.5%" in card.narration
+    assert "…" not in scenario.narration
+    assert "전체적으로" not in card.narration
+
+
+def test_stale_summary_is_not_narrated_but_its_sector_metrics_remain():
+    group = {**_group("macro", "거시", 300, "연준 인하 가능성은 99.9%다."), "stale": True}
+    card = build_scenario(_snapshot([group]), production_date=date(2026, 9, 1)).scenes[1]
+    assert "99.9" not in card.narration
+    assert card.metric == "300"
+    assert "갱신 대기" in card.source_note
+
+
+def test_volume_share_uses_only_selected_sectors_and_handles_zero_volume():
+    scenario = build_scenario(_snapshot([_group("macro", "거시", 300), _group("equities", "주식", 100)]), production_date=date(2026, 9, 1))
+    assert scenario.scenes[0].metric == "75%"
+    assert "선정 2개 분야" in scenario.scenes[0].metric_label
+    zero = build_scenario(_snapshot([_group("macro", "거시", 0)]), production_date=date(2026, 9, 1))
+    assert zero.scenes[0].volume_share == 0
 
 
 def test_long_summaries_are_cut_at_a_clause_not_mid_word():

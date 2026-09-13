@@ -38,7 +38,7 @@ def test_daily_pipeline_passes_saved_backgrounds_without_network_generation(tmp_
 
     monkeypatch.setattr(pipeline, "render_video", render)
     settings = replace(Settings.from_env(), output_dir=tmp_path / "output", state_file=tmp_path / "state.json", visuals_enabled=enabled)
-    pipeline.produce_daily(settings, production_date=date(2026, 9, 12), upload=False)
+    pipeline.produce_daily(settings, production_date=date(2026, 9, 12))
     expected = (ASSET_DIR / "financial-city.png", ASSET_DIR / "global-trade.png") if enabled else (None, None)
     assert captured["background_paths"] == expected
     payload = json.loads((settings.output_dir / "2026-09-12" / "scenario.json").read_text(encoding="utf-8"))

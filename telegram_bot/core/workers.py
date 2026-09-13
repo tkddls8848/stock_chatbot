@@ -11,37 +11,26 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial, wraps
-from itertools import count
-from threading import Lock
 from typing import Any, Callable
 
 from shared.core.config import NON_URGENT_DEFER_TIMEOUT_SECONDS, NON_URGENT_WORKER_COUNT
 
 logger = logging.getLogger(__name__)
 
-_NON_URGENT_EXECUTORS = tuple(
-    ThreadPoolExecutor(
-        max_workers=1,
-        thread_name_prefix=f"non-urgent-{index + 1}",
-    )
-    for index in range(NON_URGENT_WORKER_COUNT)
+_NON_URGENT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=NON_URGENT_WORKER_COUNT,
+    thread_name_prefix="non-urgent",
 )
-_NON_URGENT_EXECUTOR_SEQUENCE = count()
-_NON_URGENT_EXECUTOR_LOCK = Lock()
-
-
-def _next_non_urgent_executor() -> ThreadPoolExecutor:
-    """1→N 순서로 각 단일 스레드 실행기에 작업을 배정한다."""
-    with _NON_URGENT_EXECUTOR_LOCK:
-        index = next(_NON_URGENT_EXECUTOR_SEQUENCE) % len(_NON_URGENT_EXECUTORS)
-    return _NON_URGENT_EXECUTORS[index]
 
 
 async def run_non_urgent(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """비긴급·블로킹 작업을 라운드 로빈 전용 워커에서 실행한다."""
+    """공유 대기열에서 빈 전용 워커가 비긴급·블로킹 작업을 가져간다.
+
+    워커별 대기열에 순번으로 넣으면 외부 API에서 멈춘 작업 뒤의 뉴스 분석도
+    함께 멈춘다. 하나의 대기열을 써서 나머지 워커가 계속 처리하게 한다.
+    """
     call = partial(func, *args, **kwargs)
-    executor = _next_non_urgent_executor()
-    return await asyncio.get_running_loop().run_in_executor(executor, call)
+    return await asyncio.get_running_loop().run_in_executor(_NON_URGENT_EXECUTOR, call)
 
 
 # 고가치 분석은 평시 9% 예산을 넘겨 버스트 크레딧을 쓸 수 있다. 이 상태는

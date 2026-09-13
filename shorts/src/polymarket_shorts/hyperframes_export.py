@@ -51,6 +51,8 @@ def _bullet_map(scene: dict[str, Any]) -> dict[str, str]:
 
 
 def _presentation_narration(scene: dict[str, Any], signal_index: int) -> str:
+    if scene.get("narration"):
+        return str(scene["narration"]).strip()
     kind = str(scene.get("kind") or "")
     if kind != "consensus":
         return str(scene.get("narration") or scene.get("body") or "").strip()
@@ -96,10 +98,12 @@ def parse_vtt(text: str) -> tuple[Cue, ...]:
 def _metric_values(scene: dict[str, Any]) -> tuple[str, str, int, int, int]:
     bullets = _bullet_map(scene)
     evidence = bullets.get("근거", "데이터 집계 중")
-    distribution = bullets.get("분포", "강한 합의 0 / 경합 0")
+    if bullets.get("이벤트"):
+        evidence = f"{bullets['이벤트'].replace('건', '')} EVENT / 24H {bullets.get('24시간 거래량', '-')}"
+    distribution = bullets.get("분포", bullets.get("합의", "강한 합의 0 / 경합 0"))
     event_match = re.search(r"([\d,]+)\s*EVENT", evidence, re.IGNORECASE)
     volume_match = re.search(r"24H\s+([^/]+)$", evidence, re.IGNORECASE)
-    strong_match = re.search(r"강한 합의\s*([\d,]+)", distribution)
+    strong_match = re.search(r"강한(?: 합의)?\s*([\d,]+)", distribution)
     contested_match = re.search(r"경합\s*([\d,]+)", distribution)
     event_count = int(event_match.group(1).replace(",", "")) if event_match else 0
     strong = int(strong_match.group(1).replace(",", "")) if strong_match else 0
@@ -133,7 +137,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
           <div class="intro-lockup">
             <p class="eyebrow reveal">{kicker}</p>
             <h1 class="hero-title reveal">{title}</h1>
-            <div class="hero-stat reveal"><strong>22,898</strong><span>OPEN EVENTS</span></div>
+            <div class="hero-stat reveal"><strong>{html.escape(str(scene.get('metric') or 'CHECK'))}</strong><span>{html.escape(str(scene.get('metric_label') or 'MARKET NOTES'))}</span></div>
             <div class="chip-row">{body}</div>
           </div>"""
     elif kind == "outro":
@@ -161,7 +165,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
             </div>
             <div class="decision reveal">
               <span>판단</span>
-              <p>{html.escape(bullets.get('판단', '시장 기대를 점검하십시오'))}</p>
+              <p>{html.escape(str(scene.get('body') or bullets.get('판단', '시장 기대를 점검하십시오')))}</p>
             </div>
             <div class="metric-grid">
               <div class="metric reveal"><span>분석 표본</span><strong>{events_text}</strong><em>EVENT</em></div>
@@ -171,7 +175,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
               <div class="bar-row"><span>강한 합의</span><div class="bar"><i style="--bar:{strong_width}%"></i></div><strong>{strong}</strong></div>
               <div class="bar-row"><span>경합</span><div class="bar"><i style="--bar:{contested_width}%"></i></div><strong>{contested}</strong></div>
             </div>
-            <div class="action reveal"><span>EXECUTIVE CHECK</span><p>{html.escape(bullets.get('체크', '변화가 사업 가정에 미치는 영향을 확인하십시오'))}</p></div>
+            <div class="action reveal"><span>CHECK</span><p>{html.escape(str(scene.get('takeaway') or bullets.get('체크', '질문별 조건을 확인하십시오')))}</p></div>
           </div>"""
 
     return f"""
@@ -357,7 +361,8 @@ def export_project(
             voice=voice or settings.tts_voice,
             rate=rate or settings.tts_rate,
         )
-        duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin)
+        # 다음 장면의 진입 전에 말끝과 화면 퇴장 애니메이션을 위한 여유를 둔다.
+        duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin) + 0.6
         cues = parse_vtt(subtitle_path.read_text(encoding="utf-8-sig"))
         timed_scenes.append(
             TimedScene(
@@ -368,11 +373,6 @@ def export_project(
             )
         )
         cursor += duration
-
-    if cursor > settings.max_duration_seconds:
-        raise ValueError(
-            f"HyperFrames 내레이션이 {cursor:.1f}초로 제한 {settings.max_duration_seconds:.1f}초를 초과합니다"
-        )
 
     (project_dir / "index.html").write_text(
         _index_html(scenario, timed_scenes, cursor), encoding="utf-8"

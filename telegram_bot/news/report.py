@@ -338,6 +338,20 @@ async def _log_highlights(
         except Exception as e:
             logger.error("[NEWS REPORT] %s 근거 로그 기록 실패: %s", market, e)
 
+    # 미선정 표본은 학습에만 쓴다. 사용자 뉴스·예측 로그나 사건 재탕 차단에 넣지 않는다.
+    if prefilter is not None:
+        for evaluation in result.get("evaluations", []):
+            item = items[evaluation["index"]]
+            candidate_id = str(item.get("prefilter_candidate_id") or "")
+            if candidate_id:
+                try:
+                    await prefilter.record_outcome(
+                        candidate_id=candidate_id, impact=evaluation["impact"],
+                        sentiment=None, selected=False,
+                    )
+                except Exception as exc:
+                    logger.error("[NEWS REPORT] %s 학습 평가 저장 실패: %s", market, exc)
+
 
 async def _send_sections(
     bot: Bot,

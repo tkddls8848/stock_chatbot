@@ -5,6 +5,7 @@
 - market: 시장 코드(CN, HK, US, KR 등)
 - window: 보고서가 다루는 UTC +9 시간 구간
 - articles: [{index, title, source, published_at}]
+- evaluation_indexes: 서버가 무작위로 선정한 학습용 기사 index(최대 10개)
 
 analysis 작성 규칙:
 - 한국어 평문으로 400~500자로 쓴다. 마크다운, 글머리 기호, JSON을 쓰지 않는다.
@@ -34,9 +35,16 @@ highlights 작성 규칙:
   숫자로 쓰지 않는다(600519가 아니라 "600519"). 앞자리 0을 지우지 않는다.
   해당 종목이 없으면 빈 배열 []로 둔다.
 
+evaluations 작성 규칙:
+- evaluation_indexes 중 highlights에 선정되지 않은 기사만 각각 {"index":정수,"impact":"high 또는 medium 또는 low"}로 평가한다.
+- 보고서 선정 여부와 독립적으로 제목의 시장·기업 영향도를 판단한다. 빠졌다는 이유로 low를 붙이지 않는다.
+- high는 중대한 정책·실적·사업 변화, medium은 구체적이지만 제한적인 영향, low는 시장 관련성이 약하거나 실질적 변화 정보가 적은 경우다. highlights에도 같은 기준을 쓴다.
+- 제목만으로 평가할 수 없으면 해당 항목을 생략한다. 양성·음성 비율을 억지로 맞추지 않는다.
+- 학습 표본을 채우기 위해 highlights에 기사를 추가하지 않는다. evaluations는 사용자에게 표시되지 않는다.
+
 출력 규칙:
 - 설명이나 코드블록 없이 아래 형식의 JSON 객체 하나만 출력한다.
 - 문자열 안에서 큰따옴표는 \"로 escape하고 줄바꿈을 넣지 않는다. 따옴표가
   필요하면 한글 따옴표 「」를 쓴다.
 
-{"analysis":"400~500자 한국어 시장상황 분석","highlights":[{"index":0,"title":"한국어 제목","sentiment":0.4,"impact":"medium","mentioned_stocks":["600519"]}]}
+{"analysis":"400~500자 한국어 시장상황 분석","highlights":[{"index":0,"title":"한국어 제목","sentiment":0.4,"impact":"medium","mentioned_stocks":["600519"]}],"evaluations":[]}

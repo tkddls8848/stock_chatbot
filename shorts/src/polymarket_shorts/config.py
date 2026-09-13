@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
+import math
 from pathlib import Path
 import shutil
 from zoneinfo import ZoneInfo
@@ -57,21 +58,20 @@ class Settings:
     ffmpeg_bin: str
     ffprobe_bin: str
     visuals_enabled: bool
-    upload_enabled: bool
-    youtube_privacy: str
-    youtube_client_secret_file: Path
-    youtube_token_file: Path
+    editor_account_id: str = ""
+    editor_api_token: str = field(default="", repr=False)
+    editor_model: str = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
     @classmethod
     def from_env(cls) -> "Settings":
-        privacy = os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip()
-        if privacy not in {"private", "unlisted", "public"}:
-            raise ValueError("SHORTS_YOUTUBE_PRIVACY must be private, unlisted, or public")
-        maximum = float(os.getenv("SHORTS_MAX_DURATION_SECONDS", "119"))
-        if not 30 <= maximum <= 119:
-            raise ValueError("SHORTS_MAX_DURATION_SECONDS must be between 30 and 119")
+        maximum = float(os.getenv("SHORTS_MAX_DURATION_SECONDS", "180"))
+        if not math.isfinite(maximum) or maximum <= 0:
+            raise ValueError("SHORTS_MAX_DURATION_SECONDS must be finite and positive")
         font = os.getenv("SHORTS_FONT_FILE", "").strip()
         return cls(
+            editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
+            editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
+            editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast").strip(),
             web_url=os.getenv("POLYMARKET_WEB_URL", "https://nunchi.live").rstrip("/"),
             timezone=ZoneInfo(os.getenv("SHORTS_TIMEZONE", "Asia/Seoul")),
             output_dir=PROJECT_DIR / "output",
@@ -80,17 +80,9 @@ class Settings:
             target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "760"))),
             max_groups=max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5"))),
             tts_voice=os.getenv("SHORTS_TTS_VOICE", "ko-KR-SunHiNeural"),
-            tts_rate=os.getenv("SHORTS_TTS_RATE", "-4%"),
+            tts_rate=os.getenv("SHORTS_TTS_RATE", "+0%"),
             font_file=Path(font) if font else None,
             ffmpeg_bin=_media_binary("FFMPEG_BIN", "ffmpeg"),
             ffprobe_bin=_media_binary("FFPROBE_BIN", "ffprobe"),
             visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),
-            upload_enabled=_bool("SHORTS_UPLOAD_ENABLED"),
-            youtube_privacy=privacy,
-            youtube_client_secret_file=PROJECT_DIR / os.getenv(
-                "YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json"
-            ),
-            youtube_token_file=PROJECT_DIR / os.getenv(
-                "YOUTUBE_TOKEN_FILE", "youtube_token.json"
-            ),
         )

@@ -190,7 +190,13 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   탐색 슬롯(`NEWS_PREFILTER_EXPLORATION_SLOTS`)으로만 측정된다. 이 한계는
   `telegram_bot/features/news_prefilter/service.py`의 `SHADOW_CAVEATS`에 적어
   두었고 지운 채로 승격하지 않는다.
-- **사전선별의 라벨 공급원은 3시간 보고서 하나뿐이다.** 보고서가 고른
+- **사전선별의 라벨 공급원은 3시간 보고서 하나뿐이다.** 보고서 입력에서 시장별
+  최대 10건을 무작위 표본으로 지정한다. 주요 기사와 겹치지 않는 표본은 같은
+  호출의 `evaluations`에서 중요도만 평가해 학습에 쓴다. 미평가는 음성이 아니다.
+  표본은 사용자 표시·NewsLog·PredictionLog·사건 재탕 차단에 넣지 않는다.
+  추가 요청은 없지만 출력 토큰 비용은 늘 수 있으며 기존 출력 상한은 유지한다.
+  표본도 최신순 보고서 후보 안에 있으므로 shadow의 선택 편향을 해소하지는 않는다.
+  보고서가 고른
   `highlights`의 `impact`를 `news/report.py`의 `_log_highlights`가
   `record_outcome`으로 되먹인다. 보고서가 이미 만든 값이라 **추가 LLM 호출이
   없다.** 사전선별은 제목만 보고 추측하므로 기사를 실제로 읽고 판정하는
@@ -200,7 +206,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   라벨 0건으로 돌았다(2026-08-30 ~ 09-12). 그래서 둘을 두었다 —
   `test_news_report.py`가 이 호출을 고정하고, `/system prefilter`는 라벨 0건을
   "아직 덜 모임"과 구분해 원인을 짚어 준다.
-  **보고서에 오른 기사에만 라벨이 붙는다.** 사전선별이 새로 끌어올렸을 기사의
+  **보고서 근거와 입력 안의 평가 표본에만 라벨이 붙는다.** 사전선별이 새로 끌어올렸을 기사의
   impact는 여전히 관측되지 않으므로, 그 능력은 `active`의 탐색 슬롯으로만
   측정된다. 승격 판단에서 이 한계를 빼놓지 않는다.
 - **관측 파일은 두 정책이 고르는 기사와 탐색분만 남긴다.** 후보 250건을 전부

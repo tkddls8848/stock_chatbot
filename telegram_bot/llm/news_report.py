@@ -6,6 +6,7 @@
 
 import json
 import logging
+import random
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +61,11 @@ class NewsReportAnalyzer:
         if not headlines:
             raise NewsReportError("no headlines to analyze")
 
-        payload = {"market": market, "window": window, "articles": headlines}
+        sample_indexes = random.sample(
+            [item["index"] for item in headlines], min(10, len(headlines))
+        )
+        payload = {"market": market, "window": window, "articles": headlines,
+                   "evaluation_indexes": sample_indexes}
         user_prompt = json.dumps(payload, ensure_ascii=False)
         valid_indexes = {item["index"] for item in headlines}
         limit = self._highlight_limit(len(headlines))
@@ -86,9 +91,13 @@ class NewsReportAnalyzer:
             try:
                 if not raw.strip():
                     raise NewsReportError("empty news report response content")
-                return self._parse(
+                result = self._parse(
                     raw, valid_indexes=valid_indexes, limit=limit, salvage=last
                 )
+                result["evaluations"] = [
+                    row for row in result["evaluations"] if row["index"] in sample_indexes
+                ]
+                return result
             except NewsReportError:
                 if last:
                     raise
@@ -155,7 +164,22 @@ class NewsReportAnalyzer:
             # 본문도 없고 근거도 다 버렸으면 남길 것이 없다. 빈 섹션보다
             # 원문 제목 나열(format_market_section의 fallback)이 낫다.
             raise NewsReportError("news report has neither analysis nor highlights")
-        return {"analysis": analysis.strip(), "highlights": parsed}
+        # 학습용 부가 응답 실패로 사용자 보고서를 재요청하지 않는다.
+        evaluations = []
+        evaluation_seen = {row["index"] for row in parsed}
+        rows = data.get("evaluations", [])
+        if isinstance(rows, list):
+            for row in rows[:10]:
+                if not isinstance(row, dict):
+                    continue
+                index, impact = row.get("index"), row.get("impact")
+                if (type(index) is not int or index not in valid_indexes
+                        or index in evaluation_seen or impact not in ("high", "medium", "low")):
+                    continue
+                evaluation_seen.add(index)
+                evaluations.append({"index": index, "impact": impact})
+        logger.info("[NEWS REPORT] 학습용 추가 평가 %d건", len(evaluations))
+        return {"analysis": analysis.strip(), "highlights": parsed, "evaluations": evaluations}
 
     @staticmethod
     def _parse_highlight(

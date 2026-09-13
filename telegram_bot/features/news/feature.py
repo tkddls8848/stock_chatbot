@@ -66,6 +66,8 @@ def _install_jobs(scheduler, app) -> None:
         minutes=NEWS_COLLECTION_INTERVAL_MINUTES,
         args=[app],
         next_run_time=now(),
+        # Telegram 초기 연결이 몇 초 걸려도 첫 수집을 한 시간 뒤로 넘기지 않는다.
+        misfire_grace_time=60,
         id="news_collection",
         max_instances=1,
         coalesce=True,
