@@ -11,7 +11,7 @@ from typing import Any
 
 from .config import PROJECT_DIR, Settings
 from .media import background_for
-from .render import probe_duration
+from .render import _narration_durations, probe_duration
 from .tts import synthesize
 
 
@@ -26,7 +26,6 @@ class Cue:
 class TimedScene:
     start: float
     duration: float
-    audio_file: str
     cues: tuple[Cue, ...]
 
 
@@ -208,18 +207,18 @@ def _caption_html(timed_scenes: list[TimedScene]) -> str:
 
 
 def _index_html(
-    scenario: dict[str, Any], timed_scenes: list[TimedScene], total_duration: float
+    scenario: dict[str, Any], timed_scenes: list[TimedScene], total_duration: float,
+    audio_file: str = "assets/narration.mp3",
 ) -> str:
     scenes = scenario.get("scenes") or []
     scene_markup = "\n".join(
         _scene_html(scene, timed_scenes[index], index + 1, len(scenes))
         for index, scene in enumerate(scenes)
     )
-    audio_markup = "\n".join(
-        f'<audio id="voice-{index}" src="{html.escape(timed.audio_file)}" '
-        f'data-start="{timed.start:.3f}" data-duration="{timed.duration:.3f}" '
-        f'data-track-index="20" data-volume="1" preload="auto"></audio>'
-        for index, timed in enumerate(timed_scenes, start=1)
+    audio_markup = (
+        f'<audio id="narration" src="{html.escape(audio_file)}" data-start="0" '
+        f'data-duration="{total_duration:.3f}" data-track-index="20" '
+        'data-volume="1" preload="auto"></audio>'
     )
     scene_specs = json.dumps(
         [
@@ -336,8 +335,8 @@ def export_project(
     assets_dir = project_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     timed_scenes: list[TimedScene] = []
-    cursor = 0.0
     signal_index = 0
+    narrations: list[str] = []
     for index, scene in enumerate(scenes, start=1):
         scene.pop("background_asset", None)
         background = (
@@ -351,24 +350,38 @@ def export_project(
             scene["background_asset"] = f"assets/{background.name}"
         if str(scene.get("kind") or "") == "consensus":
             signal_index += 1
-        narration = _presentation_narration(scene, signal_index)
-        audio_path = assets_dir / f"voice-{index:02d}.mp3"
-        subtitle_path = assets_dir / f"voice-{index:02d}.vtt"
-        synthesize(
-            narration,
-            audio_path=audio_path,
-            subtitle_path=subtitle_path,
-            voice=voice or settings.tts_voice,
-            rate=rate or settings.tts_rate,
+        narrations.append(_presentation_narration(scene, signal_index))
+
+    audio_path = assets_dir / "narration.mp3"
+    subtitle_path = assets_dir / "captions.vtt"
+    synthesize(
+        "\n".join(narrations),
+        audio_path=audio_path,
+        subtitle_path=subtitle_path,
+        voice=voice or settings.tts_voice,
+        rate=rate or settings.tts_rate,
+    )
+    total_duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin) + 0.6
+    all_cues = parse_vtt(subtitle_path.read_text(encoding="utf-8-sig"))
+    durations = _narration_durations(
+        narrations, [(cue.start, cue.end, cue.text) for cue in all_cues], total_duration,
+    )
+    cursor = 0.0
+    for duration in durations:
+        scene_end = cursor + duration
+        cues = tuple(
+            Cue(
+                start=max(0.0, cue.start - cursor),
+                end=min(duration, cue.end - cursor),
+                text=cue.text,
+            )
+            for cue in all_cues
+            if cursor <= cue.start < scene_end
         )
-        # 다음 장면의 진입 전에 말끝과 화면 퇴장 애니메이션을 위한 여유를 둔다.
-        duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin) + 0.6
-        cues = parse_vtt(subtitle_path.read_text(encoding="utf-8-sig"))
         timed_scenes.append(
             TimedScene(
                 start=cursor,
                 duration=duration,
-                audio_file=f"assets/{audio_path.name}",
                 cues=cues,
             )
         )
@@ -384,11 +397,12 @@ def export_project(
         "duration_seconds": round(cursor, 3),
         "voice": voice or settings.tts_voice,
         "rate": rate or settings.tts_rate,
+        "synthesis": "continuous",
+        "audio": f"assets/{audio_path.name}",
         "scenes": [
             {
                 "start": round(timed.start, 3),
                 "duration": round(timed.duration, 3),
-                "audio": timed.audio_file,
                 "background": scenes[index].get("background_asset"),
             }
             for index, timed in enumerate(timed_scenes)

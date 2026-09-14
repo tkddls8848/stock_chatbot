@@ -52,13 +52,14 @@ def test_vtt_and_vertical_composition_are_generated():
     }
     markup = _index_html(
         scenario,
-        [TimedScene(0, 3, "assets/voice-01.mp3", cues)],
+        [TimedScene(0, 3, cues)],
         3,
     )
 
     assert 'data-width="1080"' in markup
     assert 'data-height="1920"' in markup
-    assert 'src="assets/voice-01.mp3"' in markup
+    assert 'id="narration"' in markup
+    assert 'src="assets/narration.mp3"' in markup
     assert "첫 문장" in markup
     assert 'window.__timelines["main"]' in markup
 
@@ -81,3 +82,35 @@ def test_export_copies_reusable_background_and_records_portable_path(tmp_path, m
     assert (project / "assets" / "financial-city.png").exists() == enabled
     assert manifest["scenes"][0]["background"] == ("assets/financial-city.png" if enabled else None)
     assert ('src="assets/financial-city.png"' in markup) == enabled
+    assert manifest["synthesis"] == "continuous"
+    assert manifest["audio"] == "assets/narration.mp3"
+
+
+def test_export_synthesizes_all_scenes_as_one_audio_file(tmp_path, monkeypatch):
+    source = tmp_path / "scenario.json"
+    source.write_text(json.dumps({"scenes": [
+        {"kind": "intro", "title": "도입", "narration": "첫 문장입니다."},
+        {"kind": "outro", "title": "마무리", "narration": "마지막 문장입니다."},
+    ]}), encoding="utf-8")
+    calls = []
+
+    def synthesize(text, *, audio_path, subtitle_path, **kwargs):
+        calls.append((text, audio_path.name, subtitle_path.name))
+        audio_path.touch()
+        subtitle_path.write_text(
+            "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n첫 문장입니다.\n\n"
+            "00:00:01.000 --> 00:00:02.000\n마지막 문장입니다.\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(hyperframes_export, "synthesize", synthesize)
+    monkeypatch.setattr(hyperframes_export, "probe_duration", lambda *a, **kw: 2.0)
+    project = tmp_path / "project"
+
+    manifest = hyperframes_export.export_project(
+        source, project, settings=replace(Settings.from_env(), visuals_enabled=False),
+    )
+
+    assert calls == [("첫 문장입니다.\n마지막 문장입니다.", "narration.mp3", "captions.vtt")]
+    assert [scene["start"] for scene in manifest["scenes"]] == [0.0, 1.0]
+    assert (project / "index.html").read_text(encoding="utf-8").count("<audio ") == 1

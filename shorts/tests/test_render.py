@@ -88,9 +88,13 @@ def test_scene_cuts_follow_tts_cues_not_text_length():
     scenes = (Scene("intro", "질문", "", "", "거래가 많으면 확실할까요?"), Scene("consensus", "거시", "", "", "거시. 연준의 결정을 봅니다."))
     scenario = Scenario("2026-09-13", "g1", "", scenes)
     rows = [(0.1, 3.0, scenes[0].narration), (5.5, 6.0, "거시."), (6.0, 10.0, "연준의 결정을 봅니다.")]
-    assert render._scene_durations(scenario, rows, 10.0) == [5.5, 4.5]
+    assert render._narration_durations(
+        [scene.narration for scene in scenario.scenes], rows, 10.0,
+    ) == [5.5, 4.5]
     with pytest.raises(render.RenderError, match="맞출 수"):
-        render._scene_durations(scenario, rows[:1], 10.0)
+        render._narration_durations(
+            [scene.narration for scene in scenario.scenes], rows[:1], 10.0,
+        )
 
 
 def test_short_captions_preserve_text_and_cue_interval(tmp_path):
@@ -118,7 +122,9 @@ def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path)
 
     with Image.open(target) as image:
         pixels = image.convert("RGBA").load()
-        accent = lambda y: sum(pixels[x, y][:3] == (212, 168, 79) for x in range(72, 879))
+        def accent(y):
+            return sum(pixels[x, y][:3] == (212, 168, 79) for x in range(72, 879))
+
         assert accent(PROGRESS_Y + 2) > 200   # 진행바가 새 자리에 있다
         assert accent(1582) == 0              # 예전 자리에는 없다
         assert accent(SAFE_BOTTOM - 10) == 0  # 자막이 들어갈 띠는 비어 있다

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from polymarket_shorts import review, workflow
+from polymarket_shorts import llm, review, workflow
 from polymarket_shorts.config import Settings
 from polymarket_shorts.scenario import Scenario, Scene
 
@@ -123,10 +123,34 @@ def test_truncated_llm_response_is_not_retried(draft, monkeypatch):
             pass
         def json(self):
             return {"choices": [{"finish_reason": "length", "message": {"content": "{"}}]}
-    monkeypatch.setattr(workflow.requests, "post", lambda *a, **kw: calls.append(kw) or Response())
+    monkeypatch.setattr(llm.requests, "post", lambda *a, **kw: calls.append(kw) or Response())
     with pytest.raises(review.ReviewError, match="완결되지"):
         workflow.request_edit(scenario, metadata, "쉽게", settings)
     assert len(calls) == 1
+
+
+def test_edit_prompt_names_the_current_scene_order(draft, monkeypatch):
+    _, scenario, metadata, settings = draft
+    settings = replace(settings, editor_account_id="account", editor_api_token="secret")
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(patch())}}]}
+
+    def post(*args, **kwargs):
+        captured.update(kwargs["json"])
+        return Response()
+
+    monkeypatch.setattr(llm.requests, "post", post)
+    workflow.request_edit(scenario, metadata, "두 번째 장면을 쉽게", settings)
+
+    system_prompt = captured["messages"][0]["content"]
+    assert "장면 번호는 [1, 2, 3]" in system_prompt
+    assert "scene_order는 반드시 [1, 2, 3]" in system_prompt
 
 
 
@@ -137,22 +161,27 @@ def test_revision_renderer_uses_edited_script_and_persists_preview(draft, monkey
     from polymarket_shorts import pipeline
     root, scenario, metadata, settings = draft
     settings = replace(settings, visuals_enabled=False)
-    def audio(texts, **kwargs):
-        assert texts == [scene.narration for scene in scenario.scenes]
-        return root / "audio.wav", root / "subtitles.vtt", (10, 10, 10)
+    def audio(text, *, audio_path, subtitle_path, **kwargs):
+        assert text == scenario.narration
+        assert audio_path.name == "narration.mp3"
+        assert subtitle_path.name == "captions.vtt"
+        audio_path.write_bytes(b"continuous-audio")
+        subtitle_path.write_text("captions", encoding="utf-8")
     def render(actual, **kwargs):
         assert actual == scenario
-        assert kwargs["audio_scene_durations"] == (10, 10, 10)
+        assert "audio_scene_durations" not in kwargs
         kwargs["output_path"].write_bytes(b"rendered")
         return 30.0
-    monkeypatch.setattr(pipeline, "synthesize_sections", audio)
+    monkeypatch.setattr(pipeline, "synthesize", audio)
     monkeypatch.setattr(pipeline, "find_font", lambda *a: root / "font.ttf")
     monkeypatch.setattr(pipeline, "render_video", render)
     target = root / "rendered"
     result = pipeline.produce_revision(scenario, metadata, target, settings)
     assert result.status == "pending_review"
     assert metadata["title"] in review.read_script(target)
-    assert json.loads((target / "production.json").read_text(encoding="utf-8"))["rate"] == settings.tts_rate
+    production = json.loads((target / "production.json").read_text(encoding="utf-8"))
+    assert production["rate"] == settings.tts_rate
+    assert production["synthesis"] == "continuous"
 
 
 def test_conversation_edits_and_completes_local_review(draft, monkeypatch, capsys):

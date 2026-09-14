@@ -10,11 +10,13 @@ from typing import Any
 
 from .client import PolymarketWebClient
 from .config import Settings
+from .highlights import HighlightError, Highlights, pick_highlights
+from .llm import LLMError
 from .media import background_for
 from .render import find_font, probe_duration, render_video
 from .review import write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
-from .tts import SCENE_PAUSE_SECONDS, synthesize, synthesize_sections
+from .tts import synthesize
 
 
 logger = logging.getLogger(__name__)
@@ -48,15 +50,37 @@ def produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
     return result
 
 
+def _issue_picker(settings: Settings):
+    """분야 문단에서 오늘의 이슈를 뽑아 온다. 실패하면 문단 요약으로 만든다.
+
+    자격증명이 없거나 모델이 지어낸 수치를 돌려준 날에도 영상은 나와야 한다 —
+    그날치 제작을 통째로 멈추는 것보다 총론 요약 하루가 낫다.
+    """
+    def pick(groups: list[dict[str, Any]]) -> Highlights | None:
+        if not groups:
+            return None
+        try:
+            return pick_highlights(
+                groups, settings, target_chars=settings.target_script_chars,
+            )
+        except (HighlightError, LLMError) as exc:
+            logger.warning("이슈 선별에 실패해 문단 요약으로 대체합니다: %s", exc)
+            return None
+    return pick
+
+
 def produce_revision(
     scenario: Scenario, metadata: dict[str, Any], target: Path, settings: Settings,
 ) -> ProductionResult:
-    """고정된 시나리오를 장면별 음성과 함께 렌더하고 새 검수를 요구한다."""
+    """고정된 시나리오를 하나의 연속 음성으로 렌더하고 새 검수를 요구한다."""
     work = target / "media"
     work.mkdir(parents=True, exist_ok=True)
-    audio, subtitles, timings = synthesize_sections(
-        [scene.narration for scene in scenario.scenes], work_dir=work,
-        voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
+    # 편집 단위는 장면으로 유지하지만 최종 음성은 전체 원고를 한 번에 합성한다.
+    # 장면별 TTS를 잘라 이어 붙이면 경계마다 음색과 호흡이 다시 시작된다.
+    audio, subtitles = work / "narration.mp3", work / "captions.vtt"
+    synthesize(
+        scenario.narration, audio_path=audio, subtitle_path=subtitles,
+        voice=settings.tts_voice, rate=settings.tts_rate,
     )
     backgrounds = tuple(
         background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
@@ -68,7 +92,6 @@ def produce_revision(
         work_dir=work, font_path=find_font(settings.font_file),
         ffmpeg_bin=settings.ffmpeg_bin, ffprobe_bin=settings.ffprobe_bin,
         max_duration=settings.max_duration_seconds, background_paths=backgrounds,
-        audio_scene_durations=timings,
     )
     script = write_review(
         target, scenario=scenario, metadata=metadata, video=video,
@@ -78,8 +101,7 @@ def produce_revision(
     write_json(target / "production.json", {
         "title": metadata["title"], "generation_id": scenario.generation_id,
         "duration_seconds": duration, "voice": settings.tts_voice, "rate": settings.tts_rate,
-        "scene_audio_seconds_including_pause": timings,
-        "pause_seconds": SCENE_PAUSE_SECONDS,
+        "synthesis": "continuous",
         "audio": str(audio), "subtitles": str(subtitles), "video": str(video),
     })
     return ProductionResult(
@@ -158,6 +180,7 @@ def produce_daily(
         production_date=today,
         target_chars=settings.target_script_chars,
         max_groups=settings.max_groups,
+        picker=_issue_picker(settings),
     )
     day_dir = settings.output_dir / day
     day_dir.mkdir(parents=True, exist_ok=True)

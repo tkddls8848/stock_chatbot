@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from .client import Snapshot
+
+if TYPE_CHECKING:  # highlights가 이 모듈을 읽는다. 실행 시점에 되부르지 않는다.
+    from .highlights import Highlights
 
 
 _GROUP_PRIORITY = {"composite": 0, "macro": 1, "equities": 2, "geopolitics": 3, "general": 4}
@@ -120,6 +123,17 @@ def _sector_cards(brief: dict[str, Any], maximum: int) -> list[dict[str, Any]]:
     return cards[:maximum]
 
 
+# TTS가 읽을 수 있게 옮기는 고유명사. 화면의 영문 그대로는 "스트레이트 오브
+# 호르무즈"도 아닌 소리로 읽힌다. 문단이 쓰는 표기만 여기 담는다.
+_LOCALIZED = {"Strait of Hormuz": "호르무즈 해협"}
+
+
+def localize(text: str) -> str:
+    for foreign, korean in _LOCALIZED.items():
+        text = text.replace(foreign, korean)
+    return text
+
+
 def _card_summary(group: dict[str, Any], limit: int) -> str:
     """최신 단락에서 고유명사·수치가 있는 완결된 문장을 우선한다."""
     if group.get("stale") or group.get("status") != "ok":
@@ -134,9 +148,8 @@ def _card_summary(group: dict[str, Any], limit: int) -> str:
         named = sum(word in text for word in ("연준", "OPEC", "Hormuz", "호르무즈", "중국", "미국", "OpenAI", "Anthropic"))
         generic = text.startswith(("전체적으로", "이러한", "주요 이슈 중"))
         return 4 * concrete + 2 * named + 2 * bool(re.search(r"\d+월", text)) - 3 * generic
-    text = max(sentences, key=score)
-    text = text.replace("Strait of Hormuz", "호르무즈 해협")
-    return _end_sentence(to_polite_text(text))
+    text = localize(max(sentences, key=score))
+    return end_sentence(to_polite_text(text))
 
 
 # ── 어조 ────────────────────────────────────────────────
@@ -189,7 +202,7 @@ def to_polite(sentence: str) -> str:
     return f"{stem}{_with_jongseong(prev, _JONG_B)}니다{tail}"
 
 
-def _end_sentence(text: str) -> str:
+def end_sentence(text: str) -> str:
     """문장을 마침표로 닫는다. 이미 구두점으로 끝났으면 그대로 둔다.
 
     근거와 체크포인트 사이에 마침표가 없으면 TTS가 한 문장으로 읽어
@@ -246,17 +259,29 @@ def _specific_evidence(paragraph: str, limit: int) -> str:
     return clip_at_sentence(" ".join(candidates[:2]), limit).rstrip(".")
 
 
+def _has_summary(group: dict[str, Any]) -> bool:
+    """이 분야의 문단을 말로 옮겨도 되는가. 갱신 대기·실패는 수치만 쓴다."""
+    return group.get("status") == "ok" and not group.get("stale")
+
+
 def build_scenario(
     snapshot: Snapshot,
     *,
     production_date: date,
     target_chars: int = 760,
     max_groups: int = 5,
+    picker: Callable[[list[dict[str, Any]]], "Highlights | None"] | None = None,
 ) -> Scenario:
-    """Question → evidence → interpretation; keep every sector and its source status."""
+    """Question → evidence → interpretation; keep every sector and its source status.
+
+    `picker`는 분야 문단에서 시청자가 궁금해할 이슈를 뽑아 온다(`highlights.py`).
+    없거나 None을 돌려주면 문단에서 문장 하나를 고르는 기존 요약으로 만든다.
+    """
     groups = _sector_cards(snapshot.brief, max_groups)
     if not groups:
         raise ValueError("영상에 사용할 분야 카드가 없습니다")
+    chosen = picker([g for g in groups if _has_summary(g)]) if picker else None
+    picks = chosen.picks if chosen else {}
     total_volume = sum(float(g.get("volume24hr") or 0) for g in groups)
     lead = groups[0]
     lead_label = str(lead["label"])
@@ -265,12 +290,14 @@ def build_scenario(
     share_text = f"{share:.0%}"
     total_events = sum(int(g.get("event_count") or 0) for g in groups)
     event_share = int(lead.get("event_count") or 0) / total_events if total_events else 0
+    # 훅은 오늘 실제로 나온 이슈 하나다. 없을 때만 일반적인 질문으로 연다.
+    opening = chosen.hook if chosen else "거래가 많으면, 전망도 확실할까요?"
     intro = (
-        f"거래가 많으면, 전망도 확실할까요? "
+        f"{opening} "
         f"{lead_label}는 오늘 다루는 분야 질문의 {event_share:.0%}인데, 거래는 {share_text}입니다."
     )
     scenes = [Scene(
-        kind="intro", title="돈이 몰리면\n정답일까요?",
+        kind="intro", title=opening if chosen else "돈이 몰리면\n정답일까요?",
         kicker=f"MARKET BRIEF / {production_date:%m.%d}",
         body=f"{lead_label}에 집중된 거래", narration=intro,
         bullets=(f"24시간 거래량 · {lead_volume}", f"거래 비중 · {share_text}"),
@@ -283,12 +310,17 @@ def build_scenario(
         key = str(group.get("key") or "")
         count = int(group.get("event_count") or 0)
         volume = _money(group.get("volume24hr"))
+        highlight = picks.get(key)
         summary = _card_summary(group, max(90, target_chars // max(1, len(groups))))
-        valid = group.get("status") == "ok" and not group.get("stale")
+        valid = _has_summary(group)
         strong = int((group.get("probability") or {}).get("strong") or 0)
         tight = int((group.get("probability") or {}).get("tight") or 0)
-        if index == 0 and valid and tight:
-            summary = f"하지만 {count}개 질문 중 {tight}개는 경합입니다. " + summary
+        title, spoken = label, summary
+        if valid and highlight:
+            # 화면 제목은 분류 이름이 아니라 오늘의 이슈다. 분야 이름은 kicker가 짊어진다.
+            title, summary, spoken = highlight.headline, highlight.caption, highlight.narration
+        elif index == 0 and valid and tight:
+            summary = spoken = f"하지만 {count}개 질문 중 {tight}개는 경합입니다. " + summary
         # Domain-specific questions guide attention without asserting a causal forecast.
         watch = {
             "macro": "금리의 방향보다\n결정 시점을 확인",
@@ -300,9 +332,10 @@ def build_scenario(
         if not valid:
             watch = "요약 갱신 대기\n방향 판단은 보류"
         scenes.append(Scene(
-            kind="consensus", title=label,
-            kicker=f"{index + 1:02d} / MONEY & MEANING",
-            body=summary, narration=f"{label}. {summary}",
+            kind="consensus", title=title,
+            kicker=(f"{index + 1:02d} · {label}" if valid and highlight
+                    else f"{index + 1:02d} / MONEY & MEANING"),
+            body=summary, narration=f"{label}. {spoken}",
             accent=("gold", "blue", "red")[index % 3],
             bullets=(
                 f"이벤트 · {count:,}건",

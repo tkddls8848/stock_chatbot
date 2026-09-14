@@ -198,3 +198,70 @@ def test_title_is_a_claim_with_a_number_not_a_category_label():
     assert "거시·통화" in title
     assert "20.6M달러" in title
     assert "오늘의 폴리마켓 컨센서스" not in title
+
+
+def test_picked_issue_replaces_the_generic_summary_on_screen_and_in_speech():
+    """분야 문단의 총론 대신 뽑아 온 이슈를 말하고 보여 준다.
+
+    문단의 첫 문장은 거의 항상 "전체적으로 … 분산되어 있다"라, 그대로 읽으면
+    다섯 장면이 같은 말을 다섯 번 한다.
+    """
+    from polymarket_shorts.highlights import Highlight, Highlights
+
+    picked = Highlights(
+        hook="호르무즈 해협 정상화 가능성은 17.5%입니다.",
+        picks={"macro": Highlight(
+            key="macro", headline="연준 인상 88.5%",
+            caption="연준의 금리 인상 가능성은 88.5%입니다.",
+            narration="연준의 금리 인상 가능성은 88.5%로 나타났습니다.",
+        )},
+    )
+    scenario = build_scenario(
+        _snapshot([_group("macro", "거시", 300, "전체적으로 전망이 분산되어 있다. 연준 인상 가능성은 88.5%다.")]),
+        production_date=date(2026, 9, 1),
+        picker=lambda groups: picked,
+    )
+
+    intro, card = scenario.scenes[0], scenario.scenes[1]
+    assert intro.narration.startswith("호르무즈 해협 정상화 가능성은 17.5%입니다.")
+    assert intro.title == picked.hook
+    assert card.title == "연준 인상 88.5%"
+    assert card.kicker == "01 · 거시"       # 분야 이름은 kicker가 짊어진다
+    assert card.body == "연준의 금리 인상 가능성은 88.5%입니다."
+    assert card.narration == "거시. 연준의 금리 인상 가능성은 88.5%로 나타났습니다."
+    assert "전체적으로" not in scenario.narration
+
+
+def test_a_sector_without_a_pick_keeps_its_paragraph_summary():
+    """한 분야를 못 뽑아도 그 분야만 기존 요약으로 세운다."""
+    from polymarket_shorts.highlights import Highlight, Highlights
+
+    picked = Highlights(hook="연준 인상 가능성은 88.5%입니다.", picks={"macro": Highlight(
+        key="macro", headline="연준 인상 88.5%", caption="연준 인상 가능성은 88.5%입니다.",
+        narration="연준의 금리 인상 가능성은 88.5%로 나타났습니다.")})
+    scenario = build_scenario(
+        _snapshot([
+            _group("macro", "거시", 300, "연준 인상 가능성은 88.5%다."),
+            _group("equities", "주식", 100, "삼성전자 상승 가능성은 40.5%다."),
+        ]),
+        production_date=date(2026, 9, 1),
+        picker=lambda groups: picked,
+    )
+
+    assert scenario.scenes[2].title == "주식"
+    assert "40.5%" in scenario.scenes[2].narration
+
+
+def test_stale_sectors_are_never_offered_to_the_picker():
+    """갱신 대기 문단은 말로 옮기지 않는다. 고를 대상에서도 빼야 한다."""
+    seen = []
+    build_scenario(
+        _snapshot([
+            {**_group("macro", "거시", 300, "연준 인상 가능성은 88.5%다."), "stale": True},
+            _group("equities", "주식", 100, "삼성전자 상승 가능성은 40.5%다."),
+        ]),
+        production_date=date(2026, 9, 1),
+        picker=lambda groups: seen.append([g["key"] for g in groups]) or None,
+    )
+
+    assert seen == [["equities"]]

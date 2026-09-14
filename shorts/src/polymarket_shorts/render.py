@@ -219,24 +219,26 @@ def _caption_rows(path: Path) -> list[tuple[float, float, str]]:
     return rows
 
 
-def _scene_durations(scenario: Scenario, rows, duration: float) -> list[float]:
+def _narration_durations(narrations: list[str], rows, duration: float) -> list[float]:
     """Match scene text to actual TTS cue times instead of estimating from character counts."""
-    if len(scenario.scenes) == 1:
+    if len(narrations) == 1:
         return [duration]
-    normalize = lambda text: re.sub(r"[^\w]", "", text).lower()
+    def normalize(text):
+        return re.sub(r"[^\w]", "", text).lower()
+
     joined, offsets = "", []
     for start, end, text in rows:
         offsets.append((len(joined), start))
         joined += normalize(text)
     starts, search_from = [0.0], 0
-    for scene in scenario.scenes[1:]:
-        needle = normalize(scene.narration)[:24]
+    for narration in narrations[1:]:
+        needle = normalize(narration)[:24]
         position = joined.find(needle, search_from)
         if position < 0 or not needle:
-            raise RenderError("음성 자막과 장면을 맞출 수 없습니다: " + scene.title)
+            raise RenderError("연속 음성 자막과 장면 원고를 맞출 수 없습니다")
         cue_start = next(start for offset, start in reversed(offsets) if offset <= position)
         if cue_start <= starts[-1]:
-            raise RenderError("장면별 음성 시작 시각이 겹칩니다")
+            raise RenderError("연속 음성에서 찾은 장면 시작 시각이 겹칩니다")
         starts.append(cue_start)
         search_from = position + len(needle)
     return [end - start for start, end in zip(starts, starts[1:] + [duration])]
@@ -278,20 +280,13 @@ def render_video(
     ffprobe_bin: str,
     max_duration: float,
     background_paths: tuple[Path | None, ...] | None = None,
-    audio_scene_durations: tuple[float, ...] | None = None,
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
     rows = _caption_rows(subtitle_path)
-    if audio_scene_durations is None:
-        scene_durations = _scene_durations(scenario, rows, duration)
-    else:
-        if (len(audio_scene_durations) != len(scenario.scenes)
-                or any(d <= 0 for d in audio_scene_durations)
-                or abs(sum(audio_scene_durations) - (duration - 0.6)) > 0.05):
-            raise RenderError("장면 음성 길이 합계가 원본 음성과 다릅니다")
-        scene_durations = list(audio_scene_durations)
-        scene_durations[-1] += 0.6
+    scene_durations = _narration_durations(
+        [scene.narration for scene in scenario.scenes], rows, duration,
+    )
     captions = work_dir / "phrases.srt"
     _short_captions(rows, captions)
     frames, backgrounds, holds, timeline = [], [], [], []

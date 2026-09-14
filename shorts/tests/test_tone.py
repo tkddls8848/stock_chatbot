@@ -56,8 +56,8 @@ def test_narration_never_mixes_plain_and_polite():
 
 def test_evidence_and_checkpoint_are_separated_by_a_sentence_end():
     """마침표가 없으면 TTS가 한 문장으로 읽어 '그쳤습니다 공급망과'로 들린다."""
-    from polymarket_shorts.scenario import _end_sentence
+    from polymarket_shorts.scenario import end_sentence
 
-    assert _end_sentence("35%에 그쳤습니다") == "35%에 그쳤습니다."
-    assert _end_sentence("이미 닫혔습니다.") == "이미 닫혔습니다."
-    assert _end_sentence("잘린 문장…") == "잘린 문장…"
+    assert end_sentence("35%에 그쳤습니다") == "35%에 그쳤습니다."
+    assert end_sentence("이미 닫혔습니다.") == "이미 닫혔습니다."
+    assert end_sentence("잘린 문장…") == "잘린 문장…"
