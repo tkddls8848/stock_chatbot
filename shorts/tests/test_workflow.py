@@ -161,12 +161,13 @@ def test_revision_renderer_uses_edited_script_and_persists_preview(draft, monkey
     from polymarket_shorts import pipeline
     root, scenario, metadata, settings = draft
     settings = replace(settings, visuals_enabled=False)
-    def audio(text, *, audio_path, subtitle_path, **kwargs):
-        assert text == scenario.narration
+    def audio(text, *, audio_path, words_path, **kwargs):
+        assert text == [scene.narration for scene in scenario.scenes]
         assert audio_path.name == "narration.mp3"
-        assert subtitle_path.name == "captions.vtt"
+        assert words_path.name == "narration.words.jsonl"
         audio_path.write_bytes(b"continuous-audio")
-        subtitle_path.write_text("captions", encoding="utf-8")
+        words_path.write_text("", encoding="utf-8")
+        return ()
     def render(actual, **kwargs):
         assert actual == scenario
         assert "audio_scene_durations" not in kwargs

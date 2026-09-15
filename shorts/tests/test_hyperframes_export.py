@@ -10,8 +10,9 @@ from polymarket_shorts.hyperframes_export import (
     TimedScene,
     _index_html,
     _presentation_narration,
-    parse_vtt,
 )
+from polymarket_shorts.render import Phrase
+from polymarket_shorts.tts import Word
 
 
 def test_consensus_narration_uses_structured_bullets_not_broken_body():
@@ -34,11 +35,8 @@ def test_consensus_narration_uses_structured_bullets_not_broken_body():
     assert "자금조달 비용" in narration
 
 
-def test_vtt_and_vertical_composition_are_generated():
-    cues = parse_vtt(
-        "WEBVTT\n\n00:00:00.000 --> 00:00:01.500\n첫 문장\n\n"
-        "00:00:01.500 --> 00:00:03.000\n두 번째 문장\n"
-    )
+def test_captions_and_vertical_composition_are_generated():
+    phrases = (Phrase(0.0, 1.5, "첫 문장"), Phrase(1.5, 3.0, "두 번째 문장"))
     scenario = {
         "date": "2026-09-05",
         "scenes": [
@@ -52,7 +50,7 @@ def test_vtt_and_vertical_composition_are_generated():
     }
     markup = _index_html(
         scenario,
-        [TimedScene(0, 3, cues)],
+        [TimedScene(0, 3, phrases)],
         3,
     )
 
@@ -71,7 +69,8 @@ def test_export_copies_reusable_background_and_records_portable_path(tmp_path, m
 
     def synthesize(*args, **kwargs):
         kwargs["audio_path"].touch()
-        kwargs["subtitle_path"].write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n설명\n", encoding="utf-8")
+        kwargs["words_path"].touch()
+        return ((Word(0.1, 0.9, "설명"),),)
 
     monkeypatch.setattr(hyperframes_export, "synthesize", synthesize)
     monkeypatch.setattr(hyperframes_export, "probe_duration", lambda *a, **kw: 1.0)
@@ -94,13 +93,13 @@ def test_export_synthesizes_all_scenes_as_one_audio_file(tmp_path, monkeypatch):
     ]}), encoding="utf-8")
     calls = []
 
-    def synthesize(text, *, audio_path, subtitle_path, **kwargs):
-        calls.append((text, audio_path.name, subtitle_path.name))
+    def synthesize(text, *, audio_path, words_path, **kwargs):
+        calls.append((text, audio_path.name, words_path.name))
         audio_path.touch()
-        subtitle_path.write_text(
-            "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n첫 문장입니다.\n\n"
-            "00:00:01.000 --> 00:00:02.000\n마지막 문장입니다.\n",
-            encoding="utf-8",
+        words_path.touch()
+        return (
+            (Word(0.10, 0.90, "첫"), Word(0.90, 1.40, "문장입니다")),
+            (Word(2.00, 2.40, "마지막"), Word(2.40, 3.00, "문장입니다")),
         )
 
     monkeypatch.setattr(hyperframes_export, "synthesize", synthesize)
@@ -111,6 +110,6 @@ def test_export_synthesizes_all_scenes_as_one_audio_file(tmp_path, monkeypatch):
         source, project, settings=replace(Settings.from_env(), visuals_enabled=False),
     )
 
-    assert calls == [("첫 문장입니다.\n마지막 문장입니다.", "narration.mp3", "captions.vtt")]
-    assert [scene["start"] for scene in manifest["scenes"]] == [0.0, 1.0]
+    assert calls == [(["첫 문장입니다.", "마지막 문장입니다."], "narration.mp3", "narration.words.jsonl")]
+    assert [scene["start"] for scene in manifest["scenes"]] == [0.0, 1.45]
     assert (project / "index.html").read_text(encoding="utf-8").count("<audio ") == 1

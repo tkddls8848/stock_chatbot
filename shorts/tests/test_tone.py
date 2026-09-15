@@ -61,3 +61,23 @@ def test_evidence_and_checkpoint_are_separated_by_a_sentence_end():
     assert end_sentence("35%에 그쳤습니다") == "35%에 그쳤습니다."
     assert end_sentence("이미 닫혔습니다.") == "이미 닫혔습니다."
     assert end_sentence("잘린 문장…") == "잘린 문장…"
+
+
+def test_every_narration_prompt_forbids_a_lone_one_syllable_determiner():
+    """멘트를 쓰는 곳이 셋이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
+
+    홀로 선 `이`·`그`·`저`는 TTS가 한 음절로 스쳐 지나가 들리지 않는다.
+    2026-09-15 편집본의 "86.5%. 이 숫자는"에서 실제로 그 증상이 나왔다.
+    """
+    from polymarket_shorts import highlights, workflow
+    from polymarket_shorts.config import PROJECT_DIR
+
+    sources = {
+        "highlights.PROMPT": highlights.PROMPT,
+        "workflow.EDITOR_PROMPT": workflow.EDITOR_PROMPT,
+        "prompts/editorial_ko.txt": (PROJECT_DIR / "prompts" / "editorial_ko.txt").read_text(
+            encoding="utf-8"
+        ),
+    }
+    for name, text in sources.items():
+        assert "한 글자 관형사" in text, f"{name}에 규칙이 없습니다"

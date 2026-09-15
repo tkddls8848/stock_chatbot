@@ -77,9 +77,9 @@ def produce_revision(
     work.mkdir(parents=True, exist_ok=True)
     # 편집 단위는 장면으로 유지하지만 최종 음성은 전체 원고를 한 번에 합성한다.
     # 장면별 TTS를 잘라 이어 붙이면 경계마다 음색과 호흡이 다시 시작된다.
-    audio, subtitles = work / "narration.mp3", work / "captions.vtt"
-    synthesize(
-        scenario.narration, audio_path=audio, subtitle_path=subtitles,
+    audio, spoken = work / "narration.mp3", work / "narration.words.jsonl"
+    scene_words = synthesize(
+        [scene.narration for scene in scenario.scenes], audio_path=audio, words_path=spoken,
         voice=settings.tts_voice, rate=settings.tts_rate,
     )
     backgrounds = tuple(
@@ -88,7 +88,7 @@ def produce_revision(
     )
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
-        scenario, audio_path=audio, subtitle_path=subtitles, output_path=video,
+        scenario, audio_path=audio, scene_words=scene_words, output_path=video,
         work_dir=work, font_path=find_font(settings.font_file),
         ffmpeg_bin=settings.ffmpeg_bin, ffprobe_bin=settings.ffprobe_bin,
         max_duration=settings.max_duration_seconds, background_paths=backgrounds,
@@ -102,7 +102,7 @@ def produce_revision(
         "title": metadata["title"], "generation_id": scenario.generation_id,
         "duration_seconds": duration, "voice": settings.tts_voice, "rate": settings.tts_rate,
         "synthesis": "continuous",
-        "audio": str(audio), "subtitles": str(subtitles), "video": str(video),
+        "audio": str(audio), "words": str(spoken), "video": str(video),
     })
     return ProductionResult(
         status="pending_review", date=scenario.date,
@@ -195,11 +195,11 @@ def produce_daily(
     with tempfile.TemporaryDirectory(prefix=f".{day}-", dir=settings.output_dir) as raw_work:
         work = Path(raw_work)
         audio = work / "narration.mp3"
-        subtitles = work / "captions.vtt"
-        synthesize(
-            scenario.narration,
+        spoken = work / "narration.words.jsonl"
+        scene_words = synthesize(
+            [scene.narration for scene in scenario.scenes],
             audio_path=audio,
-            subtitle_path=subtitles,
+            words_path=spoken,
             voice=settings.tts_voice,
             rate=settings.tts_rate,
         )
@@ -212,7 +212,7 @@ def produce_daily(
         duration = render_video(
             scenario,
             audio_path=audio,
-            subtitle_path=subtitles,
+            scene_words=scene_words,
             output_path=video_path,
             work_dir=work,
             font_path=find_font(settings.font_file),

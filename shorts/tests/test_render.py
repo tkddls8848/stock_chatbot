@@ -5,6 +5,7 @@ from polymarket_shorts.render import (
     CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, PROGRESS_Y, SAFE_BOTTOM, WIDTH, find_font, render_frame,
 )
 from polymarket_shorts.scenario import Scenario, Scene
+from polymarket_shorts.tts import TTSError, Word
 import pytest
 
 
@@ -33,10 +34,8 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     scene = Scene("consensus", "제목", "기준", "첫 문장\n둘째 문장", "내레이션")
     scenario = Scenario("2026-09-05", "g1", "now", (scene,))
     audio = tmp_path / "voice.mp3"
-    subtitles = tmp_path / "captions.vtt"
     output = tmp_path / "short.mp4"
     audio.touch()
-    subtitles.touch()
     captured = {}
 
     monkeypatch.setattr(render, "probe_duration", lambda *args, **kwargs: 100.0)
@@ -62,7 +61,7 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     duration = render.render_video(
         scenario,
         audio_path=audio,
-        subtitle_path=subtitles,
+        scene_words=((Word(0.1, 1.0, "내레이션"),),),
         output_path=output,
         work_dir=tmp_path,
         font_path=tmp_path / "font.ttf",
@@ -84,27 +83,55 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert "PlayResX=1080,PlayResY=1920" in video_filter
 
 
-def test_scene_cuts_follow_tts_cues_not_text_length():
-    scenes = (Scene("intro", "질문", "", "", "거래가 많으면 확실할까요?"), Scene("consensus", "거시", "", "", "거시. 연준의 결정을 봅니다."))
-    scenario = Scenario("2026-09-13", "g1", "", scenes)
-    rows = [(0.1, 3.0, scenes[0].narration), (5.5, 6.0, "거시."), (6.0, 10.0, "연준의 결정을 봅니다.")]
-    assert render._narration_durations(
-        [scene.narration for scene in scenario.scenes], rows, 10.0,
-    ) == [5.5, 4.5]
-    with pytest.raises(render.RenderError, match="맞출 수"):
-        render._narration_durations(
-            [scene.narration for scene in scenario.scenes], rows[:1], 10.0,
-        )
+def test_scene_cuts_land_on_the_next_scene_first_spoken_word():
+    narrations = ["거래가 많으면 확실할까요?", "거시. 연준의 결정을 봅니다."]
+    # 문장 사이에는 1.1초의 쉼이 있다. 장면은 그 쉼의 어딘가가 아니라 다음 장면의
+    # 첫 단어에 붙어야 한다 — 그러지 않으면 앞 장면의 말이 새 화면 위로 넘어온다.
+    spoken = (
+        (Word(0.10, 0.60, "거래가"), Word(0.60, 1.10, "많으면"), Word(1.10, 1.90, "확실할까요")),
+        (Word(3.00, 3.40, "거시"), Word(3.40, 3.90, "연준의"),
+         Word(3.90, 4.40, "결정을"), Word(4.40, 5.00, "봅니다")),
+    )
+
+    scenes = render._phrases(narrations, spoken, 6.0)
+
+    # 새 장면은 자기 첫 단어보다 SCENE_LEAD만큼 앞에서 열린다 — 넓혀 둔 쉼의
+    # 뒤쪽이 새 화면 위에서 흐르고, 그 뒤에 말이 시작된다.
+    assert scenes[1][0].start == pytest.approx(3.0 - render.SCENE_LEAD)
+    assert render._scene_durations(scenes, 6.0) == pytest.approx([2.45, 3.55])
+    with pytest.raises(TTSError, match="찾지 못했습니다"):
+        render._phrases(narrations, (spoken[0], (Word(3.0, 3.6, "없는말"),)), 6.0)
 
 
-def test_short_captions_preserve_text_and_cue_interval(tmp_path):
-    text = "호르무즈 해협의 교통 정상화 가능성은 20.5%로 낮게 나타나며 참여자의 우려를 반영합니다."
+def test_split_phrases_start_when_the_word_is_spoken_not_at_a_character_share():
+    narration = "호르무즈 해협의 통행 정상화 가능성은 20.5%로 낮게 나타납니다."
+    # 말은 4.6초에 끝나고 6.0초까지는 쉼이다. 예전에는 문장 큐의 끝(쉼 포함)까지를
+    # 글자 수로 나눠 뒷 구절이 말보다 늦게 떴다. 이제 분할점은 단어 시작에서 온다.
+    words = (
+        Word(0.10, 0.70, "호르무즈"), Word(0.70, 1.20, "해협의"), Word(1.20, 1.60, "통행"),
+        Word(1.60, 2.10, "정상화"), Word(2.10, 2.70, "가능성은"), Word(2.70, 3.50, "20.5%로"),
+        Word(3.50, 3.90, "낮게"), Word(3.90, 4.60, "나타납니다"),
+    )
+
+    (phrases,) = render._phrases([narration], (words,), 6.0)
+
+    assert len(phrases) == 2
+    assert phrases[1].start == pytest.approx(2.70 - render.CAPTION_LEAD)
+    # 문구는 빈틈도 겹침도 없이 이어지고, 원고 글자를 하나도 잃지 않는다.
+    assert phrases[0].end == phrases[1].start
+    assert (phrases[0].start, phrases[-1].end) == (0.0, 6.0)
+    assert " ".join(phrase.text for phrase in phrases) == narration
+
+
+def test_written_captions_keep_the_phrase_times(tmp_path):
     target = tmp_path / "phrases.srt"
-    render._short_captions([(1.0, 9.0, text)], target)
-    rows = render._caption_rows(target)
-    assert len(rows) > 1
-    assert " ".join(row[2] for row in rows) == text
-    assert rows[0][0] == 1.0 and rows[-1][1] == 9.0
+
+    render._write_captions(((render.Phrase(0.05, 2.65, "앞 구절"), render.Phrase(2.65, 6.0, "뒷 구절.")),), target)
+
+    assert target.read_text(encoding="utf-8") == (
+        "1\n00:00:00,050 --> 00:00:02,650\n앞 구절\n\n"
+        "2\n00:00:02,650 --> 00:00:06,000\n뒷 구절.\n"
+    )
 
 
 def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path):

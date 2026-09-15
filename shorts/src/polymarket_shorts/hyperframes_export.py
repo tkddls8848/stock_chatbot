@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import html
 import json
 from pathlib import Path
@@ -11,22 +11,15 @@ from typing import Any
 
 from .config import PROJECT_DIR, Settings
 from .media import background_for
-from .render import _narration_durations, probe_duration
+from .render import Phrase, _phrases, _scene_durations, probe_duration
 from .tts import synthesize
-
-
-@dataclass(frozen=True)
-class Cue:
-    start: float
-    end: float
-    text: str
 
 
 @dataclass(frozen=True)
 class TimedScene:
     start: float
     duration: float
-    cues: tuple[Cue, ...]
+    phrases: tuple[Phrase, ...]
 
 
 def _latest_scenario(output_dir: Path) -> Path:
@@ -68,30 +61,6 @@ def _presentation_narration(scene: dict[str, Any], signal_index: int) -> str:
     if bullets.get("체크"):
         parts.append(f"의사결정 포인트입니다. {bullets['체크']}")
     return " ".join(parts)
-
-
-def _vtt_seconds(value: str) -> float:
-    hours, minutes, seconds = value.replace(",", ".").split(":")
-    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-
-
-def parse_vtt(text: str) -> tuple[Cue, ...]:
-    cues: list[Cue] = []
-    blocks = re.split(r"\r?\n\s*\r?\n", text.strip())
-    for block in blocks:
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        timing_index = next((i for i, line in enumerate(lines) if " --> " in line), None)
-        if timing_index is None:
-            continue
-        start_raw, end_raw = lines[timing_index].split(" --> ", 1)
-        caption = " ".join(lines[timing_index + 1 :]).strip()
-        if not caption:
-            continue
-        start = _vtt_seconds(start_raw.split()[0])
-        end = _vtt_seconds(end_raw.split()[0])
-        if end > start:
-            cues.append(Cue(start=start, end=end, text=caption))
-    return tuple(cues)
 
 
 def _metric_values(scene: dict[str, Any]) -> tuple[str, str, int, int, int]:
@@ -192,16 +161,16 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
 
 def _caption_html(timed_scenes: list[TimedScene]) -> str:
     rows: list[str] = []
-    cue_index = 0
+    caption_index = 0
     for timed in timed_scenes:
-        for cue in timed.cues:
-            cue_index += 1
-            start = timed.start + cue.start
-            duration = max(0.08, cue.end - cue.start)
+        for phrase in timed.phrases:
+            caption_index += 1
+            start = timed.start + phrase.start
+            duration = max(0.08, phrase.end - phrase.start)
             rows.append(
-                f'<div id="caption-{cue_index}" class="clip caption" '
+                f'<div id="caption-{caption_index}" class="clip caption" '
                 f'data-start="{start:.3f}" data-duration="{duration:.3f}" data-track-index="30">'
-                f'<span>{html.escape(cue.text)}</span></div>'
+                f'<span>{html.escape(phrase.text)}</span></div>'
             )
     return "\n".join(rows)
 
@@ -353,36 +322,28 @@ def export_project(
         narrations.append(_presentation_narration(scene, signal_index))
 
     audio_path = assets_dir / "narration.mp3"
-    subtitle_path = assets_dir / "captions.vtt"
-    synthesize(
-        "\n".join(narrations),
+    words_path = assets_dir / "narration.words.jsonl"
+    scene_words = synthesize(
+        narrations,
         audio_path=audio_path,
-        subtitle_path=subtitle_path,
+        words_path=words_path,
         voice=voice or settings.tts_voice,
         rate=rate or settings.tts_rate,
     )
     total_duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin) + 0.6
-    all_cues = parse_vtt(subtitle_path.read_text(encoding="utf-8-sig"))
-    durations = _narration_durations(
-        narrations, [(cue.start, cue.end, cue.text) for cue in all_cues], total_duration,
-    )
+    scene_phrases = _phrases(narrations, scene_words, total_duration)
+    durations = _scene_durations(scene_phrases, total_duration)
     cursor = 0.0
-    for duration in durations:
-        scene_end = cursor + duration
-        cues = tuple(
-            Cue(
-                start=max(0.0, cue.start - cursor),
-                end=min(duration, cue.end - cursor),
-                text=cue.text,
-            )
-            for cue in all_cues
-            if cursor <= cue.start < scene_end
-        )
+    for duration, phrases in zip(durations, scene_phrases, strict=True):
         timed_scenes.append(
             TimedScene(
                 start=cursor,
                 duration=duration,
-                cues=cues,
+                phrases=tuple(
+                    replace(phrase, start=max(0.0, phrase.start - cursor),
+                            end=min(duration, phrase.end - cursor))
+                    for phrase in phrases
+                ),
             )
         )
         cursor += duration

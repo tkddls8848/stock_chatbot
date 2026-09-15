@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 import subprocess
 import textwrap
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 from .scenario import Scenario, Scene
+from .tts import Word, locate
 
 
 WIDTH, HEIGHT = 1080, 1920
@@ -204,75 +205,102 @@ def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
     return f"subtitles='{escaped}':force_style='{style}'"
 
 
-def _caption_rows(path: Path) -> list[tuple[float, float, str]]:
-    def seconds(raw):
-        h, m, s = raw.replace(",", ".").split(":")
-        return int(h) * 3600 + int(m) * 60 + float(s)
-    rows = []
-    for block in re.split(r"\r?\n\s*\r?\n", path.read_text(encoding="utf-8-sig").strip()):
-        lines = block.splitlines()
-        for i, line in enumerate(lines):
-            if " --> " in line:
-                start, end = line.split(" --> ", 1)
-                rows.append((seconds(start), seconds(end.split()[0]), " ".join(lines[i + 1:])))
-                break
-    return rows
+# 자막은 자기 첫 단어보다 이만큼 먼저 뜬다. edge-tts의 문장 큐가 쓰던 값과 같다.
+CAPTION_LEAD = 0.05
+# 장면이 바뀔 때는 더 일찍 넘긴다. tts.SCENE_PAUSE_SECONDS로 넓혀 둔 쉼의 뒤쪽
+# 이만큼이 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
+SCENE_LEAD = 0.55
+_PHRASE_CHARS = 25
+_SENTENCE_END = (".", "?", "!")
 
 
-def _narration_durations(narrations: list[str], rows, duration: float) -> list[float]:
-    """Match scene text to actual TTS cue times instead of estimating from character counts."""
-    if len(narrations) == 1:
-        return [duration]
-    def normalize(text):
-        return re.sub(r"[^\w]", "", text).lower()
+@dataclass(frozen=True)
+class Phrase:
+    """화면에 한 번에 뜨는 자막 한 덩어리."""
 
-    joined, offsets = "", []
-    for start, end, text in rows:
-        offsets.append((len(joined), start))
-        joined += normalize(text)
-    starts, search_from = [0.0], 0
-    for narration in narrations[1:]:
-        needle = normalize(narration)[:24]
-        position = joined.find(needle, search_from)
-        if position < 0 or not needle:
-            raise RenderError("연속 음성 자막과 장면 원고를 맞출 수 없습니다")
-        cue_start = next(start for offset, start in reversed(offsets) if offset <= position)
-        if cue_start <= starts[-1]:
-            raise RenderError("연속 음성에서 찾은 장면 시작 시각이 겹칩니다")
-        starts.append(cue_start)
-        search_from = position + len(needle)
-    return [end - start for start, end in zip(starts, starts[1:] + [duration])]
+    start: float
+    end: float
+    text: str
 
 
-def _short_captions(rows, path: Path) -> None:
-    """Split long sentence cues into readable phrases, interpolating within each TTS cue."""
-    def stamp(seconds):
+def _phrases(
+    narrations: Sequence[str], scenes: Sequence[Sequence[Word]], duration: float,
+) -> tuple[tuple[Phrase, ...], ...]:
+    """장면 원고를 실제 단어 경계에 맞춰 자막 문구로 나눈다.
+
+    시각은 전부 edge-tts가 보고한 단어 구간에서 온다 — 긴 문장을 구절로 쪼갤 때
+    글자 수로 시간을 배분하던 추정이 없다. 그 추정은 문장 뒤 쉼(약 0.86초)까지
+    포함한 창을 나눠서 분할점이 늘 뒤로 밀렸고, 뒷 구절이 말보다 0.4~1.0초 늦게
+    떴다. 앞 구절은 그만큼 더 남아 다음 구절의 음성과 겹쳤다.
+
+    문구는 자기 첫 단어보다 CAPTION_LEAD(장면의 첫 문구는 SCENE_LEAD)만큼 먼저
+    떠서 다음 문구가 뜰 때까지 남는다. 그래서 빈틈도 겹침도 생기지 않는다.
+    """
+    marked: list[tuple[float, str]] = []
+    counts: list[int] = []
+    for narration, words in zip(narrations, scenes, strict=True):
+        starts = locate(narration, words)
+        # 한 단어가 차지하는 원고 구간은 다음 단어 직전까지다. 사이의 문장부호는 앞
+        # 단어에 붙어 화면에 그대로 남고, 공백과 줄바꿈만 한 칸으로 줄어든다.
+        ends = starts[1:] + [len(narration)]
+
+        def text_of(first: int, last: int, starts=starts, ends=ends, narration=narration) -> str:
+            return re.sub(r"\s+", " ", narration[starts[first]:ends[last]]).strip()
+
+        groups: list[list[int]] = []
+        group: list[int] = []
+        for index in range(len(words)):
+            if group and (len(text_of(group[0], index)) > _PHRASE_CHARS
+                          or text_of(group[-1], group[-1]).endswith(_SENTENCE_END)):
+                groups.append(group)
+                group = []
+            group.append(index)
+        groups.append(group)
+        counts.append(len(groups))
+        for position, group in enumerate(groups):
+            lead = SCENE_LEAD if position == 0 else CAPTION_LEAD
+            marked.append((max(0.0, words[group[0]].start - lead),
+                           text_of(group[0], group[-1])))
+
+    for (previous, _), (following, _) in zip(marked, marked[1:]):
+        if following <= previous:
+            raise RenderError("연속 음성에서 찾은 자막 시작 시각이 겹칩니다")
+    stops = [start for start, _ in marked[1:]] + [duration]
+
+    phrases: list[tuple[Phrase, ...]] = []
+    position = 0
+    for count in counts:
+        phrases.append(tuple(
+            Phrase(marked[position + n][0], stops[position + n], marked[position + n][1])
+            for n in range(count)
+        ))
+        position += count
+    return tuple(phrases)
+
+
+def _scene_durations(scenes: Sequence[Sequence[Phrase]], duration: float) -> list[float]:
+    """장면은 자기 첫 자막이 뜨는 순간 바뀐다 — 화면과 글자가 같이 넘어간다."""
+    starts = [0.0] + [scene[0].start for scene in scenes[1:]]
+    return [stop - start for start, stop in zip(starts, starts[1:] + [duration])]
+
+
+def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path) -> None:
+    def stamp(seconds: float) -> str:
         ms = round(seconds * 1000)
         return f"{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02},{ms % 1000:03}"
-    result = []
-    for start, end, text in rows:
-        chunks, chunk = [], ""
-        for word in text.split():
-            if chunk and len(chunk) + len(word) + 1 > 25:
-                chunks.append(chunk)
-                chunk = ""
-            chunk = f"{chunk} {word}".strip()
-        if chunk:
-            chunks.append(chunk)
-        weight = sum(len(c) for c in chunks)
-        cursor = start
-        for chunk in chunks:
-            stop = cursor + (end - start) * len(chunk) / max(1, weight)
-            result.append(f"{len(result) + 1}\n{stamp(cursor)} --> {stamp(stop)}\n{chunk}\n")
-            cursor = stop
-    path.write_text("\n".join(result), encoding="utf-8")
+
+    blocks = [
+        f"{index}\n{stamp(phrase.start)} --> {stamp(phrase.end)}\n{phrase.text}\n"
+        for index, phrase in enumerate((p for scene in scenes for p in scene), start=1)
+    ]
+    path.write_text("\n".join(blocks), encoding="utf-8")
 
 
 def render_video(
     scenario: Scenario,
     *,
     audio_path: Path,
-    subtitle_path: Path,
+    scene_words: Sequence[Sequence[Word]],
     output_path: Path,
     work_dir: Path,
     font_path: Path,
@@ -283,12 +311,10 @@ def render_video(
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
-    rows = _caption_rows(subtitle_path)
-    scene_durations = _narration_durations(
-        [scene.narration for scene in scenario.scenes], rows, duration,
-    )
+    scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
+    scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
-    _short_captions(rows, captions)
+    _write_captions(scene_phrases, captions)
     frames, backgrounds, holds, timeline = [], [], [], []
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
@@ -329,10 +355,9 @@ def render_video(
     foreground_concat, background_concat = work_dir / "frames.txt", work_dir / "backgrounds.txt"
     _concat_file(frames, holds, foreground_concat)
     _concat_file(backgrounds, holds, background_concat)
-    # Animate only the background; typography stays stable and readable.
+    # Keep still backgrounds fixed; repeated zoom changes make the image wobble.
     filters = (
-        "[0:v]fps=30,zoompan=z='1.04+0.02*sin(on/120)':x='iw/2-iw/zoom/2':"
-        "y='ih/2-ih/zoom/2':d=1:s=1080x1920:fps=30[bg];"
+        "[0:v]fps=30[bg];"
         "[1:v]fps=30,format=rgba[fg];"
         "[bg][fg]overlay=shortest=1," + _subtitle_filter(captions, font_path.stem)
         + ",tpad=stop_mode=clone:stop_duration=1[video]"
