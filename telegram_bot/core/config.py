@@ -47,7 +47,6 @@ FEATURES_ENABLED = frozenset(
         "market_sentiment",
         "research",
         "briefing",
-        "signal_scoring",
         "system_admin",
         "web_admin",
     }
@@ -76,7 +75,7 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 
 # 데이터는 코드와 같은 기준으로 소유 기능 키의 하위 디렉토리에 둔다.
-# (news/, watchlist/, instruments/, signal_scoring/, research/, runtime/)
+# (news/, watchlist/, instruments/, research/, runtime/)
 DATA_DIR          = BASE_DIR / "data"
 SENT_IDS_FILE     = DATA_DIR / "news" / "sent_ids.json"
 NEWS_LOG_FILE     = DATA_DIR / "news" / "news_log.json"
@@ -84,7 +83,6 @@ NEWS_REPORT_QUEUE_FILE = DATA_DIR / "news" / "news_report_queue.json"
 WATCHLIST_FILE    = DATA_DIR / "watchlist" / "watchlist.json"
 WATCHLIST_EVENTS_FILE = DATA_DIR / "watchlist" / "watchlist_events.json"
 STOCK_DB_FILE     = DATA_DIR / "instruments" / "stock_db.json"
-PREDICTION_LOG_FILE = DATA_DIR / "signal_scoring" / "prediction_log.jsonl"
 RESEARCH_STATE_FILE = DATA_DIR / "research" / "market_research.json"
 NEWS_PREFILTER_EVENT_FILE = DATA_DIR / "news_prefilter" / "event_memory.json"
 NEWS_PREFILTER_OBSERVATION_FILE = DATA_DIR / "news_prefilter" / "observations.jsonl"
@@ -264,8 +262,6 @@ NEWS_SOURCE_FAILURE_THRESHOLD = 3
 NEWS_SOURCE_COOLDOWN_MINUTES = 120
 # 뉴스 메시지에 감성 점수 표기 여부.
 NEWS_SENTIMENT_ENABLED = True
-# /view 감성 뷰 집계에 사용할 최근 신호 일수.
-VIEW_LOOKBACK_DAYS = 3
 # ── 시황 리서치(/research) ────────────────────────────
 RESEARCH_ANALYSIS_PROMPT_FILE = PROMPT_DIR / "market_research_ko.txt"
 RESEARCH_ANALYSIS_TIMEOUT = 600

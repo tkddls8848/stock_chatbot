@@ -127,7 +127,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   달라진 점, 다음 3시간 관찰 포인트를 추론하도록 요구한다.
 - 큐에 담긴 기사는 `SentNewsTracker.reserve` 상태다. 보고서 전송이 전부 실패하면
   큐와 예약을 유지해 다음 실행에서 재시도하고, 전송이 성립한 뒤에만 확정하고
-  큐를 비운다. 주요 근거는 `NewsLog`와 `PredictionLog`에 함께 기록한다.
+  큐를 비운다. 주요 근거는 `NewsLog`에 기록한다.
 - **기사별 번역 파이프라인은 삭제했다.** `news/{pipeline,preparation,delivery,
   selection}.py`는 `fetch_all`을 부르는 호출자가 없는 닫힌 섬이었다. 남겨 두면
   `send_global_digest`·`prepare_global_source` 같은 이름이 살아 있는 전송처럼
@@ -199,7 +199,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 - **사전선별의 라벨 공급원은 3시간 보고서 하나뿐이다.** 보고서 입력에서 시장별
   최대 10건을 무작위 표본으로 지정한다. 주요 기사와 겹치지 않는 표본은 같은
   호출의 `evaluations`에서 중요도만 평가해 학습에 쓴다. 미평가는 음성이 아니다.
-  표본은 사용자 표시·NewsLog·PredictionLog·사건 재탕 차단에 넣지 않는다.
+  표본은 사용자 표시·NewsLog·사건 재탕 차단에 넣지 않는다.
   추가 요청은 없지만 출력 토큰 비용은 늘 수 있으며 기존 출력 상한은 유지한다.
   표본도 최신순 보고서 후보 안에 있으므로 shadow의 선택 편향을 해소하지는 않는다.
   보고서가 고른
@@ -224,17 +224,19 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   기사를 추가로 수집해도 기사별 LLM 호출은 늘지 않지만 입력 토큰은 늘어난다.
   `NEWS_REPORT_MAX_HEADLINES`를 올릴 때 무료 한도(하루 10,000)와 컨텍스트 상한을
   함께 계산한다.
-- **종목·시장 감성을 읽는 경로는 네 갈래이고, 서로 캐시를 공유하지 않는다.**
-  같은 "감성"이라는 말이 네 군데서 각자 다른 저장소·집계·보존정책으로
+- **종목·시장 감성을 읽는 경로는 세 갈래이고, 서로 캐시를 공유하지 않는다.**
+  같은 "감성"이라는 말이 세 군데서 각자 다른 저장소·집계·보존정책으로
   쓰이므로, 새로 만지기 전에 어느 갈래인지부터 정한다.
   | 소비자 | 저장소 | 단위·granularity | 보존 |
   |---|---|---|---|
-  | `/view`(signal_scoring) | `PredictionLog`(JSONL append-only) | 종목별, up/down/neutral verdict 포함 | 무기한(읽을 때만 `VIEW_LOOKBACK_DAYS=3`로 필터) |
   | 브리핑(briefing) | `NewsLog` | 종목별, count·평균만(verdict 없음) | `NEWS_LOG_RETENTION_DAYS=30`로 매 append마다 정리 |
   | `/market`(market_sentiment) | `MarketDigestStore` | 시장(국가) 단위, 그날 헤드라인 배치 재요약 | `MARKET_DIGEST_RETENTION_DAYS=30` |
   | `/research`(research) | 없음 — 캐시를 안 쓴다 | 실행마다 원문을 새로 수집해 LLM에 직접 투입 | 해당 없음 |
-  `PredictionLog`·`NewsLog`는 보고서 근거 기사를 `telegram_bot/news/report.py`에서 나란히
-  기록한다(중복이 아니라 소비자가 달라서다 — 하나를 지우면 다른 소비자가 못 읽는다).
+  보고서 근거 기사는 `telegram_bot/news/report.py`가 `NewsLog`에 기록한다.
+  **`signal_scoring`(`/view`)과 그 `PredictionLog`는 삭제했다.** 종목별
+  up/down/neutral verdict는 평균 감성 임계값 하나로 만든 참고 뷰였고, 같은
+  근거 기사를 `NewsLog`가 이미 더 많은 필드로 남긴다. 되살릴 일이 생기면
+  git에서 꺼내는 별도 변경이다.
 - 예약 뉴스 보고서와 리서치 입력은 모두 원문을 사용한다.
 - 리서치 후보는 관심종목, 원문 종목명 매칭, 중화권 섹터, 미국 스크리너,
   한국 등락률에서 만든다. 분석 action은 `add`, `remove`, `watch`만 허용한다.

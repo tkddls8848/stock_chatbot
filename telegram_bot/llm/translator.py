@@ -100,7 +100,7 @@ class TranslationService:
 
         형식 검사(_parse_translation)를 통과해도 모델이 원문을 그대로 돌려주거나
         제목을 한 번 더 쓰는 주기가 있다. 그대로 보내면 다이제스트에 원문
-        한 줄이 섞이고, news_log·prediction_log에도 그 상태로 남는다.
+        한 줄이 섞이고, news_log에도 그 상태로 남는다.
         """
         if len(result.content) < _MIN_CONTENT_CHARS:
             raise TranslationQualityError(

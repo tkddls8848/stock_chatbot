@@ -6,7 +6,7 @@
 훅에서 호출한다.
 
 데이터 접근 방침: 다른 기능이 소유한 데이터는 bot_data에 설치된 매니저를
-통해 읽는다. 파일 직접 읽기(_read_json/_tail_jsonl)는 해당 기능이 꺼져
+통해 읽는다. 파일 직접 읽기(_read_json)는 해당 기능이 꺼져
 매니저가 없을 때의 읽기 전용 폴백이다. 봇과 이벤트 루프를 공유하므로
 이 동기 읽기는 반드시 asyncio.to_thread로 넘긴다(루프를 막으면 텔레그램
 폴링까지 함께 멈춘다).
@@ -21,7 +21,6 @@ from typing import Any
 
 from telegram_bot.core.config import (
     NEWS_LOG_FILE,
-    PREDICTION_LOG_FILE,
     RESEARCH_STATE_FILE,
     WATCHLIST_EVENTS_FILE,
     WEB_ADMIN_HOST,
@@ -43,23 +42,6 @@ def _read_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return default
-
-
-def _tail_jsonl(path: Path, limit: int) -> list[dict[str, Any]]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in lines[-limit:]:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rows.append(json.loads(line))
-        except ValueError:
-            continue
-    return rows
 
 
 # ── FastAPI 앱 구성 ───────────────────────────────────
@@ -181,14 +163,6 @@ def build_app(bot_app):
                 "history": manager.get_history_summaries(),
             }
         return await asyncio.to_thread(_read_json, RESEARCH_STATE_FILE, {})
-
-    # ── 종목별 뉴스 감성 로그 ─────────────────────────
-    @api.get("/api/predictions")
-    async def predictions_view(days: int = 7, _: str = Depends(require_auth)):
-        prediction_log = _bot_data().get("prediction_log")
-        if prediction_log is not None:
-            return await prediction_log.snapshot(max(1, min(days, 90)))
-        return await asyncio.to_thread(_tail_jsonl, PREDICTION_LOG_FILE, 500)
 
     return api
 

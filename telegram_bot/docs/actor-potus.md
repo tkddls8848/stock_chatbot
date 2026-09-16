@@ -339,7 +339,7 @@ telegram_bot/features/market_actor/
 | 항목 | 값 | 근거 |
 |---|---|---|
 | 기능 키 | `market_actor` · `requires={instruments, quant, watchlist, news}` | 종목명은 종목 DB, 시세는 `QuoteService`, 관심종목은 강조, `news_log`는 `event` 계열의 입력이다 |
-| 카탈로그 위치 | `signal_scoring` 앞 | 의존 순서(뉴스·정량 뒤, 집계 앞) |
+| 카탈로그 위치 | `system_admin` 앞 | 의존 순서(뉴스·정량 뒤, 관리 기능 앞) |
 | 상태 파일 | `data/market_actor/actor_log.jsonl`(검증용 append), `last_report.json`(마지막 화면) | 쓰임이 다르다. 리서치의 `history`/`last_result`와 같은 이유로 합치지 않는다 |
 | 보존 | 90일 | 게이트가 30일·30건을 보므로 여유 3배 |
 | env 키 | `MARKET_ACTOR_POST_ENABLED`(기본 `false`), `MARKET_ACTOR_POST_HOUR`/`MINUTE`(16/10) | 운영자가 조정하는 것만 env. **패턴 임계값은 코드 상수다** — env로 빼면 서버와 로컬의 판정이 갈리고 검증 표본이 섞인다 |

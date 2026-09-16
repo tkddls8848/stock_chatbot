@@ -17,7 +17,6 @@ def build_list_keyboard(watchlist: dict[str, str]) -> InlineKeyboardMarkup:
                 text=f"삭제: {name} ({code})",
                 callback_data=f"remove:{code}",
             ),
-            InlineKeyboardButton(text="📈 감성", callback_data=f"view:{code}"),
         ]
         for code, name in watchlist.items()
     ]

@@ -72,7 +72,6 @@ _HANDLER_LABELS = {
     "cmd_menu": "관심종목 메뉴 조회",
     "cmd_add": "관심종목 추가",
     "cmd_list": "관심종목 목록 조회",
-    "cmd_view": "종목 감성 조회",
     "cmd_market": "국가별 뉴스 감성 차트 생성",
     "cmd_research": "리서치 분석",
     "cmd_briefing": "브리핑 생성",

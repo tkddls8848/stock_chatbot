@@ -53,8 +53,8 @@ output "cutover_commands" {
     #    옮길 것을 나열하지 않고 뺄 것만 나열한다 — 기능이 늘 때마다 이 줄을
     #    고치는 걸 잊으면 그 기능의 이력이 조용히 사라진다.
     #    instruments는 /stockdb build로 재생성되고 runtime은 bot.lock뿐이다.
-    #    나머지(signal_scoring 예측 로그, market_sentiment 다이제스트·폴리마켓
-    #    스냅숏 포함)는 다시 만들 수 없거나 LLM 호출을 다시 태워야 한다.
+    #    나머지(market_sentiment 다이제스트·폴리마켓 스냅숏 포함)는 다시
+    #    만들 수 없거나 LLM 호출을 다시 태워야 한다.
     scp -r (Get-ChildItem data -Directory -Exclude instruments,runtime | ForEach-Object FullName) ${var.app_user}@${aws_lightsail_static_ip.this.ip_address}:${local.app_dir}/data/
 
     # 5. >>> 로컬 봇을 먼저 정지한다 <<<

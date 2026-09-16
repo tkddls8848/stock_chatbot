@@ -36,7 +36,7 @@ from telegram_bot.news.utils import (
     publication_time_naive,
     signal_codes,
 )
-from telegram_bot.state import NewsLog, NewsReportQueue, PredictionLog, SentNewsTracker
+from telegram_bot.state import NewsLog, NewsReportQueue, SentNewsTracker
 from telegram_bot.watchlist import WatchlistManager
 
 logger = logging.getLogger(__name__)
@@ -280,13 +280,12 @@ async def _log_highlights(
     market: str,
     items: list[dict],
     result: dict,
-    prediction_log: PredictionLog | None,
     news_log: NewsLog | None,
     prefilter=None,
 ) -> None:
     """보고서 주요 기사를 로그에 남기고 사전선별에 라벨을 되먹인다.
 
-    남기지 않으면 /view·/market·signal_scoring이 보고서 근거를 보지 못한다.
+    남기지 않으면 브리핑·/market이 보고서 근거를 보지 못한다.
 
     **사전선별은 이 호출이 유일한 라벨 공급원이다.** 사전선별은 제목만 보고
     추측하므로 자기가 맞았는지 스스로 알 수 없고, 기사를 실제로 읽고 중요도를
@@ -297,23 +296,11 @@ async def _log_highlights(
     바꾸면서 그 경로가 죽었고, 오류가 나지 않아 13일 동안 라벨 0건인 채로
     돌았다(2026-08-30 ~ 09-12). 이 자리를 옮기거나 지울 때 사전선별의 학습이
     함께 멈춘다는 것을 기억한다.
-    `prediction_log`는 signal_scoring 소유의 선택 의존이다 — news가
-    이를 requires로 선언하지 않는 이유는 delivery.py의
-    `_confirm_and_log_global_article`과 같다(순환 의존 회피).
     """
     for highlight in result["highlights"]:
         item = items[highlight["index"]]
         codes = signal_codes(highlight["mentioned_stocks"])
         try:
-            if prediction_log is not None:
-                await prediction_log.record(
-                    source=str(item.get("source") or ""),
-                    title=highlight["title"],
-                    sentiment=highlight["sentiment"],
-                    impact=highlight["impact"],
-                    codes=codes,
-                    market=market,
-                )
             if news_log is not None:
                 await news_log.record(
                     source=str(item.get("source") or ""),
@@ -396,7 +383,6 @@ async def _send_news_report(app: Application) -> None:
         return
 
     tracker: SentNewsTracker = app.bot_data["sent_tracker"]
-    prediction_log: PredictionLog | None = app.bot_data.get("prediction_log")
     news_log: NewsLog | None = app.bot_data.get("news_log")
     prefilter = app.bot_data.get("news_prefilter")
     window = _window_label(opened_at, now())
@@ -407,7 +393,7 @@ async def _send_news_report(app: Application) -> None:
         sections.append(format_market_section(market, market_items, result))
         if result is not None:
             await _log_highlights(
-                market, market_items, result, prediction_log, news_log, prefilter
+                market, market_items, result, news_log, prefilter
             )
 
     header = (

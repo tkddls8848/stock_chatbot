@@ -439,20 +439,19 @@ def _send_app(tmp_path, *, bot=None, analyzer=None):
     queue = _queue(tmp_path)
     asyncio.run(queue.enqueue([_item(0), _item(1)]))
     tracker = _RecordingTracker()
-    news_log, prediction_log = _RecordingLog(), _RecordingLog()
+    news_log = _RecordingLog()
     app = _App(
         bot=bot or _RecordingBot(),
         news_report_queue=queue,
         news_report_analyzer=analyzer or _analyzer(tmp_path, _payload()),
         sent_tracker=tracker,
         news_log=news_log,
-        prediction_log=prediction_log,
     )
-    return app, queue, tracker, news_log, prediction_log
+    return app, queue, tracker, news_log
 
 
 def test_report_sends_confirms_and_clears_the_queue(tmp_path):
-    app, queue, tracker, news_log, prediction_log = _send_app(tmp_path)
+    app, queue, tracker, news_log = _send_app(tmp_path)
 
     asyncio.run(send_news_report(app))
 
@@ -465,11 +464,10 @@ def test_report_sends_confirms_and_clears_the_queue(tmp_path):
     assert asyncio.run(queue.snapshot())[1] == []
     # 주요 기사는 주간 번역과 같은 로그로 들어간다.
     assert len(news_log.records) == 1
-    assert len(prediction_log.records) == 1
 
 
 def test_report_keeps_the_queue_when_telegram_fails(tmp_path):
-    app, queue, tracker, _, _ = _send_app(tmp_path, bot=_RecordingBot(fail=True))
+    app, queue, tracker, _ = _send_app(tmp_path, bot=_RecordingBot(fail=True))
 
     asyncio.run(send_news_report(app))
 
@@ -495,7 +493,6 @@ def test_report_keeps_only_the_second_chunk_when_that_send_fails(tmp_path, monke
         news_report_analyzer=_analyzer(tmp_path, _payload()),
         sent_tracker=tracker,
         news_log=_RecordingLog(),
-        prediction_log=_RecordingLog(),
     )
 
     asyncio.run(send_news_report(app))
@@ -511,9 +508,9 @@ def test_report_keeps_only_the_second_chunk_when_that_send_fails(tmp_path, monke
     strict=True,
     reason="report highlights are logged before Telegram delivery succeeds",
 )
-def test_repeated_total_send_failure_does_not_duplicate_prediction_log(tmp_path):
-    """전송되지 않은 신호는 재시도 횟수만큼 append되면 안 된다."""
-    app, queue, tracker, news_log, prediction_log = _send_app(
+def test_repeated_total_send_failure_does_not_duplicate_news_log(tmp_path):
+    """전송되지 않은 근거는 재시도 횟수만큼 append되면 안 된다."""
+    app, queue, tracker, news_log = _send_app(
         tmp_path,
         bot=_RecordingBot(fail=True),
     )
@@ -523,7 +520,6 @@ def test_repeated_total_send_failure_does_not_duplicate_prediction_log(tmp_path)
 
     assert tracker.confirmed == []
     assert len(asyncio.run(queue.snapshot())[1]) == 2
-    assert prediction_log.records == []
     assert news_log.records == []
 
 
@@ -538,7 +534,6 @@ def test_report_uses_one_llm_call_per_market(tmp_path):
         news_report_analyzer=analyzer,
         sent_tracker=_RecordingTracker(),
         news_log=None,
-        prediction_log=None,
     )
 
     asyncio.run(send_news_report(app))
@@ -547,7 +542,7 @@ def test_report_uses_one_llm_call_per_market(tmp_path):
 
 
 def test_report_survives_a_market_whose_summary_failed(tmp_path):
-    app, queue, tracker, _, _ = _send_app(
+    app, queue, tracker, _ = _send_app(
         tmp_path, analyzer=_analyzer(tmp_path, error=RuntimeError("cloudflare down"))
     )
 
@@ -815,7 +810,7 @@ def test_report_highlights_feed_the_prefilter_label():
 
     asyncio.run(
         news_report._log_highlights(
-            "CN", _queued(), _highlight_result(), None, None, prefilter
+            "CN", _queued(), _highlight_result(), None, prefilter
         )
     )
 
@@ -828,7 +823,7 @@ def test_an_article_without_a_candidate_id_is_not_reported_as_a_label():
 
     asyncio.run(
         news_report._log_highlights(
-            "CN", _queued(candidate_id=""), _highlight_result(), None, None, prefilter
+            "CN", _queued(candidate_id=""), _highlight_result(), None, prefilter
         )
     )
 
@@ -838,7 +833,7 @@ def test_an_article_without_a_candidate_id_is_not_reported_as_a_label():
 def test_logging_still_works_when_the_prefilter_is_off():
     """사전선별은 선택 기능이다. 꺼져 있어도 보고서 근거 로그는 남아야 한다."""
     asyncio.run(
-        news_report._log_highlights("CN", _queued(), _highlight_result(), None, None, None)
+        news_report._log_highlights("CN", _queued(), _highlight_result(), None, None)
     )
 
 
@@ -864,15 +859,13 @@ def test_unselected_evaluation_only_feeds_learning():
     from unittest.mock import AsyncMock
 
     prefilter = SimpleNamespace(record_outcome=AsyncMock())
-    prediction_log = SimpleNamespace(record=AsyncMock())
     news_log = SimpleNamespace(record=AsyncMock())
     result = {"analysis": "분석", "highlights": [],
               "evaluations": [{"index": 0, "impact": "low"}]}
     asyncio.run(news_report._log_highlights(
-        "CN", _queued(), result, prediction_log, news_log, prefilter,
+        "CN", _queued(), result, news_log, prefilter,
     ))
     prefilter.record_outcome.assert_awaited_once_with(
         candidate_id="cand-1", impact="low", sentiment=None, selected=False,
     )
-    prediction_log.record.assert_not_awaited()
     news_log.record.assert_not_awaited()

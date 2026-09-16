@@ -17,7 +17,6 @@ EXPECTED_FEATURES = {
     "market_sentiment",
     "research",
     "briefing",
-    "signal_scoring",
     "system_admin",
     "web_admin",
 }
@@ -77,7 +76,6 @@ def test_registry_rejects_unknown_feature():
         ({"news"}, "news → watchlist"),
         ({"market_sentiment"}, "market_sentiment → news"),
         ({"briefing"}, "briefing → news"),
-        ({"signal_scoring"}, "signal_scoring → instruments"),
         ({"quant"}, "quant → instruments"),
         ({"news_prefilter"}, "news_prefilter → instruments"),
     ],

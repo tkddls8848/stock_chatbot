@@ -14,7 +14,6 @@
 | `market_sentiment` | 날짜별 시장 감성 백필·집계·차트, Polymarket 컨센서스 스냅숏 |
 | `research` | 뉴스·정량 데이터 기반 시장 리서치(중화권·미국·한국) |
 | `briefing` | 모닝·마감 브리핑 |
-| `signal_scoring` | 종목별 뉴스 감성 뷰 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |
 | `web_admin` | 인증이 적용된 내장 관리 웹 대시보드 |
 

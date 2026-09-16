@@ -96,7 +96,6 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 | `/market [일수]` | 시장별 뉴스 감성 차트 |
 | `/menu`, `/list` | 관심 종목 목록 |
 | `/add 종목코드` | 관심 종목 추가 |
-| `/view [종목코드]` | 종목별 뉴스 감성 |
 | `/research show\|set\|run\|clear` | 리서치 후보 관리 |
 | `/briefing morning\|evening` | 브리핑 생성 |
 | `/stockdb build` | 종목 DB 갱신 |
@@ -125,7 +124,7 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 ## 데이터와 접근 제어
 
-- `data/`에는 관심 종목, 발송 이력, 뉴스·신호 로그, 종목 DB가 소유 기능별 하위 디렉토리(`news/`, `watchlist/`, `instruments/`, `signal_scoring/`, `research/`, `runtime/`)에 저장됩니다.
+- `data/`에는 관심 종목, 발송 이력, 뉴스·신호 로그, 종목 DB가 소유 기능별 하위 디렉토리(`news/`, `watchlist/`, `instruments/`, `research/`, `runtime/`)에 저장됩니다.
 - `ALLOWED_CHAT_IDS`에 쉼표로 구분한 채팅 ID를 설정해야 하며, 여기 적힌 채팅에서만 명령을 처리합니다. 비워 두거나 유효한 ID가 하나도 없으면 봇이 기동하지 않습니다 — 개인 운영용이라 빈 값을 전체 허용으로 해석하지 않습니다.
 - 뉴스·시세 제공처가 일시적으로 실패해도 다른 기능은 계속 동작하며, 다음 주기에 다시 수집합니다.
 
