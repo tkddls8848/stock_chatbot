@@ -1,0 +1,9 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+# 이 파일은 infra/scripts/install-shared-host.sh 가 infra/scripts/lib.sh 의 값으로
+# 렌더링한다. /etc/cron.d/stock-chatbot-backup 을 직접 고치지 않는다.
+#
+# cron.d 는 타임존을 선언할 수 없어 호스트 설정(UTC)을 그대로 따른다.
+# __BACKUP_HOUR__:00 UTC = 03:00 KST/JST 이며, Lightsail 자동 스냅샷
+# (__SNAPSHOT_TIME__ UTC)보다 한 시간 먼저 끝낸다 — infra/host-contract.md.
+0 __BACKUP_HOUR__ * * * __APP_USER__ umask 0077 && tar czf __BACKUP_DIR__/backup-$(date +\%F).tgz -C __APP_DIR__ data && find __BACKUP_DIR__ -maxdepth 1 -name 'backup-*.tgz' -mtime +__RETENTION_DAYS__ -delete

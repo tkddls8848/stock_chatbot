@@ -1,8 +1,0 @@
-# 부트스트랩 스크립트는 리눅스 cloud-init이 실행한다. Windows에서 체크아웃하며
-# CRLF로 변환되면 templatefile()이 CRLF를 그대로 렌더링하고, cloud-init은
-# 셔뱅을 `/bin/bash\r`로 읽어 부트스트랩 전체가 기동조차 못 한다.
-# 개발은 Windows, 실행은 리눅스이므로 이 디렉터리는 LF를 강제한다.
-*.tftpl text eol=lf
-*.sh    text eol=lf
-*.tf    text eol=lf
-*.json  text eol=lf

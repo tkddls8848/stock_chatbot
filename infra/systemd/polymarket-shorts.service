@@ -7,14 +7,18 @@ StartLimitBurst=8
 
 [Service]
 Type=oneshot
-User=ubuntu
-WorkingDirectory=/home/ubuntu/stock_chatbot/shorts
+User=stockbot
+Group=stockbot
+WorkingDirectory=/srv/stock-chatbot/shorts
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/home/ubuntu/stock_chatbot/shorts/.env
-ExecStart=/home/ubuntu/stock_chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
+EnvironmentFile=/srv/stock-chatbot/shorts/.env
+ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
 Nice=10
 CPUWeight=20
 MemoryMax=768M
 TimeoutStartSec=20min
 Restart=on-failure
 RestartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

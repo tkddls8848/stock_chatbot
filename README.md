@@ -36,17 +36,15 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 
 ## 배포
 
-AWS Lightsail에 배포하며, 인스턴스·고정 IP·방화벽과 부트스트랩(스왑·systemd·백업 cron)이 Terraform으로 코드화되어 있습니다.
+도쿄의 공유 AWS Lightsail 인스턴스 `orca-host-tokyo`에 **입주 앱**으로 배포합니다. 인스턴스·고정 IP·공인 방화벽·스냅샷은 호스트 저장소(`remote_coding`)의 Terraform이 소유하고, 이 저장소는 앱 런타임(전용 계정, systemd 유닛, 백업 cron)만 설치합니다.
 
-```powershell
-cd iac\terraform
-Copy-Item terraform.tfvars.example terraform.tfvars   # ssh_public_key_path 등 편집
-terraform init; terraform apply
-terraform output cutover_commands                     # 전환 절차
+```bash
+sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh   # 유닛·cron·venv
+sudo /srv/stock-chatbot/infra/scripts/verify-app.sh            # 점검
 ```
 
-- 실행 절차와 주의점은 [`infra/terraform/README.md`](infra/terraform/README.md)에 있습니다.
-- 부트스트랩은 봇을 **기동하지 않습니다.** 같은 토큰으로 두 프로세스가 텔레그램을 폴링하면 양쪽이 번갈아 죽으므로, 전환은 "로컬 정지 → 서버 기동" 순서로 사람이 진행합니다.
+- 호스트와의 경계와 계약 값은 [`infra/host-contract.md`](infra/host-contract.md)에 있습니다.
+- 설치는 봇을 **기동하지 않습니다.** 같은 토큰으로 두 프로세스가 텔레그램을 폴링하면 양쪽이 번갈아 죽으므로, 전환은 "로컬 정지 → 서버 기동" 순서로 사람이 진행합니다.
 
 ## 테스트
 

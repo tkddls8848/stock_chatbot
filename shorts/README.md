@@ -153,8 +153,12 @@ $env:PYTHONPATH='shorts/src'
 
 한국시간 21시에 실행되는 systemd timer가 저장소의 `infra/systemd/`에 있습니다.
 
+유닛은 다른 앱 유닛과 같은 계정·경로를 쓴다 — `stockbot` 계정으로
+`/srv/stock-chatbot/shorts`에서 실행하며, 가상환경(`.venv`)과 `.env`도 그 아래에 둔다
+(`infra/host-contract.md`).
+
 ```bash
-sudo cp ../infra/systemd/polymarket-shorts.{service,timer} /etc/systemd/system/
+sudo cp /srv/stock-chatbot/infra/systemd/polymarket-shorts.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now polymarket-shorts.timer
 systemctl list-timers | grep polymarket-shorts

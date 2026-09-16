@@ -3,13 +3,13 @@
 봇이 서버에서 도는 동안 반복해서 하는 일을 모은 **실행 문서**다. 할 일 목록이
 아니라 절차서이므로 항목이 끝나도 지우지 않는다.
 
-**다른 문서와의 경계.** 인스턴스를 처음 만들고 로컬에서 서버로 넘기는 일회성
-절차는 `infra/terraform/README.md`가 유일한 문서다 — 여기에 옮겨 적지 않는다.
+**다른 문서와의 경계.** 공유 호스트와의 경계·계약 값과 앱 런타임 설치는
+`infra/host-contract.md`가 유일한 문서다 — 여기에 옮겨 적지 않는다.
 이 문서는 그 뒤, **이미 떠 있는 서버를 상대로** 하는 일만 다룬다.
 
 | 문서 | 다루는 것 |
 |---|---|
-| `infra/terraform/README.md` | 인스턴스 생성, 부트스트랩, 최초 전환(cutover), 삭제 |
+| `infra/host-contract.md` | 호스트 소유 경계, 계약 값(리전·타임존·스냅샷·공개 웹), 앱 설치 |
 | **이 문서** | 접속, 상태 확인, 배포 갱신, 설정 변경, 실측, 판정, 백업·복구, 장애 대응 |
 | `telegram_bot/docs/actor-potus.md` | `market_actor`·`potus_feed` 계획 (앞으로 만들 것) |
 
@@ -28,10 +28,11 @@
 앱 점검은 `infra/scripts/verify-app.sh`로 우리가 직접 한다. 편입 경위와 롤백
 기준은 `infra/merge-plan.md`에 있다.
 
-이 저장소의 `infra/terraform/`은 2026-09-12 이전 독립 인스턴스의 정의이고 state는 이미
-정리됐다. 그 인스턴스·고정 IP·키페어는 2026-09-12에 폐기했으므로 여기서 `apply`나
-`destroy`하지 않는다. 롤백은 스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스를
-만드는 절차이며, 기준은 `infra/merge-plan.md`다.
+**이 저장소는 AWS 자원을 만들지 않는다.** 2026-09-12 이전 독립 인스턴스를 만들던
+`infra/terraform/`은 삭제했고(정의는 git 이력에 있다), 그 인스턴스·고정 IP·키페어도
+그날 폐기했다. 호스트 값이 필요하면 호스트 저장소에서 바꾼다 — 계약 값은
+`infra/host-contract.md`, 롤백(스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스)
+기준은 `infra/merge-plan.md`다.
 
 ## 1. 접속
 
@@ -427,8 +428,9 @@ stop/start도 보존한다. 사라지는 것은 인스턴스를 **삭제·재생
 - 사전선별 보정이 `observations.jsonl`을 처음부터 한 번 다시 읽는다(읽기 offset이
   메모리 전용이다). 손실이 아니라 CPU 비용이고 그날 예산에서 나간다.
 
-`cloud-init` user_data는 인스턴스당 1회만 실행되므로 재부팅으로 부트스트랩이 다시
-돌지 않는다. 다시 돌려야 하면 SSH로 직접 실행한다(`infra/terraform/README.md`).
+공유 호스트의 앱 런타임은 `cloud-init`이 아니라 `infra/scripts/install-shared-host.sh`가
+설치한다. 재부팅으로 다시 돌지 않으며, 유닛이나 백업 cron을 다시 깔아야 하면 그
+스크립트를 직접 실행한다(`infra/host-contract.md`).
 
 ## 10. 장애 대응
 

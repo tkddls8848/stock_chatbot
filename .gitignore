@@ -39,3 +39,6 @@ shorts/state/
 /.gitconfig
 /.lesshst
 /.cache/
+
+# 앱 인프라 스크립트의 로컬 값 덮어쓰기 (infra/scripts/lib.sh 가 읽는다)
+infra/scripts/config.env
