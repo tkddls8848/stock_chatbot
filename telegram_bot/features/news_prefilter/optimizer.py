@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import random
@@ -11,7 +12,7 @@ import time
 import zlib
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generator
 
 FEATURE_NAMES = (
     "freshness",
@@ -24,6 +25,9 @@ FEATURE_NAMES = (
 )
 HASH_BUCKETS = 2048
 MODEL_DIMENSIONS = len(FEATURE_NAMES) + HASH_BUCKETS
+MAX_SEARCH_TRIALS = 32
+MIN_TRAINING_LABELS = 120
+MIN_TRAINING_DAYS = 3
 _TEXT_RE = re.compile(r"\s+")
 
 
@@ -105,13 +109,19 @@ def _average_precision(labels: list[int], scores: list[float]) -> float:
     positives = sum(labels)
     if positives <= 0:
         return 0.0
+    # 같은 점수는 하나의 threshold로 묶는다. 상수 모델의 AP는 기저 비율이다.
     ranked = sorted(range(len(labels)), key=scores.__getitem__, reverse=True)
     hits = 0
     total = 0.0
-    for rank, index in enumerate(ranked, 1):
-        if labels[index]:
-            hits += 1
-            total += hits / rank
+    start = 0
+    while start < len(ranked):
+        end = start + 1
+        while end < len(ranked) and scores[ranked[end]] == scores[ranked[start]]:
+            end += 1
+        group_hits = sum(labels[index] for index in ranked[start:end])
+        hits += group_hits
+        total += group_hits * hits / end
+        start = end
     return total / positives
 
 
@@ -140,7 +150,7 @@ def _fit_trial(
     test_vectors: list[tuple[tuple[int, float], ...]],
     test_labels: list[int],
     rng: random.Random,
-) -> tuple[float, float, list[float]]:
+) -> Generator[None, None, tuple[float, float, list[float]]]:
     weights = [0.0] * MODEL_DIMENSIONS
     intercept = 0.0
     learning_rate = rng.choice((0.02, 0.035, 0.05))
@@ -150,7 +160,9 @@ def _fit_trial(
     indices = list(range(len(train_labels)))
     for _ in range(rng.choice((4, 6, 8))):
         rng.shuffle(indices)
-        for index in indices:
+        for position, index in enumerate(indices):
+            if position % 8 == 0:
+                yield
             vector = train_vectors[index]
             label = train_labels[index]
             score = intercept + sum(weights[i] * value for i, value in vector)
@@ -174,76 +186,75 @@ def optimize_for_cpu_budget(
     samples: list[TrainingSample],
     current_model: dict[str, Any] | None,
     cpu_budget_seconds: float,
+    *,
+    state: dict[str, Any] | None = None,
 ) -> OptimizationResult:
-    """주어진 thread CPU-time 안에서 여러 초기값을 walk-forward 검증한다."""
+    """한 trial도 CPU 조각 사이에서 이어 학습한다. 자료당 최대 32회 검증한다.
+
+    마지막 날짜는 학습에서 제외한다. 이는 모델 선택용 검증이며, 실제 수집
+    개선의 증거는 active 탐색 기사가 후속 보고서에서 받은 평가로 따로 본다.
+    """
     _lower_current_thread_priority()
     started = time.thread_time()
+    deadline = started + max(0.0, float(cpu_budget_seconds))
+    if state is None:
+        state = {}
     days = sorted({sample.day for sample in samples if sample.day})
-    if len(samples) < 120 or len(days) < 5:
-        return OptimizationResult(
-            time.thread_time() - started,
-            0,
-            len(samples),
-            None,
-            "insufficient_labels",
+    if len(samples) < MIN_TRAINING_LABELS or len(days) < MIN_TRAINING_DAYS:
+        state.clear()
+        return OptimizationResult(time.thread_time() - started, 0, len(samples), None,
+                                  "insufficient_labels")
+    # 라벨 수가 같아도 보존 창 이동이나 평가 내용 변경이면 새 검색을 시작한다.
+    fingerprint = hashlib.sha256(repr(samples).encode("utf-8")).hexdigest()
+    if state.get("fingerprint") != fingerprint:
+        state.clear()
+        test_days = set(days[-max(1, len(days) // 5):])
+        train = [sample for sample in samples if sample.day not in test_days]
+        test = [sample for sample in samples if sample.day in test_days]
+        # 양성이 대부분인 보고서 근거만으로 만든 모델을 승격시키지 않는다.
+        if (min(sum(s.label == label for s in train) for label in (0, 1)) < 10
+                or min(sum(s.label == label for s in test) for label in (0, 1)) < 5):
+            return OptimizationResult(time.thread_time() - started, 0, len(samples), None,
+                                      "invalid_time_split")
+        train_vectors = [_vector(sample.title, sample.features) for sample in train]
+        test_vectors = [_vector(sample.title, sample.features) for sample in test]
+        train_labels = [sample.label for sample in train]
+        test_labels = [sample.label for sample in test]
+        base = sum(test_labels) / len(test_labels)
+        incumbent = _incumbent_average_precision(current_model, test_vectors, test_labels)
+        state.update(
+            fingerprint=fingerprint, train_vectors=train_vectors, test_vectors=test_vectors,
+            train_labels=train_labels, test_labels=test_labels,
+            rng=random.Random(fingerprint), trials=0, best_ap=max(base, incumbent),
+            test_days=sorted(test_days), train_days=sorted(set(days) - test_days),
+            prevalence=base,
         )
-
-    test_day_count = max(1, len(days) // 5)
-    test_days = set(days[-test_day_count:])
-    train = [sample for sample in samples if sample.day not in test_days]
-    test = [sample for sample in samples if sample.day in test_days]
-    if not train or not test or len({sample.label for sample in test}) < 2:
-        return OptimizationResult(
-            time.thread_time() - started,
-            0,
-            len(samples),
-            None,
-            "invalid_time_split",
-        )
-
-    train_vectors = [_vector(sample.title, sample.features) for sample in train]
-    test_vectors = [_vector(sample.title, sample.features) for sample in test]
-    train_labels = [sample.label for sample in train]
-    test_labels = [sample.label for sample in test]
-    deadline = started + max(0.05, float(cpu_budget_seconds))
-    rng = random.Random(time.time_ns())
-    # 기존 모델의 저장된 AP를 그대로 기준선으로 쓰지 않는다. 날짜가 쌓이면
-    # walk-forward split이 달라져 다른 test set에서 잰 값이 되고, 우연히 쉬운
-    # split에서 높게 나온 값 하나가 이후 갱신을 영구히 막는다. 같은 split에서
-    # 다시 재서 비교한다.
-    best_ap = _incumbent_average_precision(current_model, test_vectors, test_labels)
-    best_model: dict[str, Any] | None = None
     trials = 0
-
-    while time.thread_time() < deadline:
-        validation_ap, intercept, weights = _fit_trial(
-            train_vectors,
-            train_labels,
-            test_vectors,
-            test_labels,
-            rng,
-        )
-        trials += 1
-        if validation_ap <= best_ap:
-            continue
-        best_ap = validation_ap
-        best_model = {
-            "version": 1,
-            "feature_names": list(FEATURE_NAMES),
-            "hash_buckets": HASH_BUCKETS,
-            "intercept": round(intercept, 8),
-            "weights": [round(weight, 8) for weight in weights],
-            "validation_ap": round(validation_ap, 6),
-            "validation_prevalence": round(sum(test_labels) / len(test_labels), 6),
-            "label_count": len(samples),
-            "train_days": sorted(set(days) - test_days),
-            "test_days": sorted(test_days),
-        }
-
-    return OptimizationResult(
-        time.thread_time() - started,
-        trials,
-        len(samples),
-        best_model,
-    )
-
+    best_model = None
+    while time.thread_time() < deadline and state["trials"] < MAX_SEARCH_TRIALS:
+        if "trial" not in state:
+            state["trial"] = _fit_trial(
+                state["train_vectors"], state["train_labels"],
+                state["test_vectors"], state["test_labels"], state["rng"],
+            )
+        try:
+            next(state["trial"])
+        except StopIteration as completed:
+            del state["trial"]
+            validation_ap, intercept, weights = completed.value
+            trials += 1
+            state["trials"] += 1
+            if validation_ap <= state["best_ap"]:
+                continue
+            state["best_ap"] = validation_ap
+            best_model = {
+                "version": 1, "feature_names": list(FEATURE_NAMES),
+                "hash_buckets": HASH_BUCKETS, "intercept": round(intercept, 8),
+                "weights": [round(weight, 8) for weight in weights],
+                "validation_ap": round(validation_ap, 6),
+                "validation_prevalence": round(state["prevalence"], 6),
+                "label_count": len(samples), "train_days": state["train_days"],
+                "test_days": state["test_days"],
+            }
+    reason = "search_complete" if state["trials"] >= MAX_SEARCH_TRIALS else ""
+    return OptimizationResult(time.thread_time() - started, trials, len(samples), best_model, reason)

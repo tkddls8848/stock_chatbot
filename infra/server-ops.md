@@ -200,51 +200,35 @@ journalctl -u stock-chatbot --since "$(date -u -d '6 days ago' '+%Y-%m-%d 00:00:
 - 여유가 크게 남으면 깊이(본문 길이·후보 수)를 먼저 올린다. **깊이는 싸고
   수량은 비싸다** — 기사 1건이 호출 1회이므로 수량은 선형으로 늘어난다.
 
-## 7. 사전선별(shadow → active) 판정
+## 7. 뉴스 사전선별 운영 확인
 
-`news_prefilter`는 번역 전에 원문 후보를 사건 단위로 묶고 점수를 매긴다. 번역
-건수는 `NEWS_GLOBAL_LIMIT` 그대로라 **추가 Neurons는 0**이고, 대신
-`NEWS_SOURCE_ARTICLE_LIMIT`을 250으로 올려 CPU로 깊이를 산다.
+`news_prefilter`는 원문 후보를 사건별로 묶고 보고서 입력을 선별한다.
+기준은 `code_guide.md`의 사전선별 항목이다. 기본 모드는 `active`이고 소스당
+12건 중 중요도순 10건·무작위 탐색 2건을 큐로 보낸다. 기사별 번역 경로는 없다.
 
-**"일주일 뒤"의 시작점은 서버에 켠 날이다.** 로컬에서 대신 쌓을 수 없다 —
-관측은 뉴스 주기가 돌아야 생기고 로컬 봇은 돌지 않는다.
-
-켠 뒤 첫 며칠은 CPU만 본다.
+배포·재기동 후 `/system prefilter`에서 active, 소스당 12건, 탐색 2건을 확인한다.
+구버전의 “번역 순서는 최신순”, “하루 4.32h 예산”이 보이면 실행 중인 체크아웃과
+프로세스의 시작 시각을 확인한다. 개발 workspace 변경만으로 운영 봇은 바뀌지 않는다.
 
 ```bash
-journalctl -u stock-chatbot | grep PREFILTER | grep 중단= | tail -20
+systemctl show stock-chatbot -p WorkingDirectory -p ExecStart -p ActiveEnterTimestamp
+journalctl -u stock-chatbot --since '30 minutes ago' --no-pager | rg PREFILTER
 ```
 
-`중단=budget`이 **매일** 나오면 예산이 아니라 관측량을 먼저 줄인다. 배경 보정은
-하루 4.32 CPU-hour(`NEWS_PREFILTER_CALIBRATION_DAILY_BUDGET_SECONDS`) 안에서만
-돌고, 직전 1분의 foreground CPU를 빼 전체 2 vCPU의 9% 안에서 적응적으로
-페이스를 잡는다. 긴급 뉴스·버스트 우선 작업·load average 1.5 이상에서도
-스스로 물러난다.
+모델이 아직 없으면 라벨 120건·3일과 시간 분할 양쪽의 양성·음성이 모였는지 본다.
+`invalid_time_split`은 무작위 평가 표본에서 낮은 중요도 라벨이 충분히 들어오는지도
+확인한다. CPU 사용량을 늘리려고 미평가 기사를 음성으로 채우지 않는다.
 
-일주일 뒤 `/system prefilter`로 네 축을 본다.
+`search_complete`는 현재 자료의 32회 검증 완료로 정상 대기다. 새 보고서 평가가
+생기면 다시 학습한다. `burst`·`urgent`·`load`는 다른 작업에 양보한 상태다.
+일일 CPU 상한은 없으며, 실제 사용량과 학습 완료 trial을 함께 확인한다.
 
-| 축 | 무엇을 답하나 | 승격 기준 |
-|---|---|---|
-| 두 정책의 불일치 | 바꿀 이유가 있는가 | 최신순만·사전선별만이 각각 유의미하게 있어야 한다. 0이면 바꿔도 같은 기사다 |
-| 점수 AUC | 점수가 impact를 가르는가 | 0.5(무작위)보다 뚜렷이 높아야 한다 |
-| 모델 검증 AP | 보정기가 기저보다 나은가 | `validation_ap` > `validation_prevalence` |
-| CPU 예산 | 3.6h/일 안에 들어오는가 | 소진으로 중단되는 날이 없어야 한다 |
+효과는 최근 7일의 반복 차단, 최신순 밖 발견 후보의 후속 평가, 점수 AUC,
+검증 AP로 점검한다. 관측 라벨 500건·음성 50건·7일 전에는 개선을 단정하지 않는다.
+active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 향상률이 아니다.
 
-**AUC를 "더 나은 기사를 찾는 능력"으로 읽지 않는다.** shadow에서 번역되는 것은
-최신순 상위뿐이라 라벨도 거기에만 붙는다. 즉 이 AUC는 *최신순이 이미 고른 기사들
-안에서의 순위*다. 사전선별이 새로 끌어올렸을 기사가 실제로 좋았는지는 `active`의
-탐색 슬롯이 그 기사를 번역해 봐야 안다. 같은 경고가 `/system prefilter` 하단과
-`service.py`의 `SHADOW_CAVEATS`에 있다.
-
-**판정과 조치**
-
-- 네 축 통과 → `config.py`의 `NEWS_PREFILTER_MODE`를 `"active"`로 바꾸고
-  커밋·배포한다. 탐색 슬롯 1개가 번역 슬롯 하나를 임의 깊이 기사에 배정하기
-  시작하므로 그 뒤부터 편향 없는 라벨이 쌓인다. 다시 일주일 뒤 AUC를 재읽는다.
-- 불일치가 0에 가까움 → 깊이만 올린 셈이니 `NEWS_SOURCE_ARTICLE_LIMIT`을 30으로
-  되돌리고(커밋) 기능을 끈다. 점수가 순서를 못 바꾸면 유지할 값이 없다.
-- AUC가 0.5 근처 → 올리지 않는다. 가중치를 손보기 전에 어떤 feature가 실제로
-  살아 있는지 본다(실측: 종목 매칭은 원문 제목의 8.2%에서만 걸린다).
+점수 효과가 나쁘면 `config.py`의 `NEWS_PREFILTER_MODE`를 `"shadow"`로 변경해
+배포·재기동한다. 반복 차단과 관측은 유지하고 보고서 후보 순서만 최신순으로 돌아간다.
 
 ## 8. Polymarket 현재 대시보드
 
@@ -479,18 +463,15 @@ sudo systemctl restart stock-chatbot
 free -h; uptime; systemctl status stock-chatbot --no-pager | grep Memory
 ```
 
-load average가 상시 1.5 이상이면 사전선별이 스스로 물러나 보정이 진행되지
-않는다. 그 상태가 계속되면 관측량이나 bundle을 다시 본다 —
-`NEWS_PREFILTER_LIGHTSAIL_VCPUS`는 `medium_3_0`(2 vCPU)에,
-`NEWS_PREFILTER_TARGET_CPU_UTILIZATION`은 평시 9%에 맞춰져 있다. bundle을
-바꾸면 vCPU 수를 함께 바꾼다.
+load average가 상시 1.5 이상이면 사전선별은 학습을 양보한다.
+`/system prefilter`와 로그에서 최근 대기 이유가 `load`인지 확인하고, 호스트의
+다른 프로세스·스케줄 중첩을 점검한다. 고정 CPU 비율·일일 학습 상한은 없다.
 
-`journalctl | grep PREFILTER`에는 보정 CPU와 직전 주기의 `foreground` CPU가
-함께 찍힌다. 두 값을 합친 주기당 목표 상한은 10.8 CPU-second다. 리서치,
-야간 다이제스트, 시장 컨센서스 처리 중에는 `버스트 우선 작업 진행 중 · 보정
-양보`가 찍힌다. 이 작업들은 9% 제한 밖에서 실행되어 모아 둔 burst capacity를
-우선 사용한다. 콘솔의 CPU 평균이 계속 9%를 넘으면 목표값보다 먼저 봇 외
-프로세스와 스케줄 중첩 여부를 확인한다.
+학습 CPU와 봇 foreground CPU는 별도로 집계한다. 단일 worker에서 1분마다
+최대 30 CPU초를 수행하되, 리서치·3시간 보고서·시장 컨센서스 작업 중에는
+`버스트 우선 작업 진행 중 · 보정 양보`가 찍힌다. 같은 자료의 32 trial이
+완료되면 새 라벨까지 쉬므로 CPU가 낮다는 사실만으로 장애로 판단하지 않는다.
+
 ## 11. 공개 웹 (읽기 전용)
 
 봇이 구워 둔 산출물만 보여 주는 **별도 프로세스**다. 웹에는 실행 트리거가 없다 —
@@ -624,7 +605,7 @@ sudo -u stockbot ls -la /srv/stock-chatbot/data/webpub/
 
 | 위험 | 신호 | 조치 |
 |---|---|---|
-| 웹이 CPU 예산을 먹는다 | 사전선별 `중단=budget`이 매일 나온다(7절) | 굽는 주기를 줄인다. 그래도 계속되면 443을 닫는다 |
+| 웹 부하로 학습이 지연된다 | 사전선별 `중단=load`가 지속된다(7절) | 프로세스별 CPU와 굽는 주기를 점검한다 |
 | 메모리 압박 | 스왑 사용이 상시, OOM kill | 웹 프로세스를 이 인스턴스에서 뺀다 |
 | 리서치면 남용 | 인증 성공 로그가 지인 수와 맞지 않는다 | 11-3의 비밀번호 교체 |
 | 공개면 남용 | 익명 트래픽이 스크레이퍼 수준으로 는다 | `basic_auth`의 `@research` matcher를 빼 전면 잠금. 계속되면 443을 닫고 터널로 되돌린다 |

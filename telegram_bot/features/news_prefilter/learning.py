@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from telegram_bot.core.clock import now, ensure_jst
+from telegram_bot.core.storage import write_text_atomic
 
 from telegram_bot.features.news_prefilter.optimizer import TrainingSample
 
@@ -33,36 +35,28 @@ class ObservationLearner:
 
     def _compact_observations_if_needed(self) -> bool:
         """보존 기간이 지난 관측을 하루 한 번 걷어낸다. 재작성했으면 True."""
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = now().astimezone(timezone.utc).date().isoformat()
         if self._last_compact_day == today or not self._observation_file.exists():
             return False
-        cutoff = datetime.now(timezone.utc) - timedelta(
+        cutoff = now().astimezone(timezone.utc) - timedelta(
             days=self._observation_retention_days
         )
-        temporary = self._observation_file.with_name(
-            f"{self._observation_file.name}.{os.getpid()}.compact.tmp"
-        )
-        with self._file_lock:
-            try:
-                with self._observation_file.open("r", encoding="utf-8") as source, temporary.open(
-                    "w", encoding="utf-8", newline="\n"
-                ) as target:
-                    for line in source:
-                        try:
-                            item = json.loads(line)
-                            observed = datetime.fromisoformat(str(item.get("observed_at")))
-                            if observed.tzinfo is None:
-                                observed = observed.replace(tzinfo=timezone.utc)
-                            if observed.astimezone(timezone.utc) < cutoff:
-                                continue
-                        except (ValueError, TypeError, json.JSONDecodeError):
+        def retained_lines():
+            with self._observation_file.open("r", encoding="utf-8") as source:
+                for line in source:
+                    try:
+                        item = json.loads(line)
+                        if not isinstance(item, dict):
                             continue
-                        target.write(line if line.endswith("\n") else line + "\n")
-                    target.flush()
-                    os.fsync(target.fileno())
-                os.replace(temporary, self._observation_file)
-            finally:
-                temporary.unlink(missing_ok=True)
+                        observed = ensure_jst(datetime.fromisoformat(str(item.get("observed_at"))))
+                        if observed < cutoff:
+                            continue
+                    except (ValueError, TypeError, json.JSONDecodeError):
+                        continue
+                    yield line if line.endswith("\n") else line + "\n"
+
+        with self._file_lock:
+            write_text_atomic(self._observation_file, retained_lines())
         self._last_compact_day = today
         return True
 

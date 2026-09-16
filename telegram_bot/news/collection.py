@@ -1,4 +1,4 @@
-"""Fetch and prefilter source articles before translation."""
+"""Fetch and prefilter original articles for the market report."""
 
 from __future__ import annotations
 
@@ -27,13 +27,11 @@ async def collect_source_candidates(
     watchlist: dict[str, str],
     prefilter=None,
     cycle_id: str = "",
+    *,
+    excluded_article_ids: set[str] | None = None,
+    excluded_event_ids: set[str] | None = None,
 ) -> list[SourceCandidate]:
-    """소스 하나를 읽어 번역 전 후보를 만든다(LLM을 부르지 않는다).
-
-    주간 번역 경로와 야간 수집 경로가 같은 목록을 봐야 한다. 여기서 소스 실패
-    격리·발행시각 필터·사전선별 순서를 한 번만 정하고, 그 뒤에 번역할지
-    큐에 담을지만 갈린다.
-    """
+    """소스 실패·신선도·기존 예약을 걸러 보고서 후보를 선별한다."""
     try:
         articles: list[GlobalArticle] = await _fetch_source(spec.fetch)
         registry.record_success(spec.key)
@@ -61,9 +59,10 @@ async def collect_source_candidates(
 
     fetched_count = len(articles)
     articles = filter_recent_articles(articles, NEWS_LIVE_MAX_AGE_HOURS)
+    articles = [article for article in articles if article.article_id not in (excluded_article_ids or set())]
     if not articles:
         logger.info(
-            "[%s] 발행시각 필터 후 기사 0건 (수집 %d건, 최근 %d시간)",
+            "[%s] 신선도·기존 예약 제외 후 기사 0건 (수집 %d건, 최근 %d시간)",
             spec.key,
             fetched_count,
             NEWS_LIVE_MAX_AGE_HOURS,
@@ -79,6 +78,7 @@ async def collect_source_candidates(
                 articles=articles,
                 watchlist=watchlist,
                 cycle_id=cycle_id,
+                excluded_event_ids=excluded_event_ids,
             )
             articles = [candidate.article for candidate in ranked_candidates]
             prefilter_contexts = {
@@ -86,7 +86,7 @@ async def collect_source_candidates(
                 for candidate in ranked_candidates
             }
         except Exception as e:
-            # 로컬 보조 기능이 뉴스 번역·전송을 막아서는 안 된다. shadow/active와
+            # 로컬 보조 기능이 뉴스 수집·보고를 막아서는 안 된다. shadow/active와
             # 무관하게 실패한 주기만 기존 최신순으로 처리한다.
             logger.error("[%s] 뉴스 사전선별 실패, 최신순으로 계속: %s", spec.key, e)
 
@@ -99,6 +99,7 @@ async def collect_source_candidates(
                 article=article,
                 prefilter_candidate_id=getattr(context, "candidate_id", ""),
                 event_id=getattr(context, "event_id", ""),
+                prefilter_exploration=bool(getattr(context, "exploration", False)) and prefilter.mode == "active",
             )
         )
     logger.info(

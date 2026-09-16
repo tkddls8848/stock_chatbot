@@ -55,8 +55,8 @@ def _service(
     *,
     mode="shadow",
     exploration_slots=0,
-    translate_limit=2,
-    translated_event_cooldown_hours=24,
+    selection_limit=2,
+    reported_event_cooldown_hours=24,
 ):
     return NewsPrefilter(
         stock_db=_StockDb(),
@@ -70,9 +70,8 @@ def _service(
         observation_retention_days=14,
         similarity_threshold=0.7,
         exploration_slots=exploration_slots,
-        translate_limit=translate_limit,
-        translated_event_cooldown_hours=translated_event_cooldown_hours,
-        daily_cpu_budget_seconds=100,
+        selection_limit=selection_limit,
+        reported_event_cooldown_hours=reported_event_cooldown_hours,
     )
 
 
@@ -146,7 +145,7 @@ def test_shadow_mode_records_scores_but_keeps_feed_order(tmp_path):
 
 
 def test_active_mode_uses_prefilter_order_without_adding_translation_slots(tmp_path):
-    service = _service(tmp_path, mode="active", translate_limit=2)
+    service = _service(tmp_path, mode="active", selection_limit=2)
     articles = [
         _article(0, "일반 시장 소식"),
         _article(1, "Apple earnings guidance raised"),
@@ -264,7 +263,7 @@ def service_pending_limit():
 
 
 def test_report_separates_policy_disagreement_from_discrimination(tmp_path):
-    service = _service(tmp_path, translate_limit=2)
+    service = _service(tmp_path, selection_limit=2)
     ranked = asyncio.run(
         service.rank_articles(
             source="gnews_us",
@@ -328,11 +327,11 @@ def test_learning_only_outcome_does_not_mark_event_selected():
 
     service = NewsPrefilter.__new__(NewsPrefilter)
     service._append_observations = Mock()
-    service._mark_event_translated = Mock()
+    service._mark_event_reported = Mock()
     payload = {"type": "outcome", "candidate_id": "sample", "impact": "low"}
     service._record_outcome_sync(payload, "sample", selected=False)
     service._append_observations.assert_called_once_with([payload])
-    service._mark_event_translated.assert_not_called()
+    service._mark_event_reported.assert_not_called()
 
 
 def test_rank_auc_treats_ties_as_random():
@@ -369,23 +368,15 @@ def test_stale_validation_ap_does_not_block_updates():
     assert result.model is not None
 
 
-def test_cpu_budget_gates_only_on_background_not_foreground(tmp_path):
-    """foreground(매 주기 후보 점수화)는 관측만 되고 예산을 깎지 않는다.
-
-    한 풀을 같이 깎던 예전 구조에서는 foreground만으로 하루치를 다 써 보정이
-    한 번도 못 도는 굶주림이 있었다.
-    """
+def test_cpu_usage_records_learning_without_a_daily_cap(tmp_path):
     service = _service(tmp_path)
-    service._cpu_budget._state["foreground_cpu_seconds"] = 500.0
-    service.record_background_cpu(55.0)
-
+    service._cpu_usage._state["foreground_cpu_seconds"] = 500.0
+    service.record_background_cpu(20000.0)
     status = service.cpu_status()
-
-    assert status["used_seconds"] == 55.0
-    assert status["remaining_seconds"] == 45.0
+    assert status["used_seconds"] == 20000.0
     assert status["foreground_seconds"] == 500.0
-    persisted = json.loads((tmp_path / "cpu.json").read_text(encoding="utf-8"))
-    assert "utc_day" in persisted
+    assert "budget_seconds" not in status
+    assert "utc_day" in json.loads((tmp_path / "cpu.json").read_text(encoding="utf-8"))
 
 
 def test_optimizer_trains_on_original_titles_with_time_split():
@@ -499,7 +490,7 @@ def test_duplicate_gate_counts_are_written_to_the_cycle_observation(tmp_path):
 
 def test_translated_event_gate_expires_after_the_cooldown(tmp_path):
     """차단 창을 0으로 두면 재탕 차단이 꺼진다 — 창은 설정이지 규칙이 아니다."""
-    service = _service(tmp_path, translated_event_cooldown_hours=0)
+    service = _service(tmp_path, reported_event_cooldown_hours=0)
 
     first = asyncio.run(
         service.rank_articles(
@@ -526,3 +517,119 @@ def test_translated_event_gate_expires_after_the_cooldown(tmp_path):
     )
 
     assert len(again) == 1
+
+
+def _learning_samples():
+    return [
+        TrainingSample(
+            day=f"2026-09-{1 + i // 60:02d}",
+            title="earnings surprise" if i % 2 else "routine update",
+            features={name: float(i % 2) for name in FEATURE_NAMES}, label=i % 2,
+        ) for i in range(180)
+    ]
+
+
+def test_optimizer_resumes_trials_and_rests_until_new_labels(monkeypatch):
+    from telegram_bot.features.news_prefilter import optimizer
+
+    # 가짜 CPU clock으로 trial 중간에 여러 번 양보시킨다.
+    ticks = iter(i / 10000 for i in range(10000))
+    monkeypatch.setattr(optimizer.time, "thread_time", lambda: next(ticks))
+    monkeypatch.setattr(optimizer, "MAX_SEARCH_TRIALS", 3)
+    samples = _learning_samples()
+    state = {}
+    model = None
+    results = []
+    for _ in range(100):
+        result = optimize_for_cpu_budget(samples, model, 0.001, state=state)
+        results.append(result)
+        model = result.model or model
+        if result.reason == "search_complete":
+            break
+    assert len(results) > 3  # 한 trial이 한 조각보다 길어도 진행 상태가 살아 있다.
+    assert sum(result.trials for result in results) == 3
+    assert model is not None
+    assert result.reason == "search_complete"
+    assert optimize_for_cpu_budget(samples, model, 0.001, state=state).trials == 0
+    old_fingerprint = state["fingerprint"]
+    updated = [*samples, TrainingSample("2026-09-03", "fresh event", {}, 0)]
+    optimize_for_cpu_budget(updated, model, 0.001, state=state)
+    assert state["fingerprint"] != old_fingerprint
+    assert state["trials"] == 0
+
+
+def test_constant_score_average_precision_equals_prevalence():
+    from telegram_bot.features.news_prefilter.optimizer import _average_precision
+
+    assert _average_precision([1, 1, 1, 0], [0.5] * 4) == 0.75
+    assert _average_precision([0, 1, 1, 1], [0.5] * 4) == 0.75
+
+
+def test_optimizer_requires_negative_labels_in_training_and_validation():
+    from dataclasses import replace
+
+    samples = [replace(sample, label=1) for sample in _learning_samples()]
+    result = optimize_for_cpu_budget(samples, None, 1)
+    assert result.trials == 0
+    assert result.model is None
+    assert result.reason == "invalid_time_split"
+
+
+def test_queued_event_is_excluded_before_selection(tmp_path):
+    service = _service(tmp_path, mode="active")
+    first = asyncio.run(service.rank_articles(
+        source="one", market="US", articles=[_article(0, "Apple earnings")],
+        watchlist={}, cycle_id="first",
+    ))
+    later = asyncio.run(service.rank_articles(
+        source="two", market="US", articles=[_article(1, "Apple earnings")],
+        watchlist={}, cycle_id="later", excluded_event_ids={first[0].event_id},
+    ))
+    assert later == []
+    report = asyncio.run(service.report())
+    assert report["gated"]["gated_queued_event"] == 1
+
+
+def test_active_report_counts_discoveries_and_exploration_separately(tmp_path):
+    service = _service(tmp_path, mode="active", selection_limit=2, exploration_slots=1)
+    articles = [_article(0, "일반 시장 소식"), _article(1, "관광 안내"),
+                _article(2, "Apple earnings surprise")]
+    ranked = asyncio.run(service.rank_articles(
+        source="one", market="US", articles=articles,
+        watchlist={"US:NASDAQ:AAPL": "애플"}, cycle_id="first",
+    ))
+    for row in ranked[:2]:
+        asyncio.run(service.record_outcome(candidate_id=row.candidate_id, impact="high", sentiment=0.5))
+    report = asyncio.run(service.report())
+    assert report["active_labels"]["ranked"] == 1
+    assert report["active_labels"]["exploration"] == 1
+    assert report["active_labels"]["discovered_positive"] == 1
+
+
+def test_status_ignores_expired_observations_even_before_maintenance(tmp_path):
+    from telegram_bot.core.clock import now
+
+    service = _service(tmp_path)
+    service._append_observations([{
+        "type": "cycle", "observed_at": (now() - timedelta(days=30)).isoformat(),
+        "candidates": 1000, "logged": 20,
+    }])
+    assert asyncio.run(service.report())["candidates_seen"] == 0
+
+
+def test_model_save_failure_keeps_current_model(tmp_path, monkeypatch):
+    import pytest
+    from telegram_bot.features.news_prefilter import service as module
+    from telegram_bot.features.news_prefilter.optimizer import OptimizationResult
+
+    service = _service(tmp_path)
+    previous = dict(service._model)
+    monkeypatch.setattr(service, "_optimize_sync", lambda _: OptimizationResult(0.1, 1, 180, {"weights": [1]}))
+
+    def fail(*_args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(module, "write_json_atomic", fail)
+    with pytest.raises(OSError):
+        asyncio.run(service.optimize_chunk(1))
+    assert service._model == previous

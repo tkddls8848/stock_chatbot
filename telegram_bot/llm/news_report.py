@@ -61,10 +61,16 @@ class NewsReportAnalyzer:
         if not headlines:
             raise NewsReportError("no headlines to analyze")
 
-        sample_indexes = random.sample(
-            [item["index"] for item in headlines], min(10, len(headlines))
-        )
-        payload = {"market": market, "window": window, "articles": headlines,
+        # 탐색 기사가 근거에 뽑히지 않아도 평가를 받을 통로를 확보한다.
+        # 전체 10개 중 최대 절반만 우선 배정하고 나머지는 전체 후보에서 무작위로 뽑는다.
+        exploring = [item["index"] for item in headlines if item.get("exploration")]
+        sample_indexes = random.sample(exploring, min(5, len(exploring)))
+        remaining = [item["index"] for item in headlines if item["index"] not in sample_indexes]
+        sample_indexes += random.sample(remaining, min(10 - len(sample_indexes), len(remaining)))
+        # 모델에게 선별 경로를 노출하면 중요도 평가가 그 정보에 끌릴 수 있다.
+        articles = [{key: value for key, value in item.items() if key != "exploration"}
+                    for item in headlines]
+        payload = {"market": market, "window": window, "articles": articles,
                    "evaluation_indexes": sample_indexes}
         user_prompt = json.dumps(payload, ensure_ascii=False)
         valid_indexes = {item["index"] for item in headlines}

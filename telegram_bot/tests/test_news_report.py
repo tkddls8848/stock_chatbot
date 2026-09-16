@@ -52,6 +52,9 @@ class _RecordingTracker:
         self.reserved = []
         self._reservable = reservable
 
+    async def unavailable_ids(self):
+        return set(self.confirmed) | set(self.reserved) - set(self.released)
+
     async def reserve(self, article_id):
         if not self._reservable:
             return False
@@ -869,3 +872,25 @@ def test_unselected_evaluation_only_feeds_learning():
         candidate_id="cand-1", impact="low", sentiment=None, selected=False,
     )
     news_log.record.assert_not_awaited()
+
+
+def test_exploration_gets_evaluated_without_expanding_llm_calls_or_exposing_selection(tmp_path):
+    analyzer = _analyzer(tmp_path, _payload(indexes=(0,)))
+    headlines = [{"index": i, "title": f"기사 {i}", "exploration": i >= 25} for i in range(30)]
+    analyzer.analyze("US", "00~03", headlines)
+    assert len(analyzer._backend.calls) == 1
+    request = analyzer._backend.calls[0]
+    assert len(request["evaluation_indexes"]) == 10
+    assert len(set(request["evaluation_indexes"])) == 10
+    assert set(range(25, 30)) <= set(request["evaluation_indexes"])
+    assert all("exploration" not in item for item in request["articles"])
+
+
+def test_exploration_flag_survives_queue_and_report_input():
+    from telegram_bot.news.models import SourceCandidate
+
+    article = GlobalArticle(article_id="one", title="News", content="", published_at="2026-09-16")
+    spec = SourceSpec(key="source", label="Source", fetch=lambda: [], market="US")
+    candidate = SourceCandidate(spec=spec, article=article, prefilter_exploration=True)
+    item = news_report._queue_item(candidate)
+    assert news_report._headline_payload([item])[0]["exploration"] is True

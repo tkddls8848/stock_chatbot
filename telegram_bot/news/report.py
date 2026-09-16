@@ -82,6 +82,7 @@ def _queue_item(candidate) -> dict:
         "published_at": article.published_at,
         "published_date": article.published_date or "",
         "prefilter_candidate_id": candidate.prefilter_candidate_id,
+        "prefilter_exploration": candidate.prefilter_exploration,
     }
 
 
@@ -95,12 +96,15 @@ async def collect_report_source(
     cycle_id: str = "",
 ) -> int:
     """소스 하나의 원문 기사를 예약하고 보고서 큐에 담는다."""
+    _, queued = await queue.snapshot()
     candidates = await collect_source_candidates(
         spec,
         registry,
         watchlist,
         prefilter,
         cycle_id,
+        excluded_article_ids=await tracker.unavailable_ids(),
+        excluded_event_ids={item["event_id"] for item in queued if item.get("event_id")},
     )
     reserved = []
     for candidate in candidates[:NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT]:
@@ -206,6 +210,7 @@ def _headline_payload(items: list[dict]) -> list[dict]:
                 "title": str(item.get("title") or ""),
                 "source": str(item.get("label") or item.get("source") or ""),
                 "published_at": _report_time_label(formatted),
+                "exploration": bool(item.get("prefilter_exploration")),
             }
         )
     return payload
@@ -325,7 +330,7 @@ async def _log_highlights(
         except Exception as e:
             logger.error("[NEWS REPORT] %s 근거 로그 기록 실패: %s", market, e)
 
-    # 미선정 표본은 학습에만 쓴다. 사용자 뉴스·예측 로그나 사건 재탕 차단에 넣지 않는다.
+    # 미선정 표본은 학습에만 쓴다. 사용자 뉴스 로그나 사건 재탕 차단에 넣지 않는다.
     if prefilter is not None:
         for evaluation in result.get("evaluations", []):
             item = items[evaluation["index"]]

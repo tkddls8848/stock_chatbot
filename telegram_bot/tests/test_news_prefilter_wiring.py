@@ -77,7 +77,7 @@ def test_service_is_installed_under_the_name_the_pipeline_looks_up(installed):
     app, _ = installed
 
     assert "news_prefilter" in app.bot_data
-    assert app.bot_data["news_prefilter"].mode == "shadow"
+    assert app.bot_data["news_prefilter"].mode == "active"
 
 
 def test_maintenance_job_starts_late_and_never_overlaps(installed):
@@ -101,6 +101,9 @@ class _Queue:
     def __init__(self):
         self.items = []
 
+    async def snapshot(self):
+        return "", list(self.items)
+
     async def enqueue(self, items):
         self.items.extend(items)
         return items
@@ -109,6 +112,9 @@ class _Queue:
 class _Tracker:
     def __init__(self):
         self.confirmed = []
+
+    async def unavailable_ids(self):
+        return set()
 
     async def reserve(self, article_id):
         return True
@@ -136,7 +142,7 @@ class _Prefilter:
         self.outcomes = []
         self.cycle_ids = []
 
-    async def rank_articles(self, *, source, market, articles, watchlist, cycle_id):
+    async def rank_articles(self, *, source, market, articles, watchlist, cycle_id, excluded_event_ids=None):
         self.cycle_ids.append(cycle_id)
         if self.fail:
             raise RuntimeError("사건 메모리 손상")
@@ -223,9 +229,7 @@ def test_a_broken_prefilter_falls_back_to_recency_instead_of_dropping_news(monke
 def test_candidate_id_rides_along_so_the_label_can_be_joined(monkeypatch):
     """큐 항목이 후보 식별자를 들고 가야 나중에 라벨을 이어 붙일 수 있다.
 
-    지금 그 라벨을 되먹이는 호출자는 없다(code_guide.md의 라벨 공급 항목). 식별자가
-    큐까지 살아 오는 것만이라도 고정해 두면, 공급자를 붙일 때 저장 형식을 다시
-    설계하지 않아도 된다.
+    보고서 근거·무작위 평가의 라벨이 이 식별자로 원래 후보에 연결된다.
     """
     monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
 
@@ -315,7 +319,7 @@ def test_system_prefilter_shows_disagreement_and_discrimination():
     assert "shadow" in text
     assert "0.630" in text  # AUC
     assert "최신순만 8건" in text
-    assert "0.90h / 3.60h" in text  # CPU 예산(보정)
+    assert "오늘 학습 0.90h" in text  # CPU 예산(보정)
     assert "0.50h" in text  # foreground는 참고용으로만 표시
 
 
@@ -386,43 +390,69 @@ def test_menu_button_routes_to_the_prefilter_report(monkeypatch):
 
 def _verdict(**overrides):
     from telegram_bot.features.news_prefilter.report import _verdict_lines
-
     payload = {
-        "labeled": 600, "agree": 50, "latest_only": 25, "prefilter_only": 25,
-        "auc": 0.70, "model_validation_ap": 0.45, "model_prevalence": 0.20,
+        "labeled": 600, "positives": 400, "observation_days": 7,
+        "agree": 50, "latest_only": 25, "prefilter_only": 25,
+        "auc": 0.70, "model_validation_ap": 0.9, "model_prevalence": 0.8,
     }
     payload.update(overrides)
     return " ".join(_verdict_lines(payload))
 
 
-def test_verdict_waits_until_there_are_enough_labels():
-    """표본이 얇을 때 판정하면 잡음으로 기능을 지우거나 올리게 된다."""
-    assert "아직 판단하지 않습니다" in _verdict(labeled=120)
+def test_verdict_waits_for_labels_both_classes_and_observation_window():
+    for change in ({"labeled": 120}, {"positives": 590}, {"observation_days": 2}):
+        assert "아직 판단하지 않습니다" in _verdict(**change)
 
 
-def test_verdict_says_drop_when_both_policies_pick_the_same_articles():
-    """불일치가 없으면 바꿔도 같은 기사가 나간다. 코드가 하는 일이 없다."""
-    assert "삭제 기준" in _verdict(agree=100, latest_only=2, prefilter_only=2)
-
-
-def test_verdict_says_drop_when_the_score_is_no_better_than_random():
-    assert "삭제 기준" in _verdict(auc=0.52)
-
-
-def test_verdict_promotes_only_when_every_threshold_is_met():
-    assert "승격 기준을 모두 만족" in _verdict()
-    # AUC만 모자라도 승격하지 않는다.
-    assert "승격 기준을 모두 만족" not in _verdict(auc=0.60)
-    # 기저 대비 향상이 모자라도 승격하지 않는다.
-    assert "승격 기준을 모두 만족" not in _verdict(model_validation_ap=0.25)
-
-
-def test_verdict_allows_one_extension_when_neither_side_is_clear():
-    assert "2주 연장은 한 번만" in _verdict(auc=0.60)
-
-
-def test_verdict_always_shows_the_deadline_and_the_default():
-    """기한과 기본값이 화면에 없으면 '좀 더 보자'로 미뤄진다."""
-    text = _verdict(labeled=0)
+def test_active_quality_review_does_not_claim_automatic_promotion():
+    assert "재검토" in _verdict(auc=0.52)
+    text = _verdict()
+    assert "자동 승격·삭제하지 않습니다" in text
+    assert "개선 여지 중 50%" in text
     assert "2026-10-15" in text
-    assert "기본값 삭제" in text
+
+
+def test_report_explains_active_selection_and_idle_cpu_reason():
+    prefilter = _ReportingPrefilter(
+        mode="active", maintenance={"reason": "search_complete", "cpu_seconds": 1.25,
+                                    "trials": 2, "search_trials": 32, "at": "2026-09-16"},
+    )
+    text = _run_system({"news_prefilter": prefilter}, ["prefilter"]).texts[-1]
+    assert "중요도순 선별 + 무작위 탐색" in text
+    assert "일일 상한 없음" in text
+    assert "새 라벨 대기" in text
+    assert "번역" not in text
+
+
+def test_installed_active_prefilter_observes_all_twelve_slots_with_two_explorations(installed):
+    import hashlib
+    app, _ = installed
+    service = app.bot_data["news_prefilter"]
+    articles = [GlobalArticle(article_id=str(i), title=hashlib.sha256(str(i).encode()).hexdigest(),
+                              content="", published_at=now().isoformat())
+                for i in range(30)]
+    ranked = asyncio.run(service.rank_articles(
+        source="test", market="US", articles=articles, watchlist={}, cycle_id="one",
+    ))
+    selected = ranked[:12]
+    assert len(selected) == 12
+    assert sum(row.exploration for row in selected) == 2
+    assert len({row.candidate_id for row in selected}) == 12
+    assert len(service._cycle_claimed) == 12
+    assert service._selection_limit == 12
+
+
+def test_already_queued_articles_do_not_consume_new_selection_slots(tmp_path, monkeypatch):
+    from telegram_bot.state import NewsReportQueue, SentNewsTracker
+
+    monkeypatch.setattr("telegram_bot.news.report.NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT", 2)
+    tracker = SentNewsTracker(tmp_path / "sent.json")
+    queue = NewsReportQueue(tmp_path / "queue.json", per_source_limit=2, max_items=100)
+    articles = _articles(4)
+    spec = SourceSpec(key="test", label="test", fetch=lambda: articles, market="US")
+    asyncio.run(tracker.reserve(articles[0].article_id))
+    asyncio.run(tracker.confirm(articles[1].article_id))
+    accepted = asyncio.run(collect_report_source(spec, _Registry(), tracker, queue, {}))
+    _, items = asyncio.run(queue.snapshot())
+    assert accepted == 2
+    assert [row["article_id"] for row in items] == ["article-2", "article-3"]

@@ -1,4 +1,4 @@
-"""원문 뉴스 사건 메모리, 후보 점수화, 관측/CPU 예산 관리."""
+"""원문 뉴스 사건 메모리, 후보 점수화, 관측/CPU 사용량 관리."""
 
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ import json
 import logging
 import math
 import re
+import random
 import threading
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -21,7 +22,7 @@ from typing import Any
 
 from telegram_bot.core.clock import now
 from telegram_bot.core.storage import write_json_atomic
-from telegram_bot.features.news_prefilter.cpu_budget import DailyCpuBudget
+from telegram_bot.features.news_prefilter.cpu_usage import CpuUsage
 from telegram_bot.features.news_prefilter.learning import (
     PENDING_CANDIDATE_LIMIT as _PENDING_CANDIDATE_LIMIT,
     ObservationLearner,
@@ -87,7 +88,7 @@ class EventRecord:
     sources: list[str] = field(default_factory=list)
     article_ids: list[str] = field(default_factory=list)
     occurrences: int = 0
-    # 이 사건으로 실제 번역이 나간 마지막 시각. 재탕 차단이 읽는다.
+    # 보고서 근거로 사용된 마지막 시각. 저장 키는 기존 translated_at을 유지한다.
     translated_at: str = ""
 
 
@@ -184,9 +185,8 @@ class NewsPrefilter:
         observation_retention_days: int,
         similarity_threshold: float,
         exploration_slots: int,
-        translate_limit: int,
-        translated_event_cooldown_hours: int,
-        daily_cpu_budget_seconds: float,
+        selection_limit: int,
+        reported_event_cooldown_hours: int,
     ):
         self.mode = mode
         self._event_file = event_file
@@ -196,12 +196,13 @@ class NewsPrefilter:
         self._max_events = max(100, max_events)
         self._observation_retention_days = max(1, observation_retention_days)
         self._similarity_threshold = min(0.99, max(0.1, similarity_threshold))
-        self._exploration_slots = max(0, min(exploration_slots, translate_limit - 1))
-        self._translate_limit = max(1, translate_limit)
-        self._translated_cooldown = timedelta(
-            hours=max(0, translated_event_cooldown_hours)
+        self._exploration_slots = max(0, min(exploration_slots, selection_limit - 1))
+        self._selection_limit = max(1, selection_limit)
+        self._reported_cooldown = timedelta(
+            hours=max(0, reported_event_cooldown_hours)
         )
-        self._daily_cpu_budget_seconds = max(0.0, daily_cpu_budget_seconds)
+        self._training_state: dict[str, Any] = {}
+        self._maintenance: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._file_lock = threading.RLock()
         self._optimizer = ThreadPoolExecutor(
@@ -211,10 +212,7 @@ class NewsPrefilter:
         self._events = self._load_events()
         raw_model = self._load_json(self._model_file, default={})
         self._model = raw_model if isinstance(raw_model, dict) else {}
-        self._cpu_budget = DailyCpuBudget(
-            cpu_state_file,
-            self._daily_cpu_budget_seconds,
-        )
+        self._cpu_usage = CpuUsage(cpu_state_file)
         self._last_persist_monotonic = 0.0
         self._learner = ObservationLearner(
             observation_file,
@@ -228,11 +226,10 @@ class NewsPrefilter:
         self._cycle_claimed: set[str] = set()
         self._matcher = StockEntityMatcher(stock_db.get_candidate_universe())
         logger.info(
-            "[PREFILTER] %s 모드 · 사건 %d건 · 종목명 패턴 %d개 · CPU 예산 %.2fh/일",
+            "[PREFILTER] %s 모드 · 사건 %d건 · 종목명 패턴 %d개 · 단일 worker 학습 · 일일 CPU 상한 없음",
             self.mode,
             len(self._events),
             self._matcher.pattern_count,
-            self._daily_cpu_budget_seconds / 3600,
         )
 
     @staticmethod
@@ -270,17 +267,13 @@ class NewsPrefilter:
         return events
 
     def account_foreground_cpu(self) -> float:
-        return self._cpu_budget.account_foreground_cpu()
+        return self._cpu_usage.account_foreground_cpu()
 
     def record_background_cpu(self, cpu_seconds: float) -> None:
-        self._cpu_budget.record_background_cpu(cpu_seconds)
-
-    @property
-    def remaining_cpu_seconds(self) -> float:
-        return self._cpu_budget.remaining_seconds
+        self._cpu_usage.record_background_cpu(cpu_seconds)
 
     def cpu_status(self) -> dict[str, float | str]:
-        return self._cpu_budget.status()
+        return self._cpu_usage.status()
 
     @staticmethod
     def _candidate_id(source: str, article_id: str) -> str:
@@ -338,9 +331,9 @@ class NewsPrefilter:
             return None, best_similarity
         return best_event, best_similarity
 
-    def _recently_translated(self, event_id: str, observed_at: datetime) -> bool:
-        """이 사건으로 이미 번역이 나갔고 아직 재탕 차단 시간 안인가."""
-        if not self._translated_cooldown:
+    def _recently_reported(self, event_id: str, observed_at: datetime) -> bool:
+        """이 사건이 보고서 근거로 쓰였고 아직 반복 차단 시간 안인가."""
+        if not self._reported_cooldown:
             return False
         event = self._events.get(event_id)
         if event is None or not event.translated_at:
@@ -351,9 +344,9 @@ class NewsPrefilter:
             return False
         if translated.tzinfo is None:
             translated = translated.replace(tzinfo=observed_at.tzinfo)
-        return observed_at - translated < self._translated_cooldown
+        return observed_at - translated < self._reported_cooldown
 
-    def _mark_event_translated(self, candidate_id: str) -> None:
+    def _mark_event_reported(self, candidate_id: str) -> None:
         event_id = self._candidate_events.get(candidate_id)
         event = self._events.get(event_id) if event_id else None
         if event is None:
@@ -393,6 +386,7 @@ class NewsPrefilter:
         articles: list[GlobalArticle],
         watchlist: dict[str, str],
         cycle_id: str,
+        excluded_event_ids: set[str] | None = None,
     ) -> list[RankedCandidate]:
         observed_at = now()
         self._evict_events(observed_at)
@@ -459,17 +453,20 @@ class NewsPrefilter:
             scored_rows.append((article, candidate_id, event.event_id, features, score))
             self._candidate_events[candidate_id] = event.event_id
 
-        # ── 번역 대상에서 아예 빼는 후보 ────────────────
+        # ── 보고서 후보에서 아예 빼는 후보 ────────────────
         # 점수 순서를 바꾸는 일(shadow/active의 쟁점)과 달리, 여기서 거르는 것은
-        # "같은 사건을 다시 번역하는 것"뿐이다. 두 정책 모두 걸러진 뒤의 같은
+        # "같은 사건을 다시 보고하는 것"뿐이다. 두 정책 모두 걸러진 뒤의 같은
         # 풀에서 고르므로 섀도 비교의 baseline은 그대로 유지된다.
-        gate_counts = {"translated": 0, "cycle": 0, "source": 0}
+        gate_counts = {"translated": 0, "cycle": 0, "source": 0, "queued": 0}
         raw_rows: list[tuple[GlobalArticle, str, str, dict[str, float], float]] = []
         source_events: set[str] = set()
         for row in scored_rows:
             event_id = row[2]
-            if self._recently_translated(event_id, observed_at):
+            if self._recently_reported(event_id, observed_at):
                 gate_counts["translated"] += 1
+                continue
+            if event_id in (excluded_event_ids or set()):
+                gate_counts["queued"] += 1
                 continue
             if event_id in self._cycle_claimed:
                 gate_counts["cycle"] += 1
@@ -488,19 +485,12 @@ class NewsPrefilter:
             reverse=True,
         )
         exploration_indexes: set[int] = set()
-        if self._exploration_slots and len(ranked_indexes) > self._translate_limit:
-            fixed_count = max(1, self._translate_limit - self._exploration_slots)
+        if self._exploration_slots and len(ranked_indexes) > self._selection_limit:
+            fixed_count = max(1, self._selection_limit - self._exploration_slots)
             pool = ranked_indexes[fixed_count:]
-            seed = int.from_bytes(
-                hashlib.blake2b(
-                    f"{cycle_id}:{source}".encode("utf-8"), digest_size=8
-                ).digest(),
-                "big",
-            )
-            for offset in range(min(self._exploration_slots, len(pool))):
-                chosen = pool[(seed + offset * 104729) % len(pool)]
-                exploration_indexes.add(chosen)
-            selected = ranked_indexes[:fixed_count] + list(exploration_indexes)
+            rng = random.Random(f"{cycle_id}:{source}")
+            exploration_indexes = set(rng.sample(pool, min(self._exploration_slots, len(pool))))
+            selected = ranked_indexes[:fixed_count] + sorted(exploration_indexes)
             ranked_indexes = selected + [
                 index for index in ranked_indexes if index not in set(selected)
             ]
@@ -509,8 +499,8 @@ class NewsPrefilter:
         observation_lines: list[dict[str, Any]] = []
         new_events = 0
         for index, (article, candidate_id, event_id, features, score) in enumerate(raw_rows):
-            latest_selected = index < self._translate_limit
-            prefilter_selected = prefilter_rank[index] < self._translate_limit
+            latest_selected = index < self._selection_limit
+            prefilter_selected = prefilter_rank[index] < self._selection_limit
             exploration = index in exploration_indexes
             rows.append(
                 RankedCandidate(
@@ -525,7 +515,7 @@ class NewsPrefilter:
             )
             if features["novelty"] >= 1.0:
                 new_events += 1
-            # 두 정책이 실제로 고르는 기사와 탐색분만 남긴다. 라벨은 번역된
+            # 두 정책이 실제로 고르는 기사와 탐색분만 남긴다. 라벨은 보고서에서 평가된
             # 기사에만 붙으므로 나머지 수백 건을 적어도 학습에 쓸 수 없고,
             # 하루 10만 줄이 쌓여 보존 기간 안에 디스크와 압축 비용만 키운다.
             if not (latest_selected or prefilter_selected or exploration):
@@ -560,6 +550,7 @@ class NewsPrefilter:
                 "source": source,
                 "candidates": len(raw_rows),
                 "gated_translated_event": gate_counts["translated"],
+                "gated_queued_event": gate_counts["queued"],
                 "gated_cycle_duplicate": gate_counts["cycle"],
                 "gated_source_duplicate": gate_counts["source"],
                 "new_events": new_events,
@@ -571,19 +562,20 @@ class NewsPrefilter:
 
         ordered = sorted(rows, key=lambda row: row.prefilter_rank)
         selected = rows if self.mode == "shadow" else ordered
-        # 이번 주기에 번역될 사건을 찍어 둔다. 뒤에 도는 소스가 같은 사건을
-        # 다시 번역하지 않는다 — 소스 여섯 곳이 같은 발표를 옮겨 적는 것이
+        # 이번 주기에 큐로 보낼 사건을 찍어 둔다. 뒤에 도는 소스가 같은 사건을
+        # 다시 담지 않는다 — 소스 여섯 곳이 같은 발표를 옮겨 적는 것이
         # 한 주기 안에서 가장 흔한 중복이다.
         self._cycle_claimed.update(
-            row.event_id for row in selected[: self._translate_limit]
+            row.event_id for row in selected[: self._selection_limit]
         )
         self._persist_events_if_due()
         if any(gate_counts.values()):
             logger.info(
-                "[PREFILTER] %s 재탕 차단 %d건(기번역 %d · 주기중복 %d · 소스중복 %d)",
+                "[PREFILTER] %s 재탕 차단 %d건(기보고 %d · 큐 대기 %d · 주기중복 %d · 소스중복 %d)",
                 source,
                 sum(gate_counts.values()),
                 gate_counts["translated"],
+                gate_counts["queued"],
                 gate_counts["cycle"],
                 gate_counts["source"],
             )
@@ -597,6 +589,7 @@ class NewsPrefilter:
         articles: list[GlobalArticle],
         watchlist: dict[str, str],
         cycle_id: str,
+        excluded_event_ids: set[str] | None = None,
     ) -> list[RankedCandidate]:
         async with self._lock:
             return await asyncio.to_thread(
@@ -606,6 +599,7 @@ class NewsPrefilter:
                 articles=articles,
                 watchlist=watchlist,
                 cycle_id=cycle_id,
+                excluded_event_ids=excluded_event_ids,
             )
 
     async def record_outcome(
@@ -624,6 +618,7 @@ class NewsPrefilter:
             "candidate_id": candidate_id,
             "impact": str(impact or ""),
             "sentiment": sentiment,
+            "selected": selected,
         }
         async with self._lock:
             await asyncio.to_thread(self._record_outcome_sync, payload, candidate_id, selected)
@@ -631,7 +626,7 @@ class NewsPrefilter:
     def _record_outcome_sync(self, payload: dict[str, Any], candidate_id: str, selected: bool = True) -> None:
         self._append_observations([payload])
         if selected:
-            self._mark_event_translated(candidate_id)
+            self._mark_event_reported(candidate_id)
 
     def _report_sync(self) -> dict[str, Any]:
         """관측 파일을 한 번 훑어 섀도 비교 지표를 만든다."""
@@ -643,7 +638,11 @@ class NewsPrefilter:
         latest_only = 0
         prefilter_only = 0
         scored: list[tuple[float, int]] = []
-        pending: dict[str, tuple[float, bool, bool]] = {}
+        pending: dict[str, tuple[float, bool, bool, bool, str]] = {}
+        gated = Counter()
+        active_labels = Counter()
+        observed_days: set[str] = set()
+        cutoff = now() - timedelta(days=self._observation_retention_days)
         if self._observation_file.exists():
             with self._file_lock, self._observation_file.open("rb") as handle:
                 for raw in handle:
@@ -653,8 +652,19 @@ class NewsPrefilter:
                         continue
                     if not isinstance(item, dict):
                         continue
+                    try:
+                        observed = datetime.fromisoformat(str(item.get("observed_at")))
+                        if observed.tzinfo is None:
+                            observed = observed.replace(tzinfo=cutoff.tzinfo)
+                    except (ValueError, TypeError):
+                        continue
+                    if observed < cutoff:
+                        continue
+                    observed_days.add(observed.astimezone(cutoff.tzinfo).date().isoformat())
                     kind = item.get("type")
                     if kind == "cycle":
+                        for key in ("gated_translated_event", "gated_cycle_duplicate", "gated_source_duplicate", "gated_queued_event"):
+                            gated[key] += int(item.get(key) or 0)
                         cycles += 1
                         candidates_seen += int(item.get("candidates") or 0)
                         logged += int(item.get("logged") or 0)
@@ -676,6 +686,8 @@ class NewsPrefilter:
                             float(item.get("score") or 0.0),
                             latest,
                             chosen,
+                            bool(item.get("exploration")),
+                            str(item.get("mode") or ""),
                         )
                         while len(pending) > _PENDING_CANDIDATE_LIMIT:
                             pending.pop(next(iter(pending)))
@@ -684,11 +696,26 @@ class NewsPrefilter:
                         impact = str(item.get("impact") or "")
                         if found is None or impact not in {"high", "medium", "low"}:
                             continue
-                        scored.append((found[0], int(impact in {"high", "medium"})))
+                        positive = int(impact in {"high", "medium"})
+                        scored.append((found[0], positive))
+                        if found[4] == "active":
+                            group = "exploration" if found[3] else "ranked"
+                            active_labels[group] += 1
+                            active_labels[group + "_positive"] += positive
+                            if not found[1] and found[2]:
+                                active_labels["discovered"] += 1
+                                active_labels["discovered_positive"] += positive
 
         model = self._model if isinstance(self._model, dict) else {}
         return {
             "mode": self.mode,
+            "selection_limit": self._selection_limit,
+            "exploration_slots": self._exploration_slots,
+            "retention_days": self._observation_retention_days,
+            "observation_days": len(observed_days),
+            "gated": dict(gated),
+            "active_labels": dict(active_labels),
+            "maintenance": dict(self._maintenance),
             "cycles": cycles,
             "candidates_seen": candidates_seen,
             "logged": logged,
@@ -711,12 +738,23 @@ class NewsPrefilter:
         async with self._lock:
             return await asyncio.to_thread(self._report_sync)
 
+    def record_maintenance(self, *, reason: str, cpu_seconds: float, trials: int, labels: int) -> None:
+        self._maintenance = {
+            "at": now().isoformat(timespec="seconds"), "reason": reason,
+            "cpu_seconds": cpu_seconds, "trials": trials, "labels": labels,
+            "search_trials": self._training_state.get("trials", 0),
+        }
+
     def _optimize_sync(self, cpu_seconds: float) -> OptimizationResult:
-        return optimize_for_cpu_budget(
-            self._learner.load_training_samples(),
-            dict(self._model),
-            cpu_seconds,
+        started = time.thread_time()
+        samples = self._learner.load_training_samples()
+        result = optimize_for_cpu_budget(
+            samples, dict(self._model),
+            max(0.0, cpu_seconds - (time.thread_time() - started)),
+            state=self._training_state,
         )
+        # 적재·압축·벡터화도 실제 학습 비용이다. optimizer 바깥의 CPU까지 센다.
+        return replace(result, cpu_seconds=time.thread_time() - started)
 
     async def optimize_chunk(self, cpu_seconds: float) -> OptimizationResult:
         loop = asyncio.get_running_loop()
@@ -729,6 +767,11 @@ class NewsPrefilter:
             model = dict(result.model)
             model["trained_at"] = now().isoformat(timespec="seconds")
             async with self._lock:
+                try:
+                    await asyncio.to_thread(write_json_atomic, self._model_file, model)
+                except Exception:
+                    # 저장되지 않은 승자 점수로 이후 trial의 저장을 막지 않는다.
+                    self._training_state.clear()
+                    raise
                 self._model = model
-                await asyncio.to_thread(write_json_atomic, self._model_file, model)
         return result

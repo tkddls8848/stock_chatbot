@@ -88,8 +88,10 @@ def test_registry_rejects_unsatisfied_dependencies(enabled, expected):
         build_feature_registry(enabled)
 
 
-def test_every_enabled_subset_that_passes_can_install_services():
+def test_every_enabled_subset_that_passes_can_install_services(monkeypatch):
     """검증을 통과한 조합은 서비스 설치가 KeyError 없이 끝나야 한다."""
+    # 기능 조립 검증에서 실제 종목 DB 다운로드를 시작하지 않는다.
+    monkeypatch.setattr("telegram_bot.stocks.StockDatabase.load_or_build", lambda self: None)
     closures = [
         {"instruments"},
         {"instruments", "quant"},

@@ -160,15 +160,6 @@ WEB_ADMIN_PASSWORD = os.environ.get("WEB_ADMIN_PASSWORD", "")
 
 SENT_NEWS_RETENTION_DAYS = 7
 TELEGRAM_MESSAGE_LIMIT = 4096
-# 소스 하나가 한 주기에 **번역**할 새 기사 수. Neurons를 쓰는 건 이 값이다
-# (소스 6곳 기준 주기당 최대 24회 호출).
-#
-# 하루 번역량은 "주기 수 × 이 값"과 소스의 실제 발행량 중 작은 쪽이다. 20분
-# 주기에서는 상한이 발행량보다 훨씬 커서 사실상 발행되는 대로 다 번역했다.
-# 60분 주기 × 주간 17주기 × 소스 6곳 × 4건 = 하루 408건으로, 이제 상한이
-# 먼저 걸린다 — 그 안에서 무엇을 고를지가 사전선별과 재탕 차단의 몫이다.
-NEWS_GLOBAL_LIMIT = 4
-# 번역한 기사 중 소스 하나가 실제로 **송출**할 건수. impact가 높은 순으로
 NEWS_DIGEST_MESSAGE_MAX_CHARS = 3500
 # 다이제스트 한 기사의 제목·본문 표시 상한. 프롬프트도 본문을 200자 내외로
 # 지시하지만 그것은 지시일 뿐이라, 모델이 길게 답하는 주기가 섞이면 메시지가
@@ -185,8 +176,6 @@ NEWS_LIVE_MAX_AGE_HOURS = 48
 # gnews는 이 값을 시장 수로, gnews_us·gnews_kr은 질의 수로 다시 나눠 쓴다.
 NEWS_SOURCE_ARTICLE_LIMIT = 250
 
-# 번역 결과가 품질 검사에 걸린 기사는 버리고 다음 후보로 넘어간다. 그 기사는
-
 # ── 3시간 시장상황 보고서 ────────────────────────────
 # 매시간 원문만 수집하고 UTC +9 00·03·06…시에 시장별로 한 번씩 LLM을 불러
 # 지난 구간의 공통 테마·상충 신호·다음 관찰 포인트를 보고한다. 기사별 번역은
@@ -196,8 +185,8 @@ NEWS_REPORT_INTERVAL_HOURS = 3
 NEWS_REPORT_PROMPT_FILE = PROMPT_DIR / "news_report_ko.txt"
 NEWS_REPORT_TIMEOUT = 180
 NEWS_REPORT_NUM_PREDICT = 2048
-# 큐에 담는 상한. 수집은 Neurons를 쓰지 않으므로 한 시간의 번역 상한보다
-# 넉넉히 잡아 3시간 보고서가 반복되는 테마를 판단할 폭을 남긴다.
+# 큐에 담는 상한. 수집은 LLM을 부르지 않으며 보고서가 여러 사건을 비교할
+# 폭을 확보한다. 사전선별도 이 상한으로 점수·탐색 슬롯을 배정한다.
 NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT = 12
 NEWS_REPORT_QUEUE_MAX_ITEMS = 600
 # 시장 하나의 보고서에 넣을 헤드라인 수와, 근거로 뽑아 보여줄 건수.
@@ -213,41 +202,23 @@ NEWS_REPORT_MAX_HIGHLIGHTS = 8
 NEWS_REPORT_HIGHLIGHT_RATIO = 0.25
 NEWS_REPORT_MIN_HIGHLIGHTS = 3
 
-# ── 번역 전 로컬 뉴스 사건 메모리·사전선별 ───────────
-# shadow는 점수·후보·LLM 결과만 축적하고 현재 최신순 번역 순서를 바꾸지 않는다.
-# 최소 일주일의 정책 비교가 끝난 뒤에만 active로 올린다. 승격 절차는
-# docs/server-ops.md 7절을 따른다.
-NEWS_PREFILTER_MODE = "shadow"
-
+# ── 보고서 후보 사전선별·로컬 사건 메모리 ─────────────
+# 운영자 요청으로 active 실험을 시작한다. 점수 효과가 입증됐다는 뜻은 아니다.
+# 소스당 12건 중 중요도 상위 10건 + 무작위 탐색 2건을 보고서 큐로 보낸다.
+NEWS_PREFILTER_MODE = "active"
 NEWS_PREFILTER_EVENT_WINDOW_HOURS = 72
 NEWS_PREFILTER_MAX_EVENTS = 5000
-# 라벨은 번역된 기사에만 붙어 하루 2,600건 남짓이고, 학습 샘플을 메모리에
-# 들고 있는 비용이 여기에 비례한다(실측: 5,184건 = 29MB → 7일 약 100MB).
-# 늘리기 전에 1GB 인스턴스의 여유를 다시 잰다.
 NEWS_PREFILTER_OBSERVATION_RETENTION_DAYS = 7
 NEWS_PREFILTER_SIMILARITY_THRESHOLD = 0.74
-# active에서 번역 슬롯 하나를 임의 깊이 기사에 배정해 선택 편향을 줄인다.
-# 총 번역 건수는 NEWS_GLOBAL_LIMIT 그대로라 추가 Neurons는 쓰지 않는다.
-NEWS_PREFILTER_EXPLORATION_SLOTS = 1
-# 같은 사건을 이미 번역했으면 이 시간 동안은 다른 기사로 다시 번역하지 않는다.
-# 사건 창(72시간)보다 짧게 둔다 — 같은 사건이 사흘 내내 새 숫자를 달고
-# 이어지는 경우가 있어, 재탕은 막되 후속 보도까지 막지는 않는 길이다.
-NEWS_PREFILTER_TRANSLATED_EVENT_COOLDOWN_HOURS = 24
+NEWS_PREFILTER_EXPLORATION_SLOTS = 2
+# 저장된 사건의 translated_at은 지금은 보고서 근거로 사용된 마지막 시각이다.
+NEWS_PREFILTER_REPORTED_EVENT_COOLDOWN_HOURS = 24
 
-# Terraform 기본 bundle(micro_3_0: 2 vCPU, vCPU당 baseline 10%)에서 평시 봇
-# 프로세스는 전체 vCPU 용량의 9%만 쓰는 것을 목표로 한다. 매 보정 주기마다
-# 직전 주기의 필수 foreground CPU를 먼저 빼고 남은 몫만 보정에 배정한다.
-# 리서치·3시간 시장상황 보고서·시장 컨센서스는 burst_phase로 이 제한에서 제외하며,
-# 그 구간에는 보정을 멈춰 모아 둔 버스트 크레딧을 사용자 작업에 우선 쓴다.
-NEWS_PREFILTER_LIGHTSAIL_VCPUS = 2
-NEWS_PREFILTER_TARGET_CPU_UTILIZATION = 0.09
-# 9% × 2 vCPU × 24시간 = 4.32 CPU-hour. foreground는 주기별 잔여량에서
-# 차감하고, 이 일일 상한은 보정 작업 자체가 그보다 더 쓰지 못하게 하는 이중
-# 안전장치다.
-NEWS_PREFILTER_CALIBRATION_DAILY_BUDGET_SECONDS = 15552.0
-# 1분마다 최대 10.8 CPU-second(60 × 2 × 9%)를 한 코어에서 나눠 쓴다.
-# 실제 조각은 직전 1분의 foreground CPU만큼 더 작아진다.
+# 새 라벨에 대한 학습을 단일 worker에서 수행한다. 고정 CPU 비율·일일 상한은 없다.
+# 한 번의 예약 실행은 최대 30 CPU초, 2초 조각 사이에 긴급 작업·호스트 부하를 확인한다.
+# 자료당 32 trial이 끝나면 새 라벨까지 쉰다. 이 값은 일일 소비 목표가 아니다.
 NEWS_PREFILTER_MAINTENANCE_INTERVAL_MINUTES = 1
+NEWS_PREFILTER_MAINTENANCE_MAX_SECONDS = 30.0
 NEWS_PREFILTER_MAINTENANCE_CHUNK_SECONDS = 2.0
 NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 

@@ -19,15 +19,19 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from collections.abc import Iterable
 
 
-def write_text_atomic(path: Path, data: str) -> None:
+def write_text_atomic(path: Path, data: str | Iterable[str]) -> None:
     """`path`를 `data`로 교체한다. 실패하면 예외를 올리고 원본을 남긴다."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(data)
+            if isinstance(data, str):
+                handle.write(data)
+            else:
+                handle.writelines(data)
             handle.flush()
             # 교체 자체는 원자적이지만, OS가 죽으면 내용이 아직 캐시에만 있을 수
             # 있다. 빈 파일로 교체되는 경우를 막으려면 여기서 내려야 한다.

@@ -60,6 +60,12 @@ class SentNewsTracker:
         }
         self._evict()
 
+    async def unavailable_ids(self) -> set[str]:
+        """선별 전에 이미 보고했거나 큐에서 대기 중인 기사를 제외한다."""
+        async with self._lock:
+            self._evict()
+            return set(self._id_ts) | self._pending
+
     async def reserve(self, article_id: str) -> bool:
         """처리 중이거나 이미 보낸 ID가 아니면 pending으로 예약한다."""
         async with self._lock:
