@@ -31,3 +31,11 @@ skills-lock.json
 shorts/.venv/
 shorts/output/
 shorts/state/
+
+# stockbot 서비스 계정의 HOME이 이 저장소 루트라, 홈 디렉토리 설정이 작업
+# 트리 안에 생긴다. `.config/gh/hosts.yml`에는 GitHub 토큰이 평문으로 들어
+# 있다 — `git add -A` 한 번에 자격증명이 커밋되지 않도록 여기서 막는다.
+/.config/
+/.gitconfig
+/.lesshst
+/.cache/
