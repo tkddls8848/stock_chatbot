@@ -137,7 +137,7 @@ tests/            저장소 자체의 검사(에이전트 포인터 동기화)
 telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
                   + docs/ tests/
 web/              읽기 전용 공개 웹 (8788) + docs/ tests/
-  polymarket/     폴리마켓 화면을 먹이는 순회·줄글 one-shot (봇과 무관)
+  polymarket/     폴리마켓 화면을 먹이는 순회·줄글·트렌드 one-shot (봇과 무관)
 shorts/           쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지
                   + src/ docs/ tests/
 infra/            인프라 코드 — terraform/, systemd/, scripts/, Caddyfile, server-ops.md
@@ -154,4 +154,5 @@ data/             실행 중 생성되는 상태·캐시 데이터, 소유 기�
 | 공개 웹 8788 | `python -m web.server` |
 | 폴리마켓 순회 one-shot | `python -m web.polymarket.refresh` |
 | 폴리마켓 줄글 one-shot | `python -m web.polymarket.sector_brief` |
+| 폴리마켓 트렌드 one-shot | `python -m web.polymarket.trending` |
 | 쇼츠(별개 venv, `shorts/`에서) | `python -m polymarket_shorts.cli` |

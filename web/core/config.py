@@ -83,6 +83,29 @@ POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS = 900.0
 POLYMARKET_WEB_MAX_DAILY_REQUESTS = 3000
 
 
+
+# ── 그날 트렌드 이슈 집중 조명 ─────────────────────────────────────────────
+# 화면은 "지금"만 보지만, **무엇이 오늘 움직였는가**는 지금 값 하나로 답할 수
+# 없다. 그래서 이 one-shot만 자기 스냅숏을 자기 파일에 들고 그날치 이동을 잰다.
+# generation 이력을 늘리지 않는 것이 요점이다 — detail shard가 generation 하나에
+# 100 MiB를 넘어(dashboard/storage.py) 과거 generation을 남기는 방식은 디스크가
+# 먼저 찬다. 여기 남는 것은 후보 event의 {확률, 1위, 거래량} 뿐이다.
+POLYMARKET_TRENDING_FILE = POLYMARKET_WEB_DIR / "trending.json"
+# 이동을 추적할 후보 수. 거래량 상위부터 채운다. 열린 event 전부(실측 21,872)를
+# 담으면 스냅숏 두 벌이 매 주기 수 MiB가 되는데, 거래가 없는 event의 가격 이동은
+# 호가 한 건에도 흔들려 트렌드가 아니라 잡음이다.
+POLYMARKET_TRENDING_CANDIDATE_LIMIT = 400
+# 이 미만은 후보로도 보지 않는다. 24시간 거래량이 없다시피 한 시장의 20pp 이동은
+# 참여자가 바뀐 것이 아니라 호가가 비어 있다는 뜻이다.
+POLYMARKET_TRENDING_MIN_VOLUME = 2000.0
+# 화면에 조명할 건수. 한 화면에서 훑고 끝낼 수 있는 분량으로 둔다.
+POLYMARKET_TRENDING_SPOTLIGHT_LIMIT = 10
+# 이 아래 이동은 조명하지 않는다. 3시간에 2pp 미만은 컨센서스가 바뀐 것이 아니라
+# 같은 자리에서 흔들린 것이다.
+POLYMARKET_TRENDING_MOVE_FLOOR = 0.02
+# 신규 진입·거래량 급증 목록의 길이. 조명이 주인공이고 이 둘은 곁들이다.
+POLYMARKET_TRENDING_LIST_LIMIT = 5
+
 # ── 섹터 줄글 브리프 ───────────────────────────────────────────────────────
 # 경제·금융과 지정학에 한정해 컨센서스를 줄글로 정리한다. refresh가 성공한 뒤
 # 별도 one-shot이 돌며, 봇 프로세스와 무관하다. 계획서는

@@ -16,13 +16,13 @@ import json
 
 import pytest
 
+from web.polymarket.dashboard.models import title_probability
 from web.polymarket.dashboard.taxonomy import assign_brief_group, brief_groups
 from web.polymarket.sector_brief import (
     build,
     collect_groups,
     named_events,
     summarize,
-    title_probability,
 )
 
 

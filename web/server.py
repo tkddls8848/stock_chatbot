@@ -103,6 +103,17 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="아직 섹터 브리프가 없습니다.")
         return polymarket_json(request, payload, "sector_brief")
 
+    @app.api_route("/api/polymarket/trending", methods=["GET", "HEAD"])
+    def polymarket_trending(request: Request) -> Response:
+        payload = _read_json("polymarket/trending.json")
+        # baseline·previous는 다음 주기가 이동을 계산할 상태일 뿐이다. 화면이
+        # 읽지 않고 후보 수백 건짜리라 내보내지 않는다.
+        payload.pop("baseline", None)
+        payload.pop("previous", None)
+        if not payload:
+            raise HTTPException(status_code=503, detail="아직 트렌드 집계가 없습니다.")
+        return polymarket_json(request, payload, "trending")
+
     @app.api_route("/api/polymarket/health", methods=["GET", "HEAD"])
     def polymarket_health(request: Request) -> Response:
         payload = POLYMARKET_REPOSITORY.health()

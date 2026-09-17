@@ -3,6 +3,7 @@
 from web.pages.shell import (
     DISCLAIMER,
     I_BARS,
+    I_CHART,
     I_LAYERS,
     I_SCALE,
     I_SPEC,
@@ -18,6 +19,15 @@ _POLYMARKET_MAIN = (
 .pm-brief-h{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin-bottom:6px}
 .pm-brief-h b{font-size:var(--fs-md)}.pm-brief-h span{font-size:var(--fs-xs);color:var(--mut)}
 .pm-brief-g p{margin:0;line-height:1.75}.pm-brief-g p.empty{color:var(--mut)}
+.pm-trend{display:grid;gap:8px}
+.pm-trend-row{display:grid;grid-template-columns:1fr auto auto;gap:6px 14px;align-items:center;width:100%;border:1px solid var(--line);border-radius:var(--r2);background:var(--surface-2);padding:12px 14px;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.pm-trend-row:hover{border-color:var(--gold-a40)}
+.pm-trend-row .t{font-weight:750}
+.pm-trend-move{font-size:var(--fs-lg);font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pm-trend-now{font-size:var(--fs-sm);color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pm-trend-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px}
+.pm-trend-side h4{margin:0 0 8px;font-size:var(--fs-sm)}
+@media(max-width:520px){.pm-trend-row{grid-template-columns:1fr auto}.pm-trend-now{grid-column:1/-1}}
 .pm-alert{border:1px solid var(--gold-a25);background:var(--surface-1);border-radius:var(--r2);padding:10px 14px;margin:14px 0;color:var(--ink-soft);font-size:var(--fs-sm)}
 .pm-alert.warn{border-color:rgba(143,69,17,.35);color:var(--warnc)}
 .pm-bars,.pm-ranks,.pm-events{display:grid;gap:10px}.pm-bar{display:grid;grid-template-columns:minmax(110px,180px) 1fr minmax(78px,auto);gap:10px;align-items:center}
@@ -51,6 +61,12 @@ _POLYMARKET_MAIN = (
  <div class='st'><div class='l'>분야 분류율</div><div class='v' id='pm-category-cover'>–</div></div>
  <div class='st'><div class='l'>확률 커버리지</div><div class='v' id='pm-price-cover'>–</div></div>
 </div>
+<section class='histbox' aria-labelledby='pm-trend-title'><div class='histh' id='pm-trend-title'><span class='phico'>"""
+    + icon(I_CHART)
+    + """</span>오늘의 트렌드 이슈</div>
+ <p class='sub2' id='pm-trend-meta'>불러오는 중…</p><div class='pm-trend' id='pm-trend'></div>
+ <div class='pm-trend-side'><div class='pm-panel'><h4>오늘 새로 들어온 베팅</h4><div id='pm-trend-new' class='pm-ranks'></div></div>
+ <div class='pm-panel'><h4>베팅이 몰리는 중</h4><div id='pm-trend-volume' class='pm-ranks'></div></div></div></section>
 <section class='histbox' aria-labelledby='pm-brief-title'><div class='histh' id='pm-brief-title'><span class='phico'>"""
     + icon(I_SCALE)
     + """</span>경제·금융·지정학 컨센서스</div>
@@ -102,13 +118,21 @@ async function loadBrief(){const m=document.getElementById('pm-brief-meta'),b=do
  b.innerHTML=(d.groups||[]).map(g=>{const head="<div class='pm-brief-h'><b>"+esc(g.label)+"</b><span>event "+Number(g.event_count||0).toLocaleString()+" · 24h "+money(g.volume24hr)+(g.probability&&g.probability.tight?' · 경합 '+g.probability.tight:'')+"</span></div>";
  const body=g.status==='ok'||g.paragraph?"<p>"+esc(g.paragraph)+(g.stale?" (직전 정리)":"")+"</p>":"<p class='empty'>"+(g.status==='insufficient_sample'?'표본이 부족해 정리하지 않았습니다.':'이번 주기에는 정리하지 못했습니다.')+"</p>";
  return "<div class='pm-brief-g'>"+head+body+"</div>"}).join('')||"<p class='empty'>정리된 분야가 없습니다.</p>"}
+const pp=v=>v==null?'–':(v>0?'+':'')+(Number(v)*100).toFixed(1)+'pp';const moveClass=v=>v==null?'':(v>0?'pos':(v<0?'neg':''));
+function trendMove(r){if(r.leader_changed)return "<span class='pm-trend-move'>1위 교체</span>";return "<span class='pm-trend-move "+moveClass(r.basis_change)+"'>"+esc(pp(r.basis_change))+"</span>"}
+function trendRows(items){if(!items||!items.length)return "<p class='empty'>조명할 이동이 없습니다.</p>";return items.map(r=>"<button type='button' class='pm-trend-row' data-event='"+esc(r.id)+"'><span><span class='t'>"+esc(r.title)+"</span><span class='pm-meta'><span>"+esc(r.category_label||'')+"</span><span>24h "+money(r.volume24hr)+"</span>"+(r.crossed_half?"<span class='pm-badge bad'>50% 반전</span>":"")+(r.is_new?"<span class='pm-badge'>신규</span>":"")+"</span></span>"+trendMove(r)+"<span class='pm-trend-now'>현재 "+prob(r.probability)+(r.event_type!=='binary'&&r.leader?' · '+esc(r.leader):'')+"</span></button>").join('')}
+function trendSide(items,empty){if(!items||!items.length)return "<p class='empty'>"+empty+"</p>";return items.map(r=>"<button type='button' class='pm-rank' data-event='"+esc(r.id)+"'><b>"+esc(r.title)+"</b><small>현재 "+prob(r.probability)+" · 24h "+money(r.volume24hr)+(r.volume_change!=null?" · 거래량 증감 "+money(r.volume_change):'')+"</small></button>").join('')}
+async function loadTrending(){const m=document.getElementById('pm-trend-meta'),b=document.getElementById('pm-trend');const r=await fetch('/api/polymarket/trending');if(!r.ok){m.textContent='아직 트렌드 집계가 없습니다.';b.innerHTML='';return}const d=await r.json();
+ const basis=d.basis==='day'?('오늘 '+stamp(d.baseline_at)+' 기준선 대비'):('직전 주기 '+stamp(d.basis_at)+' 대비');
+ m.textContent=(d.state==='warming_up'?'오늘 기준선을 막 세웠습니다 — 다음 주기부터 이동을 조명합니다':basis+' 이동 · 후보 '+Number(d.candidate_count||0).toLocaleString()+'건(24시간 거래량 '+money(d.min_volume)+' 이상)')+(pmGeneration&&d.generation_id!==pmGeneration?' · 이전 스냅숫 기준입니다':'');
+ b.innerHTML=trendRows(d.spotlight);document.getElementById('pm-trend-new').innerHTML=trendSide(d.new_entries,'오늘 새로 들어온 베팅이 없습니다.');document.getElementById('pm-trend-volume').innerHTML=trendSide(d.volume_movers,'거래량이 늘어난 베팅이 없습니다.');bindDetails(m.closest('section'))}
 async function loadSummary(){const r=await fetch('/api/polymarket/summary?include_flagged='+(pmFlagged?'true':'false'));if(!r.ok)throw new Error('summary '+r.status);renderSummary(await r.json())}
 function addOptions(id,items,valueKey,labelKey){const s=document.getElementById(id);items.forEach(item=>{const o=document.createElement('option');o.value=typeof item==='string'?item:item[valueKey];o.textContent=typeof item==='string'?(PM_TYPE[item]||PM_STATUS[item]||item):item[labelKey];s.appendChild(o)})}
 async function loadFilters(){const r=await fetch('/api/polymarket/categories');if(!r.ok)return;const d=await r.json();addOptions('pm-category',d.categories||[],'key','label');addOptions('pm-tag',(d.tags||[]).slice(0,200),'tag','tag');addOptions('pm-region',d.regions||[]);addOptions('pm-type',d.event_types||[]);addOptions('pm-status',d.data_statuses||[]);const p=new URLSearchParams(location.search);['q','category','tag','region','event_type','status','sort'].forEach(k=>{const el=document.querySelector('[name="'+k+'"]');if(el&&p.get(k))el.value=p.get(k)});pmPage=Math.max(1,Number(p.get('page')||1))}
 function knownParams(){const p=new URLSearchParams();document.querySelectorAll('#pm-controls [name]').forEach(el=>{if(el.value)p.set(el.name,el.value)});if(pmPage>1)p.set('page',pmPage);return p}
 async function loadEvents(){const p=knownParams();history.replaceState(null,'',location.pathname+(p.toString()?'?'+p:''));const r=await fetch('/api/polymarket/events?'+p);if(!r.ok)throw new Error('events '+r.status);const d=await r.json();pmPages=d.page_count||0;document.getElementById('pm-result-meta').textContent='검색 결과 '+Number(d.total||0).toLocaleString()+'건';const list=document.getElementById('pm-event-list');list.innerHTML=(d.events||[]).map(e=>"<button type='button' class='pm-event' data-event='"+esc(e.id)+"'><span><span class='pm-event-title'>"+esc(e.title)+"</span><span class='pm-meta'><span>"+esc(e.category_label)+"</span><span>"+esc(PM_TYPE[e.event_type]||e.event_type)+"</span><span class='pm-badge "+(e.data_status==='ok'?'ok':'bad')+"'>"+esc(PM_STATUS[e.data_status]||e.data_status)+"</span><span>24h "+money(e.volume24hr)+"</span><span>유동성 "+money(e.liquidity)+"</span></span></span><span class='pm-prob'>"+(e.leader?esc(e.leader)+' '+prob(e.leader_probability):'상세 보기')+"</span></button>").join('')||"<p class='empty'>조건에 맞는 event가 없습니다.</p>";document.getElementById('pm-page').textContent=(d.page_count?d.page:0)+' / '+d.page_count;document.getElementById('pm-prev').disabled=d.page<=1;document.getElementById('pm-next').disabled=d.page>=d.page_count;bindDetails(list)}
 async function openDetail(id){const r=await fetch('/api/polymarket/events/'+encodeURIComponent(id));if(!r.ok)return;const d=await r.json();document.getElementById('pm-detail-title').textContent=d.title;const outcomes=(d.markets||[]).map(m=>{const v=m.yes_probability;return "<div class='pm-outcome'><div class='pm-outcome-head'><b>"+esc(m.outcome_label||m.question||'결과')+"</b><span>Yes "+prob(v)+" · No "+prob(m.no_probability)+"</span></div><div class='pm-prog'><i style='width:"+(v==null?0:Math.max(0,Math.min(100,v*100)))+"%'></i></div></div>"}).join('');document.getElementById('pm-detail-body').innerHTML="<p class='pm-meta'><span>"+esc(d.category_label)+"</span><span>"+esc(PM_TYPE[d.event_type]||d.event_type)+"</span><span>"+esc(PM_STATUS[d.data_status]||d.data_status)+"</span></p>"+(d.description?"<p class='body-text'>"+esc(d.description)+"</p>":'')+outcomes+"<p class='pm-source'>종료 "+esc(stamp(d.end_date))+" · <a href='"+eventUrl(d)+"' target='_blank' rel='noopener noreferrer'>Polymarket에서 보기</a></p>";document.getElementById('pm-detail').showModal()}
-document.getElementById('pm-controls').addEventListener('change',()=>{pmPage=1;loadEvents()});let searchTimer;document.getElementById('pm-q').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{pmPage=1;loadEvents()},250)});document.getElementById('pm-prev').addEventListener('click',()=>{if(pmPage>1){pmPage--;loadEvents()}});document.getElementById('pm-next').addEventListener('click',()=>{if(pmPage<pmPages){pmPage++;loadEvents()}});document.getElementById('pm-detail-close').addEventListener('click',()=>document.getElementById('pm-detail').close());document.getElementById('pm-flag-toggle').addEventListener('click',e=>{pmFlagged=!pmFlagged;e.currentTarget.textContent=pmFlagged?'정상 event만':'주의 event 포함';loadSummary()});Promise.all([loadFilters(),loadSummary()]).then(loadEvents).then(()=>loadBrief().catch(()=>{document.getElementById('pm-brief-meta').textContent='컨센서스 정리를 읽지 못했습니다.'})).catch(()=>{const a=document.getElementById('pm-alert');a.className='pm-alert warn';a.textContent='현재 Polymarket generation을 읽지 못했습니다.'});
+document.getElementById('pm-controls').addEventListener('change',()=>{pmPage=1;loadEvents()});let searchTimer;document.getElementById('pm-q').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{pmPage=1;loadEvents()},250)});document.getElementById('pm-prev').addEventListener('click',()=>{if(pmPage>1){pmPage--;loadEvents()}});document.getElementById('pm-next').addEventListener('click',()=>{if(pmPage<pmPages){pmPage++;loadEvents()}});document.getElementById('pm-detail-close').addEventListener('click',()=>document.getElementById('pm-detail').close());document.getElementById('pm-flag-toggle').addEventListener('click',e=>{pmFlagged=!pmFlagged;e.currentTarget.textContent=pmFlagged?'정상 event만':'주의 event 포함';loadSummary()});Promise.all([loadFilters(),loadSummary()]).then(loadEvents).then(()=>loadBrief().catch(()=>{document.getElementById('pm-brief-meta').textContent='컨센서스 정리를 읽지 못했습니다.'})).then(()=>loadTrending().catch(()=>{document.getElementById('pm-trend-meta').textContent='트렌드 집계를 읽지 못했습니다.'})).catch(()=>{const a=document.getElementById('pm-alert');a.className='pm-alert warn';a.textContent='현재 Polymarket generation을 읽지 못했습니다.'});
 </script>"""
 )
 

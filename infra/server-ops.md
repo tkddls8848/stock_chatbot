@@ -257,6 +257,7 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 ```bash
 sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-refresh.{service,timer} /etc/systemd/system/
 sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-brief.service /etc/systemd/system/
+sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-trending.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now stock-chatbot-polymarket-refresh.timer
 systemctl list-timers | grep polymarket
@@ -266,9 +267,17 @@ timer는 UTC +9 `00·03·06·09·12·15·18·21시` 고정 캘린더다(`OnCalen
 `Persistent=true`라 서버가 꺼져 있어 지나친 슬롯이 있으면 기동 직후 한 번
 따라잡는다.
 
-**refresh가 성공하면 섹터 줄글이 이어서 돈다**(`OnSuccess=`). 줄글 유닛은
-`enable`하지 않는다 — timer가 아니라 refresh가 부른다. 03시에는 줄글만
-건너뛰고(`POLYMARKET_BRIEF_QUIET_HOURS`) refresh는 그대로 돈다.
+**refresh가 성공하면 섹터 줄글과 트렌드 조명이 이어서 돈다**(`OnSuccess=`). 두
+유닛 다 `enable`하지 않는다 — timer가 아니라 refresh가 부른다. 03시에는 줄글만
+건너뛰고(`POLYMARKET_BRIEF_QUIET_HOURS`) refresh와 트렌드는 그대로 돈다. 트렌드는
+LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주기를 건너뛰면 그 구간의
+이동이 영영 사라진다(스냅숏이 그 주기에만 남는다).
+
+트렌드 상태는 `data/webpub/polymarket/trending.json` 하나이고
+`curl -s localhost:8788/api/polymarket/trending`으로 확인한다. `state`가
+`warming_up`이면 비교할 직전 스냅숏이 아직 없다는 뜻이라 **다음 주기에 저절로
+풀린다**. 이 파일을 지우면 그날 기준선도 함께 사라져 다음 주기가 기준선을 다시
+세운다 — 확률 숫자와 화면 나머지는 영향받지 않는다.
 
 기다리지 않고 지금 굽고 싶으면:
 

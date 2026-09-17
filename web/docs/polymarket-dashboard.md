@@ -652,6 +652,7 @@ CPU-second와 max RSS를 `refresh_status.json`에 기록하고 rolling 24h 합�
 | `GET /api/polymarket/events/{event_id}` | detail shard에서 읽은 전체 현재 결과 |
 | `GET /api/polymarket/categories` | 카테고리·raw tag·지역 필터 값 |
 | `GET /api/polymarket/health` | 마지막 성공·실패·자원·coverage 상태 |
+| `GET /api/polymarket/trending` | 그날 기준선 대비 움직인 베팅 (`web/polymarket/trending.py`가 굽는다) |
 
 webpub은 compact manifest만 메모리에 둔다. mtime이 바뀌었을 때 새 immutable 인덱스를
 만들고 detail은 byte range로 읽는다. 7-4 임계 초과 분기가 발동하면 compact

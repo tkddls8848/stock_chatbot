@@ -108,3 +108,38 @@ def test_market_chart_is_revalidated_instead_of_heuristically_cached(tmp_path, m
     fresh = client.get("/market_chart.png", headers={"if-none-match": etag})
     assert fresh.status_code == 200
     assert fresh.content == b"new-png-bytes"
+
+
+def test_trending_route_hides_the_next_cycle_state(tmp_path, monkeypatch):
+    """화면에 나가는 것은 조명 결과뿐이다.
+
+    `baseline`·`previous`는 다음 주기가 이동을 계산할 상태이고 후보 수백 건짜리다.
+    줄글 브리프의 `previous`와 같은 이유로 잘라낸다.
+    """
+    import json
+
+    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    client = TestClient(server.build_app())
+    assert client.get("/api/polymarket/trending").status_code == 503
+
+    target = tmp_path / "polymarket" / "trending.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        json.dumps(
+            {
+                "generation_id": "g1",
+                "state": "ok",
+                "basis": "day",
+                "spotlight": [{"id": "1", "title": "event 1", "basis_change": 0.2}],
+                "baseline": {"events": {"1": {"p": 0.3}}},
+                "previous": {"events": {"1": {"p": 0.5}}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = client.get("/api/polymarket/trending").json()
+    assert payload["spotlight"][0]["basis_change"] == 0.2
+    assert "baseline" not in payload
+    assert "previous" not in payload

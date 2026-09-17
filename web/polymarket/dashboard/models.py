@@ -188,6 +188,34 @@ def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]
     return result
 
 
+def title_probability(event: dict[str, Any]) -> float | None:
+    """binary event에서 **제목이 사실로 판명될 확률**을 돌려준다.
+
+    `leader_probability`는 항상 우세한 쪽의 값이라 부호가 없다. leader가
+    "No"인 0.82는 "일어날 확률 0.82"가 아니라 "일어나지 않을 확률 0.82"다.
+
+    모델에게 이 조합을 맡기면 셋 중 둘꼴로 방향을 뒤집어 쓴다(실측
+    2026-09-01). 힌트를 더 줘도 제목 표현에 앵커링해서 "제재 완화 가능성
+    74%"라고 쓴다 — 74%는 완화되지 **않을** 확률인데도.
+
+    그래서 숫자를 읽는 방향에 맞춰 정규화한다. 줄글 브리프는 이 값을 모델에게
+    보내고, 트렌드 one-shot은 이 값으로 주기 간 이동을 잰다 — **부호가 안정된
+    값이라야 뺄셈이 뜻을 가진다.** leader가 Yes에서 No로 넘어간 주기에
+    `leader_probability`를 그대로 빼면 이동이 0에 가깝게 나오는데, 실제로는
+    그 event가 반대편으로 넘어간 순간이다.
+
+    이 함수는 숫자만 만지므로 `web.llm`을 부르지 않는 호출자도 쓸 수 있도록
+    여기(정규화 계층)에 둔다.
+    """
+    probability = _number(event.get("leader_probability"))
+    if probability is None:
+        return None
+    leader = str(event.get("leader") or "").strip().lower()
+    if leader in {"no", "아니오"}:
+        return round(1.0 - probability, 4)
+    return probability
+
+
 def normalize_event(
     event: dict[str, Any],
     *,

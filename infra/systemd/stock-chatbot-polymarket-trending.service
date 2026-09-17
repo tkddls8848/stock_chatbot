@@ -1,0 +1,18 @@
+[Unit]
+Description=Pick today's moving Polymarket bets
+After=stock-chatbot-polymarket-refresh.service
+
+[Service]
+Type=oneshot
+User=stockbot
+Group=stockbot
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/stock-chatbot/venv/bin/python -m web.polymarket.trending
+Nice=10
+CPUWeight=20
+MemoryMax=384M
+TimeoutStartSec=5min
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
