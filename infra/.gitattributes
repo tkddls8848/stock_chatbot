@@ -1,9 +1,0 @@
-# 이 디렉터리의 파일은 리눅스 공유 호스트가 그대로 실행한다. 개발은 Windows 에서 하므로
-# CRLF 로 체크아웃되면 셸 스크립트의 셔뱅이 `/usr/bin/env bash\r` 로 읽혀 기동조차 못 하고,
-# systemd 는 유닛 값 끝의 \r 를 경로의 일부로 읽는다. 그래서 여기만 LF 를 강제한다.
-# (호스트 저장소는 루트 .gitattributes 로 같은 일을 한다.)
-*.sh        text eol=lf
-*.service   text eol=lf
-*.timer     text eol=lf
-*.tmpl      text eol=lf
-*.json      text eol=lf
