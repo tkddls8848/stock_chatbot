@@ -7,6 +7,7 @@
 import json
 import logging
 import random
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,39 @@ from telegram_bot.llm.backends import LLMBackend
 logger = logging.getLogger(__name__)
 
 _VALIDATION_ATTEMPTS = 2
+# `"analysis"` 값의 시작 자리. 끝은 다음 키가 열리는 자리로 찾는다 — 본문 안
+# 따옴표를 escape하지 못해 깨진 응답이라 마지막 따옴표를 믿을 수 없다.
+_ANALYSIS_OPEN = re.compile(r'"analysis"\s*:\s*"')
+_ANALYSIS_CLOSE = re.compile(r'"\s*,\s*"(?:highlights|evaluations)"')
+
+
+def _salvage_analysis(raw: str) -> str:
+    """JSON이 통째로 깨졌을 때 본문만 건진다.
+
+    실측(2026-09-17 00시·09시 US·KR)에서 모델이 제목을 옮기며 문자열 안
+    큰따옴표를 escape하지 않아 `Expecting ',' delimiter`로 파싱이 깨졌다.
+    그 한 글자 때문에 멀쩡한 400~500자 본문까지 버려지고 보고서가 원문 제목
+    나열로 떨어졌다. **비싼 것은 analysis이고 highlight는 그 근거 목록이라는
+    기존 판단을 top-level 파싱 실패에도 그대로 적용한다.**
+
+    건지지 못하면 빈 문자열을 돌려준다 — 그때는 원문 제목 나열이 낫다.
+    """
+    opened = _ANALYSIS_OPEN.search(raw)
+    if opened is None:
+        return ""
+    rest = raw[opened.end():]
+    closed = _ANALYSIS_CLOSE.search(rest)
+    if closed is not None:
+        body = rest[: closed.start()]
+    else:
+        # 뒤가 통째로 없는 응답이다. 마지막 문장 끝까지만 남긴다 — 반 토막 문장을
+        # 보고서에 싣지 않는다.
+        cut = rest.rfind(".")
+        if cut < 0:
+            return ""
+        body = rest[: cut + 1]
+    body = body.replace('\\"', '"').replace("\\n", " ").replace("\\t", " ")
+    return " ".join(body.split()).strip()
 
 
 class NewsReportError(RuntimeError):
@@ -133,6 +167,17 @@ class NewsReportAnalyzer:
         try:
             data, _ = json.JSONDecoder().raw_decode(raw, start)
         except json.JSONDecodeError as exc:
+            # 마지막 시도에서는 본문만이라도 건진다. 다시 요청할 기회가 없고,
+            # 깨진 자리는 대개 제목 안의 따옴표 하나다.
+            if salvage:
+                analysis = _salvage_analysis(raw)
+                if analysis:
+                    logger.warning(
+                        "[NEWS REPORT] JSON이 깨져 analysis만 건진다: "
+                        "%d자 (%s); raw_chars=%d",
+                        len(analysis), exc, len(raw),
+                    )
+                    return {"analysis": analysis, "highlights": [], "evaluations": []}
             # 원문은 남기지 않는다. 길이만으로도 잘림 여부는 판단할 수 있다.
             raise NewsReportError(
                 f"news report JSON parse failed ({exc}); raw_chars={len(raw)}"

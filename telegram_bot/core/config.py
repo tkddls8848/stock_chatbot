@@ -184,7 +184,13 @@ NEWS_COLLECTION_INTERVAL_MINUTES = 60
 NEWS_REPORT_INTERVAL_HOURS = 3
 NEWS_REPORT_PROMPT_FILE = PROMPT_DIR / "news_report_ko.txt"
 NEWS_REPORT_TIMEOUT = 180
-NEWS_REPORT_NUM_PREDICT = 2048
+# 출력 예약. **2048은 상시로 모자랐다** — 2026-09-17 하루에만 06시 CN·US·KR과
+# 03시 US가 정확히 2048에서 잘려(`finish_reason=length`) 보고서가 원문 제목
+# 나열로 떨어졌다. 입력은 2,832~3,601 토큰으로 작았으므로 원인은 입력이 아니다.
+# 한국어는 토큰이 비싸서 analysis 400~500자에 번역 제목 8건·evaluations까지
+# 얹으면 2048에 닿는다. 컨텍스트 32,768에 견줘 여유가 크고, 무료 한도 대비
+# 소비도 하루 1,349/10,000(실측 2026-09-17)이라 올릴 자리가 있다.
+NEWS_REPORT_NUM_PREDICT = 3584
 # 큐에 담는 상한. 수집은 LLM을 부르지 않으며 보고서가 여러 사건을 비교할
 # 폭을 확보한다. 사전선별도 이 상한으로 점수·탐색 슬롯을 배정한다.
 NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT = 12

@@ -894,3 +894,56 @@ def test_exploration_flag_survives_queue_and_report_input():
     candidate = SourceCandidate(spec=spec, article=article, prefilter_exploration=True)
     item = news_report._queue_item(candidate)
     assert news_report._headline_payload([item])[0]["exploration"] is True
+
+
+def test_an_unescaped_quote_no_longer_throws_the_whole_body_away(tmp_path):
+    """실측(2026-09-17 00시 US, 09시 US·KR): 제목 안 큰따옴표 하나가
+    `Expecting ',' delimiter`를 내고 400~500자 본문까지 통째로 버려졌다.
+    비싼 것은 analysis이므로 본문만이라도 건진다."""
+    # 모델이 제목의 따옴표를 escape하지 않아 문자열이 일찍 닫힌 응답이다.
+    broken = (
+        '{"analysis":"현재 시장상황 요약이다. 반도체가 지배적 국면이다.",'
+        '"highlights":[{"index":0,"title":"애플 "신제품" 발표","sentiment":0.4,'
+        '"impact":"medium","mentioned_stocks":[]}],"evaluations":[]}'
+    )
+    analyzer = _two_attempt_analyzer([broken, broken])
+
+    result = analyzer.analyze("US", "창", [{"index": 0, "title": "a"}])
+
+    assert result["analysis"] == "현재 시장상황 요약이다. 반도체가 지배적 국면이다."
+    # 근거는 잃는다. 그래도 빈 섹션이나 제목 나열보다는 본문이 있는 쪽이 낫다.
+    assert result["highlights"] == []
+    assert result["evaluations"] == []
+
+
+def test_a_truncated_body_keeps_only_whole_sentences(tmp_path):
+    """뒤가 통째로 잘린 응답에서 반 토막 문장을 보고서에 싣지 않는다."""
+    cut = '{"analysis":"첫 문장이다. 두 번째 문장이다. 세 번째 문장은 여기서 잘'
+    analyzer = _two_attempt_analyzer([cut, cut])
+
+    result = analyzer.analyze("KR", "창", [{"index": 0, "title": "a"}])
+
+    assert result["analysis"] == "첫 문장이다. 두 번째 문장이다."
+
+
+def test_a_body_that_cannot_be_salvaged_still_falls_back_to_raw_titles(tmp_path):
+    """건질 것이 없으면 실패다. 빈 본문으로 보고서를 만들지 않는다."""
+    analyzer = _two_attempt_analyzer(["{잘린 쓰레기", "{잘린 쓰레기"])
+
+    with pytest.raises(NewsReportError):
+        analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+
+
+def test_the_first_attempt_still_retries_before_salvaging_the_body(tmp_path):
+    """건져내기는 마지막 시도에서만 한다. 온전한 JSON을 받을 기회를 먼저 준다."""
+    broken = '{"analysis":"본문","highlights":[{"index":0,"title":"따옴표 "안" 제목"}]}'
+    backend = _SequenceBackend([broken, json.dumps(_payload(), ensure_ascii=False)])
+    analyzer = NewsReportAnalyzer(
+        backend=backend, prompt_file=_prompt_file(), num_predict=2048, max_highlights=8
+    )
+
+    result = analyzer.analyze("US", "창", [{"index": 0, "title": "a"}])
+
+    assert len(backend.calls) == 2
+    assert result["analysis"] == "현재 시장상황 요약이다."
+    assert result["highlights"][0]["title"] == "한국어 제목 0"
