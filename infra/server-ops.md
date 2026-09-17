@@ -557,19 +557,24 @@ sudo apt-get update && sudo apt-get install -y caddy
 설치 직후의 Caddy는 기본 환영 페이지를 80번에 띄운다. `/etc/caddy/Caddyfile`을
 `infra/Caddyfile.example` 형태로 **먼저 바꾼 뒤** 기동한다.
 
-- 첫 줄은 도메인만 적는다. `http://`를 붙이면 자동 HTTPS가 꺼진다.
-- 비밀번호는 평문이 아니라 `caddy hash-password` 출력(bcrypt)을 넣는다.
-- `basic_auth`에는 경로 matcher(`@research`)를 붙인다. 빼면 사이트 전체가 잠긴다.
-- 도메인의 A 레코드가 고정 IP(`terraform output -raw public_ip`)를 가리키고 있어야
-  발급이 된다. 80번이 닫혀 있으면 HTTP-01 검증이 실패한다(1절).
+**손으로 쓰지 않는다.** 스크립트가 견본을 렌더링한다 — 바꿀 것은 도메인·사설
+IP·비밀번호 해시 셋뿐이고, 나머지(스킴 없는 첫 줄, `@research` matcher, `bind`)는
+견본이 이미 맞춰 두었다. 빠뜨리면 자동 HTTPS가 꺼지거나, 사이트 전체가 잠기거나,
+443을 Tailscale과 다투다 기동하지 못한다.
 
 ```bash
-caddy hash-password --plaintext '<비밀번호>'
-sudo nano /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy || sudo systemctl restart caddy
+ip -4 -o addr show | awk '{print $2, $4}'    # 사설 NIC 주소를 확인한다
+hash="$(caddy hash-password)"                # 프롬프트로 입력받는다. 히스토리에 평문이 남지 않는다
+sudo /srv/stock-chatbot/infra/scripts/install-caddyfile.sh \
+    --domain nunchi.live --bind <사설 IP> --hash "$hash"
 journalctl -u caddy -n 30 --no-pager | grep -i certificate
 ```
+
+스크립트가 백업·`caddy validate`·reload까지 하고, validate가 실패하면 되돌린다.
+`--dry-run`으로 만들어질 내용을 먼저 볼 수 있다(해시는 가린다).
+
+도메인의 A 레코드는 고정 IP를 가리키고 있어야 한다. 80번이 닫혀 있으면 HTTP-01
+검증이 실패한다(1절).
 
 인증서는 Let's Encrypt에서 자동 발급·갱신된다. **AWS가 주는 호스트네임
 (`*.compute.amazonaws.com`)으로는 발급되지 않는다** — CA가 정책으로 거부한다.
@@ -587,11 +592,15 @@ echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/
 접근 로그의 방문 수가 지인 수와 맞지 않으면 먼저 바꾼다.
 
 ```bash
-caddy hash-password --plaintext '<새 비밀번호>'
-sudo nano /etc/caddy/Caddyfile        # basic_auth 줄의 해시만 교체
-sudo systemctl reload caddy
+sudo /srv/stock-chatbot/infra/scripts/set-caddy-password.sh --password-stdin
 journalctl -u caddy --since today --no-pager | grep -c '"status":200'
 ```
+
+프롬프트로 새 비밀번호를 두 번 받아 해시로 바꿔 넣는다. **평문은 인자로 받지
+않는다** — 셸 히스토리와 `ps`에 그대로 남는다. 이미 해시를 들고 있으면
+`--hash "$(caddy hash-password)"`를 쓴다. `basicauth` 블록의 그 사용자 줄 하나만
+바꾸고, 백업·validate·reload는 스크립트가 한다. 끝나면 **옛 해시가 담긴 백업
+파일을 지운다** — 경로는 스크립트가 알려 준다.
 
 그래도 계속되면 443을 닫고(1절) SSH 터널로 되돌린다 —
 `ssh -L 8788:127.0.0.1:8788 ubuntu@<고정 IP>`.
