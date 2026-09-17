@@ -37,6 +37,12 @@ check "읽기 웹 localhost 200" curl -fsS "http://127.0.0.1:$WEB_PORT/"
 check "관리 웹 localhost 인증 요구" bash -c \
     "[ \"\$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:$ADMIN_PORT/')\" = 401 ]"
 
+# 앞단 Caddy 의 봇 차단은 우리 견본이 출처다(infra/Caddyfile.example). 실제 설정이
+# 갈라지면 robots.txt 만 남고 강제는 사라지는데, 화면은 멀쩡해 보여 알아챌 수 없다.
+# 어긋나면 infra/scripts/apply-caddy-bots.sh 로 다시 맞춘다.
+check "Caddy 봇 차단 블록" bash -c \
+    "sudo grep -qF '@aibots' /etc/caddy/Caddyfile"
+
 say "호스트 계약"
 # cron.d 는 타임존을 선언할 수 없어 호스트 설정을 그대로 따른다. 호스트가 UTC 가
 # 아니면 아래 백업 시각의 의미가 통째로 바뀌므로 여기서 먼저 본다.

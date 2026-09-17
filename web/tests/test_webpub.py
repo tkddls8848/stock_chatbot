@@ -171,15 +171,28 @@ def test_robots_blocks_the_heavy_api_face_but_not_search_crawlers(tmp_path, monk
 
 
 def test_robots_and_caddy_block_the_same_agents():
-    """권고(robots.txt)와 강제(Caddy)가 갈라지면 한쪽만 막힌 채로 돈다."""
+    """권고(robots.txt)와 강제(Caddy)가 갈라지면 한쪽만 막힌 채로 돈다.
+
+    표식(`# BEGIN aibots` ~ `# END aibots`)도 함께 본다.
+    `infra/scripts/apply-caddy-bots.sh`가 그 사이를 잘라 호스트 설정에 옮기므로,
+    표식이 사라지거나 matcher가 그 밖으로 나가면 스크립트가 빈 블록을 넣는다 —
+    차단이 사라진 채로 reload까지 성공해 버린다.
+    """
     from pathlib import Path
 
     from web.pages.robots import AI_AGENTS
 
-    caddyfile = (
+    lines = (
         Path(__file__).resolve().parents[2] / "infra" / "Caddyfile.example"
-    ).read_text(encoding="utf-8")
-    matcher = [line for line in caddyfile.splitlines() if "@aibots" in line and "header_regexp" in line]
+    ).read_text(encoding="utf-8").splitlines()
+
+    begins = [i for i, line in enumerate(lines) if "# BEGIN aibots" in line]
+    ends = [i for i, line in enumerate(lines) if "# END aibots" in line]
+    assert len(begins) == 1 and len(ends) == 1 and begins[0] < ends[0]
+
+    block = lines[begins[0] : ends[0] + 1]
+    matcher = [line for line in block if "@aibots" in line and "header_regexp" in line]
     assert len(matcher) == 1
+    assert any(line.strip() == "abort @aibots" for line in block)
     for agent in AI_AGENTS:
         assert agent in matcher[0]

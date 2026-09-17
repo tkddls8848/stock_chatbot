@@ -20,6 +20,9 @@ example.com {
 
     header X-Robots-Tag "noindex, nofollow"
 
+    # BEGIN aibots — infra/scripts/apply-caddy-bots.sh 가 이 두 줄 사이를 통째로
+    # 호스트의 /etc/caddy/Caddyfile 에 옮긴다. 손으로 옮기면 견본과 실제 설정이
+    # 갈라지고, 갈라진 것을 알아챌 방법이 없다. 표식을 지우지 않는다.
     # AI 학습·수집 봇은 프록시로 넘기기 전에 끊는다. abort는 응답을 만들지 않아
     # (403을 쓰는 것보다) 자원을 가장 적게 쓴다. UA는 봇이 자칭하는 문자열이라
     # 위장한 봇은 잡지 못한다 — 그것까지 막으려면 IP 단위 rate limit이 필요한데,
@@ -28,6 +31,7 @@ example.com {
     # 목록은 web/pages/robots.py의 AI_AGENTS와 같다. 한쪽만 고치지 않는다.
     @aibots header_regexp User-Agent "(?i)(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic-ai|CCBot|Google-Extended|PerplexityBot|Bytespider|Amazonbot|meta-externalagent|FacebookBot|Applebot-Extended|cohere-ai|Diffbot|ImagesiftBot|Omgilibot|YouBot|Timpibot|AhrefsBot|SemrushBot|MJ12bot|DotBot|DataForSeoBot)"
     abort @aibots
+    # END aibots
 
     @research path /research /research/* /api/research /api/research/*
     basicauth @research {

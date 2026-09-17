@@ -648,13 +648,30 @@ sudo -u stockbot ls -la /srv/stock-chatbot/data/webpub/
 그 분리를 위한 UA다) 통째로 막아도 noindex 전달에 영향이 없다.
 
 앱 쪽은 코드 갱신(3절)과 웹 재기동으로 끝난다. Caddy 쪽은 저장소에 견본만 있고
-실제 파일은 호스트의 `/etc/caddy/Caddyfile`이라 직접 옮겨 붙인다.
+실제 파일은 호스트의 `/etc/caddy/Caddyfile`이라 스크립트가 옮긴다.
 
 ```bash
-sudo nano /etc/caddy/Caddyfile                       # 견본의 @aibots 두 줄을 옮긴다
-sudo caddy validate --config /etc/caddy/Caddyfile    # 문법 검사. 실패하면 reload하지 않는다
-sudo systemctl reload caddy                          # 무중단 반영
+infra/scripts/apply-caddy-bots.sh --dry-run    # 무엇이 바뀌는지 먼저 본다(root 불필요)
+sudo infra/scripts/apply-caddy-bots.sh         # 백업 → 반영 → validate → reload
 ```
+
+**손으로 편집하지 않는다.** UA 목록은 견본(`infra/Caddyfile.example`)과 앱의
+robots.txt(`web/pages/robots.py`) 둘이 같아야 하는데, 편집기로 옮기면 목록을 고칠
+때마다 어긋날 자리가 하나 더 생기고 어긋난 것을 알아챌 방법이 없다. 스크립트는
+견본의 `# BEGIN aibots` ~ `# END aibots` 사이를 그대로 복사한다.
+
+스크립트가 하는 일과 안 하는 일:
+
+- **여러 번 돌려도 같다.** 표식이 있으면 그 사이만 바꾸고, 바뀔 것이 없으면 파일도
+  reload도 건드리지 않는다.
+- **되돌릴 수 있다.** 쓰기 전에 `Caddyfile.bak.<UTC시각>`으로 백업하고,
+  `caddy validate`나 `reload`가 실패하면 백업을 되돌린다. 깨진 설정으로 reload하지
+  않는다.
+- **구조가 다르면 멈춘다.** `header X-Robots-Tag` 줄도 표식도 없으면 아무 데나
+  넣지 않고 종료한다. 그때는 견본을 보고 표식 두 줄을 먼저 넣는다.
+
+`verify-app.sh`가 실제 설정에 블록이 남아 있는지 함께 본다 — 갈라지면 robots.txt만
+남고 강제는 사라지는데, 화면은 멀쩡해 보여 그냥은 알아챌 수 없다.
 
 확인한다. 첫 줄은 끊기고(exit 52 또는 연결 종료), 나머지 셋은 200이어야 한다.
 
