@@ -502,10 +502,12 @@ Neurons가 링크를 받은 사람 수만큼 나가고, 리서치 상태는 단�
 | `/`, `/about`, `/market_chart.png`, `/api/market`, `/api/meta` | 국가별 감성 집계 | 없음 |
 | `/research`, `/api/research` | `sight`, 종목별 액션·confidence | `friend` 계정 |
 
-두 면 모두 `X-Robots-Tag: noindex, nofollow`를 받는다. **`robots.txt`로 크롤링을
-막지는 않는다** — 막으면 크롤러가 noindex를 읽지 못해 URL만 색인에 남을 수 있다.
+두 면 모두 `X-Robots-Tag: noindex, nofollow`를 받는다. **검색 크롤러 자체는 막지
+않는다** — 막으면 크롤러가 noindex를 읽지 못해 URL만 색인에 남을 수 있다.
 공개면의 nav에는 리서치 링크가 그대로 있어서, 익명 방문자가 누르면 브라우저
 인증창이 뜬다(의도된 동작이다).
+
+**대신 크롤·AI 트래픽은 두 겹으로 막는다**(11-6).
 
 ```text
 브라우저 ── https://nunchi.live:443 ── Caddy (TLS + Basic 인증) ── http://127.0.0.1:8788 ── webpub
@@ -624,3 +626,45 @@ sudo -u stockbot ls -la /srv/stock-chatbot/data/webpub/
 
 443을 닫아도 잃는 것은 열람뿐이다 — 봇도 `stock-chatbot-web`도 그대로 돌고,
 `ssh -L 8788:127.0.0.1:8788`로 계속 볼 수 있다.
+
+### 11-6. 크롤·AI 봇 트래픽
+
+부하의 실체는 화면이 아니라 `/api/`다. `/api/polymarket/events`는 필터·정렬·페이지
+조합이 사실상 무한한 URL 공간이고, `/api/polymarket/events/{event_id}`는 열린 event
+22,000건이 각각 detail shard를 seek한다. 크롤러가 이 둘을 훑으면 1 GiB 인스턴스에서
+순회 one-shot·봇과 CPU를 다툰다.
+
+두 겹으로 막는다. **역할이 다르므로 둘 중 하나만 두지 않는다.**
+
+| 겹 | 자리 | 무엇을 하나 | 한계 |
+|---|---|---|---|
+| 권고 | 앱의 `/robots.txt` (`web/pages/robots.py`) | `/api/` 전체와 AI 수집 봇에 Disallow | 봇이 스스로 지킬 때만 듣는다 |
+| 강제 | Caddy `@aibots` matcher (`infra/Caddyfile.example`) | 같은 UA 목록을 프록시 전에 `abort` | UA를 위장하면 잡지 못한다 |
+
+**두 목록은 같이 고친다.** 갈라지면 한쪽만 막힌 채로 돈다.
+
+검색 크롤러(Googlebot 등)는 그대로 들여보낸다 — 위의 noindex를 읽어야 하기
+때문이다. AI 수집 봇은 검색 색인과 **다른 UA**를 쓰므로(`Google-Extended`가 정확히
+그 분리를 위한 UA다) 통째로 막아도 noindex 전달에 영향이 없다.
+
+앱 쪽은 코드 갱신(3절)과 웹 재기동으로 끝난다. Caddy 쪽은 저장소에 견본만 있고
+실제 파일은 호스트의 `/etc/caddy/Caddyfile`이라 직접 옮겨 붙인다.
+
+```bash
+sudo nano /etc/caddy/Caddyfile                       # 견본의 @aibots 두 줄을 옮긴다
+sudo caddy validate --config /etc/caddy/Caddyfile    # 문법 검사. 실패하면 reload하지 않는다
+sudo systemctl reload caddy                          # 무중단 반영
+```
+
+확인한다. 첫 줄은 끊기고(exit 52 또는 연결 종료), 나머지 셋은 200이어야 한다.
+
+```bash
+curl -sS -A "GPTBot" -o /dev/null -w '%{http_code}\n' https://nunchi.live/
+curl -sS -o /dev/null -w '%{http_code}\n' https://nunchi.live/
+curl -s https://nunchi.live/robots.txt | head -8
+curl -sS -o /dev/null -w '%{http_code}\n' https://nunchi.live/polymarket
+```
+
+IP 단위 rate limit은 두지 않는다. 우분투 저장소판 Caddy 2.6.2에 없는 기능이라
+플러그인을 넣어 다시 빌드해야 하는데, 그러면 배포가 파일 복사로 끝나지 않는다.
+UA를 위장한 봇이 실제로 문제가 되면 그때 다시 판단한다.

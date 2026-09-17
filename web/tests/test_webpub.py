@@ -143,3 +143,43 @@ def test_trending_route_hides_the_next_cycle_state(tmp_path, monkeypatch):
     assert payload["spotlight"][0]["basis_change"] == 0.2
     assert "baseline" not in payload
     assert "previous" not in payload
+
+
+def test_robots_blocks_the_heavy_api_face_but_not_search_crawlers(tmp_path, monkeypatch):
+    """크롤러를 통째로 막지 않는 것은 결정이다.
+
+    막으면 크롤러가 `X-Robots-Tag: noindex`를 읽지 못해 내용 없이 URL만 색인에
+    남는다(`infra/server-ops.md` 11절). 그래서 막는 것은 부하를 만드는 `/api/`
+    면과, 검색 색인과 다른 UA를 쓰는 AI 수집 봇뿐이다.
+    """
+    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    response = TestClient(server.build_app()).get("/robots.txt")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+
+    general = body.split("User-agent: GPTBot")[0]
+    assert "User-agent: *" in general
+    assert "Disallow: /api/" in general
+    # 전면 차단은 noindex를 읽을 통로까지 막는다.
+    assert "Disallow: /\n" not in general
+
+    for agent in ("GPTBot", "ClaudeBot", "CCBot", "Google-Extended", "Bytespider"):
+        assert f"User-agent: {agent}" in body
+    assert body.rstrip().endswith("Disallow: /")
+
+
+def test_robots_and_caddy_block_the_same_agents():
+    """권고(robots.txt)와 강제(Caddy)가 갈라지면 한쪽만 막힌 채로 돈다."""
+    from pathlib import Path
+
+    from web.pages.robots import AI_AGENTS
+
+    caddyfile = (
+        Path(__file__).resolve().parents[2] / "infra" / "Caddyfile.example"
+    ).read_text(encoding="utf-8")
+    matcher = [line for line in caddyfile.splitlines() if "@aibots" in line and "header_regexp" in line]
+    assert len(matcher) == 1
+    for agent in AI_AGENTS:
+        assert agent in matcher[0]
