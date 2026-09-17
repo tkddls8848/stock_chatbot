@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
-from web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML
+from web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML, ROBOTS_TXT
 from web.polymarket.repository import PolymarketRepository, make_etag
 
 WEBPUB_DIR = Path(__file__).resolve().parents[1] / "data" / "webpub"
@@ -47,6 +47,13 @@ def build_app() -> FastAPI:
     @app.api_route("/polymarket", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def polymarket_page() -> str:
         return POLYMARKET_HTML
+
+    @app.api_route("/robots.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
+    def robots() -> str:
+        # 화면은 열어 두고 무거운 /api/ 면과 AI 수집 봇만 막는다. 근거와 목록은
+        # web/pages/robots.py에 있고, 무시하는 봇을 실제로 끊는 것은 앞단
+        # Caddy다(infra/Caddyfile.example의 @aibots).
+        return ROBOTS_TXT
 
     @app.get("/api/market")
     def market() -> dict[str, Any]:
