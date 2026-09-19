@@ -86,7 +86,7 @@ def _install_jobs(scheduler, app) -> None:
 
 
 FEATURE = FeatureSpec(
-    key="news",
+    key="news_summary",
     label="뉴스 수집·시장상황 보고서",
     requires=frozenset({"watchlist"}),
     install_services=_install_services,

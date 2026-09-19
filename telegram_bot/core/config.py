@@ -40,10 +40,10 @@ class ConfigurationError(RuntimeError):
 FEATURES_ENABLED = frozenset(
     {
         "instruments",
-        "quant",
+        "sector_summary",
         "watchlist",
         "news_prefilter",
-        "news",
+        "news_summary",
         "market_sentiment",
         "research",
         "briefing",
@@ -245,7 +245,7 @@ RESEARCH_ANALYSIS_TIMEOUT = 600
 RESEARCH_NEWS_MAX_ITEMS = 16
 RESEARCH_NEWS_GLOBAL_LIMIT = 8
 # 분석 payload에 넣을 기사 본문 길이 상한. 제목만으로는 촉매·수치를 읽을 수
-# 없어 분석이 얕아지므로 본문을 함께 넣는다. 16건 × 600자에 후보 24개·정량·
+# 없어 분석이 얕아지므로 본문을 함께 넣는다. 16건 × 600자에 후보 24개·요약·
 # 이력까지 상한을 가득 채우면 입력이 약 22,000토큰(보수 추정)이고, 출력 예약
 # 4,096을 더해 약 26,000으로 컨텍스트 32,768의 79% 선이다. 이 값이나
 # RESEARCH_NEWS_MAX_ITEMS·RESEARCH_MAX_CANDIDATES를 올릴 때는 남은 21%를
@@ -292,10 +292,10 @@ RESEARCH_KR_CANDIDATE_LIMIT = 12
 # 거래대금(원) 하한. 급등만 보고 잡주를 추천 후보로 올리지 않기 위한 필터.
 RESEARCH_KR_MIN_TRADING_VALUE = 5000000000.0
 
-# 정량 컨텍스트(시세·자금흐름·섹터·涨停·용호방)
-QUANT_CACHE_TTL_MINUTES = 10
-QUANT_SECTOR_TOP_N = 5
-QUANT_FAILURE_COOLDOWN_MINUTES = 15
+# 요약 컨텍스트(시세·자금흐름·섹터·涨停·용호방)
+SECTOR_SUMMARY_CACHE_TTL_MINUTES = 10
+SECTOR_SUMMARY_SECTOR_TOP_N = 5
+SECTOR_SUMMARY_FAILURE_COOLDOWN_MINUTES = 15
 
 # 최근 뉴스 로그(마감 브리핑 요약 입력)
 NEWS_LOG_RETENTION_DAYS = 30

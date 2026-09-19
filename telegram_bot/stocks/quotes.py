@@ -1,4 +1,4 @@
-"""정량 컨텍스트: 시세·자금흐름·섹터·인기순위·涨停·용호방 스냅샷.
+"""요약 컨텍스트: 시세·자금흐름·섹터·인기순위·涨停·용호방 스냅샷.
 
 원시 지표를 요약해 (a) 브리핑 메시지와 (b) 시장뷰 분석 payload에
 주입한다. 자체 스코어링·백테스트는 하지 않는다(원시 지표 요약까지만).
@@ -206,7 +206,7 @@ class _TTLCache:
 
 
 class QuoteService:
-    """관심종목·시장 정량 스냅샷 제공자(블로킹, to_thread에서 호출)."""
+    """관심종목·시장 요약 스냅샷 제공자(블로킹, to_thread에서 호출)."""
 
     def __init__(
         self,
@@ -285,7 +285,7 @@ class QuoteService:
                 fetched = self._fetch_tencent_quotes(sorted(set(tencent_by_code.values())))
                 quotes.update({code: fetched[code] for code in tencent_by_code if code in fetched})
             except Exception as e:
-                logger.warning("[QUANT] 시세 조회 실패: %s", e)
+                logger.warning("[SECTOR_SUMMARY] 시세 조회 실패: %s", e)
         if yahoo_by_code:
             try:
                 fetched = self._fetch_yahoo_quotes(sorted(set(yahoo_by_code.values())))
@@ -297,7 +297,7 @@ class QuoteService:
                     }
                 )
             except Exception as e:
-                logger.warning("[QUANT] 미국·한국 시세 조회 실패: %s", e)
+                logger.warning("[SECTOR_SUMMARY] 미국·한국 시세 조회 실패: %s", e)
         return quotes
 
     def get_price(self, code: str) -> float | None:
@@ -334,7 +334,7 @@ class QuoteService:
         try:
             return self._cache.get_or_fetch(f"fund_flow:{code}", fetch)
         except Exception as e:
-            logger.warning("[QUANT] %s 자금흐름 조회 실패: %s", code, e)
+            logger.warning("[SECTOR_SUMMARY] %s 자금흐름 조회 실패: %s", code, e)
             return None
 
     # ── 섹터/시장 온도 ───────────────────────────────
@@ -368,7 +368,7 @@ class QuoteService:
                 "bottom": rows_to_list(df.tail(self._sector_top_n).iloc[::-1]),
             }
         except Exception as e:
-            logger.warning("[QUANT] 섹터 보드 조회 실패: %s", e)
+            logger.warning("[SECTOR_SUMMARY] 섹터 보드 조회 실패: %s", e)
             return {"top": [], "bottom": []}
 
     def get_sector_constituents(self, board_name: str) -> list[dict[str, str]]:
@@ -377,7 +377,7 @@ class QuoteService:
             self.get_sector_rankings()  # 라벨 매핑 채우기(최선 노력)
         label = self._sector_labels.get(board_name)
         if not label:
-            logger.warning("[QUANT] %s 업종 라벨을 찾지 못해 구성종목 조회 생략", board_name)
+            logger.warning("[SECTOR_SUMMARY] %s 업종 라벨을 찾지 못해 구성종목 조회 생략", board_name)
             return []
         try:
             df = self._cache.get_or_fetch(
@@ -389,7 +389,7 @@ class QuoteService:
                 for _, row in df.iterrows()
             ]
         except Exception as e:
-            logger.warning("[QUANT] %s 구성종목 조회 실패: %s", board_name, e)
+            logger.warning("[SECTOR_SUMMARY] %s 구성종목 조회 실패: %s", board_name, e)
             return []
 
     def get_zt_pool_summary(self) -> dict[str, Any]:
@@ -407,7 +407,7 @@ class QuoteService:
                 "names": [str(n) for n in df["名称"].head(5).tolist()],
             }
         except Exception as e:
-            logger.warning("[QUANT] 涨停 풀 조회 실패: %s", e)
+            logger.warning("[SECTOR_SUMMARY] 涨停 풀 조회 실패: %s", e)
             return {}
 
     def get_lhb_hits(self, codes: list[str], lookback_days: int = 5) -> list[dict[str, Any]]:
@@ -440,17 +440,17 @@ class QuoteService:
                     )
             return hits
         except Exception as e:
-            logger.warning("[QUANT] 용호방 조회 실패: %s", e)
+            logger.warning("[SECTOR_SUMMARY] 용호방 조회 실패: %s", e)
             return []
 
     # ── 종합 스냅샷 ──────────────────────────────────
 
-    def build_quant_context(
+    def build_sector_summary_context(
         self,
         watchlist: dict[str, str],
         include_fund_flow: bool = True,
     ) -> dict[str, Any]:
-        """브리핑·시장뷰 분석에 주입할 정량 스냅샷. 각 항목은 최선 노력."""
+        """브리핑·시장뷰 분석에 주입할 요약 스냅샷. 각 항목은 최선 노력."""
         codes = list(watchlist.keys())
         quotes = self.get_watchlist_quotes(codes)
 
@@ -495,8 +495,8 @@ def _fmt_yi(value: Any) -> str:
     return f"{number / 1e8:+.1f}억"
 
 
-def format_quant_summary(context: dict[str, Any], watchlist: dict[str, str]) -> str:
-    """정량 스냅샷을 텔레그램 HTML 본문으로 변환한다."""
+def format_sector_summary_text(context: dict[str, Any], watchlist: dict[str, str]) -> str:
+    """요약 스냅샷을 텔레그램 HTML 본문으로 변환한다."""
     import html as _html
 
     if not context:

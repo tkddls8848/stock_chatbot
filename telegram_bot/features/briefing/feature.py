@@ -68,7 +68,7 @@ def _install_jobs(scheduler, app) -> None:
 FEATURE = FeatureSpec(
     key="briefing",
     label="브리핑",
-    requires=frozenset({"news", "watchlist", "research", "quant"}),
+    requires=frozenset({"news_summary", "watchlist", "research", "sector_summary"}),
     commands=(
         CommandSpec(
             "briefing",

@@ -49,7 +49,7 @@ class MarketViewAnalyzer:
         watchlist: dict[str, str],
         news_items: list[dict[str, Any]],
         candidate_universe: list[dict[str, Any]] | None = None,
-        quant_context: dict[str, Any] | None = None,
+        sector_summary_context: dict[str, Any] | None = None,
         previous_analyses: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         candidates = candidate_universe or []
@@ -62,8 +62,8 @@ class MarketViewAnalyzer:
             "max_new_actions": self._max_new_actions,
             "max_actions": self._max_actions,
         }
-        if quant_context:
-            payload["quant_context"] = quant_context
+        if sector_summary_context:
+            payload["sector_summary_context"] = sector_summary_context
         if previous_analyses:
             payload["previous_analyses"] = previous_analyses
         raw = self._request_analysis(payload)

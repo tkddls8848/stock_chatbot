@@ -29,7 +29,7 @@ def _install_services(app) -> None:
 FEATURE = FeatureSpec(
     key="research",
     label="시장 리서치",
-    requires=frozenset({"news", "watchlist", "instruments", "quant"}),
+    requires=frozenset({"news_summary", "watchlist", "instruments", "sector_summary"}),
     commands=(
         CommandSpec(
             "research",

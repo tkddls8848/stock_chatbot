@@ -7,12 +7,12 @@
 | 기능 키 | 역할 |
 |---|---|
 | `instruments` | 종목 데이터베이스와 일별 갱신 |
-| `quant` | 시세·자금흐름·섹터 정량 데이터 |
+| `sector_summary` | 시세·자금흐름·섹터 요약 데이터 |
 | `news_prefilter` | 번역 전 로컬 사건 메모리·후보 점수화(Neurons 0) |
 | `watchlist` | 관심종목 추가·삭제·목록 |
-| `news` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 다이제스트 |
+| `news_summary` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 3시간 시장상황 보고서 |
 | `market_sentiment` | 날짜별 시장 감성 백필·집계·차트, Polymarket 컨센서스 스냅숏 |
-| `research` | 뉴스·정량 데이터 기반 시장 리서치(중화권·미국·한국) |
+| `research` | 뉴스·요약 데이터 기반 시장 리서치(중화권·미국·한국) |
 | `briefing` | 모닝·마감 브리핑 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |
 | `web_admin` | 인증이 적용된 내장 관리 웹 대시보드 |

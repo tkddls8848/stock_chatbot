@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from telegram_bot.core.clock import JST
-from telegram_bot.features.news import feature as news_feature
+from telegram_bot.features.news_summary import feature as news_feature
 from telegram_bot.llm.news_report import NewsReportAnalyzer, NewsReportError
 from telegram_bot.news.report import (
     collect_report_source,

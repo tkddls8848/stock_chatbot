@@ -26,7 +26,7 @@ def _install_services(app) -> None:
 FEATURE = FeatureSpec(
     key="market_sentiment",
     label="국가별 뉴스 감성",
-    requires=frozenset({"news"}),
+    requires=frozenset({"news_summary"}),
     commands=(
         CommandSpec("market", "국가별 뉴스 감성", cmd_market, usage="[일수]"),
     ),

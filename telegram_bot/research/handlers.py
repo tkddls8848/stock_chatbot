@@ -367,15 +367,15 @@ async def _run_research_job(
     except Exception as e:
         logger.warning("[RESEARCH] 추가 후보 수집 실패: %s", e)
 
-    # 정량 스냅샷과 직전 분석 이력을 분석 입력에 주입한다(각각 최선 노력).
-    quant_context = None
+    # 요약 스냅샷과 직전 분석 이력을 분석 입력에 주입한다(각각 최선 노력).
+    sector_summary_context = None
     if quote_service is not None:
         try:
-            quant_context = await run_non_urgent(
-                quote_service.build_quant_context, watchlist
+            sector_summary_context = await run_non_urgent(
+                quote_service.build_sector_summary_context, watchlist
             )
         except Exception as e:
-            logger.warning("[RESEARCH] 정량 컨텍스트 수집 실패: %s", e)
+            logger.warning("[RESEARCH] 요약 컨텍스트 수집 실패: %s", e)
     previous_analyses = mvm.get_history_summaries()
 
     # 분석은 중간에 양보할 수 없는 단일 LLM 호출이므로, 뉴스 주기가 도는
@@ -392,7 +392,7 @@ async def _run_research_job(
             watchlist,
             news_items,
             candidate_universe,
-            quant_context,
+            sector_summary_context,
             previous_analyses,
         )
     except MarketViewError as e:

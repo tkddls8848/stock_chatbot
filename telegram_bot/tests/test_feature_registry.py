@@ -10,10 +10,10 @@ from telegram_bot.handlers.navigation import main_menu, persistent_menu
 
 EXPECTED_FEATURES = {
     "instruments",
-    "quant",
+    "sector_summary",
     "watchlist",
     "news_prefilter",
-    "news",
+    "news_summary",
     "market_sentiment",
     "research",
     "briefing",
@@ -72,11 +72,11 @@ def test_registry_rejects_unknown_feature():
     ("enabled", "expected"),
     [
         ({"watchlist"}, "watchlist → instruments"),
-        ({"research", "instruments"}, "research → news"),
-        ({"news"}, "news → watchlist"),
-        ({"market_sentiment"}, "market_sentiment → news"),
-        ({"briefing"}, "briefing → news"),
-        ({"quant"}, "quant → instruments"),
+        ({"research", "instruments"}, "research → news_summary"),
+        ({"news_summary"}, "news_summary → watchlist"),
+        ({"market_sentiment"}, "market_sentiment → news_summary"),
+        ({"briefing"}, "briefing → news_summary"),
+        ({"sector_summary"}, "sector_summary → instruments"),
         ({"news_prefilter"}, "news_prefilter → instruments"),
     ],
 )
@@ -94,12 +94,12 @@ def test_every_enabled_subset_that_passes_can_install_services(monkeypatch):
     monkeypatch.setattr("telegram_bot.stocks.StockDatabase.load_or_build", lambda self: None)
     closures = [
         {"instruments"},
-        {"instruments", "quant"},
+        {"instruments", "sector_summary"},
         {"instruments", "watchlist"},
         {"instruments", "watchlist", "news_prefilter"},
-        {"instruments", "watchlist", "news"},
-        {"instruments", "watchlist", "news", "market_sentiment"},
-        {"instruments", "watchlist", "news", "quant", "research"},
+        {"instruments", "watchlist", "news_summary"},
+        {"instruments", "watchlist", "news_summary", "market_sentiment"},
+        {"instruments", "watchlist", "news_summary", "sector_summary", "research"},
         {"system_admin"},
         {"web_admin"},
         EXPECTED_FEATURES,
@@ -154,7 +154,7 @@ def test_catalog_reports_enabled_and_disabled_states():
         line.startswith("• <b>instruments</b>") and "✅ 활성" in line for line in lines
     )
     assert any(
-        line.startswith("• <b>news</b>") and "⛔ 비활성" in line for line in lines
+        line.startswith("• <b>news_summary</b>") and "⛔ 비활성" in line for line in lines
     )
 
 

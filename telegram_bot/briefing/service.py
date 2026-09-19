@@ -28,7 +28,7 @@ from telegram_bot.core.telegram_html import truncate_html
 from telegram_bot.core.workers import run_non_urgent, wait_for_urgent_idle
 from telegram_bot.research.news import collect_global_market_news_items
 from telegram_bot.state.news_log import aggregate_sentiment_by_code
-from telegram_bot.stocks.quotes import format_quant_summary
+from telegram_bot.stocks.quotes import format_sector_summary_text
 
 logger = logging.getLogger(__name__)
 
@@ -70,16 +70,16 @@ async def _is_holiday(app: Application) -> bool:
     return not await run_non_urgent(calendar.is_trade_date)
 
 
-async def _build_quant_section(app: Application, include_fund_flow: bool) -> tuple[dict, str]:
+async def _build_sector_summary_section(app: Application, include_fund_flow: bool) -> tuple[dict, str]:
     quote_service = app.bot_data.get("quote_service")
     wm = app.bot_data["watchlist_manager"]
     watchlist = await wm.get_all()
     if quote_service is None or not watchlist:
         return {}, ""
     context = await run_non_urgent(
-        quote_service.build_quant_context, watchlist, include_fund_flow
+        quote_service.build_sector_summary_context, watchlist, include_fund_flow
     )
-    return context, format_quant_summary(context, watchlist)
+    return context, format_sector_summary_text(context, watchlist)
 
 
 async def _collect_briefing_news(app: Application) -> list[dict]:
@@ -184,7 +184,7 @@ async def send_morning_briefing(app: Application, force: bool = False) -> None:
         logger.info("[BRIEFING] 휴장일이라 모닝 브리핑을 건너뜁니다.")
         return
 
-    quant_context, quant_text = await _build_quant_section(app, include_fund_flow=False)
+    sector_summary_context, sector_summary_text = await _build_sector_summary_section(app, include_fund_flow=False)
     news_items = await _collect_briefing_news(app)
     market_view = app.bot_data["market_view_manager"].get_sight() or ""
 
@@ -193,14 +193,14 @@ async def send_morning_briefing(app: Application, force: bool = False) -> None:
         {
             "kind": "morning",
             "market_view": market_view,
-            "quant_context": quant_context,
+            "sector_summary_context": sector_summary_context,
             "news_headlines": _news_headlines_payload(news_items),
         },
     )
 
     sections = [f"<b>📅 모닝 브리핑</b> {_today_header()}"]
-    if quant_text:
-        sections.append(quant_text)
+    if sector_summary_text:
+        sections.append(sector_summary_text)
     news_section = _format_news_section(news_items, "밤사이 주요 뉴스")
     if news_section:
         sections.append(news_section)
@@ -219,7 +219,7 @@ async def send_intraday_briefing(app: Application, force: bool = False) -> None:
 
     wm = app.bot_data["watchlist_manager"]
     watchlist = await wm.get_all()
-    quant_context, quant_text = await _build_quant_section(app, include_fund_flow=True)
+    sector_summary_context, sector_summary_text = await _build_sector_summary_section(app, include_fund_flow=True)
     news_items = await _collect_briefing_news(app)
     sentiment_stats, sentiment_section = await _build_sentiment_section(app, watchlist)
     market_view = app.bot_data["market_view_manager"].get_sight() or ""
@@ -229,15 +229,15 @@ async def send_intraday_briefing(app: Application, force: bool = False) -> None:
         {
             "kind": "intraday",
             "market_view": market_view,
-            "quant_context": quant_context,
+            "sector_summary_context": sector_summary_context,
             "news_headlines": _news_headlines_payload(news_items),
             "sentiment_stats": _sentiment_payload(sentiment_stats),
         },
     )
 
     sections = [f"<b>📈 장중 브리핑</b> {_today_header()}"]
-    if quant_text:
-        sections.append(quant_text)
+    if sector_summary_text:
+        sections.append(sector_summary_text)
     news_section = _format_news_section(news_items, "장중 주요 뉴스")
     if news_section:
         sections.append(news_section)
@@ -258,7 +258,7 @@ async def send_evening_briefing(app: Application, force: bool = False) -> None:
 
     wm = app.bot_data["watchlist_manager"]
     watchlist = await wm.get_all()
-    quant_context, quant_text = await _build_quant_section(app, include_fund_flow=True)
+    sector_summary_context, sector_summary_text = await _build_sector_summary_section(app, include_fund_flow=True)
     market_view = app.bot_data["market_view_manager"].get_sight() or ""
 
     sentiment_stats, sentiment_section = await _build_sentiment_section(app, watchlist)
@@ -268,15 +268,15 @@ async def send_evening_briefing(app: Application, force: bool = False) -> None:
         {
             "kind": "evening",
             "market_view": market_view,
-            "quant_context": quant_context,
+            "sector_summary_context": sector_summary_context,
             "news_headlines": [],
             "sentiment_stats": _sentiment_payload(sentiment_stats),
         },
     )
 
     sections = [f"<b>🌙 마감 브리핑</b> {_today_header()}"]
-    if quant_text:
-        sections.append(quant_text)
+    if sector_summary_text:
+        sections.append(sector_summary_text)
     if sentiment_section:
         sections.append(sentiment_section)
     if comment:

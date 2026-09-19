@@ -116,7 +116,7 @@ def test_manual_briefing_reports_a_failed_send_to_the_caller(monkeypatch):
     """`/briefing morning`이 한 글자도 못 보내고 "처리 완료"로 끝나면 안 된다."""
     from telegram_bot.briefing import service
 
-    async def no_quant(app, include_fund_flow):
+    async def no_summary(app, include_fund_flow):
         return {}, ""
 
     async def no_news(app):
@@ -125,7 +125,7 @@ def test_manual_briefing_reports_a_failed_send_to_the_caller(monkeypatch):
     async def no_comment(app, payload):
         return ""
 
-    monkeypatch.setattr(service, "_build_quant_section", no_quant)
+    monkeypatch.setattr(service, "_build_sector_summary_section", no_summary)
     monkeypatch.setattr(service, "_collect_briefing_news", no_news)
     monkeypatch.setattr(service, "_write_llm_comment", no_comment)
 

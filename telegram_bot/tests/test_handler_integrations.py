@@ -34,9 +34,9 @@ class _Bot:
 
 
 def test_morning_briefing_success_reaches_telegram(monkeypatch):
-    async def quant(_app, include_fund_flow):
+    async def summary(_app, include_fund_flow):
         assert include_fund_flow is False
-        return {"market": "US"}, "정량 요약"
+        return {"market": "US"}, "시장 요약"
 
     async def news(_app):
         return [{"title": "Fed holds rates", "source": "wire", "sentiment": 0.2}]
@@ -45,7 +45,7 @@ def test_morning_briefing_success_reaches_telegram(monkeypatch):
         assert payload["kind"] == "morning"
         return "변동성에 주의"
 
-    monkeypatch.setattr(briefing_service, "_build_quant_section", quant)
+    monkeypatch.setattr(briefing_service, "_build_sector_summary_section", summary)
     monkeypatch.setattr(briefing_service, "_collect_briefing_news", news)
     monkeypatch.setattr(briefing_service, "_write_llm_comment", comment)
     bot = _Bot()
@@ -57,7 +57,7 @@ def test_morning_briefing_success_reaches_telegram(monkeypatch):
     asyncio.run(briefing_service.send_morning_briefing(app, force=True))
 
     assert len(bot.messages) == 1
-    assert "정량 요약" in bot.messages[0]["text"]
+    assert "시장 요약" in bot.messages[0]["text"]
     assert "Fed holds rates" in bot.messages[0]["text"]
     assert "변동성에 주의" in bot.messages[0]["text"]
 
@@ -94,9 +94,9 @@ def test_briefing_kind_follows_jst_session_boundaries(hour, minute, expected):
 def test_intraday_briefing_combines_live_market_evidence(monkeypatch):
     captured = {}
 
-    async def quant(_app, include_fund_flow):
+    async def summary(_app, include_fund_flow):
         assert include_fund_flow is True
-        return {"fund_flow": "northbound"}, "장중 정량 요약"
+        return {"fund_flow": "northbound"}, "장중 시장 요약"
 
     async def news(_app):
         return [{"title": "반도체 강세", "source": "wire", "sentiment": 0.4}]
@@ -109,7 +109,7 @@ def test_intraday_briefing_combines_live_market_evidence(monkeypatch):
         captured.update(payload)
         return "남은 장에서 수급 지속 여부 확인"
 
-    monkeypatch.setattr(briefing_service, "_build_quant_section", quant)
+    monkeypatch.setattr(briefing_service, "_build_sector_summary_section", summary)
     monkeypatch.setattr(briefing_service, "_collect_briefing_news", news)
     monkeypatch.setattr(briefing_service, "_build_sentiment_section", sentiment)
     monkeypatch.setattr(briefing_service, "_write_llm_comment", comment)
@@ -129,7 +129,7 @@ def test_intraday_briefing_combines_live_market_evidence(monkeypatch):
     text = bot.messages[0]["text"]
     assert captured["kind"] == "intraday"
     assert "장중 브리핑" in text
-    assert "장중 정량 요약" in text
+    assert "장중 시장 요약" in text
     assert "반도체 강세" in text
     assert "감성 요약" in text
 
