@@ -20,6 +20,57 @@ from telegram_bot.llm.backends import LLMBackend
 logger = logging.getLogger(__name__)
 
 _VALIDATION_ATTEMPTS = 2
+# 응답 형식을 디코딩 단계에서 강제한다. 실측(2026-09-21, 스모크
+# `test_cloudflare_json_mode_smoke.py`)에서 이 모델이 스키마를 지켰고, 제목의
+# 큰따옴표가 이스케이프되어 원문 그대로 살아왔다.
+#
+# **비용은 0이다.** 같은 입력을 구조화 없이/있이 불렀을 때 입력 토큰이 정확히
+# 같았다(3,781/7,399). Cloudflare는 스키마를 입력 토큰으로 과금하지 않고,
+# 제약 디코딩 자체의 가산도 없다 — 네 점이
+# `neurons ≈ 0.00463×입력 + 0.0304×출력`에 맞고 남는 몫이 없다. 처음 잰
+# +41.5%는 입력이 250토큰뿐인 호출의 출력 길이 편차였다.
+#
+# **모델을 바꾸면(`CLOUDFLARE_MODEL`) 그 스모크를 다시 돌린다.** 지원하지 않는
+# 모델에 이 필드를 실으면 400으로 보고서가 통째로 실패한다. Cloudflare 문서가
+# 지원 목록에 올려 둔 모델이 실제로는 받지 않은 전례가 있어 문서로 갈음하지 않는다.
+_IMPACT_ENUM = {"type": "string", "enum": ["high", "medium", "low"]}
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "publish": {"type": "boolean"},
+        "hold_reason": {"type": "string"},
+        "analysis": {"type": "string"},
+        "highlights": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "sentiment": {"type": "number", "minimum": -1, "maximum": 1},
+                    "impact": _IMPACT_ENUM,
+                    "mentioned_stocks": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["index", "title", "sentiment", "impact", "mentioned_stocks"],
+            },
+        },
+        "evaluations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"index": {"type": "integer"}, "impact": _IMPACT_ENUM},
+                "required": ["index", "impact"],
+            },
+        },
+    },
+    "required": ["publish", "hold_reason", "analysis", "highlights", "evaluations"],
+}
+# OpenAI 호환 경로(`/ai/v1/chat/completions`)를 쓰므로 OpenAI식 봉투를 쓴다.
+# 스모크에서는 Cloudflare식 봉투도 통했지만, 엔드포인트와 같은 규격을 따른다.
+RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {"name": "news_report", "schema": RESPONSE_SCHEMA},
+}
 # `"analysis"` 값의 시작 자리. 끝은 다음 키가 열리는 자리로 찾는다 — 본문 안
 # 따옴표를 escape하지 못해 깨진 응답이라 마지막 따옴표를 믿을 수 없다.
 _ANALYSIS_OPEN = re.compile(r'"analysis"\s*:\s*"')
@@ -28,6 +79,11 @@ _ANALYSIS_CLOSE = re.compile(r'"\s*,\s*"(?:highlights|evaluations)"')
 
 def _salvage_analysis(raw: str) -> str:
     """JSON이 통째로 깨졌을 때 본문만 건진다.
+
+    **구조화 출력을 켠 뒤에도 남는다.** 스키마는 모양을 강제할 뿐이라
+    `max_tokens`에서 잘린 응답은 여전히 깨진 JSON이고, 그 절단은 이 저장소가
+    실제로 겪은 실패다(2026-09-17 06시 CN·US·KR, 03시 US).
+
 
     실측(2026-09-17 00시·09시 US·KR)에서 모델이 제목을 옮기며 문자열 안
     큰따옴표를 escape하지 않아 `Expecting ',' delimiter`로 파싱이 깨졌다.
@@ -129,6 +185,7 @@ class NewsReportAnalyzer:
                     user_prompt=user_prompt,
                     max_tokens=self._num_predict,
                     temperature=0.2,
+                    response_format=RESPONSE_FORMAT,
                 )
             except Exception as exc:
                 # 전송 계층의 재시도는 ResilientBackend가 담당한다. 여기서는

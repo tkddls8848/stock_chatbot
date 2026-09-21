@@ -8,6 +8,7 @@ import pytest
 
 from telegram_bot.core.clock import JST
 from telegram_bot.features.news_summary import feature as news_feature
+from telegram_bot.llm import news_report as news_report_llm
 from telegram_bot.llm.news_report import NewsReportAnalyzer, NewsReportError
 from telegram_bot.news.report import (
     collect_report_source,
@@ -84,10 +85,13 @@ class _FakeBackend:
         self.payload = payload
         self.error = error
         self.calls = []
+        self.response_formats = []
 
-    def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
+    def generate(self, *, system_prompt, user_prompt, max_tokens, temperature,
+                 response_format=None):
         if self.error is not None:
             raise self.error
+        self.response_formats.append(response_format)
         self.calls.append(json.loads(user_prompt))
         return json.dumps(self.payload, ensure_ascii=False)
 
@@ -97,7 +101,8 @@ class _SequenceBackend:
         self.responses = iter(responses)
         self.calls = []
 
-    def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
+    def generate(self, *, system_prompt, user_prompt, max_tokens, temperature,
+                 response_format=None):
         self.calls.append(json.loads(user_prompt))
         return next(self.responses)
 
@@ -465,6 +470,72 @@ def test_analyzer_caps_highlights_at_the_configured_limit(tmp_path):
     assert len(result["highlights"]) == 2
 
 
+# ── 응답 형식 강제 ────────────────────────────────────
+
+def test_the_request_carries_the_response_schema(tmp_path):
+    """스키마를 싣지 않으면 모델이 형식을 지킬 이유가 없다.
+
+    실측(2026-09-21)에서 이 모델이 스키마를 지켰고 제목의 큰따옴표가
+    이스케이프되어 살아왔다. 입력 토큰이 양쪽 모두 같아 비용은 0이었다.
+    """
+    analyzer = _analyzer(tmp_path, _payload())
+
+    analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+
+    sent = analyzer._backend.response_formats[0]
+    assert sent["type"] == "json_schema"
+    assert sent["json_schema"]["schema"] is news_report_llm.RESPONSE_SCHEMA
+
+
+def test_the_schema_declares_every_field_the_parser_requires():
+    """스키마와 파서가 갈라지면 모델이 형식은 지키고 검증은 실패한다."""
+    schema = news_report_llm.RESPONSE_SCHEMA
+    assert set(schema["required"]) == {
+        "publish", "hold_reason", "analysis", "highlights", "evaluations"
+    }
+    highlight = schema["properties"]["highlights"]["items"]
+    assert set(highlight["required"]) == {
+        "index", "title", "sentiment", "impact", "mentioned_stocks"
+    }
+    # 파서가 받는 값과 같은 범위·열거여야 한다(`_parse_highlight`).
+    assert highlight["properties"]["sentiment"]["minimum"] == -1
+    assert highlight["properties"]["sentiment"]["maximum"] == 1
+    assert highlight["properties"]["impact"]["enum"] == ["high", "medium", "low"]
+    evaluation = schema["properties"]["evaluations"]["items"]
+    assert evaluation["properties"]["impact"]["enum"] == ["high", "medium", "low"]
+
+
+def test_a_schema_shaped_response_passes_the_parser_untouched(tmp_path):
+    """스키마가 허용하는 응답은 파서도 그대로 받아야 한다.
+
+    스키마는 모양만 보장한다 — index가 이번에 보낸 것 중 하나인지 같은 의미
+    검증은 여전히 파서 몫이고, 두 층이 어긋나면 형식이 맞는데도 버려진다.
+    """
+    payload = {
+        "publish": True,
+        "hold_reason": "",
+        "analysis": "반도체 장비주가 국면을 이끈다.",
+        "highlights": [{
+            "index": 0,
+            "title": '애플 "비전 프로" 수요가 예상을 넘었다',
+            "sentiment": -1,
+            "impact": "low",
+            "mentioned_stocks": ["AAPL"],
+        }],
+        "evaluations": [{"index": 1, "impact": "high"}],
+    }
+    analyzer = _analyzer(tmp_path, payload)
+
+    result = analyzer.analyze(
+        "US", "창", [{"index": 0, "title": "a"}, {"index": 1, "title": "b"}]
+    )
+
+    assert result["publish"] is True
+    # 큰따옴표가 든 제목이 그대로 실린다 — 구조화 출력으로 얻는 실익이다.
+    assert result["highlights"][0]["title"] == '애플 "비전 프로" 수요가 예상을 넘었다'
+    assert result["highlights"][0]["sentiment"] == -1.0
+
+
 # ── 시장 분류와 섹션 ──────────────────────────────────
 
 def test_markets_are_grouped_in_display_order():
@@ -740,7 +811,8 @@ def test_one_market_publishes_while_another_holds(tmp_path):
     calls = []
 
     class _PerMarketBackend:
-        def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
+        def generate(self, *, system_prompt, user_prompt, max_tokens, temperature,
+                     response_format=None):
             request = json.loads(user_prompt)
             calls.append(request)
             if request["market"] == "CN":

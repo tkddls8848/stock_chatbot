@@ -398,6 +398,18 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 - 번역·분석·브리핑은 Cloudflare Workers AI만 사용한다. 비밀값은 `.env`에만 두고
   로그나 예외에 포함하지 않는다.
 - LLM JSON은 필수 필드를 엄격히 검사하고 현재 응답 envelope만 처리한다.
+- **3시간 보고서는 응답 형식을 스키마로 강제한다(`response_format`).**
+  `telegram_bot/llm/news_report.py`의 `RESPONSE_FORMAT`이고, 이 경로에만 쓴다.
+  **비용은 0이다** — 같은 입력을 구조화 없이/있이 부른 실측(2026-09-21)에서
+  입력 토큰이 정확히 같았고(3,781·7,399), 네 점이
+  `neurons ≈ 0.00463×입력 + 0.0304×출력`에 남는 몫 없이 맞는다. Cloudflare는
+  스키마를 입력 토큰으로 과금하지 않고 제약 디코딩의 가산도 없다. 작은 호출에서
+  본 ±5%는 `temperature=0.2`의 출력 길이 편차다.
+  **`CLOUDFLARE_MODEL`을 바꾸면 `test_cloudflare_json_mode_smoke.py`를 다시
+  돌린다.** 지원하지 않는 모델에 이 필드를 실으면 400으로 보고서가 통째로
+  실패하고, Cloudflare 문서가 지원 목록에 올려 둔 모델이 실제로는 받지 않은
+  전례가 있어 문서로 갈음하지 않는다. 스키마는 모양만 보장하므로
+  `max_tokens` 절단과 index 유효성·중복 같은 의미 검증은 그대로 파서가 한다.
 - **`finish_reason=length`는 성공이 아니다.** 상한에 걸려 끊긴 응답을 그대로
   돌려주면 호출자는 파싱 오류(`Unterminated string`)만 보고 원인을 못 찾는다.
   `backends.py`가 `truncated`로 실패시키고 `max_tokens`와 실제 output_tokens를

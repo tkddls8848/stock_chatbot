@@ -47,6 +47,7 @@ from telegram_bot.core.config import (
     NEWS_REPORT_TIMEOUT,
 )
 from telegram_bot.llm.backends import CloudflareWorkersAIBackend, LLMBackendError
+from telegram_bot.llm.news_report import RESPONSE_SCHEMA as REPORT_SCHEMA
 
 pytestmark = [
     pytest.mark.cloudflare_smoke,
@@ -60,41 +61,8 @@ pytestmark = [
     ),
 ]
 
-# 3시간 보고서가 실제로 돌려받는 모양이다. 축소판을 쓰지 않는 것은 **스키마
-# 자체가 입력 토큰이라** 크기가 비용 측정에 그대로 들어가기 때문이다.
-_IMPACT = {"type": "string", "enum": ["high", "medium", "low"]}
-REPORT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "publish": {"type": "boolean"},
-        "hold_reason": {"type": "string"},
-        "analysis": {"type": "string"},
-        "highlights": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "index": {"type": "integer"},
-                    "title": {"type": "string"},
-                    "sentiment": {"type": "number", "minimum": -1, "maximum": 1},
-                    "impact": _IMPACT,
-                    "mentioned_stocks": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["index", "title", "sentiment", "impact", "mentioned_stocks"],
-            },
-        },
-        "evaluations": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"index": {"type": "integer"}, "impact": _IMPACT},
-                "required": ["index", "impact"],
-            },
-        },
-    },
-    "required": ["publish", "hold_reason", "analysis", "highlights", "evaluations"],
-}
-
+# 스키마는 `news_report`가 실제로 쓰는 것을 그대로 가져온다. 사본을 두면 재는
+# 것과 도는 것이 갈라져, 측정이 통과해도 운영에서 다른 스키마가 나간다.
 # 봉투 두 벌. 어느 쪽을 받는지가 이 스모크의 첫 번째 답이다.
 ENVELOPES = {
     "openai": {
