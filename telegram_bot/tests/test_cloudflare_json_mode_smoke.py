@@ -41,6 +41,9 @@ from telegram_bot.core.config import (
     CLOUDFLARE_AI_BASE_URL,
     CLOUDFLARE_API_TOKEN,
     CLOUDFLARE_MODEL,
+    NEWS_REPORT_MAX_HEADLINES,
+    NEWS_REPORT_NUM_PREDICT,
+    NEWS_REPORT_PROMPT_FILE,
     NEWS_REPORT_TIMEOUT,
 )
 from telegram_bot.llm.backends import CloudflareWorkersAIBackend, LLMBackendError
@@ -57,12 +60,14 @@ pytestmark = [
     ),
 ]
 
-# 3시간 보고서 응답의 축소판이다. 실제 스키마를 그대로 쓰지 않는 것은, 여기서
-# 재는 것이 보고서 품질이 아니라 **형식 강제가 걸리느냐**이기 때문이다.
+# 3시간 보고서가 실제로 돌려받는 모양이다. 축소판을 쓰지 않는 것은 **스키마
+# 자체가 입력 토큰이라** 크기가 비용 측정에 그대로 들어가기 때문이다.
+_IMPACT = {"type": "string", "enum": ["high", "medium", "low"]}
 REPORT_SCHEMA = {
     "type": "object",
     "properties": {
         "publish": {"type": "boolean"},
+        "hold_reason": {"type": "string"},
         "analysis": {"type": "string"},
         "highlights": {
             "type": "array",
@@ -72,13 +77,22 @@ REPORT_SCHEMA = {
                     "index": {"type": "integer"},
                     "title": {"type": "string"},
                     "sentiment": {"type": "number", "minimum": -1, "maximum": 1},
-                    "impact": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "impact": _IMPACT,
+                    "mentioned_stocks": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["index", "title", "sentiment", "impact"],
+                "required": ["index", "title", "sentiment", "impact", "mentioned_stocks"],
+            },
+        },
+        "evaluations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"index": {"type": "integer"}, "impact": _IMPACT},
+                "required": ["index", "impact"],
             },
         },
     },
-    "required": ["publish", "analysis", "highlights"],
+    "required": ["publish", "hold_reason", "analysis", "highlights", "evaluations"],
 }
 
 # 봉투 두 벌. 어느 쪽을 받는지가 이 스모크의 첫 번째 답이다.
@@ -118,7 +132,14 @@ USER_PROMPT = json.dumps(
 )
 
 MAX_TOKENS = 1024
-_NEURONS = re.compile(r"neurons=([0-9.]+)")
+_USAGE = re.compile(
+    r"input_tokens=(?P<input>[0-9?]+) output_tokens=(?P<output>[0-9?]+)"
+    r"(?: neurons=(?P<neurons>[0-9.]+))?"
+)
+
+
+def _int(value: str | None) -> int | None:
+    return int(value) if value and value.isdigit() else None
 
 
 def _backend() -> CloudflareWorkersAIBackend:
@@ -131,19 +152,37 @@ def _backend() -> CloudflareWorkersAIBackend:
     )
 
 
-def _call(caplog, response_format=None) -> tuple[str, float | None]:
-    """한 번 부르고 본문과 그 호출이 태운 Neurons를 돌려준다."""
+def _call(
+    caplog,
+    response_format=None,
+    *,
+    system_prompt: str = SYSTEM_PROMPT,
+    user_prompt: str = USER_PROMPT,
+    max_tokens: int = MAX_TOKENS,
+) -> tuple[str, dict[str, float | int | None]]:
+    """한 번 부르고 본문과 그 호출의 usage를 돌려준다.
+
+    Cloudflare가 입력·출력 토큰과 과금 단위를 응답에 담아 주므로 추정하지
+    않는다. 늘어난 비용이 **스키마가 얹힌 입력 토큰인지 제약 디코딩
+    오버헤드인지**는 이 셋을 나란히 놓아야 갈린다.
+    """
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="telegram_bot.llm.backends"):
         content = _backend().generate(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=USER_PROMPT,
-            max_tokens=MAX_TOKENS,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
             temperature=0.2,
             response_format=response_format,
         )
-    found = _NEURONS.search(caplog.text)
-    return content, float(found.group(1)) if found else None
+    found = _USAGE.search(caplog.text)
+    if found is None:
+        return content, {"input": None, "output": None, "neurons": None}
+    return content, {
+        "input": _int(found.group("input")),
+        "output": _int(found.group("output")),
+        "neurons": float(found.group("neurons")) if found.group("neurons") else None,
+    }
 
 
 def _conforms(data: object) -> list[str]:
@@ -179,7 +218,7 @@ def test_json_schema_is_enforced_by_this_model(caplog):
     results = {}
     for name, envelope in ENVELOPES.items():
         try:
-            content, neurons = _call(caplog, envelope)
+            content, usage = _call(caplog, envelope)
         except LLMBackendError as error:
             results[name] = f"거부됨 — {error}"
             continue
@@ -190,7 +229,7 @@ def test_json_schema_is_enforced_by_this_model(caplog):
             continue
         problems = _conforms(data)
         results[name] = {
-            "neurons": neurons,
+            "neurons": usage["neurons"],
             "problems": problems,
             "analysis_chars": len(str(data.get("analysis") or "")),
             "highlights": len(data.get("highlights") or []),
@@ -221,7 +260,7 @@ def test_a_quoted_headline_survives_without_the_bracket_workaround(caplog):
     """
     envelope = ENVELOPES["openai"]
     try:
-        content, _ = _call(caplog, envelope)
+        content, _usage = _call(caplog, envelope)
     except LLMBackendError:
         pytest.skip("이 봉투를 모델이 거부했다. 위 시험이 어느 봉투가 통하는지 알려준다")
 
@@ -239,28 +278,117 @@ def test_a_quoted_headline_survives_without_the_bracket_workaround(caplog):
     )
 
 
-def test_structured_output_cost_against_the_plain_call(caplog):
-    """같은 입력을 구조화 없이 한 번 더 불러 Neurons를 견준다.
+def _report_payload(article_count: int) -> tuple[str, str]:
+    """실제 보고서와 같은 모양의 프롬프트·입력을 정해진 기사 수로 만든다.
 
-    판정하지 않고 **숫자를 남긴다.** 스키마가 입력 토큰에 얹히는 만큼 늘고,
-    형식 실패 재시도가 사라지는 만큼 준다 — 어느 쪽이 큰지는 운영 로그가
-    답할 문제이고 여기서는 호출당 차이만 잰다.
+    **크기를 맞추지 않으면 답이 왜곡된다.** 스키마는 크기가 고정된 입력 토큰
+    덩어리라, 입력이 작으면 증가율이 부풀고 크면 옅어진다. 기사 2건짜리 첫
+    측정에서 +41.5%가 나온 것도 그 호출의 입력이 250토큰 남짓이라 스키마
+    250토큰이 거의 그대로 비율이 됐기 때문이다.
+
+    실제 호출의 입력은 2,832~3,601토큰이었다(실측 2026-09-17). 그 구간을
+    양쪽에서 감싸도록 두 크기로 잰다 — 얇은 시장(40건)과 상한
+    (`NEWS_REPORT_MAX_HEADLINES`). 한 점만 재면 그 점이 우연히 유리한
+    자리였는지 알 수 없다.
     """
-    plain_content, plain_neurons = _call(caplog)
+    prompt = NEWS_REPORT_PROMPT_FILE.read_text(encoding="utf-8").replace(
+        "{max_highlights}", "8"
+    )
+    subjects = [
+        "Nvidia", "Apple", "Tesla", "Samsung Electronics", "TSMC", "Alphabet",
+        "Microsoft", "Amazon", "Meta", "Intel", "AMD", "Broadcom",
+    ]
+    verbs = [
+        "beats quarterly estimates as data center demand accelerates",
+        "cuts full-year outlook citing weaker consumer spending",
+        "announces $2.4 billion supply agreement with a memory maker",
+        "faces antitrust probe over bundled cloud licensing terms",
+        "raises dividend 12% after record free cash flow",
+        "delays product launch to the first quarter of next year",
+    ]
+    sources = ["Reuters", "Bloomberg", "CNBC", "연합뉴스", "한국경제", "Yicai"]
+    articles = []
+    for index in range(article_count):
+        subject = subjects[index % len(subjects)]
+        verb = verbs[(index // len(subjects)) % len(verbs)]
+        title = f"{subject} {verb}"
+        # 실제 입력에는 따옴표가 든 제목이 섞여 들어온다. 그것이 사고의 원인이었다.
+        if index % 17 == 0:
+            title = f'{subject} says "demand is structural", {verb}'
+        articles.append({
+            "index": index,
+            "title": title,
+            "source": sources[index % len(sources)],
+            "published_at": f"{9 + index % 12:02d}:{index % 60:02d} UTC +9",
+        })
+    payload = {
+        "market": "US",
+        "window": "09:00~12:00 UTC +9",
+        "articles": articles,
+        "previous": {
+            "window": "06:00~09:00 UTC +9",
+            "published_at": "2026-09-21T09:00:00+09:00",
+            "analysis": (
+                "반도체 공급 계약 발표가 세 건 겹치며 장비주 중심의 상승 국면이 "
+                "이어진다. 직전 보고서가 제시한 관찰 포인트였던 메모리 가격 반등은 "
+                "아직 확인되지 않았다. 다음 구간에는 메모리 현물가 방향을 본다."
+            ),
+        },
+        "must_publish": False,
+        "evaluation_indexes": list(range(10)),
+    }
+    return prompt, json.dumps(payload, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("article_count", [40, NEWS_REPORT_MAX_HEADLINES])
+def test_structured_output_cost_at_the_real_report_size(caplog, article_count):
+    """실제 보고서 크기에서 구조화 출력이 호출당 얼마를 더 태우는지 잰다.
+
+    판정하지 않고 **숫자를 남긴다.** 늘어난 값이 스키마가 얹힌 입력 토큰이면
+    입력이 큰 실제 호출에서는 옅게 희석되고, 출력 토큰이나 그 어느 쪽도 아닌
+    몫이면 제약 디코딩 자체의 오버헤드다 — 셋을 나란히 찍어야 갈린다.
+
+    맞은편 절감은 형식 실패 재시도다. `_VALIDATION_ATTEMPTS=2`라 형식이 깨지면
+    그 호출을 통째로 한 번 더 태운다(실측 2026-09-17: 따옴표 파손 3건 / 하루
+    최대 32회 ≈ 9%).
+    """
+    prompt, user_prompt = _report_payload(article_count)
+    plain_content, plain = _call(
+        caplog,
+        system_prompt=prompt,
+        user_prompt=user_prompt,
+        max_tokens=NEWS_REPORT_NUM_PREDICT,
+    )
     try:
-        _, schema_neurons = _call(caplog, ENVELOPES["openai"])
+        schema_content, schema = _call(
+            caplog,
+            ENVELOPES["openai"],
+            system_prompt=prompt,
+            user_prompt=user_prompt,
+            max_tokens=NEWS_REPORT_NUM_PREDICT,
+        )
     except LLMBackendError as error:
         pytest.skip(f"구조화 호출이 거부되어 비교할 수 없다: {error}")
 
-    print("\n=== 호출당 비용 ===")
-    print(f"구조화 없음: neurons={plain_neurons}")
-    print(f"구조화 있음: neurons={schema_neurons}")
-    if plain_neurons and schema_neurons:
-        print(f"차이: {schema_neurons - plain_neurons:+.2f} "
-              f"({(schema_neurons / plain_neurons - 1) * 100:+.1f}%)")
-    # 구조화 없는 호출이 JSON을 돌려주리라는 보장이 없다는 것도 기록으로 남긴다.
-    try:
-        json.loads(plain_content)
-        print("구조화 없는 응답도 이번에는 JSON이었다")
-    except json.JSONDecodeError as error:
-        print(f"구조화 없는 응답은 JSON이 아니었다: {error}")
+    print(f"\n=== 호출당 비용 · 기사 {article_count}건 ===")
+    print(f"구조화 없음: {plain}")
+    print(f"구조화 있음: {schema}")
+    for key in ("input", "output", "neurons"):
+        before, after = plain[key], schema[key]
+        if before and after:
+            print(f"{key}: {before} → {after} "
+                  f"({after - before:+.2f}, {(after / before - 1) * 100:+.1f}%)")
+
+    # 두 응답이 실제로 쓸 만한 보고서인지도 같은 자리에서 본다. 싸다고 해도
+    # 본문이 짧아지면 적용할 이유가 없다.
+    for label, content in (("구조화 없음", plain_content), ("구조화 있음", schema_content)):
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as error:
+            print(f"[{label}] JSON 아님 — {error}; 앞 120자: {content[:120]!r}")
+            continue
+        analysis = str(data.get("analysis") or "")
+        print(f"[{label}] analysis {len(analysis)}자 · "
+              f"highlights {len(data.get('highlights') or [])}건 · "
+              f"evaluations {len(data.get('evaluations') or [])}건")
+        print(f"[{label}] 본문: {analysis[:120]}")
