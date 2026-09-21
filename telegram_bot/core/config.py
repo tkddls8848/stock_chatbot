@@ -255,9 +255,13 @@ NEWS_PREFILTER_MAINTENANCE_CHUNK_SECONDS = 2.0
 NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 
 
-NEWS_GLOBAL_SOURCE_KEYS = ["futu", "sina", "gnews", "gnews_us", "gnews_kr"]
+NEWS_GLOBAL_SOURCE_KEYS = ["futu", "sina", "cls", "gnews", "gnews_us", "gnews_kr"]
+# 원문 1차 소스를 시장마다 하나씩 둔다. 통신사·규제기관 발표는 매체가 받아쓰기
+# 전에 나오므로, 집계 소스(Google News)만으로는 같은 사실을 한 박자 늦게 본다.
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
+    ("yonhap-economy", "https://www.yna.co.kr/rss/economy.xml"),
+    ("fed-press", "https://www.federalreserve.gov/feeds/press_all.xml"),
 ]
 NEWS_SOURCE_FAILURE_THRESHOLD = 3
 # 주기가 60분이라 60분 쿨다운은 한 주기도 쉬지 못하고 곧바로 다시 불린다.
@@ -331,9 +335,12 @@ NEWS_LOG_RETENTION_DAYS = 30
 NEWS_SOURCE_MARKETS = {
     "futu": "CN",
     "sina": "CN",
+    "cls": "CN",
     "gnews_us": "US",
     "gnews_kr": "KR",
     "mk-stock": "KR",
+    "yonhap-economy": "KR",
+    "fed-press": "US",
 }
 # /market(cmd_market)의 기본 조회 일수와 대상 시장 집합.
 MARKET_CHART_LOOKBACK_DAYS = 7

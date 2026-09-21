@@ -59,6 +59,13 @@ def fetch_sina_raw():
     return ak.stock_info_global_sina()
 
 
+@retry_on_network
+def fetch_cls_raw():
+    # "重点"은 财联社가 A/B 등급을 매긴 전보만 돌려준다. "全部"도 한 호출에 20건뿐이라
+    # 등급 없는 잡음이 섞이면 실제로 남는 기사가 몇 건 되지 않는다.
+    return ak.stock_info_global_cls(symbol="重点")
+
+
 def fetch_rss_raw(url: str) -> bytes:
     host = urlparse(url).netloc.lower()
     headers = {
@@ -122,6 +129,34 @@ def fetch_sina_articles() -> list[GlobalArticle]:
     return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
 
 
+def fetch_cls_articles() -> list[GlobalArticle]:
+    """财联社 전보(重点)를 최신순으로 정규화한다.
+
+    akshare는 이 표를 발행 시각 **오름차순**으로 돌려주고 날짜와 시각을 두 열로
+    쪼개 놓는다. 다른 어댑터와 달리 뒤집어야 최신순이 되고, `published_date`를
+    따로 넘겨야 `parse_news_datetime`이 "14:33:21"만으로는 못 읽는 시각을 읽는다.
+    """
+    df = fetch_cls_raw()
+    articles = []
+    for _, row in df.iloc[::-1].iterrows():
+        title = _cell(row, "标题")
+        content = _cell(row, "内容")
+        published_date = _cell(row, "发布日期")
+        published_at = _cell(row, "发布时间")
+        if not (title or content):
+            continue
+        articles.append(
+            GlobalArticle(
+                article_id=f"cls:{published_date} {published_at}:{(title or content)[:20]}",
+                title=title,
+                content=content,
+                published_at=published_at,
+                published_date=published_date,
+            )
+        )
+    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
+
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -169,6 +204,7 @@ def fetch_rss_articles(
 # 기사 본문에 등장한다(한국 기사를 영어로 질의하면 종목명이 사라진다).
 _GOOGLE_NEWS_LOCALES = {
     "KR": "hl=ko&gl=KR&ceid=KR:ko",
+    "HK": "hl=zh-HK&gl=HK&ceid=HK:zh-Hant",
 }
 _DEFAULT_GOOGLE_NEWS_LOCALE = "hl=en-US&gl=US&ceid=US:en"
 
@@ -199,6 +235,9 @@ def fetch_google_news_history(query: str, day: date, market: str) -> list[Global
 
 _REGIONAL_MARKET_QUERIES = {
     "CN": "China stock market economy",
+    # 보고서와 감성 차트는 HK를 시장으로 갖고 있는데 HK 기사를 내는 소스가 없어
+    # 그 칸이 늘 비어 있었다. 번체 로케일로 질의해야 현지 종목명이 본문에 남는다.
+    "HK": "香港股市 恒生指數 經濟",
     "EU": "European stock market economy",
     "RU": "Russia stock market economy",
     "KR": "Korea stock market economy",
@@ -244,7 +283,8 @@ def _deduplicate_articles(articles: list[GlobalArticle]) -> list[GlobalArticle]:
 
 def _fetch_google_news_market(market: str) -> list[GlobalArticle]:
     query = _REGIONAL_MARKET_QUERIES[market]
-    per_market_limit = max(1, (NEWS_SOURCE_ARTICLE_LIMIT + 6) // 7)
+    market_count = len(_REGIONAL_MARKET_QUERIES)
+    per_market_limit = max(1, (NEWS_SOURCE_ARTICLE_LIMIT + market_count - 1) // market_count)
     articles = fetch_rss_articles(
         _google_news_url(query, market),
         f"gnews:{market}",

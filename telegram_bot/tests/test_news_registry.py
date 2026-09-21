@@ -90,3 +90,28 @@ def test_status_lines_report_states():
     lines = registry.status_lines()
     assert lines[0] == "futu: 정상"
     assert lines[1].startswith("sina: 쿨다운")
+
+
+def test_cailianpress_is_registered_as_a_share_source():
+    specs = {spec.key: spec for spec in build_source_specs(["cls"], [])}
+
+    assert specs["cls"].market == "CN"
+    assert "财联社" in specs["cls"].label
+
+
+def test_configured_sources_and_feeds_all_resolve():
+    # 설정에 적힌 키가 빌트인에 없으면 조용히 무시된다(경고만 남는다).
+    # 소스를 추가하고 등록을 빠뜨리면 이 테스트가 잡는다.
+    from telegram_bot.core.config import (
+        NEWS_GLOBAL_SOURCE_KEYS,
+        NEWS_RSS_FEEDS,
+        NEWS_SOURCE_MARKETS,
+    )
+
+    specs = build_source_specs(NEWS_GLOBAL_SOURCE_KEYS, NEWS_RSS_FEEDS, NEWS_SOURCE_MARKETS)
+
+    assert len(specs) == len(NEWS_GLOBAL_SOURCE_KEYS) + len(NEWS_RSS_FEEDS)
+    # 혼합 소스(gnews)만 시장 태그가 비어 있다. 나머지는 보고서가 시장별로
+    # 묶을 수 있도록 태그를 갖는다.
+    untagged = {spec.key for spec in specs if not spec.market}
+    assert untagged == {"gnews"}

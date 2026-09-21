@@ -14,6 +14,7 @@ from typing import Callable
 
 from telegram_bot.news.sources import (
     GlobalArticle,
+    fetch_cls_articles,
     fetch_futu_articles,
     fetch_google_news_global_articles,
     fetch_google_news_kr_stock_articles,
@@ -46,6 +47,7 @@ class _SourceHealth:
 _BUILTIN_SPECS: dict[str, tuple[str, Callable[[], list[GlobalArticle]], str]] = {
     "futu": ("푸투니우니우(富途牛牛)", fetch_futu_articles, "CN"),
     "sina": ("신랑재경(新浪财经)", fetch_sina_articles, "CN"),
+    "cls": ("차이롄서 전보(财联社 电报)", fetch_cls_articles, "CN"),
 }
 
 _BUILTIN_SPECS["gnews"] = (
