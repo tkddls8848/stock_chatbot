@@ -1,4 +1,4 @@
-"""매시간 원문 수집과 3시간 시장상황 보고서."""
+"""매시간 원문 수집과 시장상황 보고서, 그리고 발행 판정."""
 
 import asyncio
 import json
@@ -18,7 +18,7 @@ from telegram_bot.news.report import (
 from telegram_bot.news import report as news_report
 from telegram_bot.news.registry import SourceSpec
 from telegram_bot.news.sources import GlobalArticle
-from telegram_bot.state import NewsReportQueue, SentNewsTracker
+from telegram_bot.state import NewsReportMemory, NewsReportQueue, SentNewsTracker
 
 
 class _RecordingBot:
@@ -139,6 +139,33 @@ def _queue(tmp_path, per_source_limit=12, max_items=600):
     )
 
 
+@pytest.fixture(autouse=True)
+def _publish_every_window(monkeypatch):
+    """발행 판정은 「발행 판정」 절에서 따로 세운다.
+
+    기본 하한(8건)을 그대로 두면 전송·확정·근거 로그를 보는 테스트가 전부
+    보류로 빠져 무엇을 지키는 테스트인지 알 수 없게 된다.
+    """
+    monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 1)
+
+
+def _memory(tmp_path, **entries):
+    memory = NewsReportMemory(tmp_path / "news_report_memory.json")
+    memory._markets = dict(entries)
+    return memory
+
+
+def _published_entry(hours_ago, analysis="직전 보고서 본문이다."):
+    moment = datetime.now(JST) - timedelta(hours=hours_ago)
+    return {
+        "published_at": moment.isoformat(timespec="seconds"),
+        "seen_at": moment.isoformat(timespec="seconds"),
+        "window": "00:00~03:00 UTC +9",
+        "analysis": analysis,
+        "held_windows": 0,
+    }
+
+
 def _item(index, *, market="US", event_id=""):
     return {
         "article_id": f"gnews_us-{index}",
@@ -156,6 +183,8 @@ def _item(index, *, market="US", event_id=""):
 
 def _payload(analysis="현재 시장상황 요약이다.", indexes=(0,)):
     return {
+        "publish": True,
+        "hold_reason": "",
         "analysis": analysis,
         "highlights": [
             {
@@ -253,13 +282,29 @@ def test_queue_overflow_does_not_leave_evicted_article_pending(tmp_path):
     assert "overflow-0" not in tracker._pending
 
 
-def test_queue_clear_empties_the_file(tmp_path):
+def test_queue_drop_removes_only_the_published_articles(tmp_path):
+    """시장별로 발행을 판정하므로 큐를 통째로 비울 수 없다."""
+    queue = _queue(tmp_path)
+    asyncio.run(queue.enqueue([_item(0, market="US"), _item(1, market="CN")]))
+
+    removed = asyncio.run(queue.drop({"gnews_us-0"}))
+
+    assert removed == 1
+    opened_at, items = asyncio.run(queue.snapshot())
+    assert [row["article_id"] for row in items] == ["gnews_us-1"]
+    # 보류한 기사가 남아 있는 동안은 구간이 계속 열려 있다.
+    assert opened_at
+
+
+def test_queue_drop_closes_the_window_when_nothing_is_left(tmp_path):
     queue = _queue(tmp_path)
     asyncio.run(queue.enqueue([_item(0)]))
 
-    asyncio.run(queue.clear())
+    asyncio.run(queue.drop({"gnews_us-0"}))
 
-    assert json.loads((tmp_path / "news_report_queue.json").read_text(encoding="utf-8"))["items"] == []
+    saved = json.loads((tmp_path / "news_report_queue.json").read_text(encoding="utf-8"))
+    assert saved["items"] == []
+    assert saved["opened_at"] == ""
 
 
 # ── 매시간 원문 수집 ──────────────────────────────────
@@ -438,7 +483,7 @@ def test_failed_market_still_shows_its_headlines():
 
 # ── 전송 ──────────────────────────────────────────────
 
-def _send_app(tmp_path, *, bot=None, analyzer=None):
+def _send_app(tmp_path, *, bot=None, analyzer=None, memory=None):
     queue = _queue(tmp_path)
     asyncio.run(queue.enqueue([_item(0), _item(1)]))
     tracker = _RecordingTracker()
@@ -449,6 +494,7 @@ def _send_app(tmp_path, *, bot=None, analyzer=None):
         news_report_analyzer=analyzer or _analyzer(tmp_path, _payload()),
         sent_tracker=tracker,
         news_log=news_log,
+        news_report_memory=memory if memory is not None else _memory(tmp_path),
     )
     return app, queue, tracker, news_log
 
@@ -458,7 +504,7 @@ def test_report_sends_confirms_and_clears_the_queue(tmp_path):
 
     asyncio.run(send_news_report(app))
 
-    assert "3시간 시장상황 보고서" in app.bot.messages[0]
+    assert "시장상황 보고서" in app.bot.messages[0]
     assert "UTC +9" in app.bot.messages[0]
     assert "JST" not in app.bot.messages[0]
     assert "한국어 제목 0" in app.bot.messages[0]
@@ -544,9 +590,26 @@ def test_report_uses_one_llm_call_per_market(tmp_path):
     assert len(analyzer._backend.calls) == 2
 
 
-def test_report_survives_a_market_whose_summary_failed(tmp_path):
+def test_a_failed_analysis_is_held_for_the_next_window(tmp_path):
+    """분석 실패는 원문 제목 나열이 아니라 보류다. 다음 구간이 같은 기사로 다시 본다."""
     app, queue, tracker, _ = _send_app(
         tmp_path, analyzer=_analyzer(tmp_path, error=RuntimeError("cloudflare down"))
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert app.bot.messages == []
+    assert tracker.confirmed == []
+    assert len(asyncio.run(queue.snapshot())[1]) == 2
+
+
+def test_a_failed_analysis_still_shows_headlines_at_the_hold_ceiling(tmp_path):
+    """상한까지 왔는데도 분석이 안 되면 그 시간의 뉴스를 통째로 잃지 않는다."""
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=13))
+    app, queue, tracker, _ = _send_app(
+        tmp_path,
+        analyzer=_analyzer(tmp_path, error=RuntimeError("cloudflare down")),
+        memory=memory,
     )
 
     asyncio.run(send_news_report(app))
@@ -565,6 +628,304 @@ def test_empty_queue_sends_nothing(tmp_path):
     asyncio.run(send_news_report(app))
 
     assert app.bot.messages == []
+
+
+# ── 발행 판정 ─────────────────────────────────────────
+
+def _gate_app(tmp_path, *, items, analyzer=None, memory=None, prefilter=None):
+    queue = _queue(tmp_path)
+    asyncio.run(queue.enqueue(items))
+    tracker = _RecordingTracker()
+    return _App(
+        news_report_queue=queue,
+        news_report_analyzer=analyzer or _analyzer(tmp_path, _payload()),
+        sent_tracker=tracker,
+        news_log=_RecordingLog(),
+        news_prefilter=prefilter,
+        news_report_memory=memory if memory is not None else _memory(tmp_path),
+    ), queue, tracker
+
+
+def test_a_thin_window_is_held_without_calling_the_llm(tmp_path, monkeypatch):
+    """재료가 얇으면 부르지 않는다. 억지로 쓴 한 편이 같은 국면을 반복한다."""
+    monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 8)
+    analyzer = _analyzer(tmp_path, _payload())
+    app, queue, tracker = _gate_app(
+        tmp_path, items=[_item(index) for index in range(3)], analyzer=analyzer
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert analyzer._backend.calls == []
+    assert app.bot.messages == []
+    # 보류한 기사는 버려지지 않고 다음 구간의 재료가 된다.
+    assert len(asyncio.run(queue.snapshot())[1]) == 3
+    assert tracker.confirmed == []
+
+
+def test_a_thick_window_passes_the_first_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 8)
+    analyzer = _analyzer(tmp_path, _payload())
+    app, queue, tracker = _gate_app(
+        tmp_path, items=[_item(index) for index in range(8)], analyzer=analyzer
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert len(analyzer._backend.calls) == 1
+    assert app.bot.messages
+
+
+def test_the_hold_ceiling_publishes_a_thin_window(tmp_path, monkeypatch):
+    """보류는 기다리는 것이지 덮는 것이 아니다. 상한을 넘기면 발행한다.
+
+    사전선별의 라벨 공급원이 이 보고서 하나뿐이라, 끝나지 않는 보류는 학습선을
+    조용히 끊는다.
+    """
+    monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 8)
+    analyzer = _analyzer(tmp_path, _payload())
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=13))
+    app, queue, tracker = _gate_app(
+        tmp_path, items=[_item(0)], analyzer=analyzer, memory=memory
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert app.bot.messages
+    assert analyzer._backend.calls[0]["must_publish"] is True
+
+
+def test_the_model_can_hold_a_window_that_adds_nothing(tmp_path):
+    """같은 국면이 이어지기만 하는 구간은 보내지 않는다. 침묵도 출력이다."""
+    payload = {"publish": False, "hold_reason": "직전 판단이 그대로다",
+               "analysis": "", "highlights": [], "evaluations": []}
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=3))
+    app, queue, tracker = _gate_app(
+        tmp_path,
+        items=[_item(0), _item(1)],
+        analyzer=_analyzer(tmp_path, payload),
+        memory=memory,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert app.bot.messages == []
+    assert tracker.confirmed == []
+    assert len(asyncio.run(queue.snapshot())[1]) == 2
+    assert memory.held_windows("US") == 1
+    # 보류해도 직전 발행분은 그대로 남아 다음 호출의 비교 대상이 된다.
+    assert memory.previous("US")["analysis"] == "직전 보고서 본문이다."
+
+
+def test_a_held_window_still_feeds_the_prefilter_label(tmp_path):
+    """호출은 이미 나갔다. 보류가 길어지는 동안 라벨이 마르면 학습이 멈춘다."""
+    payload = {"publish": False, "hold_reason": "새로운 것이 없다", "analysis": "",
+               "highlights": [], "evaluations": [{"index": 0, "impact": "high"}]}
+    prefilter = _RecordingPrefilter()
+    app, _, _ = _gate_app(
+        tmp_path,
+        items=[{**_item(0), "prefilter_candidate_id": "cand-1"}],
+        analyzer=_analyzer(tmp_path, payload),
+        memory=_memory(tmp_path, US=_published_entry(hours_ago=3)),
+        prefilter=prefilter,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert prefilter.outcomes == [("cand-1", "high", None)]
+
+
+def test_one_market_publishes_while_another_holds(tmp_path):
+    """시장마다 발행 시점이 다르다. 발행한 시장의 기사만 확정하고 뺀다."""
+    calls = []
+
+    class _PerMarketBackend:
+        def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
+            request = json.loads(user_prompt)
+            calls.append(request)
+            if request["market"] == "CN":
+                return json.dumps(
+                    {"publish": False, "hold_reason": "그대로다", "analysis": "",
+                     "highlights": [], "evaluations": []},
+                    ensure_ascii=False,
+                )
+            return json.dumps(_payload(), ensure_ascii=False)
+
+    analyzer = NewsReportAnalyzer(
+        backend=_PerMarketBackend(),
+        prompt_file=_prompt_file(),
+        num_predict=2048,
+        max_highlights=8,
+    )
+    app, queue, tracker = _gate_app(
+        tmp_path,
+        items=[_item(0, market="US"), _item(1, market="CN")],
+        analyzer=analyzer,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert len(app.bot.messages) == 1
+    assert "미국" in app.bot.messages[0]
+    assert "중국 본토" not in app.bot.messages[0]
+    assert tracker.confirmed == ["gnews_us-0"]
+    _, remaining = asyncio.run(queue.snapshot())
+    assert [row["article_id"] for row in remaining] == ["gnews_us-1"]
+
+
+def test_the_previous_report_is_sent_to_the_model(tmp_path):
+    """무상태로 부르면 모델은 비교 대상이 없어 같은 국면을 새 얘기처럼 다시 쓴다."""
+    analyzer = _analyzer(tmp_path, _payload())
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=3, analysis="반도체가 국면이다."))
+    app, _, _ = _gate_app(tmp_path, items=[_item(0)], analyzer=analyzer, memory=memory)
+
+    asyncio.run(send_news_report(app))
+
+    assert analyzer._backend.calls[0]["previous"]["analysis"] == "반도체가 국면이다."
+    assert analyzer._backend.calls[0]["must_publish"] is False
+
+
+def test_the_first_report_of_a_market_has_no_previous(tmp_path):
+    analyzer = _analyzer(tmp_path, _payload())
+    app, _, _ = _gate_app(tmp_path, items=[_item(0)], analyzer=analyzer)
+
+    asyncio.run(send_news_report(app))
+
+    assert analyzer._backend.calls[0]["previous"] is None
+
+
+def test_publishing_records_the_body_for_the_next_window(tmp_path):
+    memory = _memory(tmp_path)
+    app, _, _ = _gate_app(
+        tmp_path,
+        items=[_item(0)],
+        analyzer=_analyzer(tmp_path, _payload(analysis="이번 구간의 판단이다.")),
+        memory=memory,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert memory.previous("US")["analysis"] == "이번 구간의 판단이다."
+    assert memory.held_windows("US") == 0
+
+
+def test_a_failed_send_does_not_record_the_report_as_published(tmp_path):
+    """보내지 못한 글을 발행으로 기억하면 다음 보고서가 읽히지 않은 글과 견준다."""
+    memory = _memory(tmp_path)
+    app, queue, tracker = _gate_app(tmp_path, items=[_item(0)], memory=memory)
+    app.bot = _RecordingBot(fail=True)
+
+    asyncio.run(send_news_report(app))
+
+    assert memory.previous("US") is None
+    assert tracker.confirmed == []
+    assert len(asyncio.run(queue.snapshot())[1]) == 1
+
+
+def test_only_the_first_highlights_are_shown_but_all_are_logged(tmp_path, monkeypatch):
+    """본문이 판단이고 목록은 그 각주다. 줄이는 것은 표시 분량이지 라벨이 아니다."""
+    monkeypatch.setattr(news_report, "NEWS_REPORT_SHOWN_HIGHLIGHTS", 2)
+    items = [_item(index) for index in range(5)]
+    news_log = _RecordingLog()
+    app, _, _ = _gate_app(
+        tmp_path,
+        items=items,
+        analyzer=_analyzer(tmp_path, _payload(indexes=(0, 1, 2, 3, 4))),
+    )
+    app.bot_data["news_log"] = news_log
+
+    asyncio.run(send_news_report(app))
+
+    message = app.bot.messages[0]
+    assert "한국어 제목 1" in message
+    assert "한국어 제목 4" not in message
+    assert "기사 3건 더" in message
+    # 표시에서 뺀 근거도 라벨은 그대로 간다.
+    assert len(news_log.records) == 5
+
+
+def test_a_market_section_shows_how_long_it_has_been_silent(tmp_path):
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=9))
+    app, _, _ = _gate_app(tmp_path, items=[_item(0)], memory=memory)
+
+    asyncio.run(send_news_report(app))
+
+    assert "마지막 보고 이후 9시간" in app.bot.messages[0]
+
+
+def test_publish_defaults_to_true_when_the_model_omits_the_verdict(tmp_path):
+    """판정 필드 하나가 빠졌다는 이유로 한 구간을 침묵하지 않는다."""
+    payload = _payload()
+    del payload["publish"]
+    analyzer = _analyzer(tmp_path, payload)
+
+    result = analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+
+    assert result["publish"] is True
+    assert result["analysis"] == "현재 시장상황 요약이다."
+
+
+def test_a_hold_verdict_drops_the_body_and_the_highlights(tmp_path):
+    """보류분은 사용자가 보지 않는다. 들고 있으면 다음 구간이 읽힌 글로 착각한다."""
+    payload = _payload(analysis="쓰다 만 판단")
+    payload["publish"] = False
+    payload["hold_reason"] = "직전과 같다"
+    payload["evaluations"] = [{"index": 0, "impact": "low"}]
+
+    result = _analyzer(tmp_path, payload).analyze(
+        "US", "창", [{"index": 0, "title": "t"}]
+    )
+
+    assert result["publish"] is False
+    assert result["analysis"] == ""
+    assert result["highlights"] == []
+    assert result["hold_reason"] == "직전과 같다"
+    # 학습 평가는 보류해도 남는다.
+    assert result["evaluations"] == [{"index": 0, "impact": "low"}]
+
+
+def test_must_publish_overrides_a_hold_verdict(tmp_path):
+    payload = _payload()
+    payload["publish"] = False
+
+    result = _analyzer(tmp_path, payload).analyze(
+        "US", "창", [{"index": 0, "title": "t"}], None, True
+    )
+
+    assert result["publish"] is True
+    assert result["analysis"] == "현재 시장상황 요약이다."
+
+
+def test_memory_survives_a_restart(tmp_path):
+    memory = NewsReportMemory(tmp_path / "news_report_memory.json")
+    asyncio.run(memory.record_published("US", "00:00~03:00 UTC +9", "판단이다."))
+    asyncio.run(memory.record_held("CN", "재료가 얇다"))
+
+    reloaded = NewsReportMemory(tmp_path / "news_report_memory.json")
+
+    assert reloaded.previous("US")["analysis"] == "판단이다."
+    assert reloaded.held_windows("CN") == 1
+    assert reloaded.previous("CN") is None
+
+
+def test_a_market_that_never_published_still_reaches_the_ceiling(tmp_path):
+    """한 번도 발행하지 못한 시장이 상한에 영영 닿지 않으면 보류가 끝나지 않는다."""
+    memory = NewsReportMemory(tmp_path / "news_report_memory.json")
+    asyncio.run(memory.record_held("CN", "재료가 얇다"))
+    memory._markets["CN"]["held_since"] = (
+        (datetime.now(JST) - timedelta(hours=13)).isoformat(timespec="seconds")
+    )
+
+    assert memory.held_hours("CN") >= 13
+
+
+def test_publishing_clears_the_hold_streak(tmp_path):
+    memory = NewsReportMemory(tmp_path / "news_report_memory.json")
+    asyncio.run(memory.record_held("US", "재료가 얇다"))
+    asyncio.run(memory.record_published("US", "창", "판단이다."))
+
+    assert memory.held_windows("US") == 0
+    assert memory.held_hours("US") < 1
 
 
 def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
@@ -609,12 +970,22 @@ def test_initial_collection_runs_after_telegram_startup_delay(monkeypatch):
 def test_report_prompt_requires_market_inference_instead_of_article_translation():
     prompt = _prompt_file().read_text(encoding="utf-8")
 
-    assert "최근 3시간" in prompt
-    assert "현재 시장상황" in prompt
-    assert "다음 3시간" in prompt
+    assert "마지막 보고 이후" in prompt
+    assert "시장상황" in prompt
     assert "UTC +9" in prompt
     assert "기사를 차례로 번역하거나 나열하지 않는다" in prompt
     assert "야간" not in prompt
+
+
+def test_report_prompt_asks_for_a_publication_verdict_against_the_previous_report():
+    """정해진 시간마다 한 편을 채우는 것이 목적이 아니라는 것이 이 프롬프트의 전제다."""
+    prompt = _prompt_file().read_text(encoding="utf-8")
+
+    assert "쓸 말이 있을 때만 쓴다" in prompt
+    assert "publish" in prompt
+    assert "hold_reason" in prompt
+    assert "previous" in prompt
+    assert "must_publish" in prompt
 
 
 # ── 마지막 시도의 근거 기사 건져내기 ──────────────────
@@ -772,7 +1143,7 @@ class _RecordingPrefilter:
     def __init__(self):
         self.outcomes = []
 
-    async def record_outcome(self, *, candidate_id, impact, sentiment):
+    async def record_outcome(self, *, candidate_id, impact, sentiment, selected=True):
         self.outcomes.append((candidate_id, impact, sentiment))
 
 
@@ -865,6 +1236,7 @@ def test_unselected_evaluation_only_feeds_learning():
     news_log = SimpleNamespace(record=AsyncMock())
     result = {"analysis": "분석", "highlights": [],
               "evaluations": [{"index": 0, "impact": "low"}]}
+    asyncio.run(news_report._record_evaluations("CN", _queued(), result, prefilter))
     asyncio.run(news_report._log_highlights(
         "CN", _queued(), result, news_log, prefilter,
     ))

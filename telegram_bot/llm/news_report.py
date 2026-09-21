@@ -1,7 +1,11 @@
-"""3시간 동안 모은 기사 제목을 시장상황 보고서로 추론한다.
+"""마지막 보고 이후 모은 기사 제목을 시장상황 보고서로 추론한다.
 
 기사별 번역과 달리 한 시장의 공통 테마와 상충 신호를 한 호출로 분석한다.
-호출 수는 기사 수가 아니라 보고서에 포함된 시장 수에 비례한다.
+호출 수는 기사 수가 아니라 검토한 시장 수에 비례한다.
+
+**모델은 발행 여부도 함께 판정한다.** 직전 발행분(`previous`)을 입력으로 받아
+이번 묶음이 그 판단을 바꾸거나 진전시키는지 보고, 아니면 `publish`를 false로
+둔다. 보류한 기사는 버려지지 않고 다음 구간이 더 두꺼운 재료로 다시 본다.
 """
 
 import json
@@ -90,8 +94,15 @@ class NewsReportAnalyzer:
         market: str,
         window: str,
         headlines: list[dict[str, Any]],
+        previous: dict[str, Any] | None = None,
+        must_publish: bool = False,
     ) -> dict[str, Any]:
-        """헤드라인 목록에서 시장상황과 근거 기사를 만든다(블로킹)."""
+        """헤드라인 목록에서 발행 판정·시장상황·근거 기사를 만든다(블로킹).
+
+        `previous`는 이 시장에 마지막으로 **발행한** 보고서다. 사용자가 읽은
+        마지막 글이라 비교 대상이 되고, 없으면 비교 없이 발행한다.
+        `must_publish`는 보류 상한에 닿아 판정과 무관하게 발행하는 경우다.
+        """
         if not headlines:
             raise NewsReportError("no headlines to analyze")
 
@@ -105,6 +116,7 @@ class NewsReportAnalyzer:
         articles = [{key: value for key, value in item.items() if key != "exploration"}
                     for item in headlines]
         payload = {"market": market, "window": window, "articles": articles,
+                   "previous": previous or None, "must_publish": bool(must_publish),
                    "evaluation_indexes": sample_indexes}
         user_prompt = json.dumps(payload, ensure_ascii=False)
         valid_indexes = {item["index"] for item in headlines}
@@ -132,7 +144,11 @@ class NewsReportAnalyzer:
                 if not raw.strip():
                     raise NewsReportError("empty news report response content")
                 result = self._parse(
-                    raw, valid_indexes=valid_indexes, limit=limit, salvage=last
+                    raw,
+                    valid_indexes=valid_indexes,
+                    limit=limit,
+                    salvage=last,
+                    must_publish=bool(must_publish),
                 )
                 result["evaluations"] = [
                     row for row in result["evaluations"] if row["index"] in sample_indexes
@@ -156,6 +172,7 @@ class NewsReportAnalyzer:
         valid_indexes: set[int],
         limit: int,
         salvage: bool = False,
+        must_publish: bool = False,
     ) -> dict[str, Any]:
         # 모델이 정상 JSON 뒤에 설명이나 두 번째 답을 덧붙여도 첫 객체만 쓴다.
         # raw_decode는 첫 객체가 끝난 위치까지만 읽으므로 후행 텍스트를 무시한다.
@@ -177,7 +194,10 @@ class NewsReportAnalyzer:
                         "%d자 (%s); raw_chars=%d",
                         len(analysis), exc, len(raw),
                     )
-                    return {"analysis": analysis, "highlights": [], "evaluations": []}
+                    # 건진 본문이 있으면 발행한다. 판정 필드까지 깨진 응답을
+                    # 보류로 읽으면 쓸 만한 글을 조용히 버리게 된다.
+                    return {"publish": True, "hold_reason": "", "analysis": analysis,
+                            "highlights": [], "evaluations": []}
             # 원문은 남기지 않는다. 길이만으로도 잘림 여부는 판단할 수 있다.
             raise NewsReportError(
                 f"news report JSON parse failed ({exc}); raw_chars={len(raw)}"
@@ -192,10 +212,24 @@ class NewsReportAnalyzer:
         if not isinstance(highlights, list):
             raise NewsReportError("news report highlights must be a list")
 
+        # 판정 필드가 없거나 모양이 틀리면 발행으로 읽는다. 보류는 사용자에게
+        # 한 구간의 침묵이라, 필드 하나가 빠졌다는 이유로 침묵하면 안 된다.
+        publish = data.get("publish")
+        if not isinstance(publish, bool):
+            if publish is not None:
+                logger.warning("[NEWS REPORT] publish 값이 bool이 아니라 발행으로 읽는다: %r", publish)
+            publish = True
+        if must_publish:
+            publish = True
+        hold_reason = data.get("hold_reason")
+        hold_reason = hold_reason.strip()[:200] if isinstance(hold_reason, str) else ""
+
         parsed: list[dict[str, Any]] = []
         seen: set[int] = set()
         dropped: list[str] = []
-        for row in highlights[:limit]:
+        # 보류라면 근거를 읽지 않는다. 표시하지 않을 목록을 검사하느라 보고서를
+        # 버리게 되고, 버려질 근거가 학습 표본의 자리까지 차지한다.
+        for row in highlights[:limit] if publish else []:
             try:
                 parsed.append(self._parse_highlight(row, valid_indexes, seen))
             except NewsReportError as error:
@@ -211,9 +245,9 @@ class NewsReportAnalyzer:
                 len(dropped) + len(parsed),
                 "; ".join(dropped),
             )
-        if salvage and not analysis.strip() and not parsed:
-            # 본문도 없고 근거도 다 버렸으면 남길 것이 없다. 빈 섹션보다
-            # 원문 제목 나열(format_market_section의 fallback)이 낫다.
+        if publish and not analysis.strip() and not parsed:
+            # 발행이라면서 본문도 근거도 없다. 빈 섹션을 보내지 않는다 —
+            # 재요청하거나(중간 시도) 원문 제목 나열로 떨어뜨린다(마지막 시도).
             raise NewsReportError("news report has neither analysis nor highlights")
         # 학습용 부가 응답 실패로 사용자 보고서를 재요청하지 않는다.
         evaluations = []
@@ -230,7 +264,13 @@ class NewsReportAnalyzer:
                 evaluation_seen.add(index)
                 evaluations.append({"index": index, "impact": impact})
         logger.info("[NEWS REPORT] 학습용 추가 평가 %d건", len(evaluations))
-        return {"analysis": analysis.strip(), "highlights": parsed, "evaluations": evaluations}
+        if not publish:
+            # 보류분은 사용자가 보지 않는다. 본문과 근거를 들고 있으면 다음
+            # 구간이 그것을 발행한 글로 착각한다 — 평가만 남긴다.
+            return {"publish": False, "hold_reason": hold_reason, "analysis": "",
+                    "highlights": [], "evaluations": evaluations}
+        return {"publish": True, "hold_reason": "", "analysis": analysis.strip(),
+                "highlights": parsed, "evaluations": evaluations}
 
     @staticmethod
     def _parse_highlight(

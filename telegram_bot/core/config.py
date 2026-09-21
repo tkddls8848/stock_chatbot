@@ -80,6 +80,7 @@ DATA_DIR          = BASE_DIR / "data"
 SENT_IDS_FILE     = DATA_DIR / "news" / "sent_ids.json"
 NEWS_LOG_FILE     = DATA_DIR / "news" / "news_log.json"
 NEWS_REPORT_QUEUE_FILE = DATA_DIR / "news" / "news_report_queue.json"
+NEWS_REPORT_MEMORY_FILE = DATA_DIR / "news" / "news_report_memory.json"
 WATCHLIST_FILE    = DATA_DIR / "watchlist" / "watchlist.json"
 WATCHLIST_EVENTS_FILE = DATA_DIR / "watchlist" / "watchlist_events.json"
 STOCK_DB_FILE     = DATA_DIR / "instruments" / "stock_db.json"
@@ -176,10 +177,14 @@ NEWS_LIVE_MAX_AGE_HOURS = 48
 # gnews는 이 값을 시장 수로, gnews_us·gnews_kr은 질의 수로 다시 나눠 쓴다.
 NEWS_SOURCE_ARTICLE_LIMIT = 250
 
-# ── 3시간 시장상황 보고서 ────────────────────────────
-# 매시간 원문만 수집하고 UTC +9 00·03·06…시에 시장별로 한 번씩 LLM을 불러
-# 지난 구간의 공통 테마·상충 신호·다음 관찰 포인트를 보고한다. 기사별 번역은
-# 예약 실행하지 않는다 — 호출량은 기사 수가 아니라 보고서당 시장 수에 비례한다.
+# ── 시장상황 보고서 ──────────────────────────────────
+# 매시간 원문만 수집하고 UTC +9 00·03·06…시에 **발행할지부터 판정한다.**
+# 3시간은 검토 주기이고 발행 주기가 아니다 — 재료가 얇거나 직전 보고서의
+# 판단이 그대로인 구간에 한 편을 억지로 쓰게 하면 같은 국면을 다른 문장으로
+# 반복하게 되고, 그 반복이 보고서를 기계적으로 만든다. 보류한 시장의 기사는
+# 큐에 남아 다음 구간에 더 두꺼운 재료로 다시 평가된다.
+# 기사별 번역은 예약 실행하지 않는다 — 호출량은 기사 수가 아니라 발행·검토한
+# 시장 수에 비례하고, 1차 게이트에 걸린 시장은 LLM을 부르지도 않는다.
 NEWS_COLLECTION_INTERVAL_MINUTES = 60
 NEWS_REPORT_INTERVAL_HOURS = 3
 NEWS_REPORT_PROMPT_FILE = PROMPT_DIR / "news_report_ko.txt"
@@ -190,7 +195,11 @@ NEWS_REPORT_TIMEOUT = 180
 # 한국어는 토큰이 비싸서 analysis 400~500자에 번역 제목 8건·evaluations까지
 # 얹으면 2048에 닿는다. 컨텍스트 32,768에 견줘 여유가 크고, 무료 한도 대비
 # 소비도 하루 1,349/10,000(실측 2026-09-17)이라 올릴 자리가 있다.
-NEWS_REPORT_NUM_PREDICT = 3584
+NEWS_REPORT_NUM_PREDICT = 4096
+# 본문을 450~650자로 늘리면서 함께 올렸다. 650자는 한국어 토큰으로 약 1,000이고
+# 근거 기사 8건(제목 80자·부가 필드)이 약 1,300, evaluations 10건이 약 150,
+# 발행 판정 두 필드가 약 100이라 합이 2,600 선이다. 3584에 남는 여유가
+# 900토큰뿐이라 highlights가 상한까지 찬 구간에서 다시 length에 닿는다.
 # 큐에 담는 상한. 수집은 LLM을 부르지 않으며 보고서가 여러 사건을 비교할
 # 폭을 확보한다. 사전선별도 이 상한으로 점수·탐색 슬롯을 배정한다.
 NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT = 12
@@ -207,6 +216,23 @@ NEWS_REPORT_MAX_HIGHLIGHTS = 8
 # 11건→3, 20건→5, 32건 이상→8. 큰 시장은 지금과 같다.
 NEWS_REPORT_HIGHLIGHT_RATIO = 0.25
 NEWS_REPORT_MIN_HIGHLIGHTS = 3
+# 화면에 붙이는 근거는 그중 앞 몇 건까지다. 나머지도 모델이 고른 근거라
+# NewsLog와 사전선별 라벨에는 그대로 들어간다 — 줄이는 것은 표시 분량이지
+# 라벨 공급량이 아니다. 본문이 판단이고 목록은 그 각주다.
+NEWS_REPORT_SHOWN_HIGHLIGHTS = 4
+# ── 발행 판정 ────────────────────────────────────────
+# 1차: 그 시장이 마지막 발행 뒤 모은 기사가 이만큼도 안 되면 LLM을 부르지 않고
+# 보류한다. 2차: 모델이 직전 보고서 대비 새로 확인된 사실·방향 전환이 없다고
+# 판정하면 보류한다.
+NEWS_REPORT_MIN_ARTICLES = 8
+# 연속 보류 상한. 이 시간을 넘기면 판정과 무관하게 발행한다.
+# **사전선별의 라벨 공급원은 이 보고서 하나뿐이라** 무한 보류는 학습선을
+# 조용히 끊는다(2026-08-30~09-12에 같은 선이 끊겨 13일간 라벨 0건으로 돌았다).
+NEWS_REPORT_MAX_HELD_HOURS = 12
+# 직전 발행 보고서를 시장별로 기억한다. 다음 호출 입력에 넣어 "지난번 관찰
+# 포인트가 확인됐는가"를 쓰게 하는 자리다 — 이 기억이 없으면 매 보고서가
+# 무상태라 비교 대상 없이 같은 국면을 새 얘기처럼 다시 쓴다.
+NEWS_REPORT_MEMORY_RETENTION_DAYS = 30
 
 # ── 보고서 후보 사전선별·로컬 사건 메모리 ─────────────
 # 운영자 요청으로 active 실험을 시작한다. 점수 효과가 입증됐다는 뜻은 아니다.

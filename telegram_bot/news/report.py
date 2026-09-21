@@ -1,8 +1,19 @@
-"""매시간 원문 수집과 3시간 시장상황 보고서 생성.
+"""매시간 원문 수집과 시장상황 보고서 생성.
 
-기사별 번역 대신 원문 제목을 큐에 모으고, UTC +9 기준 3시간마다 시장별 공통
-테마·상충 신호·다음 관찰 포인트를 추론한다. LLM 호출 수는 기사 수가 아니라
-보고서에 포함된 시장 수에 비례한다.
+기사별 번역 대신 원문 제목을 큐에 모으고, UTC +9 기준 3시간마다 시장별로
+공통 테마·상충 신호·다음 관찰 포인트를 추론한다.
+
+**3시간은 검토 주기이고 발행 주기가 아니다.** 시장마다 두 단계로 발행을
+판정한다. ① 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`에 못 미치면
+LLM을 부르지 않고 보류한다. ② 모델이 직전 발행분 대비 새로 확인된 사실도
+방향 전환도 없다고 판정하면 보류한다. 보류한 시장의 기사는 큐에 남아 다음
+구간에 더 두꺼운 재료로 다시 평가되고, `NEWS_REPORT_MAX_HELD_HOURS`를 넘기면
+판정과 무관하게 발행한다.
+
+재료가 얇은 구간에 한 편을 억지로 쓰게 하면 같은 국면을 다른 문장으로
+반복하게 되고, 그 반복이 보고서를 기계적으로 만든다. 침묵도 출력이다.
+
+LLM 호출 수는 기사 수가 아니라 ①을 통과한 시장 수에 비례한다.
 """
 
 import asyncio
@@ -13,12 +24,15 @@ from datetime import datetime, timedelta
 from telegram import Bot
 from telegram.ext import Application
 
-from telegram_bot.core.clock import JST, now
+from telegram_bot.core.clock import JST, ensure_jst, now
 from telegram_bot.core.config import (
     NEWS_DIGEST_MESSAGE_MAX_CHARS,
     NEWS_REPORT_INTERVAL_HOURS,
     NEWS_REPORT_MAX_HEADLINES,
+    NEWS_REPORT_MAX_HELD_HOURS,
+    NEWS_REPORT_MIN_ARTICLES,
     NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
+    NEWS_REPORT_SHOWN_HIGHLIGHTS,
     NEWS_SOURCE_MARKETS,
     TELEGRAM_CHAT_ID,
 )
@@ -36,7 +50,12 @@ from telegram_bot.news.utils import (
     publication_time_naive,
     signal_codes,
 )
-from telegram_bot.state import NewsLog, NewsReportQueue, SentNewsTracker
+from telegram_bot.state import (
+    NewsLog,
+    NewsReportMemory,
+    NewsReportQueue,
+    SentNewsTracker,
+)
 from telegram_bot.watchlist import WatchlistManager
 
 logger = logging.getLogger(__name__)
@@ -183,13 +202,42 @@ def group_by_market(items: list[dict]) -> list[tuple[str, list[dict]]]:
     return [(key, _sorted_by_recency(grouped[key])) for key in ordered_keys]
 
 
-def _window_label(opened_at: str, closed_at: datetime) -> str:
-    try:
-        opened = datetime.fromisoformat(opened_at)
-    except (TypeError, ValueError):
-        opened = None
-    opened = opened or closed_at - timedelta(hours=NEWS_REPORT_INTERVAL_HOURS)
+def _market_window(
+    memory: NewsReportMemory | None,
+    market: str,
+    opened_at: str,
+    closed_at: datetime,
+) -> str:
+    """이 시장이 **마지막으로 발행된 뒤** 쌓인 구간.
+
+    시장마다 발행 시점이 다르므로 구간도 시장마다 다르다. 발행 이력이 없으면
+    큐가 열린 시각을, 그것도 없으면 직전 검토 시각을 시작으로 본다.
+    """
+    opened = memory.last_published_at(market) if memory is not None else None
+    if opened is None:
+        try:
+            opened = ensure_jst(datetime.fromisoformat(opened_at))
+        except (TypeError, ValueError):
+            opened = closed_at - timedelta(hours=NEWS_REPORT_INTERVAL_HOURS)
+    span = closed_at - opened
+    if span >= timedelta(hours=24):
+        return f"{opened.strftime('%m-%d %H:%M')}~{closed_at.strftime('%m-%d %H:%M')} UTC +9"
     return f"{opened.strftime('%H:%M')}~{closed_at.strftime('%H:%M')} UTC +9"
+
+
+def _elapsed_label(
+    memory: NewsReportMemory | None,
+    market: str,
+    closed_at: datetime,
+) -> str:
+    """섹션 머리에 붙일 「마지막 보고 이후 N시간」. 첫 보고면 빈 문자열이다."""
+    opened = memory.last_published_at(market) if memory is not None else None
+    if opened is None:
+        return ""
+    hours = int((closed_at - opened).total_seconds() // 3600)
+    if hours >= 24:
+        return f"마지막 보고 이후 {hours // 24}일 {hours % 24}시간"
+    return f"마지막 보고 이후 {max(hours, 1)}시간"
 
 
 def _report_time_label(value: str) -> str:
@@ -235,10 +283,20 @@ def format_market_section(
     market: str,
     items: list[dict],
     result: dict | None,
+    elapsed: str = "",
 ) -> str:
-    """시장 하나의 상황 보고서 섹션. result가 없으면 제목만 나열한다."""
+    """시장 하나의 상황 보고서 섹션. result가 없으면 제목만 나열한다.
+
+    근거 기사는 앞 `NEWS_REPORT_SHOWN_HIGHLIGHTS`건만 붙인다. 본문이 판단이고
+    목록은 그 각주라, 목록이 길어질수록 글이 아니라 뉴스 나열로 읽힌다.
+    나머지 근거도 `_log_highlights`가 NewsLog와 사전선별 라벨에 그대로 넣는다 —
+    줄이는 것은 표시 분량이지 라벨 공급량이 아니다.
+    """
     label = _MARKET_LABELS.get(market, market)
-    lines = [f"<b>[{html.escape(label)}]</b> 수집 {len(items)}건"]
+    head = f"<b>[{html.escape(label)}]</b> 수집 {len(items)}건"
+    if elapsed:
+        head = f"{head} · {html.escape(elapsed)}"
+    lines = [head]
     if result is None:
         # LLM이 실패한 시장이다. 그 시간의 뉴스를 통째로 잃지 않도록 원문
         # 제목만이라도 남긴다.
@@ -262,8 +320,12 @@ def format_market_section(
 
     if result["analysis"]:
         lines.append(html.escape(result["analysis"]))
-    for highlight in result["highlights"]:
+    shown = result["highlights"][:NEWS_REPORT_SHOWN_HIGHLIGHTS]
+    for highlight in shown:
         lines.append(_highlight_text(items[highlight["index"]], highlight))
+    hidden = len(result["highlights"]) - len(shown)
+    if hidden > 0:
+        lines.append(f"<i>이 판단이 읽은 기사 {hidden}건 더</i>")
     return "\n\n".join(lines)
 
 
@@ -272,10 +334,14 @@ async def _analyze_market(
     market: str,
     window: str,
     items: list[dict],
+    previous: dict | None = None,
+    must_publish: bool = False,
 ) -> dict | None:
     headlines = _headline_payload(items[:NEWS_REPORT_MAX_HEADLINES])
     try:
-        return await run_non_urgent(analyzer.analyze, market, window, headlines)
+        return await run_non_urgent(
+            analyzer.analyze, market, window, headlines, previous, must_publish
+        )
     except NewsReportError as e:
         logger.error("[NEWS REPORT] %s 시장상황 분석 실패: %s", market, e)
         return None
@@ -330,19 +396,50 @@ async def _log_highlights(
         except Exception as e:
             logger.error("[NEWS REPORT] %s 근거 로그 기록 실패: %s", market, e)
 
-    # 미선정 표본은 학습에만 쓴다. 사용자 뉴스 로그나 사건 재탕 차단에 넣지 않는다.
-    if prefilter is not None:
-        for evaluation in result.get("evaluations", []):
-            item = items[evaluation["index"]]
-            candidate_id = str(item.get("prefilter_candidate_id") or "")
-            if candidate_id:
-                try:
-                    await prefilter.record_outcome(
-                        candidate_id=candidate_id, impact=evaluation["impact"],
-                        sentiment=None, selected=False,
-                    )
-                except Exception as exc:
-                    logger.error("[NEWS REPORT] %s 학습 평가 저장 실패: %s", market, exc)
+
+
+async def _record_evaluations(
+    market: str,
+    items: list[dict],
+    result: dict,
+    prefilter=None,
+) -> None:
+    """미선정 표본의 중요도 평가를 사전선별 학습에만 넣는다.
+
+    사용자 뉴스 로그나 사건 재탕 차단에는 넣지 않는다 — 사용자가 본 적 없는
+    기사다. **보류한 구간에도 이 평가는 기록한다.** 호출은 이미 나갔고, 제목의
+    중요도 판정은 발행 여부와 무관한 사실이다. 보류가 길어지는 동안 라벨이
+    0건으로 마르면 사전선별 학습이 조용히 멈춘다.
+    """
+    if prefilter is None:
+        return
+    for evaluation in result.get("evaluations", []):
+        item = items[evaluation["index"]]
+        candidate_id = str(item.get("prefilter_candidate_id") or "")
+        if not candidate_id:
+            continue
+        try:
+            await prefilter.record_outcome(
+                candidate_id=candidate_id, impact=evaluation["impact"],
+                sentiment=None, selected=False,
+            )
+        except Exception as exc:
+            logger.error("[NEWS REPORT] %s 학습 평가 저장 실패: %s", market, exc)
+
+
+async def _hold_market(
+    memory: NewsReportMemory | None,
+    market: str,
+    reason: str,
+) -> None:
+    """이 구간에 이 시장을 발행하지 않는다. 기사는 큐에 그대로 남는다."""
+    logger.info("[NEWS REPORT] %s 보류: %s", market, reason)
+    if memory is None:
+        return
+    try:
+        await memory.record_held(market, reason)
+    except Exception as exc:
+        logger.error("[NEWS REPORT] %s 보류 기록 실패: %s", market, exc)
 
 
 async def _send_sections(
@@ -377,7 +474,7 @@ async def send_news_report(app: Application) -> None:
         await _send_news_report(app)
 
 
-@burst_job("3시간 시장상황 보고서")
+@burst_job("시장상황 보고서")
 async def _send_news_report(app: Application) -> None:
     queue: NewsReportQueue | None = app.bot_data.get("news_report_queue")
     analyzer: NewsReportAnalyzer | None = app.bot_data.get("news_report_analyzer")
@@ -390,19 +487,71 @@ async def _send_news_report(app: Application) -> None:
     tracker: SentNewsTracker = app.bot_data["sent_tracker"]
     news_log: NewsLog | None = app.bot_data.get("news_log")
     prefilter = app.bot_data.get("news_prefilter")
-    window = _window_label(opened_at, now())
+    memory: NewsReportMemory | None = app.bot_data.get("news_report_memory")
+    closed_at = now()
 
     sections: list[str] = []
+    published: list[tuple[str, list[dict], dict | None, str]] = []
     for market, market_items in group_by_market(items):
-        result = await _analyze_market(analyzer, market, window, market_items)
-        sections.append(format_market_section(market, market_items, result))
-        if result is not None:
-            await _log_highlights(
-                market, market_items, result, news_log, prefilter
+        window = _market_window(memory, market, opened_at, closed_at)
+        # 상한을 넘겼으면 판정과 무관하게 발행한다. 보류는 재료가 쌓일 때까지
+        # 기다리는 것이지 그 시장을 영영 덮는 것이 아니고, 사전선별의 라벨
+        # 공급원도 이 보고서 하나뿐이다.
+        held_hours = memory.held_hours(market) if memory is not None else 0.0
+        must_publish = held_hours >= NEWS_REPORT_MAX_HELD_HOURS
+
+        if len(market_items) < NEWS_REPORT_MIN_ARTICLES and not must_publish:
+            # 1차 게이트. 여기서 걸린 시장은 LLM을 부르지 않는다.
+            await _hold_market(
+                memory, market, f"재료가 얇다 — 기사 {len(market_items)}건"
             )
+            continue
+
+        result = await _analyze_market(
+            analyzer,
+            market,
+            window,
+            market_items,
+            memory.previous(market) if memory is not None else None,
+            must_publish,
+        )
+        if result is None:
+            # 분석이 실패했다. 상한 전이면 다음 구간이 같은 기사로 다시 본다 —
+            # 원문 제목 나열은 상한에 닿았을 때의 마지막 수단이다.
+            if not must_publish:
+                await _hold_market(memory, market, "분석 실패, 다음 구간에 다시 본다")
+                continue
+        elif not result["publish"]:
+            await _record_evaluations(market, market_items, result, prefilter)
+            await _hold_market(
+                memory, market, result["hold_reason"] or "직전 보고서 대비 새로운 것이 없다"
+            )
+            continue
+
+        sections.append(
+            format_market_section(
+                market,
+                market_items,
+                result,
+                _elapsed_label(memory, market, closed_at),
+            )
+        )
+        published.append((market, market_items, result, window))
+        if result is not None:
+            await _log_highlights(market, market_items, result, news_log, prefilter)
+            await _record_evaluations(market, market_items, result, prefilter)
+
+    if not sections:
+        # 할 말이 있는 시장이 없다. 기사는 큐에 남아 다음 구간이 더 두꺼운
+        # 재료로 다시 본다 — 빈 보고서를 보내는 것보다 낫다.
+        logger.info(
+            "[NEWS REPORT] 발행할 시장이 없어 보내지 않는다 (큐 %d건 유지)", len(items)
+        )
+        return
 
     header = (
-        f"🧭 <b>3시간 시장상황 보고서</b>\n{html.escape(window)} · 수집 {len(items)}건"
+        f"🧭 <b>시장상황 보고서</b>\n"
+        f"{closed_at.strftime('%m-%d %H:%M')} UTC +9 · 시장 {len(sections)}곳"
     )
     sent, failed = await _send_sections(app.bot, TELEGRAM_CHAT_ID, header, sections)
     if not sent:
@@ -414,11 +563,31 @@ async def _send_news_report(app: Application) -> None:
         # 비우고, 빠진 조각은 로그로만 남긴다.
         logger.error("[NEWS REPORT] 보고서 %d조각이 빠진 채 확정합니다.", failed)
 
-    for item in items:
-        await tracker.confirm(str(item.get("article_id") or ""))
+    # **발행한 시장의 기사만** 확정하고 큐에서 뺀다. 보류한 시장의 기사는
+    # 큐에 남아 다음 구간의 재료가 된다.
+    published_ids = {
+        str(item.get("article_id") or "")
+        for _, market_items, _, _ in published
+        for item in market_items
+    }
+    for article_id in published_ids:
+        await tracker.confirm(article_id)
     await tracker.persist()
-    await queue.clear()
-    logger.info("[NEWS REPORT] 보고서 전송 완료 · 기사 %d건 확정", len(items))
+    await queue.drop(published_ids)
+    if memory is not None:
+        for market, _, result, window in published:
+            try:
+                await memory.record_published(
+                    market, window, (result or {}).get("analysis", "")
+                )
+            except Exception as exc:
+                logger.error("[NEWS REPORT] %s 발행 기록 실패: %s", market, exc)
+    logger.info(
+        "[NEWS REPORT] 보고서 전송 완료 · 시장 %d곳 · 기사 %d건 확정 (큐 %d건 보류)",
+        len(published),
+        len(published_ids),
+        len(items) - len(published_ids),
+    )
 
 
 async def run_news_report_job(app: Application) -> None:

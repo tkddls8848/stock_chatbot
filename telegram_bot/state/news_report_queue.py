@@ -103,18 +103,35 @@ class NewsReportQueue:
         async with self._lock:
             return self._opened_at, list(self._items)
 
-    async def clear(self) -> None:
+    async def drop(self, article_ids: set[str]) -> int:
+        """발행한 시장의 기사만 큐에서 뺀다.
+
+        시장별로 발행을 판정하므로 큐를 통째로 비울 수 없다. 보류한 시장의
+        기사는 남아 다음 구간에 더 두꺼운 재료로 다시 평가된다. 마지막 한 건이
+        빠지면 `opened_at`도 지워 다음 구간이 자기 시작 시각을 새로 적는다.
+        """
+        if not article_ids:
+            return 0
         async with self._lock:
             previous_items = list(self._items)
             previous_opened = self._opened_at
-            self._items = []
-            self._opened_at = ""
+            kept = [
+                item for item in self._items
+                if str(item.get("article_id") or "") not in article_ids
+            ]
+            removed = len(self._items) - len(kept)
+            if not removed:
+                return 0
+            self._items = kept
+            if not self._items:
+                self._opened_at = ""
             try:
                 await self._persist()
             except Exception:
                 self._items = previous_items
                 self._opened_at = previous_opened
                 raise
+            return removed
 
     async def _persist(self) -> None:
         payload = {"opened_at": self._opened_at, "items": list(self._items)}

@@ -1,4 +1,4 @@
-"""뉴스 수집과 3시간 시장상황 보고서 기능 선언."""
+"""뉴스 수집과 시장상황 보고서 기능 선언."""
 
 from telegram_bot.core.clock import JST, now
 
@@ -8,6 +8,8 @@ from telegram_bot.core.config import (
     NEWS_LOG_FILE,
     NEWS_LOG_RETENTION_DAYS,
     NEWS_REPORT_INTERVAL_HOURS,
+    NEWS_REPORT_MEMORY_FILE,
+    NEWS_REPORT_MEMORY_RETENTION_DAYS,
     NEWS_REPORT_QUEUE_FILE,
     NEWS_REPORT_QUEUE_MAX_ITEMS,
     NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
@@ -25,7 +27,12 @@ from telegram_bot.news.report import (
     collect_report_articles,
     run_news_report_job,
 )
-from telegram_bot.state import NewsLog, NewsReportQueue, SentNewsTracker
+from telegram_bot.state import (
+    NewsLog,
+    NewsReportMemory,
+    NewsReportQueue,
+    SentNewsTracker,
+)
 
 
 def _install_services(app) -> None:
@@ -51,11 +58,17 @@ def _install_services(app) -> None:
         per_source_limit=NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
         max_items=NEWS_REPORT_QUEUE_MAX_ITEMS,
     )
+    # 직전 발행분을 시장별로 기억한다. 이것이 없으면 매 보고서가 무상태라
+    # 비교 대상 없이 같은 국면을 새 얘기처럼 다시 쓰고, 발행 판정도 설 자리가 없다.
+    app.bot_data["news_report_memory"] = NewsReportMemory(
+        NEWS_REPORT_MEMORY_FILE,
+        retention_days=NEWS_REPORT_MEMORY_RETENTION_DAYS,
+    )
     app.bot_data["news_report_analyzer"] = build_news_report_analyzer()
 
 
 async def run_news_collection(app) -> None:
-    """원문 기사만 수집해 다음 3시간 보고서 큐에 담는다."""
+    """원문 기사만 수집해 다음 보고서 큐에 담는다."""
     await collect_report_articles(app)
 
 
@@ -95,5 +108,6 @@ FEATURE = FeatureSpec(
         "data/news/sent_ids.json",
         "data/news/news_log.json",
         "data/news/news_report_queue.json",
+        "data/news/news_report_memory.json",
     ),
 )
