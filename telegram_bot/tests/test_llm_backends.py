@@ -113,6 +113,28 @@ def test_request_uses_openai_compatible_endpoint():
     ]
 
 
+def test_response_format_is_absent_unless_asked():
+    """구조화 출력을 쓰지 않는 호출의 요청 본문은 전과 같아야 한다.
+
+    이 모델이 `response_format`을 실제로 받는지 아직 재지 않았다. 키를 항상
+    실으면 재기 전에 모든 호출 경로가 그 답에 걸린다.
+    """
+    session = _FakeSession(_chat_completion("{}"))
+
+    _cloudflare(session).generate(**GENERATE_KWARGS)
+
+    assert "response_format" not in session.calls[0]["json"]
+
+
+def test_response_format_rides_the_request_when_given():
+    session = _FakeSession(_chat_completion("{}"))
+    schema = {"type": "json_schema", "json_schema": {"type": "object"}}
+
+    _cloudflare(session).generate(**GENERATE_KWARGS, response_format=schema)
+
+    assert session.calls[0]["json"]["response_format"] == schema
+
+
 def test_per_request_timeout_overrides_default():
     session = _FakeSession(_chat_completion("{}"))
 
@@ -346,6 +368,17 @@ def test_passes_through_on_success():
     assert backend.generate(**GENERATE_KWARGS) == "ok"
     assert len(session.calls) == 1
     assert backend.circuit_status() == "closed"
+
+
+def test_response_format_survives_the_resilient_wrapper():
+    """회로 차단·재시도 래퍼가 파라미터를 떨어뜨리면 구조화 출력이 조용히 꺼진다."""
+    session = _FakeSession(_chat_completion("{}"))
+    backend, _ = _resilient(session)
+    schema = {"type": "json_schema", "json_schema": {"type": "object"}}
+
+    backend.generate(**GENERATE_KWARGS, response_format=schema)
+
+    assert session.calls[0]["json"]["response_format"] == schema
 
 
 def test_retries_retryable_errors_then_succeeds():

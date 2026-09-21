@@ -109,6 +109,7 @@ class LLMBackend(Protocol):
         max_tokens: int,
         temperature: float,
         timeout: float | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str: ...
 
 
@@ -177,7 +178,16 @@ class CloudflareWorkersAIBackend:
         max_tokens: int,
         temperature: float,
         timeout: float | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
+        """`response_format`은 지정한 호출에만 실린다.
+
+        None이면 payload에 키 자체를 넣지 않아 기존 호출의 요청 본문이 그대로다.
+        구조화 출력이 이 모델에서 실제로 도는지는
+        `test_cloudflare_json_mode_smoke.py`가 실계정으로 잰다 — Cloudflare가
+        지원 목록에 올려 둔 모델이 실제로는 받지 않은 전례가 있어, 문서를 믿고
+        호출 경로를 바꾸지 않는다.
+        """
         started = time.monotonic()
         if self._suppress_thinking:
             system_prompt = f"{system_prompt}\n/no_think"
@@ -191,6 +201,8 @@ class CloudflareWorkersAIBackend:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         headers = {
             "Authorization": f"Bearer {self._api_token}",
             "Content-Type": "application/json",
@@ -498,6 +510,7 @@ class ResilientBackend:
         max_tokens: int,
         temperature: float,
         timeout: float | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
         if self._circuit_open():
             logger.info(
@@ -517,6 +530,7 @@ class ResilientBackend:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "timeout": timeout,
+            "response_format": response_format,
         }
         last_error: LLMBackendError | None = None
         for attempt in range(self._max_attempts):
