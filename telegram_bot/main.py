@@ -89,6 +89,11 @@ async def _stop_scheduler(app: Application) -> None:
     if app.bot_data.get(_RUNTIME_STOPPED_KEY):
         return
 
+    # 종료 정리의 시작점. 아래 완료 줄과 짝이다 — 둘 다 없으면 PTB의 stop
+    # 단계에서 멈춘 것이고, 시작만 있으면 이 함수 안에서 멈춘 것이다. 기존
+    # 완료 로그는 스케줄러가 돌던 경우에만 찍혀 이 구분에 쓸 수 없었다.
+    logger.info("종료 정리를 시작합니다.")
+
     scheduler = app.bot_data.get("scheduler")
     scheduler_was_running = scheduler is not None and scheduler.running
     if scheduler_was_running:
@@ -105,6 +110,7 @@ async def _stop_scheduler(app: Application) -> None:
             await asyncio.sleep(0)
         logger.info("작업 스케줄러를 종료했습니다.")
     app.bot_data[_RUNTIME_STOPPED_KEY] = True
+    logger.info("종료 정리를 마쳤습니다.")
 
 
 def main() -> None:

@@ -72,7 +72,12 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
-logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+# telegram.ext만 INFO로 둔다. 2026-09-21 12:08 종료가 90초 만에 SIGKILL됐는데
+# journal이 비어 어느 단계에서 멈췄는지 가릴 수 없었다 — PTB가 INFO로 찍는
+# "Application is stopping."과 "Application.stop() complete"가 그 구간을 가른다.
+# 나머지 단계는 전부 DEBUG라 이 둘만 올리면 되고, 시끄러운 쪽은 위의 httpx와
+# raw API 쪽 telegram 로거라 둘은 WARNING에 그대로 둔다.
+logging.getLogger("telegram.ext").setLevel(logging.INFO)
 
 # 데이터는 코드와 같은 기준으로 소유 기능 키의 하위 디렉토리에 둔다.
 # (news/, watchlist/, instruments/, research/, runtime/)
