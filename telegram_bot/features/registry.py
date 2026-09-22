@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from typing import Iterable
 
 from telegram import BotCommand
@@ -168,7 +169,7 @@ class FeatureRegistry:
         for feature in self._enabled_specs:
             for command in feature.commands:
                 usage = f" {command.usage}" if command.usage else ""
-                lines.append(f"/{command.name}{usage} — {command.description}")
+                lines.append(escape(f"/{command.name}{usage} — {command.description}"))
         lines.extend(
             [
                 "",

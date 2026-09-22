@@ -190,6 +190,22 @@ def test_generated_help_includes_command_usage_and_code_examples():
     assert "/briefing [morning|intraday|evening]" in text
     assert "/score" not in text
     assert "KR:KOSPI:005930" in text
+    assert "/system [features|&lt;기능 상태&gt;]" in text
+
+
+def test_generated_help_escapes_command_text_but_keeps_heading_markup():
+    feature = next(spec for spec in ALL_FEATURES if spec.key == "system_admin")
+    command = replace(
+        feature.commands[0], usage="<기능>", description="A & B <상태>"
+    )
+    registry = FeatureRegistry(
+        [replace(feature, commands=(command,))], {feature.key}
+    )
+
+    text = registry.help_text()
+
+    assert text.startswith("<b>명령어 안내</b>")
+    assert "/start &lt;기능&gt; — A &amp; B &lt;상태&gt;" in text
 
 
 def test_persistent_menu_matches_current_primary_workflows():
