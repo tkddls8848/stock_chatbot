@@ -255,9 +255,20 @@ NEWS_PREFILTER_MAINTENANCE_CHUNK_SECONDS = 2.0
 NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 
 
-NEWS_GLOBAL_SOURCE_KEYS = ["futu", "sina", "cls", "gnews", "gnews_us", "gnews_kr"]
 # 원문 1차 소스를 시장마다 하나씩 둔다. 통신사·규제기관 발표는 매체가 받아쓰기
 # 전에 나오므로, 집계 소스(Google News)만으로는 같은 사실을 한 박자 늦게 본다.
+#
+# `sina`는 뺐다(2026-09-21 실측, 09-22 재확인). zhibo.sina.com.cn(49.7.36.230)이
+# 이 서버에서 닿지 않는다 — DNS는 풀리는데 SYN이 China Telecom 국제 백본
+# (202.97.x) 안쪽에서 조용히 버려진다. ICMP도 전 포트도 무응답이라 사이트의
+# 지역 차단이 아니라 경로 차단이고, 서버를 옮겨도 중국 밖이면 같다.
+# 거절(RST)이 아니라 드롭이라 connect 한 번이 tcp_syn_retries=6 만큼 약 127초를
+# 물고, retry_on_network의 재시도 3회가 곱해져 수집 워커 하나가 6분 넘게 잡혔다.
+# 부팅 즉시 도는 수집(next_run_time=now())이 그 창을 만들어, 그 안에 SIGTERM이
+# 오면 non-daemon 스레드를 조인하지 못해 종료가 90초 뒤 SIGKILL로 끝났다.
+# 중화권 1차 소스 자리는 `cls`가 맡는다. 경로가 열리면 이 목록에 다시 넣기만
+# 하면 된다 — 소스 정의는 news/registry.py 카탈로그에 그대로 있다.
+NEWS_GLOBAL_SOURCE_KEYS = ["futu", "cls", "gnews", "gnews_us", "gnews_kr"]
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
     ("yonhap-economy", "https://www.yna.co.kr/rss/economy.xml"),
