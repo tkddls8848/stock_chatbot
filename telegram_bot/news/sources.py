@@ -279,7 +279,7 @@ _REGIONAL_MARKET_QUERIES = {
     "EU": "European stock market economy",
     "RU": "Russia stock market economy",
     "KR": "Korea stock market economy",
-    "JP": "Japan stock market economy",
+    "JP": "日本株 日経平均 経済",
     "TW": "Taiwan stock market economy",
 }
 # 시장 전용 소스의 질의. 리서치 후보 발굴이 개별 종목 언급에 의존하므로

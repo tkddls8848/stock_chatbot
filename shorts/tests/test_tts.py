@@ -105,12 +105,48 @@ def test_scene_breaks_are_widened_by_duplicating_silent_frames(tmp_path):
     assert paced[1][0].start == pytest.approx(1.86 + added * tts._FRAME_SECONDS)
 
 
-def test_a_scene_break_without_silence_fails_instead_of_duplicating_speech(tmp_path):
+def test_a_scene_break_without_silence_preserves_audio_and_timing(tmp_path):
     audio = tmp_path / "voice.mp3"
     audio.write_bytes(_cbr_mp3([bytes([n % 251 or 7]) * 140 for n in range(1, 201)]))
 
-    with pytest.raises(tts.TTSError, match="무음 프레임"):
-        tts._pace_scene_breaks(audio, ((Word(0.0, 1.0, "앞"),), (Word(1.86, 2.5, "뒤"),)))
+    original = audio.read_bytes()
+    scenes = ((Word(0.0, 1.0, "앞"),), (Word(1.86, 2.5, "뒤"),))
+    assert tts._pace_scene_breaks(audio, scenes) == scenes
+    assert audio.read_bytes() == original
+
+
+def test_a_long_pause_does_not_search_for_silence(tmp_path, monkeypatch):
+    audio = tmp_path / "voice.mp3"
+    original = _cbr_mp3([bytes([n % 251 or 7]) * 140 for n in range(1, 201)])
+    audio.write_bytes(original)
+    monkeypatch.setattr(tts, "_quiet_frame", lambda *args: pytest.fail("이미 충분히 긴 쉼입니다"))
+    scenes = ((Word(0, 1, "앞"),), (Word(3, 3.5, "뒤"),))
+    assert tts._pace_scene_breaks(audio, scenes) == scenes
+    assert audio.read_bytes() == original
+
+
+def test_mixed_pauses_shift_only_by_inserted_silence(tmp_path):
+    frames = [bytes([n % 251 or 7]) * 140 for n in range(1, 301)]
+    frames[145:175] = [b"\x00" * 140] * 30
+    audio = tmp_path / "voice.mp3"
+    original = _cbr_mp3(frames)
+    audio.write_bytes(original)
+    scenes = ((Word(0, 1, "첫째"),), (Word(1.86, 3.4, "둘째"),), (Word(4.26, 5, "셋째"),))
+    paced = tts._pace_scene_breaks(audio, scenes)
+    added = round((tts.SCENE_PAUSE_SECONDS - .86) / tts._FRAME_SECONDS)
+    assert paced[:2] == scenes[:2]
+    assert paced[2][0].start == pytest.approx(4.26 + added * tts._FRAME_SECONDS)
+    middle = int((3.4 + 4.26) / 2 / tts._FRAME_SECONDS) * tts._FRAME_BYTES
+    assert audio.read_bytes()[:middle] == original[:middle]
+    assert audio.read_bytes()[middle + added * tts._FRAME_BYTES:] == original[middle:]
+
+
+def test_invalid_mp3_still_fails_before_pacing(tmp_path):
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"invalid mp3")
+    with pytest.raises(tts.TTSError, match="MP3"):
+        tts._pace_scene_breaks(audio, ((Word(0, 1, "앞"),), (Word(1.86, 2.5, "뒤"),)))
+    assert audio.read_bytes() == b"invalid mp3"
 
 
 def test_words_are_matched_to_the_script_in_order():

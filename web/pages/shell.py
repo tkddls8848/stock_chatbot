@@ -396,7 +396,7 @@ _SITE_FOOT = (
     "<div class='sf-mast'>"
     "<span class='sf-brand'>" + SITE_BRAND_KO + " · " + SITE_HOST + "</span>"
     "<dl class='sf-cred'>"
-    "<dt>다루는 시장</dt><dd>중국 본토 · 홍콩 · 미국 · 한국</dd>"
+    "<dt>다루는 시장</dt><dd>중국 본토 · 홍콩 · 미국 · 한국 · 일본</dd>"
     "<dt>값의 성격</dt><dd>뉴스 보도의 논조를 집계한 관측치입니다. 시세·수익률·"
     "매매 신호가 아니며, 원시 가격 데이터는 제공하지 않습니다.</dd>"
     "<dt>시각 기준</dt><dd>모든 날짜와 시각은 <code>UTC +9</code>입니다. 소스 타임존은 "

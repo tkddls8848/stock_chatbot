@@ -78,7 +78,7 @@ class Settings:
             state_file=PROJECT_DIR / "state" / "published.json",
             max_duration_seconds=maximum,
             target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "760"))),
-            max_groups=max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5"))),
+            max_groups=min(5, max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5")))),
             tts_voice=os.getenv("SHORTS_TTS_VOICE", "ko-KR-SunHiNeural"),
             tts_rate=os.getenv("SHORTS_TTS_RATE", "+0%"),
             font_file=Path(font) if font else None,

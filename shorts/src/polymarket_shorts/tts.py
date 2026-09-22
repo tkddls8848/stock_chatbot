@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Sequence
 import asyncio
 import json
+import logging
 
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
+
+
+logger = logging.getLogger(__name__)
 
 
 # 장면이 바뀌는 자리의 호흡. edge-tts는 장면 사이도 문장 사이와 똑같이 0.86초로
@@ -148,7 +152,7 @@ def _pace_scene_breaks(
     0.863초로 고정이라, 쉼은 합성 뒤에 넣을 수밖에 없다.
 
     쉼 한가운데의 무음 프레임을 그만큼 복제해 끼운다. 말소리 프레임은 한 바이트도
-    건드리지 않으므로 디코드 결과가 삽입 지점 앞뒤로 그대로다.
+    건드리지 않는다. 복제 가능한 프레임이 없으면 해당 경계의 원래 호흡을 유지한다.
     """
     if len(scenes) < 2:
         return scenes
@@ -160,9 +164,15 @@ def _pace_scene_breaks(
         gap = scene[0].start - previous[-1].end
         extra = max(0, round((SCENE_PAUSE_SECONDS - gap) / _FRAME_SECONDS))
         middle = int((previous[-1].end + scene[0].start) / 2 / _FRAME_SECONDS)
-        paced.extend(frames[cursor:middle])
-        paced.extend([_quiet_frame(frames, middle)] * extra)
-        cursor = middle
+        if extra:
+            quiet = _quiet_frame(frames, middle)
+            if quiet is None:
+                logger.warning("%.2f초 장면 경계에 복제할 무음이 없어 원래 호흡을 유지합니다", scene[0].start)
+                extra = 0
+            else:
+                paced.extend(frames[cursor:middle])
+                paced.extend([quiet] * extra)
+                cursor = middle
         shift += extra * _FRAME_SECONDS
         shifted.append(tuple(replace(word, start=word.start + shift, end=word.end + shift)
                              for word in scene))
@@ -171,10 +181,10 @@ def _pace_scene_breaks(
     return tuple(shifted)
 
 
-def _quiet_frame(frames: Sequence[bytes], middle: int) -> bytes:
+def _quiet_frame(frames: Sequence[bytes], middle: int) -> bytes | None:
     """쉼 한가운데에서 되풀이되는 프레임. 말소리를 복제하지 않도록 반복을 요구한다."""
     window = frames[max(0, middle - 8):middle + 8]
+    if not window:
+        return None
     frame, count = Counter(window).most_common(1)[0]
-    if count < 2:
-        raise TTSError("장면 경계에서 복제할 무음 프레임을 찾지 못했습니다")
-    return frame
+    return frame if count >= 2 else None

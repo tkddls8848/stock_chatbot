@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from polymarket_shorts import render
 from polymarket_shorts.render import (
@@ -9,6 +9,29 @@ from polymarket_shorts.tts import TTSError, Word
 import pytest
 
 from conftest import requires_cjk_font
+
+
+@requires_cjk_font
+def test_wrapping_preserves_words_and_numeric_units(cjk_font):
+    draw = ImageDraw.Draw(Image.new("RGB", (1080, 1920)))
+    font = render._font(cjk_font, 78)
+    title = "미국 연준 금리 인하 0회 97.5%"
+    lines = render._wrap(draw, title, font, 806)
+    assert " ".join(lines) == title
+    assert any("0회" in line for line in lines)
+    assert any("97.5%" in line for line in lines)
+    assert all(draw.textlength(line, font=font) <= 806 for line in lines)
+
+
+@requires_cjk_font
+def test_wrapping_keeps_explicit_breaks_and_all_of_a_long_word(cjk_font):
+    draw = ImageDraw.Draw(Image.new("RGB", (1080, 1920)))
+    font = render._font(cjk_font, 44)
+    text = "첫째 줄\n" + "아주긴원고" * 10
+    lines = render._wrap(draw, text, font, 300)
+    assert lines[0] == "첫째 줄"
+    assert "".join(lines[1:]) == "아주긴원고" * 10
+    assert all(draw.textlength(line, font=font) <= 300 for line in lines)
 
 
 @requires_cjk_font

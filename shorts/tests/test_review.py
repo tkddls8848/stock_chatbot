@@ -31,3 +31,15 @@ def test_review_script_carries_the_narration_and_publish_metadata(tmp_path):
     assert "화면 문구" in script
     assert METADATA["title"] in script
     assert "2분 05.5초" in script
+
+
+def test_review_shows_body_checkpoint_and_original_evidence(tmp_path):
+    scenario = Scenario("2026-09-22", "g2", "2026-09-22T15:00:00+09:00", (
+        Scene("consensus", "연준 88.5%", "거시", "화면의 실제 설명입니다.", "읽을 멘트입니다.",
+              takeaway="마감 조건 확인", evidence=("연준 인상 가능성은 88.5%다.",),
+              selection_note="근거 문장 검증 통과"),
+    ))
+    script = review._script(scenario, METADATA, tmp_path / "short.mp4", 30)
+    for text in ("화면의 실제 설명입니다.", "마감 조건 확인", "원자료 근거 문장",
+                 "연준 인상 가능성은 88.5%다.", "근거 문장 검증 통과"):
+        assert text in script

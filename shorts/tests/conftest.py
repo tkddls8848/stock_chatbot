@@ -49,3 +49,39 @@ def cjk_font() -> Path:
     """
     configured = os.getenv("SHORTS_FONT_FILE", "").strip()
     return find_font(Path(configured) if configured else None)
+
+
+@pytest.fixture
+def event_factory():
+    def make(identity="e1", **changes):
+        return {"id": identity, "title": "Fed Decision in October?", "tags": ["fed"],
+                "generation_id": "g1", "data_status": "ok", "event_type": "exclusive_multi",
+                "volume24hr": 100000, "liquidity": 200000, "end_date": "2026-10-29T03:59:00Z",
+                "leader": "No change", "leader_probability": .55, **changes}
+    return make
+
+
+@pytest.fixture
+def issue_source(event_factory):
+    from polymarket_shorts.client import Snapshot
+    from polymarket_shorts.markets import shortlist, prepare_issue
+
+    summary = {"generation_id": "g1", "generated_at": "2026-09-23T09:00:00+09:00", "freshness": {"state": "normal"}}
+    snapshot = Snapshot(summary, (event_factory(),), {})
+    candidate = shortlist(snapshot)[0][0]
+    candidate["selection"] = {"reason": "연준의 금리 결정은 금융시장 자금조달 비용과 연결되는 주요 이슈입니다."}
+    detail = {**event_factory(), "active": True, "closed": False, "slug": "fed-october",
+              "description": "Federal Reserve target rate decision in October.", "markets": [
+                  {"id": "m1", "question": "Will the Fed keep rates unchanged in October?", "outcome_label": "No change",
+                   "active": True, "closed": False, "price_valid": True, "price_warning": None,
+                   "yes_probability": .55, "no_probability": .45, "volume24hr": 90000, "liquidity": 100000},
+                  {"id": "m2", "question": "Will the Fed raise rates by 25 bps in October?", "outcome_label": "25 bps increase",
+                   "active": True, "closed": False, "price_valid": True, "price_warning": None,
+                   "yes_probability": .4, "no_probability": .6, "volume24hr": 10000, "liquidity": 100000},
+              ]}
+    issue = prepare_issue(candidate, detail, [])
+    script = {"id": "e1", "headline": "연준의 금리 결정", "question": "연준은 10월에 금리를 어떻게 결정할까요?",
+              "market_labels": [{"id": "m1", "label": "10월 금리 동결"}, {"id": "m2", "label": "10월 금리 25bp 인상"}],
+              "context": "금리 결정은 기업의 자금조달 비용과 연결됩니다.",
+              "watch_point": "연준의 공식 결정문을 확인하세요.", "news_ids": []}
+    return snapshot, candidate, detail, issue, script

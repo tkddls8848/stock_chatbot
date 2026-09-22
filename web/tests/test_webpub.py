@@ -12,15 +12,24 @@ def test_publish_market_and_serve_it(tmp_path, monkeypatch):
 
     export.publish_market(
         b"png-bytes",
-        {"KR": {"avg_sentiment": 0.2, "count": 12, "daily": []}},
+        {"KR": {"avg_sentiment": 0.2, "count": 12, "daily": []},
+         "JP": {"avg_sentiment": -0.1, "count": 15, "daily": []}},
         7,
     )
 
     client = TestClient(server.build_app())
     payload = client.get("/api/market").json()
     assert payload["markets"]["KR"]["count"] == 12
+    assert payload["markets"]["JP"]["count"] == 15
     assert client.get("/market_chart.png").content == b"png-bytes"
     assert client.get("/").status_code == 200
+
+
+def test_market_page_includes_japan_before_its_data_is_ready():
+    assert "const MARKETS=['CN','HK','US','KR','JP']" in server.INDEX_HTML
+    assert "자료 수집·분석 대기" in server.INDEX_HTML
+    for body in (server.INDEX_HTML, server.ABOUT_HTML):
+        assert "일본" in body
 
 
 def test_publish_research_preserves_full_result_and_history(tmp_path, monkeypatch):

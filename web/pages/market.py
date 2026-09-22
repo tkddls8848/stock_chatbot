@@ -12,7 +12,7 @@ from web.pages.shell import (
 
 _MARKET_MAIN = (
     h1(I_CHART, "시장 컨센서스")
-    + "<div class='disc'>중국·홍콩·미국·한국 뉴스를 시장별로 묶어 하루치 요약을 만들고, "
+    + "<div class='disc'>중국·홍콩·미국·한국·일본 뉴스를 시장별로 묶어 하루치 요약을 만들고, "
     "그 요약에 매긴 <b>−1 ~ +1</b> 감성 점수의 추이를 그립니다. 아래 값은 마지막으로 "
     "계산된 산출물이며, 페이지를 열 때 다시 계산하지 않습니다.</div>"
     + "<div class='sub2'>감성은 보도 논조의 방향이지 시세나 수익률이 아닙니다. "
@@ -53,19 +53,23 @@ _MARKET_MAIN = (
 _MARKET_SCRIPT = (
     "<script>" + JS_UTIL + """
 const LABELS={CN:'중국 본토',HK:'홍콩',US:'미국',KR:'한국',JP:'일본',EU:'유럽',OTHER:'기타'};
+const MARKETS=['CN','HK','US','KR','JP'];
 function bar(v){const w=Math.min(Math.abs(v),1)*50;const side=v>=0?'left:50%':'right:50%';
   const color=v>=0?'var(--pos)':'var(--neg)';
   return "<div class='bar'><i style='"+side+";width:"+w.toFixed(1)+"%;background:"+color+"'></i></div>";}
 fetch('/api/market').then(r=>r.json()).then(d=>{
   const markets=d.markets||{};
-  const entries=Object.entries(markets).sort((a,b)=>(b[1].avg_sentiment||0)-(a[1].avg_sentiment||0));
+  const observed=Object.entries(markets);
+  const entries=[...new Set([...MARKETS,...Object.keys(markets)])].map(code=>[code,markets[code]])
+    .sort((a,b)=>(b[1]?.avg_sentiment??-Infinity)-(a[1]?.avg_sentiment??-Infinity));
   document.getElementById('s-time').innerHTML=stampHtml(d.generated_at);
   document.getElementById('s-days').textContent=d.lookback_days?d.lookback_days+'일':'–';
-  document.getElementById('s-markets').textContent=entries.length||'–';
-  document.getElementById('s-count').textContent=entries.reduce((n,[,v])=>n+(v.count||0),0)||'–';
+  document.getElementById('s-markets').textContent=observed.length||'–';
+  document.getElementById('s-count').textContent=observed.reduce((n,[,v])=>n+(v.count||0),0)||'–';
   const body=document.getElementById('rows');
-  if(!entries.length){body.innerHTML="<tr><td colspan='5' class='empty'>산출물이 아직 없습니다.</td></tr>";return;}
   body.innerHTML=entries.map(([code,v])=>{
+    if(!v)return "<tr><td><div class='nm'>"+esc(LABELS[code]||code)+"</div><div class='cd'>"+esc(code)+"</div></td>"
+      +"<td colspan='4' class='empty'>자료 수집·분석 대기</td></tr>";
     const s=Number(v.avg_sentiment||0);
     const days=Array.isArray(v.daily)?v.daily.length:0;
     return "<tr><td><div class='nm'>"+esc(LABELS[code]||code)+"</div><div class='cd'>"+esc(code)+"</div></td>"

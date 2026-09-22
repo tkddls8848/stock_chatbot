@@ -124,13 +124,20 @@ def _script(
             "**화면 문구**",
             "",
             "```text",
-            scene.takeaway or scene.body,
+            scene.body,
             "```",
+            "",
+            f"**체크포인트** {scene.takeaway or '-'}",
             "",
             "**멘트**",
             "",
             scene.narration,
         ]
+        if scene.selection_note:
+            lines += ["", f"**원고 선별** {scene.selection_note}"]
+        if scene.evidence:
+            lines += ["", "**원자료 근거 문장**", ""]
+            lines.extend(f"> {sentence}" for sentence in scene.evidence)
     return "\n".join(lines) + "\n"
 
 

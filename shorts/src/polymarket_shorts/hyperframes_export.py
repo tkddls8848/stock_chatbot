@@ -120,6 +120,20 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
             <ol class="check-list">{checks}</ol>
             <p class="disclaimer reveal">예측시장 가격 기반 · 사실 확정 및 투자 조언 아님</p>
           </div>"""
+    elif scene.get("event_id"):
+        bullets = _bullet_map(scene)
+        content = f"""
+          <div class="signal-layout">
+            <div class="signal-head"><p class="eyebrow reveal">{kicker}</p><h1 class="signal-title reveal">{title}</h1></div>
+            <div class="decision reveal"><span>개별 베팅 현황</span><p>{html.escape(str(scene.get('body', '')))}</p></div>
+            <div class="metric-grid">
+              <div class="metric reveal"><span>{html.escape(str(scene.get('metric_label', '')))}</span><strong>{html.escape(str(scene.get('metric', '')))}</strong><em>예 가격</em></div>
+              <div class="metric reveal"><span>이벤트 24시간 거래량</span><strong>{html.escape(bullets.get('24시간 거래량', ''))}</strong></div>
+            </div>
+            <div class="action reveal"><span>종료 예정</span><p>{html.escape(bullets.get('종료 예정', ''))}</p></div>
+            <div class="action reveal"><span>CHECK</span><p>{html.escape(str(scene.get('takeaway', '')))}</p></div>
+            <p class="disclaimer reveal">{html.escape(str(scene.get('source_note', '')))} · 예측시장 가격</p>
+          </div>"""
     else:
         bullets = _bullet_map(scene)
         events_text, volume, event_count, strong, contested = _metric_values(scene)

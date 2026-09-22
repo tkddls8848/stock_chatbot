@@ -9,7 +9,7 @@ StartLimitBurst=8
 Type=oneshot
 User=stockbot
 Group=stockbot
-WorkingDirectory=/srv/stock-chatbot/shorts
+WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/srv/stock-chatbot/shorts/.env
 ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli

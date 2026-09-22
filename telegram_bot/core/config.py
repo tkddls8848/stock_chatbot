@@ -376,7 +376,7 @@ NEWS_SOURCE_MARKETS = {
 }
 # /market(cmd_market)의 기본 조회 일수와 대상 시장 집합.
 MARKET_CHART_LOOKBACK_DAYS = 7
-MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR"})
+MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR", "JP"})
 # 아래는 일별 감성 다이제스트 전용이다.
 MARKET_CHART_MIN_ARTICLES = 6
 MARKET_CHART_MIN_DAYS = 3
@@ -409,7 +409,7 @@ NEWS_MARKET_BACKFILL_QUERIES = {
     "HK": "Hong Kong stock market",
     "US": "US stock market",
     "KR": "Korea stock market",
-    "JP": "Japan stock market",
+    "JP": "日本株 日経平均 東証",
     "EU": "European stock market",
     "RU": "Russia stock market",
     "TW": "Taiwan stock market",
@@ -431,6 +431,7 @@ BRIEFING_MARKET_OPEN_MINUTE = 0
 BRIEFING_MARKET_CLOSE_HOUR = 17
 BRIEFING_MARKET_CLOSE_MINUTE = 0
 BRIEFING_NEWS_MAX_ITEMS = 14
+BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP")
 BRIEFING_PROMPT_FILE = PROMPT_DIR / "briefing_ko.txt"
 BRIEFING_TIMEOUT = 180
 # 코멘트 출력 예약 토큰. 헤드라인을 늘린 만큼 코멘트도 길게 받는다.

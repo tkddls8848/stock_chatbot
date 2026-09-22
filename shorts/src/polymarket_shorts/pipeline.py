@@ -8,10 +8,10 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from .client import PolymarketWebClient
+from .client import PolymarketWebClient, SourceError
 from .config import Settings
-from .highlights import HighlightError, Highlights, pick_highlights
-from .llm import LLMError
+from .highlights import select_issues, write_issues
+from .markets import shortlist, prepare_issue
 from .media import background_for
 from .render import find_font, probe_duration, render_video
 from .review import write_json, write_review
@@ -50,23 +50,58 @@ def produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
     return result
 
 
-def _issue_picker(settings: Settings):
-    """분야 문단에서 오늘의 이슈를 뽑아 온다. 실패하면 문단 요약으로 만든다.
+def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:
+    """최대 두 번의 모델 호출만 쓰고, 제작 판단의 원자료를 렌더 전에 보존한다."""
+    client = PolymarketWebClient(settings.web_url)
+    snapshot = client.snapshot()
+    candidates, audit = shortlist(snapshot)
+    audit.update({"generation_id": snapshot.generation_id, "generated_at": snapshot.summary["generated_at"],
+                  "candidates": candidates, "selected": [], "rejected": [], "llm_calls": 0})
+    day_dir.mkdir(parents=True, exist_ok=True)
+    # 실패한 단계와 이미 지출한 조회도 다시 확인할 수 있도록 단계마다 원자적으로 저장한다.
+    def save():
+        audit["requests"] = dict(client.requests)
+        write_json(day_dir / "selection.json", audit)
+    save()
+    try:
+        if candidates:
+            audit["llm_calls"] += 1
+            save()
+        selected = select_issues(candidates, settings, rejected=audit["rejected"])
+        audit["selected"] = selected
+        save()
+        issues = []
+        for candidate in selected:
+            detail = client.detail(candidate["id"], snapshot.generation_id)
+            # 잘못된 개별 가격은 해당 이슈만 제외한다. 세대 불일치는 위 detail에서 중단한다.
+            try:
+                issue = prepare_issue(candidate, detail, [])
+            except SourceError as exc:
+                audit["rejected"].append({"id": candidate["id"], "reason": str(exc)})
+                continue
+            issue["news"] = client.news(candidate["title"], reference=snapshot.summary["generated_at"])
+            issues.append(issue)
+        client.confirm(snapshot.generation_id)
+        write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": issues})
+        if not issues:
+            audit["status"] = "no_suitable_issues"
+            save()
+            return None
+        audit["llm_calls"] += 1
+        save()
+        scripts = write_issues(issues, settings)
+        scenario = build_scenario(snapshot, issues, scripts, production_date=today)
+        audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
+        save()
+        write_json(day_dir / "scenario.json", scenario.to_dict())
+        return scenario
+    except Exception as exc:
+        audit["status"] = "failed"
+        audit["error"] = str(exc)
+        raise
+    finally:
+        save()
 
-    자격증명이 없거나 모델이 지어낸 수치를 돌려준 날에도 영상은 나와야 한다 —
-    그날치 제작을 통째로 멈추는 것보다 총론 요약 하루가 낫다.
-    """
-    def pick(groups: list[dict[str, Any]]) -> Highlights | None:
-        if not groups:
-            return None
-        try:
-            return pick_highlights(
-                groups, settings, target_chars=settings.target_script_chars,
-            )
-        except (HighlightError, LLMError) as exc:
-            logger.warning("이슈 선별에 실패해 문단 요약으로 대체합니다: %s", exc)
-            return None
-    return pick
 
 
 def produce_revision(
@@ -140,15 +175,20 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
     # A concrete question promises an explanation without mistaking turnover for inflows.
     headline = (
-        f"{scenario.lead_label} {scenario.lead_volume} 거래, 전망도 확실할까?"
+        " ".join(scenario.scenes[0].title.split())
+        if scenario.scenes and scenario.scenes[0].evidence
+        else f"{scenario.lead_label} {scenario.lead_volume} 거래, 전망도 확실할까?"
         if scenario.lead_label and scenario.lead_volume
         else "지난 24시간 예측시장에서 돈이 몰린 곳"
     )
     return {
         "title": f"{headline} | {stamp} #Shorts",
         "description": (
-            "경제·금융·지정학 예측시장의 현재 컨센서스를 요약했습니다.\n\n"
-            f"오늘 다룬 분야: {', '.join(labels)}\n"
+            "거래가 활발하고 시장 관련성이 높은 개별 예측시장 이슈를 골랐습니다.\n\n"
+            f"오늘 다룬 이슈: {', '.join(labels)}\n"
+            f"원자료 기준 시각: {scenario.source_written_at}\n"
+            + "\n".join(scene.source_url for scene in scenario.scenes if scene.source_url) + "\n"
+            +
             "확률은 Polymarket 참여자의 베팅 가격이 암시하는 값이며, 사실 확정이나 "
             "투자 조언이 아닙니다.\n\n#폴리마켓 #예측시장 #시장컨센서스 #Shorts"
         ),
@@ -174,16 +214,10 @@ def produce_daily(
             review_path=previous.get("review_path"),
         )
 
-    snapshot = PolymarketWebClient(settings.web_url).snapshot()
-    scenario = build_scenario(
-        snapshot,
-        production_date=today,
-        target_chars=settings.target_script_chars,
-        max_groups=settings.max_groups,
-        picker=_issue_picker(settings),
-    )
     day_dir = settings.output_dir / day
-    day_dir.mkdir(parents=True, exist_ok=True)
+    scenario = prepare_daily(settings, today, day_dir)
+    if scenario is None:
+        return ProductionResult(status="no_suitable_issues", date=day)
     video_path = day_dir / f"polymarket-{day}.mp4"
     scenario_path = day_dir / "scenario.json"
     metadata = metadata_for(scenario)

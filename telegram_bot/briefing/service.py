@@ -20,6 +20,7 @@ from telegram_bot.core.config import (
     BRIEFING_MARKET_OPEN_HOUR,
     BRIEFING_MARKET_OPEN_MINUTE,
     BRIEFING_NEWS_MAX_ITEMS,
+    BRIEFING_NEWS_MARKETS,
     TELEGRAM_CHAT_ID,
     TELEGRAM_MESSAGE_LIMIT,
 )
@@ -88,6 +89,7 @@ async def _collect_briefing_news(app: Application) -> list[dict]:
         return await collect_global_market_news_items(
             registry,
             max_items=BRIEFING_NEWS_MAX_ITEMS,
+            markets=BRIEFING_NEWS_MARKETS,
         )
     except Exception as e:
         logger.error("[BRIEFING] 뉴스 수집 실패: %s", e)
@@ -101,8 +103,10 @@ def _format_news_section(news_items: list[dict], title: str) -> str:
     for item in news_items:
         headline = html.escape(str(item.get("title") or item.get("content") or "")[:80])
         source = html.escape(str(item.get("source") or ""))
+        market = html.escape(str(item.get("market") or ""))
         marker = _sentiment_marker(item.get("sentiment"))
-        lines.append(f"{marker} {headline} <i>({source})</i>")
+        market_label = f"[{market}] " if market else ""
+        lines.append(f"{marker} {market_label}{headline} <i>({source})</i>")
     return "\n".join(lines)
 
 
@@ -139,6 +143,7 @@ def _news_headlines_payload(news_items: list[dict]) -> list[dict]:
         {
             "title": str(item.get("title") or "")[:120],
             "source": str(item.get("source") or ""),
+            "market": str(item.get("market") or ""),
             "sentiment": item.get("sentiment"),
         }
         for item in news_items
@@ -260,6 +265,7 @@ async def send_evening_briefing(app: Application, force: bool = False) -> None:
     watchlist = await wm.get_all()
     sector_summary_context, sector_summary_text = await _build_sector_summary_section(app, include_fund_flow=True)
     market_view = app.bot_data["market_view_manager"].get_sight() or ""
+    news_items = await _collect_briefing_news(app)
 
     sentiment_stats, sentiment_section = await _build_sentiment_section(app, watchlist)
 
@@ -269,7 +275,7 @@ async def send_evening_briefing(app: Application, force: bool = False) -> None:
             "kind": "evening",
             "market_view": market_view,
             "sector_summary_context": sector_summary_context,
-            "news_headlines": [],
+            "news_headlines": _news_headlines_payload(news_items),
             "sentiment_stats": _sentiment_payload(sentiment_stats),
         },
     )
@@ -277,6 +283,9 @@ async def send_evening_briefing(app: Application, force: bool = False) -> None:
     sections = [f"<b>🌙 마감 브리핑</b> {_today_header()}"]
     if sector_summary_text:
         sections.append(sector_summary_text)
+    news_section = _format_news_section(news_items, "마감 주요 뉴스")
+    if news_section:
+        sections.append(news_section)
     if sentiment_section:
         sections.append(sentiment_section)
     if comment:

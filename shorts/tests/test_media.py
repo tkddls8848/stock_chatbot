@@ -28,8 +28,10 @@ def test_daily_pipeline_passes_saved_backgrounds_without_network_generation(tmp_
         Scene("consensus", "무역", "기준", "본문", "내레이션", visual_query="global cargo shipping containers trade"),
     )
     scenario = Scenario("2026-09-12", "g1", "2026-09-12T00:00:00+09:00", scenes)
-    monkeypatch.setattr(pipeline.PolymarketWebClient, "snapshot", lambda self: object())
-    monkeypatch.setattr(pipeline, "build_scenario", lambda *a, **kw: scenario)
+    def prepare(settings, today, day_dir):
+        day_dir.mkdir(parents=True)
+        return scenario
+    monkeypatch.setattr(pipeline, "prepare_daily", prepare)
     monkeypatch.setattr(pipeline, "synthesize", lambda *a, **kw: None)
     monkeypatch.setattr(pipeline, "probe_duration", lambda *a, **kw: 10.0)
     captured = {}
