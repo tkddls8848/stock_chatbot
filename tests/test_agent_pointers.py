@@ -6,6 +6,7 @@ Claude Code는 `CLAUDE.md`를, Codex·Cursor 계열은 `AGENTS.md`를 자동으�
 완전히 같아야** 한다.
 """
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,45 @@ def test_pointers_stay_thin():
     for path in POINTERS:
         lines = len(path.read_text(encoding="utf-8").splitlines())
         assert lines < 40, f"{path.name}이 {lines}줄이다. 규칙은 code_guide.md에 둔다"
+
+
+def test_pointer_and_standard_agree_on_the_lint_target():
+    r"""포인터와 기준 문서에 두 벌로 적힌 유일한 것이 lint 대상 목록이다.
+
+    포인터는 실행 명령만 담고 규칙은 `code_guide.md`에 둔다는 것이 이 저장소의
+    구조인데, 그 실행 명령 자체는 양쪽에 적혀 있다. 파이썬 경로가 달라
+    (리눅스 `python` 대 PowerShell `.\venv\Scripts\python.exe`) 줄 전체는
+    비교할 수 없으므로, 갈라지면 실제로 문제가 되는 **검사 대상 목록**을 맞춘다.
+    한쪽에만 디렉터리를 추가하면 그쪽 지시만 따른 에이전트가 검사를 빠뜨린다.
+    """
+    pattern = re.compile(r"ruff check\s+(.+)")
+
+    targets = {}
+    for path in (*POINTERS, STANDARD):
+        found = pattern.findall(path.read_text(encoding="utf-8"))
+        assert found, f"{path.name}에 ruff check 명령이 없다"
+        targets[path.name] = {line.strip() for line in found}
+
+    assert len(set(map(frozenset, targets.values()))) == 1, (
+        f"lint 대상이 갈라졌다: {targets}"
+    )
+
+
+def test_pointers_only_name_paths_that_exist():
+    """포인터가 대는 저장소 경로는 실재해야 한다.
+
+    포인터는 얇아서 파일을 몇 개만 지목하는데, 그 파일이 옮겨져도 포인터는
+    조용히 남는다. 첫 칸이 최상위 디렉터리인 것만 본다 — `core/clock.py`처럼
+    "그 모듈의"를 뜻하는 상대 표기는 저장소 경로가 아니다.
+    """
+    top_level = {child.name for child in ROOT.iterdir() if child.is_dir()}
+
+    for path in POINTERS:
+        cited = re.findall(r"`([A-Za-z_][\w/.-]*\.(?:py|md|txt))`", path.read_text(encoding="utf-8"))
+        for ref in cited:
+            if "/" not in ref or ref.split("/")[0] not in top_level:
+                continue
+            assert (ROOT / ref).exists(), f"{path.name}이 없는 경로를 가리킨다: {ref}"
 
 
 def test_the_standard_itself_is_not_a_pointer():
