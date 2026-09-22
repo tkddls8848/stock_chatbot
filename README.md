@@ -1,6 +1,6 @@
 # Stock Chatbot
 
-중국·홍콩·한국·글로벌 시장의 뉴스와 종목 정보를 수집하고, 3시간 시장상황 보고서·감성 분석·관심 종목 관리·브리핑을 제공하는 주식 시장 정보 텔레그램 봇입니다.
+중국·홍콩·미국·한국·일본·글로벌 시장의 뉴스와 종목 정보를 수집하고, 시장상황 보고서·감성 분석·관심 종목 관리·브리핑을 제공하는 주식 시장 정보 텔레그램 봇입니다.
 
 ## 시작하기
 
@@ -28,7 +28,7 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 시장상황·감성·리서치·브리핑 분석이 모두 Cloudflare Workers AI(`@cf/qwen/qwen3-30b-a3b-fp8`)로 동작합니다. 로컬 GPU나 별도 추론 서버가 필요 없어서 **1GB 메모리 무료 VM에서도 돌아갑니다.**
 
 - 무료 한도는 **하루 10,000 Neurons**이며 UTC 00시(UTC +9 오전 9시)에 리셋됩니다. 리서치 분석은 입력 깊이를 늘린 뒤(뉴스 16건 × 본문 600자, 후보 24개) 1회에 약 400~600 Neurons로 추정되며, 이전의 얕은 입력(6건 × 240자) 기준 실측치는 약 110 Neurons였습니다.
-- 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 3시간마다 시장별로 한 번씩 분석합니다. 따라서 LLM 호출 수는 기사 수가 아니라 보고서에 포함된 시장 수에 비례합니다.
+- 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 3시간마다 **발행할지부터 판정합니다.** 3시간은 검토 주기이지 발행 주기가 아닙니다 — 그 시장이 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`(8)에 못 미치면 LLM을 부르지 않고 보류하고, 모델이 직전 보고서 대비 새로울 것이 없다고 판정해도 보류합니다. 연속 보류가 `NEWS_REPORT_MAX_HELD_HOURS`(12)를 넘으면 판정과 무관하게 발행합니다. 따라서 LLM 호출 수는 기사 수가 아니라 **발행·검토한 시장 수**에 비례합니다.
 - 한도가 소진되면 다음 리셋까지 호출을 멈춥니다. 그날 시장상황 보고서와 `/research`는 실패하지만, 브리핑은 지수·헤드라인만 담은 데이터 전용 브리핑으로 자동 전환됩니다.
 - 실사용량은 로그에 그대로 남으며 일일 합계는 UTC 00시(한국시간 오전 9시)를 경계로 셉니다. 로그는 파일이 아니라 표준 오류로 나가므로, 서버에서는 `journalctl -u stock-chatbot | grep neurons=`로, 로컬에서는 `python -m telegram_bot.main 2> bot.log`처럼 받아 두고 확인합니다.
 - 한도를 넘겨 쓰려면 Workers Paid 플랜에서 초과분이 1,000 Neurons당 $0.011입니다.
@@ -51,7 +51,13 @@ sudo /srv/stock-chatbot/infra/scripts/verify-app.sh            # 점검
 ```powershell
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
+python -m pytest -q shorts/tests   # 루트 pytest에 안 잡힙니다
 ```
+
+`shorts/`는 자기 `pyproject.toml`과 venv를 쓰는 별개 패키지라 루트 `pytest`가
+수집하지 않습니다. 쇼츠를 고쳤으면 위 줄을 함께 돌립니다 — 빼먹으면 조용히
+썩습니다. 한글 폰트가 없는 기기에서는 렌더 테스트가 건너뛰어집니다
+(`apt-get install fonts-noto-cjk` 또는 `SHORTS_FONT_FILE` 지정).
 
 실제 Cloudflare 계정을 호출하는 스모크 테스트는 기본 실행에서 제외되며, 자격증명과 무료 할당량을 소비합니다.
 
@@ -69,17 +75,17 @@ Polymarket 읽기 스모크도 같은 방식으로 제외되어 있습니다. Ga
 RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 ```
 
-폴리마켓 현재 대시보드는 봇과 별개인 systemd one-shot이 2시간마다 굽고, 공개
+폴리마켓 현재 대시보드는 봇과 별개인 systemd one-shot이 3시간마다 굽고, 공개
 웹이 그 산출물을 내보냅니다. 설치·상태·장애 절차는 `infra/server-ops.md` 8절에
 있습니다. compact manifest 크기는 다음으로 잽니다.
 
 ```powershell
-.\venv\Scripts\python.exe tests\polymarket_manifest_size_probe.py
+.\venv\Scripts\python.exe web\tests\polymarket_manifest_size_probe.py
 ```
 
 ## 주요 기능
 
-- 중국·홍콩·미국·한국·글로벌 시장 뉴스 수집과 3시간 시장상황 보고서
+- 중국·홍콩·미국·한국·일본·글로벌 시장 뉴스 수집과 시장상황 보고서(3시간마다 발행 판정)
 - 시장별 뉴스 감성 차트 (`/market`)
 - 관심 종목 뉴스·감성 요약
 - 뉴스 기반 시장 리서치 후보 관리 (중화권·미국·한국 균형 수집과 추천)
@@ -120,9 +126,17 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 종목 DB는 `data/instruments/stock_db.json`에 캐시됩니다. 외부 식별자 매핑 API는 사용하지 않습니다.
 
+> **중국·홍콩 갱신은 현재 도쿄 서버에서 실패합니다(2026-09-22 실측).** AkShare의
+> A주 목록·홍콩 시세가 중국 본토 IP로 나가는데, 그 경로가 China Telecom 국제
+> 백본 안쪽에서 끊깁니다. 한 시장이 실패하면 이전 캐시를 그대로 이어받으므로
+> (`_preserve_markets`) 봇은 계속 돌지만, **A주·홍콩 목록은 사실상 동결**되어
+> 신규 상장·개명·상장폐지가 반영되지 않습니다. 한국·미국은 정상입니다.
+> 거래소 공식 목록(상해 `query.sse.com.cn`, 심천·홍콩 엑셀)은 같은 서버에서
+> 열리므로 대체가 가능합니다.
+
 ## 데이터와 접근 제어
 
-- `data/`에는 관심 종목, 발송 이력, 뉴스·신호 로그, 종목 DB가 소유 기능별 하위 디렉토리(`news/`, `watchlist/`, `instruments/`, `research/`, `runtime/`)에 저장됩니다.
+- `data/`에는 관심 종목, 발송 이력, 뉴스 로그, 종목 DB가 소유 기능별 하위 디렉토리(`news/`, `watchlist/`, `instruments/`, `research/`, `market_sentiment/`, `news_prefilter/`, `runtime/`)에 저장됩니다. 공개 웹이 내보내는 산출물은 `webpub/`에 따로 쌓입니다.
 - `ALLOWED_CHAT_IDS`에 쉼표로 구분한 채팅 ID를 설정해야 하며, 여기 적힌 채팅에서만 명령을 처리합니다. 비워 두거나 유효한 ID가 하나도 없으면 봇이 기동하지 않습니다 — 개인 운영용이라 빈 값을 전체 허용으로 해석하지 않습니다.
 - 뉴스·시세 제공처가 일시적으로 실패해도 다른 기능은 계속 동작하며, 다음 주기에 다시 수집합니다.
 
