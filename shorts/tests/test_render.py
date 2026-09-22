@@ -102,10 +102,12 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert "-shortest" not in captured["command"]
     assert "apad=pad_dur=0.6" in captured["command"]
     assert bodies == ["첫 문장\n둘째 문장", "첫 문장\n둘째 문장"]
-    video_filter = captured["command"][captured["command"].index("-filter_complex") + 1]
+    video_filter = captured["command"][captured["command"].index("-vf") + 1]
     # Expand still frames before drawing subtitles so cues change within a scene.
-    assert "[1:v]fps=30,format=rgba[fg]" in video_filter
-    assert "[bg][fg]overlay=shortest=1,subtitles=" in video_filter
+    assert video_filter.startswith("fps=30,subtitles=")
+    assert "overlay" not in video_filter
+    assert captured["command"].count("-i") == 2  # Composited frames and audio only.
+    assert captured["command"][captured["command"].index("-filter_threads") + 1] == "1"
     assert "PlayResX=1080,PlayResY=1920" in video_filter
 
 

@@ -326,14 +326,12 @@ def render_video(
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions)
-    frames, backgrounds, holds, timeline = [], [], [], []
+    frames, holds, timeline = [], [], []
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
     cursor = 0.0
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
-        background = work_dir / f"background-{index:02d}.png"
-        _background(selected[index - 1]).save(background)
         opening = min(3.0, seconds * .35)
         # 편집자가 지정한 문장·수치 줄바꿈은 화면에서도 보존한다.
         passages, current = [], ""
@@ -356,28 +354,21 @@ def render_video(
         for beat, hold, display_scene in beats:
             frame = work_dir / f"frame-{index:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                         background_path=selected[index - 1], beat=beat, transparent=True)
+                         background_path=selected[index - 1], beat=beat)
             frames.append(frame)
-            backgrounds.append(background)
             holds.append(hold)
             timeline.append({"start": round(cursor, 3), "duration": round(hold, 3),
                              "scene": scene.title, "beat": beat})
             cursor += hold
-    foreground_concat, background_concat = work_dir / "frames.txt", work_dir / "backgrounds.txt"
-    _concat_file(frames, holds, foreground_concat)
-    _concat_file(backgrounds, holds, background_concat)
-    # Keep still backgrounds fixed; repeated zoom changes make the image wobble.
-    filters = (
-        "[0:v]fps=30[bg];"
-        "[1:v]fps=30,format=rgba[fg];"
-        "[bg][fg]overlay=shortest=1," + _subtitle_filter(captions, font_path.stem)
-        + ",tpad=stop_mode=clone:stop_duration=1[video]"
-    )
+    frame_concat = work_dir / "frames.txt"
+    _concat_file(frames, holds, frame_concat)
+    # Static layers are already composited by render_frame. Two sparse image streams
+    # feeding fps/overlay queued gigabytes of frames on the production FFmpeg build.
+    filters = "fps=30," + _subtitle_filter(captions, font_path.stem) + ",tpad=stop_mode=clone:stop_duration=1"
     command = [
-        ffmpeg_bin, "-y", "-f", "concat", "-safe", "0", "-i", str(background_concat),
-        "-f", "concat", "-safe", "0", "-i", str(foreground_concat),
-        "-i", str(audio_path), "-filter_complex", filters, "-map", "[video]", "-map", "2:a",
-        "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        ffmpeg_bin, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(frame_concat),
+        "-i", str(audio_path), "-filter_threads", "1", "-vf", filters, "-map", "0:v", "-map", "1:a",
+        "-r", "30", "-c:v", "libx264", "-threads", "2", "-preset", "medium", "-crf", "20",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-af", "apad=pad_dur=0.6",
         "-t", f"{duration:.3f}", "-movflags", "+faststart", str(output_path),
     ]
