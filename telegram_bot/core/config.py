@@ -263,29 +263,30 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 원문 1차 소스를 시장마다 하나씩 둔다. 통신사·규제기관 발표는 매체가 받아쓰기
 # 전에 나오므로, 집계 소스(Google News)만으로는 같은 사실을 한 박자 늦게 본다.
 #
-# `sina`는 뺐다(2026-09-21 실측, 09-22 재확인). zhibo.sina.com.cn(49.7.36.230)이
-# 이 서버에서 닿지 않는다 — DNS는 풀리는데 SYN이 China Telecom 국제 백본
-# (202.97.x) 안쪽에서 조용히 버려진다. ICMP도 전 포트도 무응답이라 사이트의
-# 지역 차단이 아니라 경로 차단이고, 서버를 옮겨도 중국 밖이면 같다.
-# 거절(RST)이 아니라 드롭이라 connect 한 번이 tcp_syn_retries=6 만큼 약 127초를
-# 물고, retry_on_network의 재시도 3회가 곱해져 수집 워커 하나가 6분 넘게 잡혔다.
-# 부팅 즉시 도는 수집(next_run_time=now())이 그 창을 만들어, 그 안에 SIGTERM이
-# 오면 non-daemon 스레드를 조인하지 못해 종료가 90초 뒤 SIGKILL로 끝났다.
-# 중화권 1차 소스 자리는 `cls`가 맡는다. 경로가 열리면 이 목록에 다시 넣기만
-# 하면 된다 — 소스 정의는 news/registry.py 카탈로그에 그대로 있다.
-# `em_global`(东方财富 글로벌 속보)과 `gnews_jp`를 더했다(2026-09-22). 시장별 수급을 재 보니
-# KR 306건에 견줘 CN 86·HK 36·JP 35건으로 기울어 있었다. 더 문제는 큐 배분이다 —
-# NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT 은 **소스당**인데 `gnews` 하나가 일곱 시장을
-# 덮어, HK·JP 는 주기당 두 건 남짓만 큐에 담겼다. 3주기를 모아도
-# NEWS_REPORT_MIN_ARTICLES(8)에 못 미쳐 발행 게이트에 늘 걸린다.
-# 전용 소스를 세우면 그 시장이 자기 몫의 슬롯을 갖는다. `em`은 한 호출에 200건을
-# 주므로 cls(重点 필터가 얇아 주기당 0~1건)가 이름만 지키던 중화권 1차 자리를
-# 실제로 채운다.
-# 키가 `em`이 아니라 `em_global`인 이유가 있다. 2026-07-19(54d1779)에 제거한
-# `em`은 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은
-# 전역 속보(stock_info_global_em)로 엔드포인트가 다르다.
+# 시장이 얇을 때 수집량을 늘려도 소용이 없다. NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT
+# 은 **소스당**이라 일곱 시장을 덮는 `gnews` 하나로는 그 시장에 두 건 남짓만
+# 돌아가고, 3주기를 모아도 NEWS_REPORT_MIN_ARTICLES(8)에 못 미쳐 발행 게이트에
+# 걸린다. 전용 소스라야 자기 몫의 슬롯을 받는다 — `gnews_jp`를 세운 이유다.
+#
+# 뺀 소스 둘. 정의는 news/registry.py 카탈로그에 그대로 있으니 되살릴 때는
+# 이 목록에 키만 다시 넣는다.
+# - `sina`(2026-09-21 실측, 09-22 재확인): zhibo.sina.com.cn(49.7.36.230)이 이
+#   서버에서 닿지 않는다. DNS는 풀리는데 SYN이 China Telecom 국제 백본(202.97.x)
+#   안쪽에서 조용히 버려진다. ICMP도 전 포트도 무응답이라 사이트의 지역 차단이
+#   아니라 경로 차단이고, 서버를 옮겨도 중국 밖이면 같다. 거절(RST)이 아니라
+#   드롭이라 connect 한 번이 tcp_syn_retries=6 만큼 약 127초를 물고, 재시도 3회가
+#   곱해져 수집 워커가 6분 넘게 잡혔다. 부팅 즉시 도는 수집이 그 창을 만들어,
+#   그 안에 SIGTERM이 오면 종료가 90초 뒤 SIGKILL로 끝났다.
+# - `cls`(2026-09-22): 닿기는 하는데 symbol="重点" 필터가 얇아 주기당 0~1건이다.
+#   중화권 1차 소스 자리를 이름만 지키고 있었고, 그 자리는 한 호출에 200건을
+#   주는 `em_global`이 실제로 채운다. 큐 슬롯 12개를 0~1건이 점유하는 것도
+#   손해다. "全部"로 바꾸면 20건을 받지만 등급 없는 잡음이 섞인다.
+#
+# `em_global`의 키가 `em`이 아닌 이유가 있다. 2026-07-19(54d1779)에 제거한 `em`은
+# 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은 전역
+# 속보(stock_info_global_em)로 엔드포인트가 다르다.
 NEWS_GLOBAL_SOURCE_KEYS = [
-    "futu", "cls", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp",
+    "futu", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp",
 ]
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
