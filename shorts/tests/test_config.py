@@ -2,7 +2,10 @@ from pathlib import Path
 
 from polymarket_shorts import config
 
+from conftest import windows_only
 
+
+@windows_only
 def test_windows_winget_ffmpeg_is_found_when_path_is_stale(tmp_path, monkeypatch):
     binary = (
         tmp_path

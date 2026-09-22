@@ -2,14 +2,17 @@ from PIL import Image
 
 from polymarket_shorts import render
 from polymarket_shorts.render import (
-    CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, PROGRESS_Y, SAFE_BOTTOM, WIDTH, find_font, render_frame,
+    CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, PROGRESS_Y, SAFE_BOTTOM, WIDTH, render_frame,
 )
 from polymarket_shorts.scenario import Scenario, Scene
 from polymarket_shorts.tts import TTSError, Word
 import pytest
 
+from conftest import requires_cjk_font
 
-def test_render_frame_is_vertical_short_resolution(tmp_path):
+
+@requires_cjk_font
+def test_render_frame_is_vertical_short_resolution(tmp_path, cjk_font):
     target = tmp_path / "frame.png"
     render_frame(
         Scene(
@@ -20,7 +23,7 @@ def test_render_frame_is_vertical_short_resolution(tmp_path):
             narration="거시 통화입니다.",
         ),
         target,
-        font_path=find_font(),
+        font_path=cjk_font,
         index=2,
         total=5,
     )
@@ -134,11 +137,12 @@ def test_written_captions_keep_the_phrase_times(tmp_path):
     )
 
 
-def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path):
+@requires_cjk_font
+def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path, cjk_font):
     target = tmp_path / "frame.png"
     render_frame(
         Scene("consensus", "거시·통화", "EVENT 25", "본문", "내레이션", source_note="09.13 15:00"),
-        target, font_path=find_font(), index=2, total=5, transparent=True,
+        target, font_path=cjk_font, index=2, total=5, transparent=True,
     )
 
     # 자막 아래 끝이 안전 영역 바닥이다. 고지문은 그 위, 진행바는 헤더 옆으로 올라갔다.

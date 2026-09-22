@@ -4,6 +4,8 @@ from datetime import date
 
 import pytest
 
+from conftest import requires_cjk_font
+
 from polymarket_shorts import pipeline
 from polymarket_shorts.config import Settings
 from polymarket_shorts.media import ASSET_DIR, background_for
@@ -19,6 +21,7 @@ def test_local_backgrounds_are_present_and_missing_images_use_plain_background(t
 
 
 @pytest.mark.parametrize("enabled", [True, False])
+@requires_cjk_font
 def test_daily_pipeline_passes_saved_backgrounds_without_network_generation(tmp_path, monkeypatch, enabled):
     scenes = (
         Scene("intro", "제목", "기준", "본문", "내레이션"),
