@@ -66,6 +66,11 @@ def fetch_cls_raw():
     return ak.stock_info_global_cls(symbol="重点")
 
 
+@retry_on_network
+def fetch_em_raw():
+    return ak.stock_info_global_em()
+
+
 def fetch_rss_raw(url: str) -> bytes:
     host = urlparse(url).netloc.lower()
     headers = {
@@ -157,6 +162,36 @@ def fetch_cls_articles() -> list[GlobalArticle]:
     return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
 
 
+def fetch_em_articles() -> list[GlobalArticle]:
+    """东方财富 글로벌 재경 속보를 정규화한다.
+
+    중화권 수급이 얇아 넣었다(2026-09-22 실측: CN 86건 대 KR 306건). cls 는
+    symbol="重点" 필터가 얇아 주기당 0~1건이라 1차 소스 자리를 이름만 지키고
+    있었다. 이쪽은 같은 호출로 200건을 준다.
+
+    `发布时间`이 "2026-09-22 11:32:10"처럼 날짜와 시각을 한 열에 담으므로
+    published_date 를 따로 넘기지 않는다 — parse_news_datetime 이 그대로 읽는다.
+    """
+    df = fetch_em_raw()
+    articles = []
+    for _, row in df.iterrows():
+        title = _cell(row, "标题")
+        content = _cell(row, "摘要")
+        published_at = _cell(row, "发布时间")
+        if not (title or content):
+            continue
+        articles.append(
+            GlobalArticle(
+                article_id=f"em_global:{published_at}:{(title or content)[:20]}",
+                title=title,
+                content=content,
+                published_at=published_at,
+                url=_cell(row, "链接"),
+            )
+        )
+    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
+
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -205,6 +240,9 @@ def fetch_rss_articles(
 _GOOGLE_NEWS_LOCALES = {
     "KR": "hl=ko&gl=KR&ceid=KR:ko",
     "HK": "hl=zh-HK&gl=HK&ceid=HK:zh-Hant",
+    # 일본어 로케일로 받아야 종목명이 현지 표기(트요타가 아니라 トヨタ)로 남아
+    # 사전선별의 종목 매칭과 리서치 후보 발굴이 본문에서 이름을 찾을 수 있다.
+    "JP": "hl=ja&gl=JP&ceid=JP:ja",
 }
 _DEFAULT_GOOGLE_NEWS_LOCALE = "hl=en-US&gl=US&ceid=US:en"
 
@@ -256,6 +294,11 @@ _MARKET_STOCK_NEWS_QUERIES = {
         "코스피 증시 마감 when:1d",
         "코스닥 종목 실적 when:1d",
         "한국 증시 상승 종목 when:1d",
+    ),
+    "JP": (
+        "日経平均 株価 終値 when:1d",
+        "東証 プライム 決算 銘柄 when:1d",
+        "日本株 上昇 銘柄 when:1d",
     ),
 }
 
@@ -378,3 +421,7 @@ def fetch_google_news_us_stock_articles() -> list[GlobalArticle]:
 
 def fetch_google_news_kr_stock_articles() -> list[GlobalArticle]:
     return fetch_google_news_stock_articles("KR")
+
+
+def fetch_google_news_jp_stock_articles() -> list[GlobalArticle]:
+    return fetch_google_news_stock_articles("JP")

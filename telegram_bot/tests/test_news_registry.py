@@ -48,7 +48,11 @@ def test_source_markets_config_tags_rss_and_overrides_builtin():
     assert specs["futu"].market == "HK"
 
 
-def test_eastmoney_news_provider_is_not_registered():
+def test_eastmoney_per_stock_news_provider_is_not_registered():
+    # 2026-07-19(54d1779)에 뺀 `em`은 종목별 검색 API(stock_news_em)다. 기사별
+    # 뉴스 경로 자체가 그 뒤 삭제됐으므로 이 키는 계속 비어 있어야 한다.
+    # 전역 속보(stock_info_global_em)는 엔드포인트가 달라 `em_global`로 따로
+    # 등록돼 있다 — 아래 test_eastmoney_global_wire_is_registered 가 그쪽을 본다.
     assert build_source_specs(["em"], []) == []
 
 
@@ -97,6 +101,21 @@ def test_cailianpress_is_registered_as_a_share_source():
 
     assert specs["cls"].market == "CN"
     assert "财联社" in specs["cls"].label
+
+
+def test_eastmoney_global_wire_is_registered_as_a_share_source():
+    specs = {spec.key: spec for spec in build_source_specs(["em_global"], [])}
+
+    assert specs["em_global"].market == "CN"
+    assert "东方财富" in specs["em_global"].label
+
+
+def test_japan_stock_source_is_registered_with_its_own_market():
+    # gnews 하나가 일곱 시장을 덮어 JP 몫이 큐에서 두 건 남짓이었다. 전용
+    # 소스라야 per_source_limit 슬롯을 따로 받는다.
+    specs = {spec.key: spec for spec in build_source_specs(["gnews_jp"], [])}
+
+    assert specs["gnews_jp"].market == "JP"
 
 
 def test_configured_sources_and_feeds_all_resolve():

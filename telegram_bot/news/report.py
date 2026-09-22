@@ -70,7 +70,9 @@ _MARKET_LABELS = {
     "OTHER": "기타",
 }
 # 시장 표시 순서. 목록 밖 시장은 뒤에 붙인다.
-_MARKET_ORDER = ("CN", "HK", "US", "KR")
+# 전용 소스가 있는 시장을 의도한 순서로 둔다. 여기 없는 시장(gnews 의 EU·RU·TW)은
+# 아래에서 정렬돼 뒤에 붙는다 — 순서가 우연이 되지 않게 JP 를 명시한다.
+_MARKET_ORDER = ("CN", "HK", "US", "KR", "JP")
 _DIGEST_HEADER_RESERVE = 200
 # 요약이 실패한 시장에 원문 제목만 남길 때의 건수.
 _FALLBACK_HEADLINE_LIMIT = 10

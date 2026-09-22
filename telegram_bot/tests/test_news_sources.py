@@ -121,6 +121,37 @@ def test_cls_adapter_returns_newest_first_with_split_timestamp(monkeypatch):
     assert articles[0].article_id.startswith("cls:2026-09-20 11:00:00:")
 
 
+def test_em_adapter_reads_summary_column_and_single_timestamp(monkeypatch):
+    # 东方财富는 본문을 "摘要"에 담고 날짜·시각을 "发布时间" 한 열에 준다.
+    # cls 와 달리 published_date 를 따로 넘기지 않아야 한다.
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [
+            {"标题": "속보 A", "摘要": "본문 A", "发布时间": "2026-09-22 11:32:10", "链接": "https://x/1"},
+            {"标题": "", "摘要": "", "发布时间": "2026-09-22 11:00:00", "链接": ""},
+            {"标题": "속보 B", "摘要": "본문 B", "发布时间": "2026-09-22 10:00:00", "链接": "https://x/2"},
+        ]
+    )
+    monkeypatch.setattr(sources, "fetch_em_raw", lambda: frame)
+
+    articles = sources.fetch_em_articles()
+
+    assert [article.title for article in articles] == ["속보 A", "속보 B"]
+    assert articles[0].published_at == "2026-09-22 11:32:10"
+    assert articles[0].published_date == ""
+    assert articles[0].url == "https://x/1"
+    assert articles[0].article_id.startswith("em_global:2026-09-22 11:32:10:")
+
+
+def test_japan_market_uses_japanese_locale_and_stock_queries():
+    # 영어 로케일로 받으면 종목명이 현지 표기로 남지 않아 사전선별의 종목
+    # 매칭과 리서치 후보 발굴이 본문에서 이름을 찾지 못한다.
+    assert "hl=ja&gl=JP&ceid=JP:ja" in sources._google_news_url("日経平均", "JP")
+    assert "JP" in sources._MARKET_STOCK_NEWS_QUERIES
+    assert len(sources._MARKET_STOCK_NEWS_QUERIES["JP"]) == 3
+
+
 def test_cls_timestamp_parses_only_with_published_date():
     from telegram_bot.news.utils import parse_news_datetime
 

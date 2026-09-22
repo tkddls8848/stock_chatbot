@@ -273,7 +273,20 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 오면 non-daemon 스레드를 조인하지 못해 종료가 90초 뒤 SIGKILL로 끝났다.
 # 중화권 1차 소스 자리는 `cls`가 맡는다. 경로가 열리면 이 목록에 다시 넣기만
 # 하면 된다 — 소스 정의는 news/registry.py 카탈로그에 그대로 있다.
-NEWS_GLOBAL_SOURCE_KEYS = ["futu", "cls", "gnews", "gnews_us", "gnews_kr"]
+# `em_global`(东方财富 글로벌 속보)과 `gnews_jp`를 더했다(2026-09-22). 시장별 수급을 재 보니
+# KR 306건에 견줘 CN 86·HK 36·JP 35건으로 기울어 있었다. 더 문제는 큐 배분이다 —
+# NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT 은 **소스당**인데 `gnews` 하나가 일곱 시장을
+# 덮어, HK·JP 는 주기당 두 건 남짓만 큐에 담겼다. 3주기를 모아도
+# NEWS_REPORT_MIN_ARTICLES(8)에 못 미쳐 발행 게이트에 늘 걸린다.
+# 전용 소스를 세우면 그 시장이 자기 몫의 슬롯을 갖는다. `em`은 한 호출에 200건을
+# 주므로 cls(重点 필터가 얇아 주기당 0~1건)가 이름만 지키던 중화권 1차 자리를
+# 실제로 채운다.
+# 키가 `em`이 아니라 `em_global`인 이유가 있다. 2026-07-19(54d1779)에 제거한
+# `em`은 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은
+# 전역 속보(stock_info_global_em)로 엔드포인트가 다르다.
+NEWS_GLOBAL_SOURCE_KEYS = [
+    "futu", "cls", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp",
+]
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
     ("yonhap-economy", "https://www.yna.co.kr/rss/economy.xml"),
@@ -352,6 +365,8 @@ NEWS_SOURCE_MARKETS = {
     "futu": "CN",
     "sina": "CN",
     "cls": "CN",
+    "em_global": "CN",
+    "gnews_jp": "JP",
     "gnews_us": "US",
     "gnews_kr": "KR",
     "mk-stock": "KR",
