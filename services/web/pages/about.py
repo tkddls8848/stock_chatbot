@@ -42,7 +42,7 @@ _ABOUT_MAIN = (
         "<li><b>리서치</b> — 관심 주제에 대한 요약, 후보 종목의 추가·주목·제외, "
         "리스크, 그리고 그 주제를 약화시키는 반론. 마지막 결과 한 건만 보관합니다.</li>"
         "<li>같은 값을 <code>/api/market</code>·<code>/api/research</code>·"
-        "<code>/api/meta</code>에서 JSON으로도 읽을 수 있습니다.</li>"
+        "<code>/api/meta</code>에서 원본 자료로도 읽을 수 있습니다.</li>"
         "</ul>",
     )
     + sec(
@@ -69,14 +69,14 @@ _ABOUT_MAIN = (
         "<dt>대상 시장</dt><dd>중국 본토 · 홍콩 · 미국 · 한국 · 일본</dd>"
         "<dt>감성 척도</dt><dd><code>-1.00</code> 부정 ~ <code>+1.00</code> 긍정. "
         "화면에서는 <b>빨강이 긍정, 파랑이 부정</b>입니다.</dd>"
-        "<dt>시각 기준</dt><dd>모든 날짜와 시각은 <code>UTC +9</code>입니다. 소스 타임존은 "
-        "수집 단계에서 변환합니다.</dd>"
+        "<dt>시각 기준</dt><dd>모든 날짜와 시각은 한국 시간입니다. 해외 뉴스의 시각도 "
+        "수집할 때 한국 시간으로 바꿉니다.</dd>"
         "<dt>갱신</dt><dd>뉴스 주기마다 수집하고, 화면의 수치는 마지막 계산 시점에 "
         "고정됩니다.</dd>"
-        "<dt>제공 형식</dt><dd><code>GET /api/market</code> · "
-        "<code>GET /api/research</code> · <code>GET /api/meta</code> · "
-        "<code>GET /market_chart.png</code></dd>"
-        "<dt>쓰기</dt><dd>없습니다. 이 사이트는 <code>GET</code>만 가집니다.</dd>"
+        "<dt>원본 자료</dt><dd><code>/api/market</code> · "
+        "<code>/api/research</code> · <code>/api/meta</code> · "
+        "<code>/market_chart.png</code></dd>"
+        "<dt>바꾸는 기능</dt><dd>없습니다. 이 사이트는 읽기만 할 수 있습니다.</dd>"
         "</dl>",
     )
     + sec(

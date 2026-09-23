@@ -57,7 +57,7 @@ function nsCard(row){const a=document.createElement('article');a.className='ns-r
  const title=document.createElement('h2');title.textContent=row.title;a.append(title);
  if(row.text&&row.text!==row.title){const body=document.createElement('p');body.textContent=row.text;a.append(body);}
  const source=document.createElement('div');source.className='ns-meta';
- source.textContent='출처: '+row.source+(row.published_at?' · '+stamp(row.published_at)+' UTC +9':' · 날짜 기준');
+ source.textContent='출처: '+row.source+(row.published_at?' · '+stamp(row.published_at)+' (한국 시간)':' · 날짜 기준');
  if(typeof row.sentiment==='number')source.textContent+=' · 보도 감성 '+(row.sentiment>=0?'+':'')+row.sentiment.toFixed(2);
  a.append(source);
  if(row.url){try{const url=new URL(row.url);if(['https:','http:'].includes(url.protocol)){
@@ -80,7 +80,7 @@ async function nsSearch(){if(nsController)nsController.abort();const controller=
  if(!d.results.length){const empty=document.createElement('p');empty.className='empty';
  empty.textContent=d.available_documents?'조건에 맞는 자료가 없습니다. 기간을 넓히거나 주제를 짧게 입력해 보세요.':'아직 검색할 자료가 없습니다. 뉴스 보고서와 시장 요약이 발행되면 검색할 수 있습니다.';nsList.append(empty);}
  const times=d.sources_updated_at;document.getElementById('ns-source').textContent=
- ['뉴스 자료 '+(stamp(times.news)||'수집 대기'),'시장 요약 '+(stamp(times.market)||'수집 대기')].join(' · ')+' (UTC +9)';
+ ['뉴스 자료 '+(stamp(times.news)||'수집 대기'),'시장 요약 '+(stamp(times.market)||'수집 대기')].join(' · ')+' (한국 시간)';
  document.getElementById('ns-page').textContent=nsPages?nsPage+' / '+nsPages:'';
  document.getElementById('ns-prev').disabled=nsPage<=1;document.getElementById('ns-next').disabled=nsPage>=nsPages;
  }catch(e){if(e.name!=='AbortError'){nsList.replaceChildren();nsStatus.textContent=e.message||'검색 자료를 읽지 못했습니다.';}}

@@ -29,7 +29,7 @@ class ConfigurationError(RuntimeError):
 
 
 # ── Cloudflare Workers AI ─────────────────────────────
-# 줄글 브리프 하나만 쓴다. 봇 쪽 복사본과 값이 같아 보여도 각자 소유다 —
+# 폴리마켓 one-shot 둘(줄글 브리프·검색 주석)만 쓴다. 봇 쪽 복사본과 값이 같아 보여도 각자 소유다 —
 # 한쪽이 모델이나 타임아웃을 바꿔도 다른 쪽 프로세스는 흔들리지 않는다.
 # API 토큰은 .env에만 두고 커밋하지 않는다. 로그·예외에도 남기지 않는다.
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
@@ -44,12 +44,12 @@ CLOUDFLARE_FAILURE_COOLDOWN_SECONDS = 300
 
 
 def require_cloudflare_credentials() -> None:
-    """줄글 브리프를 부르기 직전에 확인한다.
+    """LLM one-shot(줄글 브리프·검색 주석)을 부르기 직전에 확인한다.
 
     import 시점에 검사하지 않는 것이 봇 쪽과 다르다. 공개 웹 서버(`services.web.server`)와
     숫자 순회(`services.web.polymarket.refresh`)는 LLM을 쓰지 않으므로, 자격증명이 없다고
-    화면과 확률 숫자까지 함께 멈출 이유가 없다. 멈춰야 하는 것은 줄글 one-shot
-    하나뿐이다.
+    화면과 확률 숫자까지 함께 멈출 이유가 없다. 멈춰야 하는 것은 LLM을 부르는
+    one-shot뿐이다.
     """
     missing = [
         name
@@ -61,7 +61,7 @@ def require_cloudflare_credentials() -> None:
     ]
     if missing:
         raise ConfigurationError(
-            f"폴리마켓 줄글 브리프에 필요한 {', '.join(missing)}이(가) .env에 비어 있습니다"
+            f"폴리마켓 LLM one-shot에 필요한 {', '.join(missing)}이(가) .env에 비어 있습니다"
         )
 
 
@@ -140,3 +140,30 @@ POLYMARKET_BRIEF_TIMEOUT = 180
 # 단락 하나라 출력이 짧다. 다만 finish_reason=length는 재시도 없이 실패이므로
 # 프롬프트가 지시한 길이의 두 배 남짓을 예약해 둔다.
 POLYMARKET_BRIEF_NUM_PREDICT = 900
+
+# ── 자연어 검색용 event 주석 ────────────────────────────────────────────────
+# 순회가 성공한 뒤 별도 one-shot이 event마다 한국어 요약·검색 키워드를 달아
+# 둔다. 검색하는 순간에는 LLM을 부르지 않는다. 계획서는
+# docs/polymarket-nl-search.md.
+#
+# current.json에 넣지 않는다 — 건당 약 250 B × 21,872건이면 16 MiB 상한의
+# 3분의 1이다. 별도 파일로 두고 repository가 따로 읽는다.
+POLYMARKET_SEARCH_INDEX_FILE = POLYMARKET_WEB_DIR / "search_index.json"
+# 최근 24시간 호출 표본. refresh의 status.json처럼 예산을 스스로 지키는 데 쓴다.
+POLYMARKET_ANNOTATE_STATUS_FILE = POLYMARKET_WEB_DIR / "annotate_status.json"
+POLYMARKET_ANNOTATE_PROMPT_FILE = PROMPT_DIR / "polymarket_annotate_ko.txt"
+# 한 호출에 묶는 event 수. 출력이 건당 100토큰 안팎이라 25건이면 2,500토큰
+# 남짓이다. 더 묶으면 max_tokens 절단 한 번에 버리는 건수가 커진다.
+POLYMARKET_ANNOTATE_BATCH_SIZE = 25
+POLYMARKET_ANNOTATE_NUM_PREDICT = 4096
+POLYMARKET_ANNOTATE_TIMEOUT = 180
+# 한 실행의 호출 상한. 백필이 하루 예산을 첫 주기에 몰아 쓰지 않고 3시간
+# 주기마다 나눠 쓰게 하고, 유닛의 TimeoutStartSec 안에 끝나게 한다.
+POLYMARKET_ANNOTATE_MAX_BATCHES_PER_RUN = 8
+# 최근 24시간 Neurons 상한. 무료 한도(하루 10,000)를 봇·섹터 줄글(하루
+# 1,500~2,500)과 함께 쓴다. 첫 백필(약 5만) 동안 올릴지는 봇 사용량을 보고
+# 여기서 정한다 — 튜닝값이라 .env가 아니라 이력이 남는 상수로 둔다.
+POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS = 4000.0
+# 모델에 넘기는 설명(description) 길이. 제목만으로는 무엇을 거는지 모호한
+# event가 있어 앞부분만 붙인다. 뒷부분은 대개 판정 규칙의 세부다.
+POLYMARKET_ANNOTATE_DESCRIPTION_CHARS = 300

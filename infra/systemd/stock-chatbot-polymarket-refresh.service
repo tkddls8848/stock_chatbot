@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 # 순회가 성공한 뒤에만 이어서 돈다. 줄글(LLM)과 트렌드(숫자)는 서로를
 # 기다리지 않는다 — 한쪽이 실패해도 다른 쪽은 그대로 돈다.
-OnSuccess=stock-chatbot-polymarket-brief.service stock-chatbot-polymarket-trending.service
+OnSuccess=stock-chatbot-polymarket-brief.service stock-chatbot-polymarket-trending.service stock-chatbot-polymarket-annotate.service
 
 [Service]
 Type=oneshot

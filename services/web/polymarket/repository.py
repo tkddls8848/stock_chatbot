@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Any
 
 from services.web.core.clock import now
+from services.web.polymarket import relevance
 from services.web.polymarket.dashboard.storage import read_detail
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[3] / "data" / "webpub" / "polymarket"
@@ -74,6 +75,11 @@ class PolymarketRepository:
         self._manifest: dict[str, Any] = {}
         self._events_by_id: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
+        # 검색용 주석(`annotate.py`가 쓴다). current.json과 따로 바뀌므로 mtime도
+        # 따로 본다. 없으면 제목·태그만으로 검색한다.
+        self._index_mtime_ns: int | None = None
+        self._annotations: dict[str, tuple[str, str, str]] = {}
+        self._index_lock = Lock()
 
     def load(self) -> dict[str, Any]:
         path = self.root / "current.json"
@@ -99,6 +105,34 @@ class PolymarketRepository:
             self._events_by_id = index
             self._mtime_ns = mtime_ns
         return self._manifest
+
+    def load_index(self) -> dict[str, tuple[str, str, str]]:
+        path = self.root / "search_index.json"
+        try:
+            mtime_ns = path.stat().st_mtime_ns
+        except OSError:
+            return self._annotations
+        if mtime_ns == self._index_mtime_ns:
+            return self._annotations
+        with self._index_lock:
+            if mtime_ns == self._index_mtime_ns:
+                return self._annotations
+            rows = _read_json(path).get("events")
+            if not isinstance(rows, dict):
+                # 읽다 만 파일이면 직전 색인을 그대로 쓴다.
+                return self._annotations
+            self._annotations = {
+                str(key): relevance.prepare_annotation(value)
+                for key, value in rows.items()
+                if isinstance(value, dict)
+            }
+            self._index_mtime_ns = mtime_ns
+        return self._annotations
+
+    def index_version(self) -> str:
+        """ETag에 넣는다. 주석만 바뀐 주기에도 검색 결과가 달라지기 때문이다."""
+        self.load_index()
+        return str(self._index_mtime_ns or "")
 
     def health(self) -> dict[str, Any]:
         manifest = self.load()
@@ -201,12 +235,13 @@ class PolymarketRepository:
         event_type: str | None = None,
         status: str | None = None,
         query: str | None = None,
-        sort: str = "volume24hr",
+        sort: str | None = None,
         order: str = "desc",
         page: int = 1,
         page_size: int = 25,
     ) -> dict[str, Any]:
         manifest = self.load()
+        annotations = self.load_index()
         values = list(manifest.get("events", []))
         if category:
             values = [event for event in values if event.get("category") == category]
@@ -218,30 +253,58 @@ class PolymarketRepository:
             values = [event for event in values if event.get("event_type") == event_type]
         if status:
             values = [event for event in values if event.get("data_status") == status]
-        if query:
-            needle = query.casefold()
-            values = [
-                event for event in values
-                if needle in str(event.get("title", "")).casefold()
-                or any(needle in str(value).casefold() for value in event.get("tags", []))
-            ]
+        tokens = relevance.query_tokens(query) if query else []
+        ranks: dict[str, tuple[int, int]] = {}
+        if tokens:
+            compiled = relevance.compile_tokens(tokens)
+            needed = relevance.minimum_matches(tokens)
+            kept = []
+            for event in values:
+                rank = relevance.score(compiled, event, annotations.get(str(event.get("id"))))
+                if rank[0] >= needed:
+                    ranks[str(event.get("id"))] = rank
+                    kept.append(event)
+            values = kept
+        # 질문이 있으면 관련도순이 기본이다. 질문 없이 관련도순을 고르면 매길
+        # 관련도가 없으므로 거래량순으로 본다.
+        sort = sort or ("relevance" if tokens else "volume24hr")
+        if sort == "relevance" and not tokens:
+            sort = "volume24hr"
+
+        def volume(event: dict[str, Any]) -> float:
+            value = event.get("volume24hr")
+            return float(value) if isinstance(value, (int, float)) else -math.inf
 
         def key(event: dict[str, Any]):
+            if sort == "relevance":
+                return (*ranks[str(event.get("id"))], volume(event))
             value = event.get(sort)
             if sort == "title":
                 return (value is None, str(value or "").casefold())
             return (value is None, float(value) if isinstance(value, (int, float)) else -math.inf)
 
-        values.sort(key=key, reverse=order == "desc")
+        # 관련도는 방향이 하나뿐이다 — 덜 관련된 것부터 보여 줄 이유가 없다.
+        values.sort(key=key, reverse=sort == "relevance" or order == "desc")
         total = len(values)
         start = (page - 1) * page_size
+        page_events = []
+        for event in values[start : start + page_size]:
+            annotation = annotations.get(str(event.get("id")))
+            # manifest의 dict를 고치지 않는다 — 다른 요청이 같은 객체를 읽는다.
+            page_events.append({**event, "summary": annotation[2] if annotation else None})
         return {
             "generation_id": manifest.get("generation_id"),
             "total": total,
             "page": page,
             "page_size": page_size,
             "page_count": math.ceil(total / page_size) if total else 0,
-            "events": values[start : start + page_size],
+            "sort": sort,
+            "query_tokens": tokens,
+            "search_index": {
+                "annotated": sum(1 for key in annotations if key in self._events_by_id),
+                "total": len(self._events_by_id),
+            },
+            "events": page_events,
         }
 
     def detail(self, event_id: str) -> dict[str, Any] | None:

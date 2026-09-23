@@ -258,6 +258,7 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-refresh.{service,timer} /etc/systemd/system/
 sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-brief.service /etc/systemd/system/
 sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-trending.service /etc/systemd/system/
+sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-annotate.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now stock-chatbot-polymarket-refresh.timer
 systemctl list-timers | grep polymarket
@@ -267,11 +268,20 @@ timer는 UTC +9 `00·03·06·09·12·15·18·21시` 고정 캘린더다(`OnCalen
 `Persistent=true`라 서버가 꺼져 있어 지나친 슬롯이 있으면 기동 직후 한 번
 따라잡는다.
 
-**refresh가 성공하면 섹터 줄글과 트렌드 조명이 이어서 돈다**(`OnSuccess=`). 두
-유닛 다 `enable`하지 않는다 — timer가 아니라 refresh가 부른다. 03시에는 줄글만
+**refresh가 성공하면 섹터 줄글·트렌드 조명·검색 주석이 이어서 돈다**(`OnSuccess=`).
+세 유닛 다 `enable`하지 않는다 — timer가 아니라 refresh가 부른다. 03시에는 줄글만
 건너뛰고(`POLYMARKET_BRIEF_QUIET_HOURS`) refresh와 트렌드는 그대로 돈다. 트렌드는
 LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주기를 건너뛰면 그 구간의
 이동이 영영 사라진다(스냅숏이 그 주기에만 남는다).
+
+검색 주석은 새로 생겼거나 제목이 바뀐 event에만 한국어 요약·검색어를 달아
+`data/webpub/polymarket/search_index.json`에 쌓는다. 진행과 예산은
+`annotate_status.json`에 있다 — `annotated`/`total`이 채워진 비율이고,
+`rolling_neurons`가 최근 24시간 사용량이다. 상한
+(`POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS`)에 닿으면 `last_result`가
+`skipped_budget`·`stopped_budget`이고 **다음 날 저절로 이어서 채운다.** 색인을
+지우면 처음부터 다시 채우느라 약 3주치 예산을 다시 쓴다 — 지우지 않는다.
+색인이 비어 있어도 검색은 영문 제목·태그로 동작한다.
 
 트렌드 상태는 `data/webpub/polymarket/trending.json` 하나이고
 `curl -s localhost:8788/api/polymarket/trending`으로 확인한다. `state`가

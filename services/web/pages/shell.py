@@ -335,7 +335,7 @@ tbody td,thead th{padding:var(--sp-3)}}
 _NAV_LINKS = (
     ("/", "시장"),
     ("/search", "뉴스 검색"),
-    ("/polymarket", "Polymarket"),
+    ("/polymarket", "폴리마켓"),
     ("/research", "리서치"),
     ("/about", "정보"),
 )
@@ -392,8 +392,8 @@ _ASOF = (
 )
 
 _FOOT_NOTE = (
-    "<div class='asof-note'>이 페이지의 모든 수치는 실시간이 아니라 마지막 산출물의 "
-    "스냅숏입니다. 인용하기 전에 화면 위쪽의 기준 시각을 확인해 주세요.</div>"
+    "<div class='asof-note'>이 페이지의 모든 수치는 실시간이 아니라 마지막으로 "
+    "계산한 값입니다. 인용하기 전에 화면 위쪽의 기준 시각을 확인해 주세요.</div>"
 )
 
 _SITE_FOOT = (
@@ -404,14 +404,14 @@ _SITE_FOOT = (
     "<dt>다루는 시장</dt><dd>중국 본토 · 홍콩 · 미국 · 한국 · 일본</dd>"
     "<dt>값의 성격</dt><dd>뉴스 보도의 논조를 집계한 관측치입니다. 시세·수익률·"
     "매매 신호가 아니며, 원시 가격 데이터는 제공하지 않습니다.</dd>"
-    "<dt>시각 기준</dt><dd>모든 날짜와 시각은 <code>UTC +9</code>입니다. 소스 타임존은 "
-    "수집 단계에서 변환합니다.</dd>"
+    "<dt>시각 기준</dt><dd>모든 날짜와 시각은 한국 시간입니다. 해외 뉴스의 시각도 "
+    "수집할 때 한국 시간으로 바꿉니다.</dd>"
     "<dt>갱신</dt><dd>뉴스 주기마다 갱신하며, 화면의 값은 마지막 계산 시점에 고정됩니다.</dd>"
-    "<dt>제공 형식</dt><dd><code>GET /api/market</code> · <code>GET /api/research</code> · "
-    "<code>GET /api/meta</code> · <code>GET /market_chart.png</code> — 쓰기 API는 없습니다.</dd>"
+    "<dt>원본 자료</dt><dd><code>/api/market</code> · <code>/api/research</code> · "
+    "<code>/api/meta</code> · <code>/market_chart.png</code> — 읽기만 할 수 있고 바꾸는 기능은 없습니다.</dd>"
     "</dl></div>"
     "<div class='sfin'><span class='sf-links'>"
-    "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/polymarket'>Polymarket</a>"
+    "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/polymarket'>폴리마켓</a>"
     "<a href='/research'>리서치</a><a href='/about'>정보</a>"
     "</span><span>정보 제공 목적이며 투자 권유가 아닙니다.</span></div>"
     "</div></footer></body></html>"
@@ -442,8 +442,8 @@ def sec(glyph: str, title: str, body: str) -> str:
 
 
 DISCLAIMER = (
-    "<div class='foot'>정보 제공 목적이며 투자 권유가 아닙니다. 값은 갱신 시점 기준 "
-    "스냅숏이며, 투자 판단과 책임은 이용자 본인에게 있습니다.</div>"
+    "<div class='foot'>정보 제공 목적이며 투자 권유가 아닙니다. 값은 갱신 시점에 "
+    "고정된 기록이며, 투자 판단과 책임은 이용자 본인에게 있습니다.</div>"
 )
 
 
@@ -468,7 +468,7 @@ fetch('/api/meta').then(r=>r.json()).then(d=>{
   const stat=document.getElementById('asof-stat');
   const statT=document.getElementById('asof-stat-t');
   if(parts.length){
-    date.textContent=parts.join(' · ')+' UTC +9';
+    date.textContent=parts.join(' · ')+' (한국 시간)';
     statT.textContent='산출물 있음';
   }else{
     date.textContent='아직 산출물이 없습니다';

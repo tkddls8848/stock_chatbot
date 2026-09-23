@@ -163,7 +163,9 @@ def build_app() -> FastAPI:
             "ok", "low_liquidity", "no_liquidity", "liquidity_missing", "unavailable"
         ] | None = None,
         q: str | None = Query(default=None, max_length=200),
-        sort: Literal["volume24hr", "liquidity", "leader_probability", "end_date", "title"] = "volume24hr",
+        sort: Literal[
+            "relevance", "volume24hr", "liquidity", "leader_probability", "end_date", "title"
+        ] | None = None,
         order: Literal["asc", "desc"] = "desc",
         page: int = Query(default=1, ge=1),
         page_size: int = Query(default=25, ge=1, le=100),
@@ -180,6 +182,9 @@ def build_app() -> FastAPI:
             "order": order,
             "page": page,
             "page_size": page_size,
+            # 주석만 바뀐 주기에도 결과가 달라진다. generation만 보면 304로 옛
+            # 결과를 돌려준다.
+            "index": POLYMARKET_REPOSITORY.index_version(),
         }
         payload = POLYMARKET_REPOSITORY.events(
             category=category,

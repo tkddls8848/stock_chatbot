@@ -28,7 +28,7 @@
 - **저장소 루트가 import root다.** 모든 명령을 루트에서 돌린다. 내부 import는
   `from services.telegram_bot.core...`, `from services.telegram_bot.news...`, `from services.web.polymarket...`
   형식이다.
-- 진입점은 넷이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
+- 진입점은 여섯이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
   `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: services`가 난다.
   | 프로세스 | 명령 |
   |---|---|
@@ -36,6 +36,8 @@
   | 공개 웹 8788 | `python -m services.web.server` |
   | 폴리마켓 순회 one-shot | `python -m services.web.polymarket.refresh` |
   | 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |
+  | 폴리마켓 트렌드 one-shot | `python -m services.web.polymarket.trending` |
+  | 폴리마켓 검색 주석 one-shot | `python -m services.web.polymarket.annotate` |
 - **텔레그램 봇 폴더를 `telegram`으로 이름 붙이지 않는다.** `python-telegram-bot`이
   제공하는 최상위 모듈이 정확히 `telegram`이라, import root에 같은 이름을 두면
   19개 파일의 `from telegram import Update`가 전부 이 폴더를 집는다.
@@ -96,6 +98,8 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
       dashboard/       Gamma 순회·정규화·generation 저장
       refresh.py       3시간마다 도는 순회 — `python -m services.web.polymarket.refresh`
       sector_brief.py  순회 성공 뒤 도는 줄글 — `python -m services.web.polymarket.sector_brief`
+      annotate.py      순회 성공 뒤 도는 검색 주석 — `python -m services.web.polymarket.annotate`
+      relevance.py     자연어 검색 점수(LLM 없음)
       repository.py    server.py가 현재 generation을 읽는 자리
     docs/  tests/
 
@@ -301,6 +305,16 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   "skipped_budget"`, 종료 코드 0). **실패한 실행도 센다** — manifest 상한
   초과처럼 219 page를 전부 돌고 죽는 실패가 있어, 세지 않으면 반복 실패가
   예산을 그대로 통과한다.
+- **폴리마켓 자연어 검색은 검색하는 순간 LLM을 부르지 않는다.** 순회가 성공하면
+  `annotate.py`가 새로 생겼거나 제목이 바뀐 event에만 한국어 요약·검색어·세부
+  주제를 달아 `search_index.json`에 쌓고, `repository.py`가 그 위에서 파이썬만으로
+  점수를 매긴다(맞은 낱말 수 → 칸 가중 → 거래량). 요약에는 확률을 넣지 않는다 —
+  3시간마다 바뀌는 값을 넣으면 한 번 단 주석을 다시 쓸 수 없다. 색인은
+  `current.json`에 넣지 않는다(건당 약 250 B × event 수). 주석 one-shot도 자기
+  예산을 지킨다 — 최근 24시간 Neurons를 `annotate_status.json`에 더해
+  `POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS`(4,000)에 닿으면 건너뛰고, 응답이 없는
+  실패는 예약한 출력 전부가 나갔다고 센다. 계획서는
+  `services/web/docs/polymarket-nl-search.md`.
 - **generation은 두 벌만 남긴다.** detail shard가 generation 하나에 116 MiB라
   쌓이면 디스크가 상한보다 먼저 찬다. 직전 하나를 남기는 것은 이력이 아니라,
   승격 순간에 이미 들어와 있던 요청이 자기가 읽던 shard를 계속 seek할 수 있게
@@ -328,6 +342,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   화면은 **라이트 전용**이고(`color-scheme:light`) 감성의 부호는 **빨강이 긍정,
   파랑이 부정**이다 — 한국 시장 화면의 관례라 읽는 사람이 다른 화면에서 종일
   보는 방향과 맞춘다. 서양식 녹/적으로 되돌리지 않는다.
+  **화면 표기는 쉬운 한국어로 쓴다.** `Binary`·`event`·`generation`·`freshness`·
+  `UTC +9`·`Yes/No`·`pp` 같은 영문·전문 용어 대신 이지선다·예측 질문·수집분·
+  한국 시간·예/아니오·%p처럼 풀어 쓴다. API의 필드 이름과 값은 영문 그대로 두고
+  화면에서만 바꾼다(`services/web/pages/polymarket.py`의 `PM_TYPE`·`PM_FRESH` 등) —
+  shorts가 그 값을 HTTP로 읽는다. 폴리마켓 원문 태그처럼 번역할 수 없는 자료는
+  원문임을 밝힌다.
 - 종목 canonical code는 시장마다 형식이 다르다. CN·HK는 **접두사 없는 숫자 코드**
   (`600519`, `00700`)이고, US·KR만 `US:NASDAQ:AAPL`·`KR:KOSPI:005930` 형식이다
   (`services/telegram_bot/stocks/universe.py`의 `stock_key`). KR 6자리는 A주 코드와 겹치므로 US·KR에만
@@ -517,8 +537,9 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 ### 죽은 코드는 추측하지 말고 측정한다
 
-네 진입점(`services.telegram_bot.main`, `services.web.server`, `services.web.polymarket.refresh`,
-`services.web.polymarket.sector_brief`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
+여섯 진입점(`services.telegram_bot.main`, `services.web.server`, `services.web.polymarket.refresh`,
+`services.web.polymarket.sector_brief`, `services.web.polymarket.trending`,
+`services.web.polymarket.annotate`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
 찾는다. 함수 안 지연 import는 그래프에 안 잡히므로 따로 확인한다.
 
 `news/{pipeline,preparation,delivery,selection}.py` 523줄이 이 방법으로 나왔다.

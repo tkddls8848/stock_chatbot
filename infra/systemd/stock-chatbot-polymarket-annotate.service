@@ -1,0 +1,20 @@
+[Unit]
+Description=Annotate Polymarket events for Korean natural-language search
+After=stock-chatbot-polymarket-refresh.service
+
+[Service]
+Type=oneshot
+User=stockbot
+Group=stockbot
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.polymarket.annotate
+Nice=10
+CPUWeight=20
+MemoryMax=384M
+# 한 실행은 최대 8배치(POLYMARKET_ANNOTATE_MAX_BATCHES_PER_RUN)다. 배치당 수십 초,
+# 최악이면 타임아웃 180초 × 재시도 2회라 넉넉히 둔다.
+TimeoutStartSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
