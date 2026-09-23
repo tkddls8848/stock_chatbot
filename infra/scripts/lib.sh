@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 앱 설치·점검 스크립트가 공통으로 쓰는 설정과 출력 헬퍼. 직접 실행하지 않고 source 한다.
 #
-# 이 앱은 공유 호스트 orca-host-tokyo 의 입주 앱이다. AWS 자원(인스턴스·고정 IP·공인
-# 방화벽·스냅샷)과 OS 기본 설정은 여기서 다루지 않는다 — 호스트 저장소가 소유한다.
-# 계약 값과 경계는 infra/host-contract.md 에 있다.
+# 이 앱은 공유 호스트 orca-host-tokyo-v2 의 입주 앱이다. AWS 자원(인스턴스·고정 IP·공인
+# 방화벽·스냅샷)과 OS 기본 설정은 여기서 다루지 않는다 — 호스트 저장소 remote_coding 이
+# 소유한다. 계약 값과 경계는 infra/host-contract.md 에 있다.
 
 set -euo pipefail
 
@@ -14,17 +14,17 @@ INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck disable=SC1091
 [ -f "$SCRIPT_DIR/config.env" ] && . "$SCRIPT_DIR/config.env"
 
-# --- 앱 배치 (우리 소유) ----------------------------------------------------
-# 호스트 규약은 "입주 앱은 전용 시스템 계정과 /srv/<앱>" 이다. systemd 유닛의
-# User/WorkingDirectory/ExecStart 도 같은 값을 쓴다.
-APP_USER="${APP_USER:-stockbot}"
-APP_GROUP="${APP_GROUP:-stockbot}"
+# --- 앱 배치 ----------------------------------------------------------------
+# 호스트가 서버를 ubuntu 단일 계정으로 통합했다(2026-09-23, remote_coding
+# docs/server-migration.md). 봇·웹·Orca 가 모두 ubuntu 로 돌고, 앱 전용 계정은
+# 두지 않는다. systemd 유닛의 User/Group 도 같은 값이다.
+APP_USER="${APP_USER:-ubuntu}"
+APP_GROUP="${APP_GROUP:-ubuntu}"
 APP_DIR="${APP_DIR:-/srv/stock-chatbot}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/stock-chatbot}"
 
-# 앱 내부 포트. 둘 다 127.0.0.1 전용이며 공인 방화벽에 열지 않는다.
+# 앱 내부 포트. 127.0.0.1 전용이며 공인 방화벽에 열지 않는다.
 WEB_PORT="${WEB_PORT:-8788}"    # 읽기 웹 (앞단 Caddy 가 TLS·인증)
-ADMIN_PORT="${ADMIN_PORT:-8787}"  # 관리 웹 (SSH 터널로만 접근)
 
 # --- 호스트와의 계약 값 (호스트 소유, 여기서는 따라간다) --------------------
 # 호스트 타임존은 UTC 고정이고 cron.d 는 타임존을 선언할 수 없다. Lightsail 자동

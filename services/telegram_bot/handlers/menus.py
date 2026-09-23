@@ -50,21 +50,11 @@ def _back() -> list[list[tuple[str, str]]]:
     return [[("🏠 처음", "nav:home")]]
 
 
-def market_menu() -> InlineKeyboardMarkup:
-    return _keyboard([
-        [
-            ("7일", "nav:market:sentiment:7"),
-            ("14일", "nav:market:sentiment:14"),
-            ("30일", "nav:market:sentiment:30"),
-        ],
-        *_back(),
-    ])
-
-
 def research_menu() -> InlineKeyboardMarkup:
+    """리서치 관리 패널. 결과 자체는 웹 /research에서 본다."""
     return _keyboard([
-        [("주제 보기", "nav:research:show"), ("분석 실행", "nav:research:run")],
-        [("주제 설정", "nav:research:set"), ("주제 삭제", "nav:research:clear")],
+        [("주제 보기", "nav:research:show"), ("지금 실행", "nav:research:run")],
+        [("주제 변경", "nav:research:set"), ("주제 비우기", "nav:research:clear")],
         *_back(),
     ])
 

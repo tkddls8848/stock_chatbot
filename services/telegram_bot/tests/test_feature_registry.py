@@ -18,7 +18,7 @@ EXPECTED_FEATURES = {
     "research",
     "briefing",
     "system_admin",
-    "web_admin",
+    "web_status",
 }
 
 
@@ -36,7 +36,7 @@ def test_full_feature_set_has_unique_commands_and_valid_dependencies():
     ]
 
     assert len(command_names) == len(set(command_names))
-    assert {"market", "research", "briefing", "system"} <= set(
+    assert {"market", "research", "briefing", "system", "web"} <= set(
         command_names
     )
     assert "score" not in command_names
@@ -101,7 +101,6 @@ def test_every_enabled_subset_that_passes_can_install_services(monkeypatch):
         {"instruments", "watchlist", "news_summary", "market_sentiment"},
         {"instruments", "watchlist", "news_summary", "sector_summary", "research"},
         {"system_admin"},
-        {"web_admin"},
         EXPECTED_FEATURES,
     ]
     for enabled in closures:
@@ -138,9 +137,7 @@ def test_registry_resolves_menu_ownership_and_persistent_labels():
     registry = build_feature_registry(EXPECTED_FEATURES)
 
     assert registry.menu_owner("nav:market") == "market_sentiment"
-    assert registry.menu_owner("nav:market:sentiment") == "market_sentiment"
-    assert registry.menu_owner("nav:market:sentiment:30") == "market_sentiment"
-    assert registry.menu_owner("nav:market:sentiment:14") == "market_sentiment"
+    assert registry.menu_owner("nav:web") == "web_status"
     assert registry.menu_owner("nav:marketplace") is None
     assert registry.persistent_callback("📊 시장") == "nav:market"
     assert registry.persistent_callback("없는 메뉴") is None
@@ -185,8 +182,9 @@ def test_generated_help_includes_command_usage_and_code_examples():
 
     text = registry.help_text()
 
-    assert "/market [일수]" in text
-    assert "/research show|set|run|clear" in text
+    assert "/market — 시장 감성 지금 갱신" in text
+    assert "/research show|set|clear|run" in text
+    assert "/web — 웹 산출물 갱신 상태" in text
     assert "/briefing [morning|intraday|evening]" in text
     assert "/score" not in text
     assert "KR:KOSPI:005930" in text
@@ -216,6 +214,6 @@ def test_persistent_menu_matches_current_primary_workflows():
     assert rows == [
         ["🏠 홈"],
         ["⭐ 관심종목", "📊 시장"],
-        ["🔎 리서치", "📰 브리핑"],
+        ["🔎 리서치", "📰 브리핑", "🌐 웹"],
         ["⚙️ 관리"],
     ]

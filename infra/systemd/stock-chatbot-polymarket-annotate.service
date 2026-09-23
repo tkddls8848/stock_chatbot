@@ -4,8 +4,8 @@ After=stock-chatbot-polymarket-refresh.service
 
 [Service]
 Type=oneshot
-User=stockbot
-Group=stockbot
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.polymarket.annotate

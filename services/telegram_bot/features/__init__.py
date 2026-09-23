@@ -10,7 +10,7 @@ from services.telegram_bot.features.research.feature import FEATURE as RESEARCH
 from services.telegram_bot.features.sector_summary.feature import FEATURE as SECTOR_SUMMARY
 from services.telegram_bot.features.system_admin.feature import FEATURE as SYSTEM_ADMIN
 from services.telegram_bot.features.watchlist.feature import FEATURE as WATCHLIST
-from services.telegram_bot.features.web_admin.feature import FEATURE as WEB_ADMIN
+from services.telegram_bot.features.web_status.feature import FEATURE as WEB_STATUS
 
 ALL_FEATURES = (
     INSTRUMENTS,       # 종목 마스터 데이터 — 종목 DB의 기반
@@ -18,11 +18,11 @@ ALL_FEATURES = (
     WATCHLIST,         # 관심종목 관리
     NEWS_PREFILTER,    # 번역 전 로컬 뉴스 사건 메모리·사전선별
     NEWS_SUMMARY,      # 뉴스 수집·시장상황 보고서
-    MARKET_SENTIMENT,  # 국가별 뉴스 감성(폴리마켓 컨센서스·이상탐지 포함)
-    RESEARCH,          # 시장 리서치
+    MARKET_SENTIMENT,  # 국가별 뉴스 감성 — 예약 갱신, 패널에서 지금 갱신
+    RESEARCH,          # 시장 리서치 — 예약 실행, 패널에서 주제·지금 실행
     BRIEFING,          # 모닝·마감 브리핑
     SYSTEM_ADMIN,      # 시작·도움말·시스템 제어
-    WEB_ADMIN,         # 관리 웹 대시보드
+    WEB_STATUS,        # 웹 산출물 갱신 상태(관리 패널)
 )
 
 

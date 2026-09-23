@@ -48,7 +48,7 @@ FEATURES_ENABLED = frozenset(
         "research",
         "briefing",
         "system_admin",
-        "web_admin",
+        "web_status",
     }
 )
 
@@ -155,14 +155,6 @@ def _validate_cloudflare_credentials() -> None:
 
 
 _validate_cloudflare_credentials()
-
-# ── 관리 웹(web_admin 기능) ───────────────────────────
-# 봇 프로세스에 내장되는 관리용 웹 대시보드. FEATURES_ENABLED의 web_admin
-# 키로 켜고 끄며, 봇을 제어하므로 WEB_ADMIN_PASSWORD를 지정해야만 기동한다.
-WEB_ADMIN_HOST = "127.0.0.1"
-WEB_ADMIN_PORT = 8787
-WEB_ADMIN_USER = os.environ.get("WEB_ADMIN_USER", "admin")
-WEB_ADMIN_PASSWORD = os.environ.get("WEB_ADMIN_PASSWORD", "")
 
 SENT_NEWS_RETENTION_DAYS = 7
 TELEGRAM_MESSAGE_LIMIT = 4096
@@ -374,7 +366,7 @@ NEWS_SOURCE_MARKETS = {
     "yonhap-economy": "KR",
     "fed-press": "US",
 }
-# /market(cmd_market)의 기본 조회 일수와 대상 시장 집합.
+# 시장 감성 예약 갱신의 조회 일수와 대상 시장 집합. 웹 화면이 이 기간의 차트를 그린다.
 MARKET_CHART_LOOKBACK_DAYS = 7
 MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR", "JP"})
 # 아래는 일별 감성 다이제스트 전용이다.
@@ -389,7 +381,7 @@ MARKET_DIGEST_ARTICLES_PER_DAY = 40
 # 표본이 이보다 적은 날은 계산하지 않는다. 3건짜리 하루를 20건짜리 하루와 같은
 # 무게로 그리면 차트가 다시 출렁인다.
 MARKET_DIGEST_MIN_ARTICLES = 5
-# `/market` 최대 조회 범위(30일)와 맞춘다. 그보다 오래된 항목은 차트가 읽지 않는다.
+# 최대 조회 범위(30일)와 맞춘다. 그보다 오래된 항목은 차트가 읽지 않는다.
 MARKET_DIGEST_RETENTION_DAYS = 30
 # 요청당 LLM 호출 상한. 40회 ≈ 350 Neurons.
 MARKET_DIGEST_MAX_CALLS_PER_REQUEST = 40
@@ -415,7 +407,8 @@ NEWS_MARKET_BACKFILL_QUERIES = {
     "TW": "Taiwan stock market",
 }
 
-# 모닝/마감 브리핑과 관심종목 편입·편출 성과표(호스트 현지 시각 기준 cron)
+# 모닝/마감 브리핑(JST 기준 cron). 스케줄러에 시간대를 넘기지 않으면 호스트 시간대를
+# 따르는데, 공유 호스트가 UTC라 2026-09-24 전까지 모닝 브리핑이 18시대(JST)에 나갔다.
 # BRIEFING_LLM_ENABLED는 위(줄 120)에 이미 정의돼 있다 — Cloudflare 자격증명
 # 검증기가 모듈 로딩 중간에 그 값을 곧바로 써야 해서 앞으로 옮겼다.
 BRIEFING_MORNING_ENABLED = True
@@ -431,6 +424,23 @@ BRIEFING_MARKET_OPEN_MINUTE = 0
 BRIEFING_MARKET_CLOSE_HOUR = 17
 BRIEFING_MARKET_CLOSE_MINUTE = 0
 BRIEFING_NEWS_MAX_ITEMS = 14
+
+# ── 예약 리서치·시장 감성(JST 기준 cron) ─────────────────
+# 둘 다 정해진 시각에 돌고, 결과는 웹(data/webpub)과 봇이 같은 한 벌을 읽는다.
+# 텔레그램은 웹의 관리 패널이다 — 주제 조작과 "지금 실행"만 거기서 한다.
+# 리서치는 모닝 브리핑(08:50) 전에 끝나야 브리핑이 그날 결과를 쓴다.
+# 한 번에 LLM 호출 한 번이지만 뉴스 수집·후보 구성까지 수 분이 걸린다.
+RESEARCH_SCHEDULE_HOUR = 8
+RESEARCH_SCHEDULE_MINUTE = 20
+# 시장 감성은 오늘 치만 다시 계산하고 지난 날은 저장값을 재사용한다(시장당 1회 호출).
+# 하루 세 번이면 아시아 장 전·장 마감 뒤·미장 전에 한 번씩 갱신된다.
+MARKET_SENTIMENT_SCHEDULE_HOURS = (7, 13, 19)
+MARKET_SENTIMENT_SCHEDULE_MINUTE = 40
+
+# 관리 패널의 웹 상태(/web). 봇은 웹 코드를 import하지 않고 같은 호스트의 공개 웹
+# GET API를 HTTP로 읽는다(shorts와 같은 방식). 웹은 루프백 8788에만 떠 있다.
+WEB_STATUS_BASE_URL = "http://127.0.0.1:8788"
+WEB_STATUS_TIMEOUT_SECONDS = 5
 BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP")
 BRIEFING_PROMPT_FILE = PROMPT_DIR / "briefing_ko.txt"
 BRIEFING_TIMEOUT = 180

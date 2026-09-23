@@ -9,6 +9,7 @@ import pytest
 from services.telegram_bot.briefing import service as briefing_service
 from services.telegram_bot.core.clock import JST
 from services.telegram_bot.research import handlers as research_handlers
+from services.telegram_bot.research import job as research_job
 
 
 class _Message:
@@ -164,8 +165,12 @@ def test_briefing_without_argument_runs_automatically_selected_kind(monkeypatch)
 
 
 class _MarketViewManager:
-    def __init__(self):
+    def __init__(self, topic="금리와 기술주"):
         self.saved = []
+        self._topic = topic
+
+    def get_sight(self):
+        return self._topic
 
     def get_history_summaries(self):
         return []
@@ -174,18 +179,57 @@ class _MarketViewManager:
         self.saved.append((result, metadata))
 
 
-def _research_context(collector, analyzer):
+class _Watchlist:
+    def __init__(self):
+        self.items = {}
+
+    async def get_all(self):
+        return dict(self.items)
+
+    async def add(self, code, name):
+        self.items[code] = name
+
+    async def remove(self, code):
+        return self.items.pop(code, None)
+
+
+class _StockDb:
+    def resolve_code(self, code):
+        return None
+
+    def get_display_name(self, code):
+        return None
+
+
+def _research_app(collector, analyzer, *, bot=None):
     manager = _MarketViewManager()
-    return SimpleNamespace(
+    app = SimpleNamespace(
+        bot=bot or _Bot(),
         bot_data={
-            "watchlist_manager": SimpleNamespace(get_all=_empty_watchlist),
-            "stock_db": SimpleNamespace(),
+            "watchlist_manager": _Watchlist(),
+            "stock_db": _StockDb(),
             "market_view_analyzer": analyzer,
             "market_view_manager": manager,
             "research_news_collector": collector,
             "quote_service": None,
-        }
-    ), manager
+        },
+    )
+    return app, manager
+
+
+@pytest.fixture
+def _quiet_research(monkeypatch):
+    """후보 발굴·웹 게시·관심종목 이벤트 기록을 막는다. 실제 data/에 쓰지 않는다."""
+    from services.web import export
+
+    monkeypatch.setattr(research_job, "build_research_candidate_universe", lambda *a, **k: [])
+    monkeypatch.setattr(research_job, "collect_extra_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(export, "publish_research", lambda *a, **k: None)
+
+    async def no_event(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(research_job, "record_watchlist_event", no_event)
 
 
 async def _empty_watchlist():
@@ -201,68 +245,74 @@ def _research_result():
     }
 
 
-def test_research_job_success_saves_and_delivers_result(monkeypatch):
+def test_research_run_saves_result_and_stays_quiet_without_changes(_quiet_research):
     async def collector():
         return [{"title": "headline", "content": "body", "source": "wire"}]
 
     analyzer = SimpleNamespace(analyze=lambda *args: _research_result())
-    context, manager = _research_context(collector, analyzer)
-    message = _Message()
-    update = SimpleNamespace(effective_message=message)
-    monkeypatch.setattr(research_handlers, "build_research_candidate_universe", lambda *a, **k: [])
-    monkeypatch.setattr(research_handlers, "collect_extra_candidates", lambda *a, **k: [])
+    app, manager = _research_app(collector, analyzer)
 
-    asyncio.run(
-        research_handlers._run_research_job(
-            update,
-            context,
-            "금리와 기술주",
-        )
-    )
+    outcome = asyncio.run(research_job.run_research(app))
 
     assert len(manager.saved) == 1
-    assert any("시장 요약" in text for text, _ in message.replies)
+    assert outcome["applied"] == {"add": [], "remove": []}
+    # 바뀐 관심종목이 없으면 알림을 보내지 않는다.
+    assert app.bot.messages == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="research news collector exceptions currently escape without a user-facing failure",
-)
-def test_research_news_api_failure_is_reported_to_user(monkeypatch):
+def test_research_run_applies_additions_and_sends_one_short_notice(_quiet_research):
+    async def collector():
+        return [{"title": "headline", "content": "body", "source": "wire"}]
+
+    result = {
+        **_research_result(),
+        "actions": [{"action": "add", "ticker": "600519", "name": "귀주모태",
+                     "confidence": 0.8, "relevance": 0.9, "reason": "근거"}],
+    }
+    analyzer = SimpleNamespace(analyze=lambda *args: result)
+    app, _ = _research_app(collector, analyzer)
+
+    asyncio.run(research_job.run_research(app))
+
+    assert app.bot_data["watchlist_manager"].items == {"600519": "귀주모태"}
+    assert len(app.bot.messages) == 1
+    text = app.bot.messages[0]["text"]
+    assert "➕ 귀주모태(600519)" in text and "근거" not in text
+
+
+def test_research_run_without_topic_does_nothing(_quiet_research):
+    async def collector():
+        raise AssertionError("must not collect")
+
+    app, manager = _research_app(collector, SimpleNamespace(analyze=None))
+    manager._topic = None
+
+    assert asyncio.run(research_job.run_research(app)) is None
+
+
+def test_manual_research_run_reports_a_news_failure(_quiet_research):
     async def collector():
         raise RuntimeError("news provider down")
 
-    analyzer = SimpleNamespace(analyze=lambda *args: _research_result())
-    context, _ = _research_context(collector, analyzer)
+    app, _ = _research_app(collector, SimpleNamespace(analyze=lambda *args: _research_result()))
     message = _Message()
-    update = SimpleNamespace(effective_message=message)
+    context = SimpleNamespace(application=app, bot_data=app.bot_data)
 
-    asyncio.run(
-        research_handlers._run_research_job(
-            update,
-            context,
-            "금리와 기술주",
-        )
-    )
+    asyncio.run(research_handlers._run_and_report(message, context))
 
-    assert any("뉴스" in text and "실패" in text for text, _ in message.replies)
+    assert any("리서치 실패" in text for text, _ in message.replies)
 
 
-def test_research_result_send_failure_propagates(monkeypatch):
+def test_research_notice_failure_propagates(_quiet_research):
     async def collector():
         return [{"title": "headline", "content": "body", "source": "wire"}]
 
-    analyzer = SimpleNamespace(analyze=lambda *args: _research_result())
-    context, _ = _research_context(collector, analyzer)
-    update = SimpleNamespace(effective_message=_Message(fail=True))
-    monkeypatch.setattr(research_handlers, "build_research_candidate_universe", lambda *a, **k: [])
-    monkeypatch.setattr(research_handlers, "collect_extra_candidates", lambda *a, **k: [])
+    result = {
+        **_research_result(),
+        "actions": [{"action": "add", "ticker": "600519", "name": "귀주모태",
+                     "confidence": 0.8, "relevance": 0.9}],
+    }
+    app, _ = _research_app(collector, SimpleNamespace(analyze=lambda *args: result), bot=_Bot(fail=True))
 
     with pytest.raises(RuntimeError, match="telegram down"):
-        asyncio.run(
-            research_handlers._run_research_job(
-                update,
-                context,
-                "금리와 기술주",
-            )
-        )
+        asyncio.run(research_job.run_research(app))

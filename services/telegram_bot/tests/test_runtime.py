@@ -52,7 +52,7 @@ def test_watchlist_add_and_remove_use_injected_code_resolver(tmp_path):
 
 def test_scheduler_uses_application_lifecycle(monkeypatch):
     menu_configured = False
-    web_admin_stop_calls = 0
+    shutdown_calls = 0
 
     async def configure_menu(_app):
         nonlocal menu_configured
@@ -60,14 +60,17 @@ def test_scheduler_uses_application_lifecycle(monkeypatch):
 
     monkeypatch.setattr(bot_main, "configure_telegram_menu", configure_menu)
 
-    async def stop_web_admin(_app):
-        nonlocal web_admin_stop_calls
-        web_admin_stop_calls += 1
-
-    monkeypatch.setattr(bot_main, "stop_web_admin", stop_web_admin)
-
     async def exercise():
+        nonlocal shutdown_calls
         scheduler = AsyncIOScheduler()
+        original_shutdown = scheduler.shutdown
+
+        def counted_shutdown(*args, **kwargs):
+            nonlocal shutdown_calls
+            shutdown_calls += 1
+            return original_shutdown(*args, **kwargs)
+
+        scheduler.shutdown = counted_shutdown
         registry = SimpleNamespace(is_enabled=lambda _key: False)
         app = SimpleNamespace(
             bot_data={
@@ -85,7 +88,7 @@ def test_scheduler_uses_application_lifecycle(monkeypatch):
 
         # The shutdown hook is registered for both stop and shutdown phases.
         await bot_main._stop_scheduler(app)
-        assert web_admin_stop_calls == 1
+        assert shutdown_calls == 1
 
     asyncio.run(exercise())
 

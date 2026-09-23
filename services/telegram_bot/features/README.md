@@ -11,11 +11,11 @@
 | `news_prefilter` | 번역 전 로컬 사건 메모리·후보 점수화(Neurons 0) |
 | `watchlist` | 관심종목 추가·삭제·목록 |
 | `news_summary` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 3시간 시장상황 보고서 |
-| `market_sentiment` | 날짜별 시장 감성 백필·집계·차트, Polymarket 컨센서스 스냅숏 |
-| `research` | 뉴스·요약 데이터 기반 시장 리서치(중화권·미국·한국) |
+| `market_sentiment` | 날짜별 시장 감성 백필·집계·차트를 예약 갱신해 웹에 굽는다(`/market`은 지금 갱신) |
+| `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용, 결과를 웹에 굽는다(`/research`는 주제·지금 실행) |
 | `briefing` | 모닝·마감 브리핑 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |
-| `web_admin` | 인증이 적용된 내장 관리 웹 대시보드 |
+| `web_status` | 공개 웹 산출물의 갱신 상태(`/web`) — 웹 API를 HTTP로 읽는다 |
 
 기능을 비활성화할 때는 `FEATURES_ENABLED`에서 키를 제거한다. 의존 기능이
 빠지면 시작 단계에서 오류가 발생하므로 불완전한 조합으로 실행되지 않는다.

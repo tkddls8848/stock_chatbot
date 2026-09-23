@@ -32,7 +32,7 @@
   `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: services`가 난다.
   | 프로세스 | 명령 |
   |---|---|
-  | 텔레그램 봇(+8787 관리 웹) | `python -m services.telegram_bot.main` |
+  | 텔레그램 봇 | `python -m services.telegram_bot.main` |
   | 공개 웹 8788 | `python -m services.web.server` |
   | 폴리마켓 순회 one-shot | `python -m services.web.polymarket.refresh` |
   | 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |
@@ -60,7 +60,7 @@
 
 **도메인은 자기 코드·테스트·계획서를 자기 폴더 안에 둔다. 인프라 코드는 전부
 `infra/`에 있다.** 도메인 안에 `deploy/`를 두지 않는다 — systemd 유닛·Caddy·
-terraform·호스트 스크립트는 넷이 한 인스턴스에 얹히는 문제라 한곳에서 봐야 순서와
+설치 스크립트는 넷이 한 인스턴스에 얹히는 문제라 한곳에서 봐야 순서와
 의존을 읽을 수 있다. 최상위 `tests/`에는 **어느 도메인의 것도 아닌 저장소 자체의
 검사**만 둔다(현재는 에이전트 포인터 동기화 하나뿐이다). 도메인 코드를 검사하는
 테스트를 여기 두지 않는다.
@@ -83,7 +83,6 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
     stocks/            종목 DB와 시세
     state/             발송·뉴스·시장 감성 상태
     watchlist/         관심종목 상태
-    webadmin/          관리 웹 대시보드(터널 전용, 8787) — 봇과 같은 프로세스다
     docs/  tests/
 
   web/                 읽기 전용 공개 웹(별도 프로세스, 8788)
@@ -109,9 +108,9 @@ shorts/                쇼츠 영상 자동 생성. 자기 pyproject·venv를 �
   src/  docs/  tests/
 
 infra/                 인프라 코드 전부. 네 도메인이 한 인스턴스에 얹힌다
-  terraform/           Lightsail 생성·초기 전환·삭제
-  systemd/             유닛·타이머·cron 전부(봇·웹·폴리마켓·쇼츠·백업)
-  scripts/             호스트 런타임 설치, 작업 트리 정리
+  systemd/             유닛·타이머·cron 전부(봇·웹·폴리마켓·쇼츠·백업). 실행 계정은 ubuntu
+  scripts/             봇을 뺀 앱 유닛·백업 cron 설치, 앱 점검, Caddy, 작업 트리 정리
+  host-contract.md     공유 호스트(remote_coding)와의 경계·계약 값·설치(배포서)
   Caddyfile.example    TLS·Basic 인증 프록시 견본
   server-ops.md        떠 있는 서버를 상대로 반복하는 절차서
 
@@ -257,8 +256,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | 소비자 | 저장소 | 단위·granularity | 보존 |
   |---|---|---|---|
   | 브리핑(briefing) | `NewsLog` | 종목별, count·평균만(verdict 없음) | `NEWS_LOG_RETENTION_DAYS=30`로 매 append마다 정리 |
-  | `/market`(market_sentiment) | `MarketDigestStore` | 시장(국가) 단위, 그날 헤드라인 배치 재요약 | `MARKET_DIGEST_RETENTION_DAYS=30` |
-  | `/research`(research) | 없음 — 캐시를 안 쓴다 | 실행마다 원문을 새로 수집해 LLM에 직접 투입 | 해당 없음 |
+  | 시장 감성(market_sentiment, 예약 갱신) | `MarketDigestStore` | 시장(국가) 단위, 그날 헤드라인 배치 재요약 | `MARKET_DIGEST_RETENTION_DAYS=30` |
+  | 리서치(research, 예약 실행) | 없음 — 캐시를 안 쓴다 | 실행마다 원문을 새로 수집해 LLM에 직접 투입 | 해당 없음 |
   보고서 근거 기사는 `services/telegram_bot/news/report.py`가 `NewsLog`에 기록한다.
   **`signal_scoring`(`/view`)과 그 `PredictionLog`는 삭제했다.** 종목별
   up/down/neutral verdict는 평균 감성 임계값 하나로 만든 참고 뷰였고, 같은
@@ -268,12 +267,26 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 - 리서치 후보는 관심종목, 원문 종목명 매칭, 중화권 섹터, 미국 스크리너,
   한국 등락률에서 만든다. 분석 action은 `add`, `remove`, `watch`만 허용한다.
 - 리서치 상태는 `history`, `sight`, `updated_at`, `last_result` 형식만 읽고 쓴다.
-  `history`는 다음 분석 프롬프트에 들어가는 **압축본**이고, `last_result`는
-  `/research show`가 실행 직후와 같은 화면을 다시 그리기 위한 **마지막 전체
-  결과**다. 쓰임이 달라 합치지 않는다 — 합치면 프롬프트가 비대해지거나 show가
-  얇아진다. 주제를 바꾸거나 지우면 둘 다 비운다.
+  `sight`가 주제이고 **텔레그램 관리 패널에서만 바꾼다.** `history`는 다음 분석
+  프롬프트에 들어가는 **압축본**이고, `last_result`는 패널의 `/research`가 요약·실행
+  시각을 보여 주는 **마지막 전체 결과**다. 쓰임이 달라 합치지 않는다 — 합치면
+  프롬프트가 비대해진다. 주제를 바꾸거나 지우면 둘 다 비운다.
+- **텔레그램은 뉴스·브리핑을 받고, 공개 웹의 관리 패널이다.** 리서치와 시장 감성은
+  명령으로 도는 기능이 아니라 봇 스케줄러의 예약 작업이다 — 리서치는 매일
+  `RESEARCH_SCHEDULE_*`(08:20, 모닝 브리핑 전), 시장 감성은
+  `MARKET_SENTIMENT_SCHEDULE_*`(07:40·13:40·19:40). 결과는 봇 상태와 웹 산출물에
+  **같은 한 벌**로 남고, 브리핑과 웹 화면이 같은 결과를 읽는다. 패널은 주제
+  보기·바꾸기·비우기(`/research`), 지금 실행(`/research run`·`/market`), 웹 상태
+  (`/web`)만 갖는다. 결과 전체와 근거는 텔레그램에 다시 그리지 않고 웹에서 본다.
+- **리서치의 관심종목 추가·삭제는 묻지 않고 적용한다**(`research/job.py`의
+  `apply_actions`). 실제로 바뀐 것이 있을 때만 짧은 알림 한 통을 보낸다. 한 번에
+  바뀌는 수는 분석기의 `RESEARCH_MAX_NEW_ACTIONS`와 `collect_actions`의 걸러내기가
+  제한한다. 예약 실행과 패널 실행이 겹치면 잠금으로 줄을 세운다 — 두 분석이 같은
+  history를 읽고 서로의 결과를 덮지 않게 한다.
+- **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
+  코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
 - 관심종목과 발송 이력도 현재 JSON 형식만 지원한다.
-- `/market`은 기사별 번역 대신 시장·일자별 헤드라인 다이제스트를 분석한다.
+- 시장 감성은 기사별 번역 대신 시장·일자별 헤드라인 다이제스트를 분석한다.
   완료된 과거 일자는 저장 결과를 재사용하고 오늘만 다시 계산한다.
 - **Polymarket은 텔레그램에서 철수했고 공개 웹의 독립 화면이다.** `/polymarket`
   명령·메뉴, 08:35 스냅숏 job, 거시 위험선호 컨센서스, 90일 이력, 승격 게이트,
@@ -324,10 +337,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `research.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
   렌더하지 않는다 — `render_market_chart`는 dpi 160짜리 12×7.5인치 figure라 지인
   몇 명의 새로고침만으로 사전선별 보정이 밀린다. **실행 트리거는 웹에 열지 않는다**:
-  `/research run`·`/market` 재계산은 텔레그램에만 둔다. Neurons가 링크를 받은 사람
+  리서치·시장 감성의 "지금 실행"은 텔레그램 관리 패널에만 둔다. Neurons가 링크를 받은 사람
   수만큼 나가고, 리서치 상태(`sight`·`history`)가 단일 사용자 형식이라 동시 실행이
-  서로의 맥락을 덮기 때문이다. 쓰기 API가 있는 관리 웹(8787)은 계속 터널 전용이고,
-  8788도 방화벽에 열지 않는다 — TLS와 Basic 인증은 앞단 Caddy가 맡는다
+  서로의 맥락을 덮기 때문이다. 봇 프로세스 안의 관리 웹(8787)은 없앴다(2026-09-24) —
+  쓰기 API를 가진 면을 하나 줄인다. 8788도 방화벽에 열지 않는다 — TLS와 Basic 인증은 앞단 Caddy가 맡는다
   (`https://nunchi.live`. 절차는 `infra/server-ops.md` 11절). **인증은 면을 나눈다** —
   국가별 감성 집계는 열고, 종목명·`add`/`watch`·confidence가 담기는 `/research`만
   잠근다. 잠금이 지키는 것은 시스템이 아니라 내용이다.
@@ -492,8 +505,12 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   적으면 끝난 일이 남고, 계획서에 절차를 적으면 계획을 지울 때 절차까지 사라진다.
 - 모듈은 한 책임을 유지하되 한두 함수만 담는 무의미한 파일 분할은 피한다.
 - **시각은 그 모듈의 `core/clock.py`가 주는 `now()`·`today()`만 쓴다.** `datetime.now()`·`date.today()`는
-  호스트 타임존을 따라가서 서버를 다른 타임존에 올리면 `/market`의 하루 경계와 보존
+  호스트 타임존을 따라가서 서버를 다른 타임존에 올리면 시장 감성의 하루 경계와 보존
   기간이 통째로 밀린다. ruff의 `DTZ` 규칙이 이걸 막는다(테스트는 예외).
+  **봇 스케줄러도 같다.** `main.build_scheduler()`가 `AsyncIOScheduler(timezone=JST)`로
+  만들어 cron 작업을 전부 JST로 읽는다. 시간대 없이 만들던 동안 공유 호스트(UTC)에서
+  브리핑과 종목 DB 갱신이 9시간 늦게 돌았다(2026-09-24까지). 작업마다 `timezone`을
+  붙이지 않는다 — 새 작업이 또 빠뜨린다. `test_scheduled_jobs.py`가 지킨다.
   저장된 타임스탬프를 `now()`와 비교할 때는 `ensure_jst()`로 감싼다 — aware 전환
   이전에 쓴 `data/` 파일에는 오프셋이 없어 그냥 비교하면 TypeError로 죽는다.
   예외는 셋뿐이다: Cloudflare 할당량 리셋은 UTC 00시 기준이고
@@ -585,7 +602,11 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 ## 배포
 
-`infra/host-contract.md`가 유일한 배포 문서다. 이 앱은 공유 호스트의 입주 앱이고
-AWS 자원을 만들지 않는다 — 인스턴스·고정 IP·공인 방화벽·스냅샷은 호스트 저장소가
-소유한다. 설치 스크립트는 봇을 자동 기동하지 않는다. 동일 Telegram 토큰의 중복
+`infra/host-contract.md`가 유일한 배포 문서다. 이 앱은 공유 호스트
+`orca-host-tokyo-v2`의 입주 앱이고 AWS 자원을 만들지 않는다 — 인스턴스·고정 IP·공인
+방화벽·스냅샷·OS 계정은 호스트 저장소 `remote_coding`이 소유한다. **실행 계정은 호스트가
+정한 `ubuntu`다**(2026-09-23 이관 때 앱 전용 `stockbot`을 없앴다). **경계는 한 줄이다 —
+호스트 저장소는 AWS 환경을 만들고, 이 저장소 `infra/`는 그 위에 서비스를 심는다.**
+체크아웃·venv·유닛·cron·점검은 전부 여기 있다(`install-shared-host.sh`, 갱신은
+`deploy.sh`). 설치 스크립트는 처음 설치할 때 봇을 자동 기동하지 않는다. 동일 Telegram 토큰의 중복
 polling을 피하도록 로컬을 정지한 뒤 서버를 기동한다.

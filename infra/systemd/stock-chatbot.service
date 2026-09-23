@@ -7,8 +7,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=stockbot
-Group=stockbot
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 Environment=MPLBACKEND=Agg

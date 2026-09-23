@@ -12,11 +12,11 @@ from services.telegram_bot.briefing.service import cmd_briefing
 from services.telegram_bot.features.instruments.handlers import cmd_stockdb
 from services.telegram_bot.features.market_sentiment.handlers import cmd_market
 from services.telegram_bot.features.system_admin.handlers import cmd_system
+from services.telegram_bot.features.web_status.handlers import cmd_web
 from services.telegram_bot.handlers.menus import (
     _back,
     _keyboard,
     main_menu,
-    market_menu,
     persistent_menu,
     refresh_persistent_menu,
     research_menu,
@@ -50,12 +50,11 @@ async def _dispatch_primary_menu_action(
     동작이 다르므로 각 호출부가 명시적으로 처리한다.
     """
     if action == "market":
-        send = message.edit_text if edit_message else message.reply_text
-        await send(
-            "<b>국가별 뉴스 감성</b>\n조회 기간을 선택하세요.",
-            parse_mode="HTML",
-            reply_markup=market_menu(),
-        )
+        # 관리 패널: 누르면 바로 갱신해 웹에 굽는다. 차트는 웹에서 본다.
+        await cmd_market(update, _context(context, []))
+        return True
+    if action == "web":
+        await cmd_web(update, _context(context, []))
         return True
     if action == "watch":
         await cmd_menu(update, _context(context, []))
@@ -63,7 +62,7 @@ async def _dispatch_primary_menu_action(
     if action == "research":
         send = message.edit_text if edit_message else message.reply_text
         await send(
-            "<b>리서치</b>",
+            "<b>🔎 리서치 관리</b>\n결과·근거는 웹 /research 에서 봅니다.",
             parse_mode="HTML",
             reply_markup=research_menu(),
         )
@@ -105,15 +104,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         edit_message=True,
     ):
         return True
-    if action == "market:sentiment":
-        await message.edit_text(
-            "<b>국가별 뉴스 감성</b>\n조회 기간을 선택하세요.",
-            parse_mode="HTML",
-            reply_markup=market_menu(),
-        )
-    elif action.startswith("market:sentiment:"):
-        await cmd_market(update, _context(context, [action.rsplit(":", 1)[1]]))
-    elif action.startswith("research:"):
+    if action.startswith("research:"):
         command = action.split(":", 1)[1]
         if command == "set":
             context.user_data["menu_input"] = "research_topic"

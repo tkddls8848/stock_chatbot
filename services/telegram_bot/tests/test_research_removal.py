@@ -1,11 +1,10 @@
 import asyncio
 import json
-from types import SimpleNamespace
 
 import pytest
 
 from services.telegram_bot.llm.market_view import MarketViewAnalyzer, MarketViewError
-from services.telegram_bot.research import handlers
+from services.telegram_bot.research import job
 
 
 class _StockDatabaseStub:
@@ -172,31 +171,15 @@ class _WatchlistManagerStub:
         self.items[code] = name
 
 
-class _MessageStub:
-    def __init__(self):
-        self.text = ""
+def test_apply_removes_candidate_and_reports_only_real_changes(monkeypatch):
+    async def no_event(*args, **kwargs):
+        return None
 
-    async def edit_text(self, text, **kwargs):
-        self.text = text
-
-
-def test_apply_removes_approved_candidate():
+    monkeypatch.setattr(job, "record_watchlist_event", no_event)
     manager = _WatchlistManagerStub()
-    message = _MessageStub()
-    query = SimpleNamespace(message=message)
-    context = SimpleNamespace(
-        bot_data={
-            "watchlist_manager": manager,
-            "research_pending": {
-                "request1": {
-                    "add": [],
-                    "remove": [{"code": "600001", "name": "삭제 종목"}],
-                }
-            },
-        }
-    )
+    pending = {"add": [], "remove": [{"code": "600001", "name": "삭제 종목"}, {"code": "999999"}]}
 
-    asyncio.run(handlers._handle_research_apply(query, context, "request1"))
+    applied = asyncio.run(job.apply_actions({"watchlist_manager": manager}, pending))
 
     assert manager.items == {"600002": "유지 종목"}
-    assert "삭제 종목 (600001)" in message.text
+    assert applied == {"add": [], "remove": ["삭제 종목(600001)"]}

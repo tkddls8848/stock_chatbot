@@ -7,8 +7,8 @@ StartLimitBurst=8
 
 [Service]
 Type=oneshot
-User=stockbot
-Group=stockbot
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/srv/stock-chatbot/shorts/.env

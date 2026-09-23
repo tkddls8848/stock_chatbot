@@ -72,17 +72,19 @@ _HANDLER_LABELS = {
     "cmd_menu": "관심종목 메뉴 조회",
     "cmd_add": "관심종목 추가",
     "cmd_list": "관심종목 목록 조회",
-    "cmd_market": "국가별 뉴스 감성 차트 생성",
-    "cmd_research": "리서치 분석",
+    "cmd_market": "시장 감성 갱신",
+    "cmd_research": "리서치 관리",
+    "cmd_web": "웹 상태 조회",
     "cmd_briefing": "브리핑 생성",
     "cmd_stockdb": "종목 DB 갱신",
     "cmd_system": "시스템 상태 조회",
 }
 
 _MENU_LABELS = {
-    "market": "국가별 뉴스 감성 차트 생성",
+    "market": "시장 감성 갱신",
     "watch": "관심종목 관리",
-    "research": "리서치 분석",
+    "research": "리서치 관리",
+    "web": "웹 상태 조회",
     "briefing": "브리핑 생성",
     "system": "시스템 상태 조회",
     "stockdb": "종목 DB 갱신",
@@ -98,8 +100,6 @@ def request_label(update: Update, handler_name: str) -> str:
         return _MENU_LABELS.get(data.removeprefix("nav:").split(":", 1)[0], "메뉴 작업")
     if data.startswith("remove:"):
         return "관심종목 삭제"
-    if data.startswith("research:"):
-        return "리서치 결과 반영"
     return _HANDLER_LABELS.get(handler_name, "요청 작업")
 
 
@@ -126,9 +126,9 @@ def restricted(handler: Handler, show_status: bool = True) -> Handler:
         query = getattr(update, "callback_query", None)
         callback_data = str(getattr(query, "data", ""))
         suppress_menu_status = (
-            handler.__name__ == "cmd_research"
+            handler.__name__ in {"cmd_research", "cmd_market"}
             or callback_data == "nav:research:run"
-            or callback_data.startswith("nav:market:")
+            or callback_data == "nav:market"
             or callback_data == "nav:briefing"
             or callback_data.startswith("nav:briefing:")
         )

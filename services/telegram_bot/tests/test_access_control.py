@@ -112,9 +112,8 @@ def test_menu_jobs_suppress_chat_status(monkeypatch):
 
     for callback_data in (
         "nav:research:run",
-        "nav:market:sentiment:7",
+        "nav:market",
         "nav:briefing",
-        "nav:market:sentiment:30",
     ):
         update = SimpleNamespace(
             effective_chat=SimpleNamespace(id=123),
@@ -182,10 +181,17 @@ def test_home_text_refreshes_persistent_menu_before_inline_home():
     assert message.replies[1][1].inline_keyboard
 
 
-def test_persistent_market_button_opens_the_markets_hub_not_the_admin_menu():
+def test_persistent_market_button_refreshes_now_not_the_admin_menu(monkeypatch):
     """회귀: 이름 없는 persistent 버튼은 예전 코드에서 조용히 '⚙️ 관리' 화면으로
-    떨어졌다. 감성·이상을 묶은 '📊 시장' 허브 버튼이 그 분기를 다시 밟으면
-    안 된다."""
+    떨어졌다. '📊 시장'은 관리 패널 버튼이라 누르면 바로 시장 감성을 갱신한다."""
+    from services.telegram_bot.handlers import navigation
+
+    calls = []
+
+    async def fake_cmd_market(update, context):
+        calls.append(context.args)
+
+    monkeypatch.setattr(navigation, "cmd_market", fake_cmd_market)
 
     class Message:
         def __init__(self, text):
@@ -206,14 +212,8 @@ def test_persistent_market_button_opens_the_markets_hub_not_the_admin_menu():
 
     asyncio.run(handle_menu_text(update, context))
 
-    assert message.replies, "📊 시장 produced no reply"
-    text, markup = message.replies[-1]
-    assert "<b>관리</b>" not in text
-    assert "<b>국가별 뉴스 감성</b>" in text
-    buttons = {button.callback_data for row in markup.inline_keyboard for button in row}
-    assert {"nav:market:sentiment:7", "nav:market:sentiment:30"} <= buttons
-    # 폴리마켓은 공개 웹으로 철수했다. 텔레그램 허브로 되살아나면 안 된다.
-    assert not any("polymarket" in str(data) for data in buttons)
+    assert calls == [[]]
+    assert not any("<b>관리</b>" in text for text, _ in message.replies)
 
 
 def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):

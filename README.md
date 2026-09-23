@@ -36,12 +36,14 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 
 ## 배포
 
-도쿄의 공유 AWS Lightsail 인스턴스 `orca-host-tokyo`에 **입주 앱**으로 배포합니다. 인스턴스·고정 IP·공인 방화벽·스냅샷은 호스트 저장소(`remote_coding`)의 Terraform이 소유하고, 이 저장소는 앱 런타임(전용 계정, systemd 유닛, 백업 cron)만 설치합니다.
+도쿄의 공유 AWS Lightsail 인스턴스 `orca-host-tokyo-v2`에 **입주 앱**으로 배포합니다. 인스턴스·고정 IP·공인 방화벽·스냅샷·OS 계정은 호스트 저장소(`remote_coding`)가 소유하고, 모든 앱 서비스는 호스트가 정한 `ubuntu` 계정으로 돕니다. 호스트 저장소는 AWS 환경만 만들고, 그 위에 서비스를 심는 일은 이 저장소 `infra/`가 전부 합니다.
 
 ```bash
-sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh   # 유닛·cron·venv
-sudo /srv/stock-chatbot/infra/scripts/verify-app.sh            # 점검
+sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh   # 최초 설치: venv·유닛 전부·백업 cron
+sudo /srv/stock-chatbot/infra/scripts/deploy.sh                # 갱신: pull → 설치 → 재시작 → 점검
 ```
+
+갱신 절차는 `infra/server-ops.md` 3절, 경계와 계약 값은 `infra/host-contract.md`에 있습니다.
 
 - 호스트와의 경계와 계약 값은 [`infra/host-contract.md`](infra/host-contract.md)에 있습니다.
 - 설치는 봇을 **기동하지 않습니다.** 같은 토큰으로 두 프로세스가 텔레그램을 폴링하면 양쪽이 번갈아 죽으므로, 전환은 "로컬 정지 → 서버 기동" 순서로 사람이 진행합니다.
@@ -86,9 +88,9 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 ## 주요 기능
 
 - 중국·홍콩·미국·한국·일본·글로벌 시장 뉴스 수집과 시장상황 보고서(3시간마다 발행 판정)
-- 시장별 뉴스 감성 차트 (`/market`)
+- 시장별 뉴스 감성 차트 — 하루 세 번 예약 갱신해 웹에 게시
 - 관심 종목 뉴스·감성 요약
-- 뉴스 기반 시장 리서치 후보 관리 (중화권·미국·한국 균형 수집과 추천)
+- 뉴스 기반 시장 리서치 — 매일 예약 실행, 결과는 웹에 게시하고 관심종목에 자동 적용
 - 개장 전·마감 브리핑
 - 중국·홍콩·한국·미국 종목 DB
 
@@ -97,28 +99,14 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 | 명령 | 설명 |
 |---|---|
 | `/start`, `/help` | 사용 안내와 메뉴 표시 |
-| `/market [일수]` | 시장별 뉴스 감성 차트 |
+| `/market` | 시장 감성 지금 갱신(웹 차트 다시 굽기) |
 | `/menu`, `/list` | 관심 종목 목록 |
 | `/add 종목코드` | 관심 종목 추가 |
-| `/research show\|set\|run\|clear` | 리서치 후보 관리 |
+| `/research show\|set\|clear\|run` | 리서치 주제 보기·바꾸기·비우기, 지금 실행 |
+| `/web` | 웹 산출물 갱신 상태 |
 | `/briefing morning\|evening` | 브리핑 생성 |
 | `/stockdb build` | 종목 DB 갱신 |
 | `/system [features\|prefilter]` | 시스템 상태, 기능 카탈로그, 뉴스 사전선별 섀도 비교 |
-
-## 관리 웹 (선택)
-
-봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `services/telegram_bot/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
-
-```env
-WEB_ADMIN_USER=admin
-WEB_ADMIN_PASSWORD=<반드시 지정>
-```
-
-- `WEB_ADMIN_PASSWORD`를 지정하지 않으면 기능이 켜져 있어도 자동으로 건너뜁니다.
-- 모든 요청은 HTTP Basic 인증 뒤에 있으며, 봇과 같은 이벤트 루프에서 동작해 텔레그램과 상태를 공유합니다.
-- 외부에 노출할 때는 HTTPS 역방향 프록시(예: Nginx/Caddy/Cloudflare) 뒤에 두는 것을 권장합니다.
-
-접속 후 `http://<호스트>:<포트>/`에서 시스템 상태, 관심 종목 추가·삭제, 최근 뉴스, 리서치 후보를 확인할 수 있습니다.
 
 ## 종목 DB
 
@@ -148,13 +136,13 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 ```text
 tests/            저장소 자체의 검사(에이전트 포인터 동기화)
-services/telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
+services/telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목
                   + docs/ tests/
 services/web/              읽기 전용 공개 웹 (8788) + docs/ tests/
   polymarket/     폴리마켓 화면을 먹이는 순회·줄글·트렌드 one-shot (봇과 무관)
 shorts/           쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지
                   + src/ docs/ tests/
-infra/            인프라 코드 — terraform/, systemd/, scripts/, Caddyfile, server-ops.md
+infra/            인프라 코드 — systemd/, scripts/, Caddyfile, host-contract.md, server-ops.md
 data/             실행 중 생성되는 상태·캐시 데이터, 소유 기능별 하위 디렉토리 (Git 제외)
 ```
 
@@ -164,7 +152,7 @@ data/             실행 중 생성되는 상태·캐시 데이터, 소유 기�
 
 | 프로세스 | 명령 |
 |---|---|
-| 텔레그램 봇(+8787 관리 웹) | `python -m services.telegram_bot.main` |
+| 텔레그램 봇 | `python -m services.telegram_bot.main` |
 | 공개 웹 8788 | `python -m services.web.server` |
 | 폴리마켓 순회 one-shot | `python -m services.web.polymarket.refresh` |
 | 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |

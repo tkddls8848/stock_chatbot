@@ -17,47 +17,48 @@
 
 ## 0. 운영 리전
 
-운영 서버는 도쿄의 공유 `medium_3_0` 인스턴스 `orca-host-tokyo`
-(`ap-northeast-1a`, 고정 IP `16.76.30.47`)다. 앱은 전용 `stockbot` 계정의
-`/srv/stock-chatbot`에서 실행한다.
+운영 서버는 도쿄의 공유 `medium_3_0`(4GB) 인스턴스 `orca-host-tokyo-v2`
+(`ap-northeast-1a`, 고정 IP `16.76.30.47`)다. 앱은 `/srv/stock-chatbot`에서
+**`ubuntu` 계정으로** 실행한다 — 호스트가 2026-09-23 이관하면서 봇·웹·Orca를
+`ubuntu` 단일 계정으로 합쳤다(앱 전용 `stockbot` 계정은 없다).
 
 **인프라 비용 때문에 인스턴스를 공유할 뿐 별개 프로젝트다.** 호스트 자체
 (인스턴스·고정 IP·공인 방화벽·스냅샷·Orca·Tailscale·OS 계정)는 별개 저장소
-`C:/Users/PSI/orca/remote_coding/remote-lightsail`이 소유하고, 앱 운영은 전부
-이 저장소가 소유한다. 호스트 저장소는 우리 경로·포트·권한을 알지 못하므로
-앱 점검은 `infra/scripts/verify-app.sh`로 우리가 직접 한다. 편입 경위와 롤백
-기준은 `infra/merge-plan.md`에 있다.
+`C:/Users/PSI/orca/remote_coding`이 소유한다 — 그 저장소는 AWS 환경만 만든다. 그 위에
+서비스를 심는 일(체크아웃·venv·유닛·cron·점검)은 전부 이 저장소 `infra/`가 한다
+(`infra/host-contract.md`).
 
-**이 저장소는 AWS 자원을 만들지 않는다.** 2026-09-12 이전 독립 인스턴스를 만들던
-`infra/terraform/`은 삭제했고(정의는 git 이력에 있다), 그 인스턴스·고정 IP·키페어도
-그날 폐기했다. 호스트 값이 필요하면 호스트 저장소에서 바꾼다 — 계약 값은
-`infra/host-contract.md`, 롤백(스냅샷 `stock-chatbot-pre-merge-20260912`로 새 인스턴스)
-기준은 `infra/merge-plan.md`다.
+**이 저장소는 AWS 자원을 만들지 않는다.** 호스트 값이 필요하면 호스트 저장소에서
+바꾼다 — 계약 값은 `infra/host-contract.md`에 있다. 옛 인스턴스 `orca-host-tokyo`는
+롤백용으로 서비스를 멈춘 채 보존 중이며, 이관·롤백 절차는 호스트 저장소의
+`docs/server-migration.md`가 소유한다.
 
 ## 1. 접속
 
-개발 작업은 Tailscale의 `orca` 별칭, 설치·복구 작업은 `ubuntu` 관리자 키를 쓴다.
+개발 작업은 Tailscale, 설치·복구 작업은 공인 IP의 관리자 키를 쓴다. 둘 다 `ubuntu`다.
 
 ```powershell
-ssh orca
+ssh orca                                                    # ~/.ssh/config 의 Host orca (아래)
 ssh -i $env:USERPROFILE\.ssh\orca-lightsail-tokyo ubuntu@16.76.30.47
-ssh -L 8787:127.0.0.1:8787 -i $env:USERPROFILE\.ssh\orca-lightsail-tokyo ubuntu@16.76.30.47
 ```
 
-관리 터널을 연 뒤 `http://127.0.0.1:8787`로 접속한다. 기본 공인 방화벽은 관리자
-IP `/32`의 22만 허용한다. 6768과 8787/8788은 공개하지 않는다. `nunchi.live`가
-NXDOMAIN인 동안 Caddy와 80/443도 꺼 둔다. DNS와 Caddy를 복구할 때만 공유 인프라의
-`enable_public_web=true`를 적용한다.
+```sshconfig
+Host orca
+    HostName orca-host-tokyo-v2.<tailnet>.ts.net
+    User ubuntu
+    IdentityFile ~/.ssh/orca-lightsail-tokyo
+```
+
+`ssh orca`가 `Could not resolve hostname orca-host-tokyo...`로 실패하면 로컬
+`~/.ssh/config`가 옛 인스턴스 이름을 가리키는 것이다 — 위처럼 `-v2`로 고친다.
+
+기본 공인 방화벽은 관리자 IP `/32`의 22만 허용한다. 6768(Orca)과 8788(읽기 웹)은
+공개하지 않는다. IP가 바뀌어 잠기면 호스트 저장소의 `scripts/util/update-admin-ip.sh`를
+돌리거나 Tailscale 경로로 붙는다.
 
 ```powershell
-terraform -chdir=C:\Users\PSI\orca\remote_coding\remote-lightsail\terraform plan
-aws lightsail get-instance-port-states --region ap-northeast-1 --instance-name orca-host-tokyo
-```
-
-관리 웹 비밀번호는 부트스트랩이 무작위로 만들어 서버 `.env`에 넣었다.
-
-```bash
-sudo grep WEB_ADMIN_PASSWORD /srv/stock-chatbot/.env
+terraform -chdir=C:\Users\PSI\orca\remote_coding\terraform plan
+aws lightsail get-instance-port-states --region ap-northeast-1 --instance-name orca-host-tokyo-v2
 ```
 
 ## 2. 상태 확인
@@ -70,15 +71,14 @@ Caddy는 DNS를 복구해 공개 웹을 다시 열 때만 사용한다. 봇과 �
 systemctl status stock-chatbot --no-pager
 systemctl is-enabled stock-chatbot          # enabled 여야 재부팅 후 자동 기동된다
 systemctl is-active stock-chatbot-web stock-chatbot-polymarket-refresh.timer
-sudo -u stockbot git -C /srv/stock-chatbot log -1 --oneline
+git -C /srv/stock-chatbot log -1 --oneline
 journalctl -u stock-chatbot -n 50 --no-pager
 ```
 
 기동 로그에 `봇 시작됨. 활성 기능: ...`이 뜨고 목록이 기대와 같아야 한다.
 
-`is-enabled`가 `disabled`면 **재부팅 후 봇이 올라오지 않는다.** 부트스트랩은
-유닛 설치만 하고 `enable`은 전환 명령(`terraform output cutover_commands`)이
-`systemctl enable --now`로 한다 — `start`만 했다면 지금 켠다.
+`is-enabled`가 `disabled`면 **재부팅 후 봇이 올라오지 않는다.** 설치 스크립트는
+처음 설치할 때 아무것도 켜지 않는다 — `start`만 했다면 지금 켠다.
 
 ```bash
 sudo systemctl enable stock-chatbot
@@ -94,21 +94,24 @@ journalctl -u stock-chatbot -f                            # 실시간
 
 ## 3. 코드 갱신 (배포)
 
-서버는 clone한 `main`을 pull한다. **작업 브랜치에만 커밋해 두면 서버는 옛 코드를
-받는다** — 먼저 `main`에 병합하고 push한다.
+서버는 GitHub `main`을 fast-forward로만 받는다. **작업 브랜치에만 커밋해 두면 서버는
+옛 코드를 받는다** — 먼저 `main`에 병합하고 push한다.
 
 ```bash
-sudo -u stockbot git -C /srv/stock-chatbot log -1 --oneline
-sudo -u stockbot git -C /srv/stock-chatbot pull
-sudo -u stockbot /srv/stock-chatbot/venv/bin/pip install -r /srv/stock-chatbot/requirements.txt
-sudo systemctl restart stock-chatbot
-journalctl -u stock-chatbot -f
+sudo /srv/stock-chatbot/infra/scripts/deploy.sh
 ```
 
-**디렉터리 구조나 실행 모듈이 바뀐 커밋을 받을 때는 pull만으로 부족하다.**
-`/etc/systemd/system/`의 유닛이 옛 경로를 가리킨 채 남아 재기동이 실패한다.
-`sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh`로 유닛을 다시 설치하고
-`sudo systemctl daemon-reload` 뒤에 재기동한다.
+`deploy.sh`는 pull → `install-shared-host.sh`(의존성·유닛·cron) → 켜져 있던 봇·웹
+재시작 → `verify-app.sh` 순서로 돈다. 설치를 매번 다시 하므로 **디렉터리 구조나 실행
+모듈이 바뀐 커밋도 이것 하나로 된다**(2026-09-24 `services/` 이동이 그런 커밋이었다 —
+유닛이 옛 경로를 가리킨 채 남으면 재기동이 실패한다). 폴리마켓 one-shot은 timer가
+다음 주기에 새 코드로 부른다.
+
+**서버에서 추적 파일을 고쳐 두었으면 `deploy.sh`가 멈춘다.** 서버 핫픽스를 조용히 덮으면
+무엇을 잃었는지 모른다 — `git -C /srv/stock-chatbot diff`로 확인하고 저장소로 옮기거나
+버린 뒤 다시 돌린다. **의존성은 `requirements.lock.txt`가 있으면 그것으로 설치한다** —
+이관 때 옛 서버의 실제 패키지 버전을 담아 온 미추적 파일이다. `requirements.txt`에
+패키지를 추가했다면 이 lock 파일에도 반영해야 서버에 깔린다.
 
 **`.env`를 함께 고쳐야 하는 변경이면 `.env`를 먼저 고치고 마지막에 한 번만
 재기동한다.** pull부터 하고 재기동하면 새 코드가 옛 설정을 거부해 봇이 뜨지
@@ -125,11 +128,12 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 
 | JST | 무엇 | 놓치면 |
 |---|---|---|
-| **08:35 ~ 10:35** | Polymarket 스냅숏(08:35, 재시도 09:35·10:35) | 그날 스냅숏이 통째로 빈다. 가동률 게이트(7일 중 6일)에서 하루를 깎는다 |
-| **07:00** | 야간 다이제스트 발송 | 큐가 다음 주간 주기로 넘어간다(첫 주간 주기가 큐를 확인하므로 유실은 아니다) |
+| **08:20 ~ 08:50** | 예약 리서치(08:20) → 모닝 브리핑(08:50) | 그날 리서치가 빠지고 브리핑이 전날 결과를 쓴다. 패널 `/research run`으로 다시 돌린다 |
+| **17:40** | 마감 브리핑 | 그날 마감 브리핑이 빈다 |
+| 07:40·13:40·19:40 | 시장 감성 예약 갱신 | 웹 차트가 다음 회차까지 직전 것으로 남는다. 패널 `/market`으로 다시 굽는다 |
 | 매시 정각 부근 | 뉴스 주기(60분) | 그 주기 한 번을 건너뛴다. 다음 주기가 같은 후보를 다시 본다 |
 
-가장 안전한 창은 **11:00 ~ 23:00 사이의 정각 직후**다. 재부팅도 같은 기준으로
+시각은 전부 JST다(봇 스케줄러가 `timezone=JST`). 가장 안전한 창은 **11:00 ~ 23:00 사이의 정각 직후**다. 재부팅도 같은 기준으로
 잡는다 — `data/`는 영구 루트 디스크에 있어 재부팅으로 사라지지 않지만,
 스냅숏 창을 덮으면 그날 하루치를 잃는다.
 
@@ -142,18 +146,14 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 고치고 git에 커밋한다 — 서버 `.env`를 직접 고치던 예전 방식은 무엇을 언제
 왜 바꿨는지가 서버에만 남고 git 이력에는 없었다.
 
-```bash
-sudo -u stockbot git -C /srv/stock-chatbot log -1 --oneline
-sudo -u stockbot git -C /srv/stock-chatbot pull
-sudo systemctl restart stock-chatbot
-```
+배포는 3절과 같다.
 
 지금 서버 `.env`에 남아 있어야 하는 키는 `.env.example`에 적힌 것뿐이다:
 `TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`·`ALLOWED_CHAT_IDS`·
 `CLOUDFLARE_ACCOUNT_ID`·`CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_MODEL`(모델
-폐기·개명에 코드 배포 없이 대응하는 유일한 예외)·`WEB_ADMIN_USER`·
-`WEB_ADMIN_PASSWORD`·`POLYMARKET_PROXY_URL`. 이 목록 밖의 키가 `.env`에
-남아 있다면(예: 옛 `NEWS_GLOBAL_LIMIT=4`) 지운다 — `load_dotenv`가 이걸
+폐기·개명에 코드 배포 없이 대응하는 유일한 예외)·`POLYMARKET_PROXY_URL`.
+이 목록 밖의 키가 `.env`에 남아 있다면(예: 옛 `NEWS_GLOBAL_LIMIT=4`, 관리 웹을 없앤 뒤의
+`WEB_ADMIN_USER`·`WEB_ADMIN_PASSWORD`) 지운다 — `load_dotenv`가 이걸
 `os.environ`에 얹어도 더 이상 아무도 읽지 않으니 무해하지만, 다음에 값을
 바꿀 때 "여기 있는 값이 진짜인가" 혼란을 남긴다.
 
@@ -180,7 +180,7 @@ sudo grep -n '^ALLOWED_CHAT_IDS=' /srv/stock-chatbot/.env
 야간 7시간분이 기사별 번역에서 통째로 빠지고 사전선별의 재탕 차단이 소스 간
 중복을 걷어낸다 — 순증인지 순감인지는 재 봐야 안다.
 
-**서버에서 잰다.** 같은 명령이 `terraform output verify_commands`에 들어 있다.
+**서버에서 잰다.**
 최근 7일을 UTC 일자별로 한 줄씩(`YYYY-MM-DD <합계>`) 뱉는다.
 
 ```bash
@@ -251,15 +251,11 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 
 ### 8-1. 설치
 
-**부트스트랩도 3절의 코드 갱신도 이 유닛을 설치하지 않는다.** 인스턴스를 새로
-만들거나 이 기능을 처음 켤 때 한 번 직접 설치한다(11-1의 웹 유닛과 같다).
+`install-shared-host.sh`가 timer와 one-shot 넷(refresh·brief·trending·annotate)을 함께
+설치하고, 처음 설치할 때는 timer를 켜지 않는다.
 
 ```bash
-sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-refresh.{service,timer} /etc/systemd/system/
-sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-brief.service /etc/systemd/system/
-sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-trending.service /etc/systemd/system/
-sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-polymarket-annotate.service /etc/systemd/system/
-sudo systemctl daemon-reload
+sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh
 sudo systemctl enable --now stock-chatbot-polymarket-refresh.timer
 systemctl list-timers | grep polymarket
 ```
@@ -302,8 +298,8 @@ journalctl -u stock-chatbot-polymarket-refresh -n 40 --no-pager
 
 ```bash
 curl -s localhost:8788/api/polymarket/health
-sudo -u stockbot cat /srv/stock-chatbot/data/webpub/polymarket/status.json
-sudo -u stockbot ls /srv/stock-chatbot/data/webpub/polymarket/generations/
+cat /srv/stock-chatbot/data/webpub/polymarket/status.json
+ls /srv/stock-chatbot/data/webpub/polymarket/generations/
 ```
 
 | 보이는 것 | 뜻 |
@@ -325,7 +321,7 @@ sudo -u stockbot ls /srv/stock-chatbot/data/webpub/polymarket/generations/
 한국 PC에서 열렸다는 사실은 서버 접근을 보장하지 않는다.
 
 ```bash
-sudo -u stockbot env RUN_POLYMARKET_SMOKE=1 /srv/stock-chatbot/venv/bin/python -m pytest -q -m polymarket_smoke
+cd /srv/stock-chatbot && RUN_POLYMARKET_SMOKE=1 venv/bin/python -m pytest -q -m polymarket_smoke
 ```
 
 ### 8-4. 장애 분기
@@ -363,7 +359,7 @@ webpub이 이 파일을 통째로 파이썬 객체로 올리고 `MemoryMax=192M`
 부르지 않는다(다음 실행이 그 디렉토리를 지우기 전에 돌린다).
 
 ```bash
-sudo -u stockbot /srv/stock-chatbot/venv/bin/python /srv/stock-chatbot/web/tests/polymarket_manifest_size_probe.py
+/srv/stock-chatbot/venv/bin/python /srv/stock-chatbot/services/web/tests/polymarket_manifest_size_probe.py
 ```
 
 고치는 방향은 **compact에서 목록·순위·필터·정렬이 읽지 않는 필드를 detail로
@@ -429,9 +425,9 @@ sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
 | 원자적 쓰기 | 매 저장 | 각 모듈 `core/storage.py` (임시파일 → fsync → `os.replace`) |
 
 ```bash
-ls -la ~/backup-*.tgz | tail -5                      # 백업이 실제로 도는지
-tar tzf ~/backup-$(date +%F).tgz | head              # 내용 확인
-tar xzf ~/backup-YYYY-MM-DD.tgz -C /tmp/restore      # 복구는 다른 경로에 풀고 골라 덮는다
+ls -la /var/backups/stock-chatbot/ | tail -5                                  # 백업이 실제로 도는지
+tar tzf /var/backups/stock-chatbot/backup-$(date -u +%F).tgz | head             # 내용 확인
+tar xzf /var/backups/stock-chatbot/backup-YYYY-MM-DD.tgz -C /tmp/restore        # 복구는 다른 경로에 풀고 골라 덮는다
 ```
 
 **재부팅으로 `data/`는 사라지지 않는다.** 영구 루트 디스크에 있어 reboot도
@@ -448,8 +444,8 @@ stop/start도 보존한다. 사라지는 것은 인스턴스를 **삭제·재생
   메모리 전용이다). 손실이 아니라 CPU 비용이고 그날 예산에서 나간다.
 
 공유 호스트의 앱 런타임은 `cloud-init`이 아니라 `infra/scripts/install-shared-host.sh`가
-설치한다. 재부팅으로 다시 돌지 않으며, 유닛이나 백업 cron을 다시 깔아야 하면 그
-스크립트를 직접 실행한다(`infra/host-contract.md`).
+설치한다. 재부팅으로 다시 돌지 않으며, 다시 깔아야 하면 그 스크립트를 직접 실행한다
+(`infra/host-contract.md`).
 
 ## 10. 장애 대응
 
@@ -463,20 +459,26 @@ journalctl -u stock-chatbot -n 80 --no-pager
 |---|---|---|
 | `ConfigurationError` + 허용 목록 | `ALLOWED_CHAT_IDS`가 비었다 | 5절 |
 | `Conflict: terminated by other getUpdates` | 로컬 봇이 같이 켜져 있다 | 한쪽을 끈다 |
-| `ModuleNotFoundError: telegram_bot`·`web` | `WorkingDirectory`가 저장소 루트가 아니다 | 유닛 파일 확인 |
+| `ModuleNotFoundError: services` | `WorkingDirectory`가 저장소 루트가 아니다 | 유닛 파일 확인 |
+| `No module named telegram_bot`·`web` | 유닛이 `services/` 이동 전 경로를 가리킨다 | 3절의 두 설치 스크립트를 다시 돌린다 |
 | `No module named pytest` | 부트스트랩은 실행 의존성만 깐다 | `pip install -r requirements-dev.txt` |
 | 차트 관련 실패 | `MPLBACKEND=Agg`가 없다 | 유닛 파일 확인 |
 
 **직전 배포로 되돌린다.** 서버에서 커밋을 되돌리고 재기동한다.
 
 ```bash
-sudo -u stockbot git -C /srv/stock-chatbot log --oneline -5
-sudo -u stockbot git -C /srv/stock-chatbot checkout <직전 커밋>
-sudo systemctl restart stock-chatbot
+git -C /srv/stock-chatbot log --oneline -5
+git -C /srv/stock-chatbot checkout <직전 커밋>
+sudo systemctl restart stock-chatbot stock-chatbot-web
 ```
 
-**서버를 세운다.** `terraform output -raw rollback_command`. 로컬 봇을 다시 켤
-때는 서버가 확실히 멈춘 뒤에 켠다.
+detached HEAD가 되므로 다음 배포 전에 `git checkout main`으로 돌려놓는다 —
+`deploy.sh`는 브랜치가 다르면 중단한다.
+
+**서버를 세운다.** `sudo systemctl stop stock-chatbot stock-chatbot-web
+stock-chatbot-polymarket-refresh.timer`. 로컬 봇을 다시 켤 때는 서버가 확실히 멈춘 뒤에
+켠다. 호스트 자체를 옛 인스턴스로 되돌리는 롤백은 호스트 저장소의
+`docs/server-migration.md`를 따른다.
 
 **메모리·CPU를 본다.** 공유 호스트는 4GB RAM과 4GB swap이다.
 
@@ -536,12 +538,10 @@ Basic 인증도 TLS가 성립한 뒤에 처리된다.
 
 ### 11-1. 웹 프로세스
 
-부트스트랩은 이 유닛을 설치하지 않는다(봇 유닛만 만든다). 인스턴스를 새로 만들면
-직접 설치한다.
+`install-shared-host.sh`가 설치하고, 처음에는 켜지 않는다.
 
 ```bash
-sudo cp /srv/stock-chatbot/infra/systemd/stock-chatbot-web.service /etc/systemd/system/
-sudo systemctl daemon-reload
+sudo /srv/stock-chatbot/infra/scripts/install-shared-host.sh
 sudo systemctl enable --now stock-chatbot-web
 curl -s localhost:8788/api/meta        # 산출물 시각. 봇이 아직 굽기 전이면 {}
 ```
@@ -582,6 +582,11 @@ journalctl -u caddy -n 30 --no-pager | grep -i certificate
 
 스크립트가 백업·`caddy validate`·reload까지 하고, validate가 실패하면 되돌린다.
 `--dry-run`으로 만들어질 내용을 먼저 볼 수 있다(해시는 가린다).
+
+**인스턴스가 바뀌면 사설 IP도 바뀐다.** 공인 고정 IP를 그대로 옮겨 붙여도 사설 NIC
+주소는 새로 받는다. 2026-09-23 v2 이관 때는 호스트의 복원 스크립트가 `bind` 값을 새
+사설 IP로 바꿨다. 그 뒤 Caddyfile을 다시 렌더링할 때는 위 `ip` 명령으로 현재 값을
+다시 읽는다. Caddy 자체는 패키지 전용 `caddy` 계정으로 돈다(앱 계정과 무관하다).
 
 도메인의 A 레코드는 고정 IP를 가리키고 있어야 한다. 80번이 닫혀 있으면 HTTP-01
 검증이 실패한다(1절).
@@ -628,7 +633,7 @@ journalctl -u caddy --since today --no-pager | grep -c '"status":200'
 systemctl status stock-chatbot-web caddy --no-pager
 journalctl -u stock-chatbot-web -n 50 --no-pager
 journalctl -u stock-chatbot --no-pager | grep WEBPUB | tail -10   # 굽기 실패 여부
-sudo -u stockbot ls -la /srv/stock-chatbot/data/webpub/
+ls -la /srv/stock-chatbot/data/webpub/
 ```
 
 ### 11-5. 중단 기준

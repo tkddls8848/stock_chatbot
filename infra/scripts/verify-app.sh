@@ -2,7 +2,8 @@
 # stock_chatbot 앱 점검. 공유 호스트에서 우리 몫만 본다.
 #
 # 호스트 자체(Orca, Tailscale, OS 계정, 방화벽)는 이 스크립트가 보지 않는다 —
-# 그쪽은 호스트 저장소의 scripts/util/verify-host.sh 가 소유한다.
+# 그쪽은 호스트 저장소 remote_coding 의 scripts/util/verify-host.sh 가 소유한다.
+# 앱 서비스(봇 포함)의 실행 계정·자동 시작은 여기서 본다.
 # 인스턴스를 공유할 뿐 별개 프로젝트이므로 서로의 내부를 검사하지 않는다.
 # 다만 우리가 기대고 있는 계약 값(호스트 타임존)은 여기서 확인한다.
 #
@@ -26,16 +27,17 @@ check "Polymarket timer active" systemctl is-active --quiet stock-chatbot-polyma
 check "Polymarket timer 부팅 시 자동 시작" systemctl is-enabled --quiet stock-chatbot-polymarket-refresh.timer
 
 say "계정과 비밀"
-check "$APP_USER 전용 계정" id "$APP_USER"
+# 호스트는 ubuntu 단일 계정이고 그 계정에 sudo 가 있다(remote_coding 의 결정).
+# 앱 전용 계정·sudo 분리는 더 이상 검사하지 않고, 실제 실행 계정이 유닛과 같은지만 본다.
+for unit in stock-chatbot.service stock-chatbot-web.service stock-chatbot-polymarket-refresh.service; do
+    check "$unit 실행 계정 $APP_USER" bash -c \
+        "[ \"\$(systemctl show '$unit' -p User --value)\" = '$APP_USER' ]"
+done
 check "운영 .env 소유권·권한" bash -c \
     "[ \"\$(sudo stat -c '%U:%G %a' '$APP_DIR/.env')\" = '$APP_USER:$APP_GROUP 600' ]"
-check "$APP_USER sudo 그룹 아님" bash -c \
-    "! id -nG '$APP_USER' | tr ' ' '\n' | grep -qx -e sudo -e admin"
 
 say "웹 (루프백 전용)"
 check "읽기 웹 localhost 200" curl -fsS "http://127.0.0.1:$WEB_PORT/"
-check "관리 웹 localhost 인증 요구" bash -c \
-    "[ \"\$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:$ADMIN_PORT/')\" = 401 ]"
 
 # 앞단 Caddy 의 봇 차단은 우리 견본이 출처다(infra/Caddyfile.example). 실제 설정이
 # 갈라지면 robots.txt 만 남고 강제는 사라지는데, 화면은 멀쩡해 보여 알아챌 수 없다.

@@ -1,15 +1,7 @@
-"""리서치 결과의 마켓 뷰 반론(view_critique) 파싱·렌더링 검증."""
+"""리서치 결과의 마켓 뷰 반론(view_critique) 파싱 검증. 결과 화면은 웹에 있다."""
 import json
 
 from services.telegram_bot.llm.market_view import MarketViewAnalyzer
-from services.telegram_bot.research.results import format_result_sections
-
-
-def _format_message(result: dict) -> str:
-    """섹션을 합쳐 렌더링 결과 전체를 한 문자열로 본다."""
-    return "\n\n".join(
-        format_result_sections(result, {"add": [], "remove": []}, 3, 5)
-    )
 
 
 def _analyzer(tmp_path) -> MarketViewAnalyzer:
@@ -107,31 +99,3 @@ def test_parse_view_critique_caps_at_limit(tmp_path):
     assert [c["point"] for c in result["view_critique"]] == [
         f"반론 {i}" for i in range(5)
     ]
-
-
-def test_format_message_renders_critique_section():
-    result = {
-        "summary": "요약",
-        "actions": [],
-        "risks": [],
-        "view_critique": [
-            {
-                "point": "수요 둔화 신호",
-                "severity": 0.6,
-                "evidence": {"title": "판매 부진 <보도>", "source": "Sina"},
-            },
-            {"point": "정책 리스크", "severity": None, "evidence": None},
-        ],
-    }
-    text = _format_message(result)
-    assert "🗣 내 뷰 반론" in text
-    assert "[60%] 수요 둔화 신호" in text
-    assert "판매 부진 &lt;보도&gt; (Sina)" in text  # HTML 이스케이프 확인
-    assert "- 정책 리스크" in text
-
-
-def test_format_message_critique_empty():
-    result = {"summary": "요약", "actions": [], "risks": []}
-    text = _format_message(result)
-    assert "🗣 내 뷰 반론" in text
-    assert "상충하는 근거 없음" in text

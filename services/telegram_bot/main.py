@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
+from services.telegram_bot.core.clock import JST
 from services.telegram_bot.core.config import (
     FEATURES_ENABLED,
     RUNTIME_LOCK_FILE,
@@ -22,7 +23,6 @@ from services.telegram_bot.core.config import (
 )
 from services.telegram_bot.features import build_feature_registry
 from services.telegram_bot.handlers.commands import configure_telegram_menu
-from services.telegram_bot.webadmin.server import start_web_admin, stop_web_admin
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +73,21 @@ async def _handle_update_error(_update: object, context: ContextTypes.DEFAULT_TY
     logger.error("[TELEGRAM] update processing failed: %s", context.error, exc_info=context.error)
 
 
+def build_scheduler() -> AsyncIOScheduler:
+    """cron 작업을 전부 JST로 읽는 스케줄러.
+
+    시간대를 주지 않으면 호스트 시간대를 따르는데 공유 호스트가 UTC라,
+    2026-09-24까지 브리핑(08:50)·종목 DB 갱신(08:30)이 9시간 늦게 돌았다.
+    작업마다 timezone을 붙이면 새 작업이 또 빠뜨리므로 기본값을 여기서 정한다.
+    """
+    return AsyncIOScheduler(timezone=JST)
+
+
 async def _start_application(app: Application) -> None:
     app.bot_data.pop(_RUNTIME_STOPPED_KEY, None)
     await configure_telegram_menu(app)
     scheduler = app.bot_data["scheduler"]
     scheduler.start()
-    # 웹 서버는 Application 기동 후에만 시작할 수 있어 install_services가
-    # 아닌 여기서 기능 활성 여부를 보고 띄운다.
-    registry = app.bot_data["feature_registry"]
-    if registry.is_enabled("web_admin"):
-        await start_web_admin(app)
 
 
 async def _stop_scheduler(app: Application) -> None:
@@ -97,11 +102,8 @@ async def _stop_scheduler(app: Application) -> None:
     scheduler = app.bot_data.get("scheduler")
     scheduler_was_running = scheduler is not None and scheduler.running
     if scheduler_was_running:
-        # 웹 서버 종료가 최대 5초 걸릴 수 있으므로 새 예약 작업부터 막는다.
         scheduler.pause()
         scheduler.shutdown(wait=False)
-
-    await stop_web_admin(app)
 
     if scheduler_was_running:
         # AsyncIOScheduler.shutdown() schedules cleanup and task cancellation on the
@@ -141,7 +143,7 @@ def main() -> None:
 
         feature_registry.install_telegram_handlers(app)
 
-        scheduler = AsyncIOScheduler()
+        scheduler = build_scheduler()
         app.bot_data["scheduler"] = scheduler
         feature_registry.install_jobs(scheduler, app)
 
