@@ -314,6 +314,10 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .asof-x{margin-left:0;flex-basis:100%}
 tbody td,thead th{padding:var(--sp-3)}}
 @media(max-width:520px){
+.navin{height:auto;flex-wrap:wrap;padding-top:10px;padding-bottom:8px;border-radius:24px}
+.brand{flex-shrink:0;white-space:nowrap}
+.links{flex:1 1 100%;min-width:0;margin-left:0;gap:0;justify-content:space-between}
+.links a{padding:8px 6px;font-size:12px}
 .spec{grid-template-columns:1fr}
 .spec dd{padding-top:0;border-top:0}
 .research-meta{grid-template-columns:1fr}
