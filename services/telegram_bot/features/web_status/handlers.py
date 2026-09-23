@@ -64,7 +64,9 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
         state = _FRESHNESS.get(str(freshness.get("state")), str(freshness.get("state") or "미상"))
         lines.append(
             f"폴리마켓 수집: {_stamp(freshness.get('last_success_at'))} · {state}"
-            + (f" · 마지막 시도 {html.escape(str(health['last_result']))}" if health.get("last_result") not in (None, "ok") else "")
+            # 정상 결과는 적지 않는다. 예산 초과·실패 같은 예외만 보인다.
+            + (f" · 마지막 시도 {html.escape(str(health['last_result']))}"
+               if health.get("last_result") not in (None, "ok", "success") else "")
         )
     brief = _get("/api/polymarket/sector-brief", fetch)
     lines.append(f"폴리마켓 줄글: {_stamp((brief or {}).get('written_at'))}")
