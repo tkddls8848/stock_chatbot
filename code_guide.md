@@ -460,12 +460,13 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   지우지 않는다. 공유 호스트와의 경계·계약 값과 앱 설치는 `infra/host-contract.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 셋이다: `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  현재 계획서는 넷이다: `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
   게시물 추적), `services/web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
   대시보드로),
   `services/web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
-  이동 추적). 뒤 둘은 앞이 전제이지만 파일을 나눴다 — 대시보드 계획서가 먼저
-  끝나 지워져도 줄글 계획은 남아야 한다.
+  이동 추적), `services/web/docs/polymarket-nl-search.md`(event 주석을 미리 달아 두는
+  한국어 자연어 배팅 검색). 뒤 셋은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
+  계획서가 먼저 끝나 지워져도 나머지 계획은 남아야 한다.
   **계획서를 새로 파는 것은 주제가 기존 계획서와 독립일 때뿐이고, 다 끝나면 파일째
   지운다.** 종류를 섞지 않는다: 절차서에 할 일을
   적으면 끝난 일이 남고, 계획서에 절차를 적으면 계획을 지울 때 절차까지 사라진다.
