@@ -314,6 +314,10 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .asof-x{margin-left:0;flex-basis:100%}
 tbody td,thead th{padding:var(--sp-3)}}
 @media(max-width:520px){
+.navin{height:auto;flex-wrap:wrap;padding-top:10px;padding-bottom:8px;border-radius:24px}
+.brand{flex-shrink:0;white-space:nowrap}
+.links{flex:1 1 100%;min-width:0;margin-left:0;gap:0;justify-content:space-between}
+.links a{padding:8px 6px;font-size:12px}
 .spec{grid-template-columns:1fr}
 .spec dd{padding-top:0;border-top:0}
 .research-meta{grid-template-columns:1fr}
@@ -330,6 +334,7 @@ tbody td,thead th{padding:var(--sp-3)}}
 
 _NAV_LINKS = (
     ("/", "시장"),
+    ("/search", "뉴스 검색"),
     ("/polymarket", "Polymarket"),
     ("/research", "리서치"),
     ("/about", "정보"),
@@ -406,7 +411,7 @@ _SITE_FOOT = (
     "<code>GET /api/meta</code> · <code>GET /market_chart.png</code> — 쓰기 API는 없습니다.</dd>"
     "</dl></div>"
     "<div class='sfin'><span class='sf-links'>"
-    "<a href='/'>시장</a><a href='/polymarket'>Polymarket</a>"
+    "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/polymarket'>Polymarket</a>"
     "<a href='/research'>리서치</a><a href='/about'>정보</a>"
     "</span><span>정보 제공 목적이며 투자 권유가 아닙니다.</span></div>"
     "</div></footer></body></html>"
@@ -456,6 +461,7 @@ const pct=v=>Math.round((Number(v)||0)*100)+'%';
 // 발행 정보 띠는 화면마다 같으므로 한 곳에서 채운다.
 fetch('/api/meta').then(r=>r.json()).then(d=>{
   const parts=[];
+  if(d.news_generated_at)parts.push('뉴스 자료 '+stamp(d.news_generated_at));
   if(d.market_generated_at)parts.push('시장 집계 '+stamp(d.market_generated_at));
   if(d.research_generated_at)parts.push('리서치 '+stamp(d.research_generated_at));
   const date=document.getElementById('asof-date');

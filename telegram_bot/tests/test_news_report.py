@@ -145,13 +145,17 @@ def _queue(tmp_path, per_source_limit=12, max_items=600):
 
 
 @pytest.fixture(autouse=True)
-def _publish_every_window(monkeypatch):
+def _publish_every_window(monkeypatch, tmp_path):
     """발행 판정은 「발행 판정」 절에서 따로 세운다.
 
     기본 하한(8건)을 그대로 두면 전송·확정·근거 로그를 보는 테스트가 전부
     보류로 빠져 무엇을 지키는 테스트인지 알 수 없게 된다.
     """
     monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 1)
+    from web import export
+
+    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path / "webpub")
+    monkeypatch.setattr(export, "META_JSON", tmp_path / "webpub" / "meta.json")
 
 
 def _memory(tmp_path, **entries):
@@ -1391,3 +1395,31 @@ def test_the_first_attempt_still_retries_before_salvaging_the_body(tmp_path):
     assert len(backend.calls) == 2
     assert result["analysis"] == "현재 시장상황 요약이다."
     assert result["highlights"][0]["title"] == "한국어 제목 0"
+
+
+def test_report_exports_only_published_news_to_public_search(tmp_path):
+    app, queue, _, _ = _send_app(tmp_path)
+    for item in queue._items:
+        item["published_at"] = datetime.now(JST).isoformat()
+        item["url"] = "https://example.com/article"
+    asyncio.run(send_news_report(app))
+    payload = json.loads((tmp_path / "webpub" / "news.json").read_text(encoding="utf-8"))
+    rows = payload["documents"]
+    assert any(row["kind"] == "report" for row in rows)
+    assert any(row["title"] == "한국어 제목 0" for row in rows)
+    assert any(row["url"] == "https://example.com/article" for row in rows)
+    assert all("mentioned_stocks" not in row for row in rows)
+
+
+def test_public_export_failure_does_not_repeat_telegram_delivery(tmp_path, monkeypatch):
+    from web import export
+
+    def fail(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(export, "publish_news", fail)
+    app, queue, tracker, _ = _send_app(tmp_path)
+    asyncio.run(send_news_report(app))
+    assert len(app.bot.messages) == 1
+    assert len(tracker.confirmed) == 2
+    assert asyncio.run(queue.snapshot())[1] == []
