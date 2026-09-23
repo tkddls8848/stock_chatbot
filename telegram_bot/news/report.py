@@ -470,6 +470,39 @@ async def _send_sections(
     return sent, failed
 
 
+def _public_news(published: list, closed_at: datetime) -> list[dict]:
+    """공개용 필드만 내보낸다. URL은 수집 원본에서 가져오며 모델에 맡기지 않는다."""
+    documents = []
+    for market, items, result, window in published:
+        stamp = closed_at.isoformat(timespec="seconds")
+        label = _MARKET_LABELS.get(market, market)
+        if result and result.get("analysis"):
+            documents.append({
+                "id": f"report:{market}:{stamp}", "kind": "report", "market": market,
+                "title": f"{label} 시장상황 보고서 · {window}",
+                "text": result["analysis"], "date": closed_at.date().isoformat(),
+                "published_at": stamp, "source": "눈치 시장상황 보고서", "url": "",
+            })
+        highlights = result["highlights"] if result else [
+            {"index": index, "title": item["title"]}
+            for index, item in enumerate(items[:_FALLBACK_HEADLINE_LIMIT])
+        ]
+        for highlight in highlights:
+            item = items[highlight["index"]]
+            occurred = parse_news_datetime(item.get("published_at"), item.get("published_date"))
+            # 원문 발행 시각이 없으면 보고서 발행일을 쓰고 시각은 미상으로 표시한다.
+            day = ensure_jst(occurred).date() if occurred else closed_at.date()
+            documents.append({
+                "id": f"news:{market}:{item['article_id']}", "kind": "news", "market": market,
+                "title": highlight["title"], "text": str(item.get("title") or ""),
+                "date": day.isoformat(),
+                "published_at": ensure_jst(occurred).isoformat() if occurred else "",
+                "source": str(item.get("label") or item.get("source") or ""),
+                "url": str(item.get("url") or ""), "sentiment": highlight.get("sentiment"),
+            })
+    return documents
+
+
 async def send_news_report(app: Application) -> None:
     """큐의 기사를 시장별로 분석해 3시간 보고서를 보내고 큐를 비운다."""
     async with _REPORT_LOCK:
@@ -564,6 +597,13 @@ async def _send_news_report(app: Application) -> None:
         # 일부만 나갔다. 큐를 남기면 성공한 조각을 다음 실행에 다시 보내게 되므로
         # 비우고, 빠진 조각은 로그로만 남긴다.
         logger.error("[NEWS REPORT] 보고서 %d조각이 빠진 채 확정합니다.", failed)
+
+    try:
+        from web.export import publish_news
+
+        await asyncio.to_thread(publish_news, _public_news(published, closed_at))
+    except Exception:
+        logger.exception("[NEWS REPORT] 공개 검색 자료 저장 실패")
 
     # **발행한 시장의 기사만** 확정하고 큐에서 뺀다. 보류한 시장의 기사는
     # 큐에 남아 다음 구간의 재료가 된다.

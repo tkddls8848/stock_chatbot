@@ -8,16 +8,18 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML, ROBOTS_TXT
+from web.pages.search import SEARCH_HTML
+from web.core.config import DATA_DIR
 from web.polymarket.repository import PolymarketRepository, make_etag
+from web.search import NewsSearch
 
-WEBPUB_DIR = Path(__file__).resolve().parents[1] / "data" / "webpub"
+WEBPUB_DIR = DATA_DIR / "webpub"
 POLYMARKET_REPOSITORY = PolymarketRepository(WEBPUB_DIR / "polymarket")
 
 
@@ -31,6 +33,24 @@ def _read_json(name: str) -> dict[str, Any]:
 
 def build_app() -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
+    search_repository = NewsSearch(WEBPUB_DIR)
+
+    @app.get("/search", response_class=HTMLResponse)
+    def search_page() -> str:
+        return SEARCH_HTML
+
+    @app.get("/api/search")
+    def search(
+        q: str = Query(default="", max_length=200),
+        market: Literal["", "CN", "HK", "US", "KR", "JP"] = "",
+        days: int | None = Query(default=None, ge=1, le=30),
+        page: int = Query(default=1, ge=1, le=1000),
+    ) -> Response:
+        try:
+            payload = search_repository.search(q, market=market, days=days, page=page)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
