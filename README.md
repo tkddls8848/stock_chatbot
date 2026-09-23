@@ -9,7 +9,7 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-python -m telegram_bot.main
+python -m services.telegram_bot.main
 ```
 
 `.env`에는 아래 값이 필요합니다.
@@ -30,7 +30,7 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 - 무료 한도는 **하루 10,000 Neurons**이며 UTC 00시(UTC +9 오전 9시)에 리셋됩니다. 리서치 분석은 입력 깊이를 늘린 뒤(뉴스 16건 × 본문 600자, 후보 24개) 1회에 약 400~600 Neurons로 추정되며, 이전의 얕은 입력(6건 × 240자) 기준 실측치는 약 110 Neurons였습니다.
 - 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 3시간마다 **발행할지부터 판정합니다.** 3시간은 검토 주기이지 발행 주기가 아닙니다 — 그 시장이 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`(8)에 못 미치면 LLM을 부르지 않고 보류하고, 모델이 직전 보고서 대비 새로울 것이 없다고 판정해도 보류합니다. 연속 보류가 `NEWS_REPORT_MAX_HELD_HOURS`(12)를 넘으면 판정과 무관하게 발행합니다. 따라서 LLM 호출 수는 기사 수가 아니라 **발행·검토한 시장 수**에 비례합니다.
 - 한도가 소진되면 다음 리셋까지 호출을 멈춥니다. 그날 시장상황 보고서와 `/research`는 실패하지만, 브리핑은 지수·헤드라인만 담은 데이터 전용 브리핑으로 자동 전환됩니다.
-- 실사용량은 로그에 그대로 남으며 일일 합계는 UTC 00시(한국시간 오전 9시)를 경계로 셉니다. 로그는 파일이 아니라 표준 오류로 나가므로, 서버에서는 `journalctl -u stock-chatbot | grep neurons=`로, 로컬에서는 `python -m telegram_bot.main 2> bot.log`처럼 받아 두고 확인합니다.
+- 실사용량은 로그에 그대로 남으며 일일 합계는 UTC 00시(한국시간 오전 9시)를 경계로 셉니다. 로그는 파일이 아니라 표준 오류로 나가므로, 서버에서는 `journalctl -u stock-chatbot | grep neurons=`로, 로컬에서는 `python -m services.telegram_bot.main 2> bot.log`처럼 받아 두고 확인합니다.
 - 한도를 넘겨 쓰려면 Workers Paid 플랜에서 초과분이 1,000 Neurons당 $0.011입니다.
 - API 토큰은 `.env`에만 두고 커밋하지 않습니다. 로그와 예외 메시지에는 토큰이 남지 않습니다.
 
@@ -107,7 +107,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 
 ## 관리 웹 (선택)
 
-봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `telegram_bot/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
+봇 프로세스에 내장되는 관리용 웹 대시보드로, 관심 종목·뉴스·리서치·시스템 상태를 브라우저에서 확인·관리합니다. 다른 기능과 같이 `services/telegram_bot/core/config.py`의 `FEATURES_ENABLED`에 `web_admin` 키가 들어 있으면 켜지며, 봇을 제어하므로 비밀번호를 지정해야만 기동합니다. 호스트·포트는 `127.0.0.1:8787` 고정 리터럴이고, 사용자·비밀번호만 `.env`에 둡니다.
 
 ```env
 WEB_ADMIN_USER=admin
@@ -148,9 +148,9 @@ WEB_ADMIN_PASSWORD=<반드시 지정>
 
 ```text
 tests/            저장소 자체의 검사(에이전트 포인터 동기화)
-telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
+services/telegram_bot/     텔레그램 봇 — 명령 처리, 뉴스, 종목 DB, 관심 종목, 8787 관리 웹
                   + docs/ tests/
-web/              읽기 전용 공개 웹 (8788) + docs/ tests/
+services/web/              읽기 전용 공개 웹 (8788) + docs/ tests/
   polymarket/     폴리마켓 화면을 먹이는 순회·줄글·트렌드 one-shot (봇과 무관)
 shorts/           쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지
                   + src/ docs/ tests/
@@ -164,9 +164,9 @@ data/             실행 중 생성되는 상태·캐시 데이터, 소유 기�
 
 | 프로세스 | 명령 |
 |---|---|
-| 텔레그램 봇(+8787 관리 웹) | `python -m telegram_bot.main` |
-| 공개 웹 8788 | `python -m web.server` |
-| 폴리마켓 순회 one-shot | `python -m web.polymarket.refresh` |
-| 폴리마켓 줄글 one-shot | `python -m web.polymarket.sector_brief` |
-| 폴리마켓 트렌드 one-shot | `python -m web.polymarket.trending` |
+| 텔레그램 봇(+8787 관리 웹) | `python -m services.telegram_bot.main` |
+| 공개 웹 8788 | `python -m services.web.server` |
+| 폴리마켓 순회 one-shot | `python -m services.web.polymarket.refresh` |
+| 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |
+| 폴리마켓 트렌드 one-shot | `python -m services.web.polymarket.trending` |
 | 쇼츠(별개 venv, `shorts/`에서) | `python -m polymarket_shorts.cli` |

@@ -41,7 +41,7 @@ terraform -chdir=<remote_coding>\terraform output -raw public_web_enabled
 `HOST_TIMEZONE`), 백업 cron은 18:00 UTC(03:00 KST/JST)로 둔다 — 스냅샷보다 한 시간 앞이다.
 **현지 시각이 중요한 스케줄은 cron이 아니라 systemd timer에 타임존을 직접 적는다**
 (`stock-chatbot-polymarket-refresh.timer`, `polymarket-shorts.timer`는 `Asia/Seoul`).
-앱의 '지금'은 `telegram_bot/core/clock.py`가 JST로 고정하므로 하루 경계는 호스트 타임존과
+앱의 '지금'은 `services/telegram_bot/core/clock.py`가 JST로 고정하므로 하루 경계는 호스트 타임존과
 무관하다.
 
 ## 호스트 값이 필요할 때

@@ -25,7 +25,7 @@ foreach ($relative in @('.tmp', '.test-tmp', '.test-tmp/pytest-of-tkddl')) {
     }
 }
 # 없는 경로는 건너뛴다. ErrorActionPreference가 Stop이라 그냥 두면 정리가 통째로 멈춘다.
-foreach ($relative in @('shared', 'telegram_bot', 'web', 'infra', 'shorts/src', 'shorts/tests')) {
+foreach ($relative in @('shared', 'services', 'infra', 'shorts/src', 'shorts/tests')) {
     $base = Join-Path $workspace $relative
     if (-not (Test-Path -LiteralPath $base)) { continue }
     $candidates += Get-ChildItem -LiteralPath $base -Recurse -Force -Directory |

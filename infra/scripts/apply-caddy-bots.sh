@@ -3,7 +3,7 @@
 #
 # 견본(infra/Caddyfile.example)의 `# BEGIN aibots` ~ `# END aibots` 사이를 그대로
 # 옮긴다. **손으로 옮기지 않는 이유는 갈라지기 때문이다.** UA 목록은 앱의
-# robots.txt(web/pages/robots.py)와도 같아야 해서 출처가 하나여야 하는데, 편집기로
+# robots.txt(services/web/pages/robots.py)와도 같아야 해서 출처가 하나여야 하는데, 편집기로
 # 옮기면 목록을 고칠 때마다 세 곳이 어긋날 자리가 생기고 어긋난 것을 알아챌 방법이
 # 없다. 여기서는 견본이 유일한 출처이고 이 스크립트가 그것을 그대로 복사한다.
 #

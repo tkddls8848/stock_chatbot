@@ -11,7 +11,7 @@
 |---|---|
 | `infra/host-contract.md` | 호스트 소유 경계, 계약 값(리전·타임존·스냅샷·공개 웹), 앱 설치 |
 | **이 문서** | 접속, 상태 확인, 배포 갱신, 설정 변경, 실측, 판정, 백업·복구, 장애 대응 |
-| `telegram_bot/docs/actor-potus.md` | `market_actor`·`potus_feed` 계획 (앞으로 만들 것) |
+| `services/telegram_bot/docs/actor-potus.md` | `market_actor`·`potus_feed` 계획 (앞으로 만들 것) |
 
 ---
 
@@ -137,7 +137,7 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 
 **`.env`는 비밀값·자격증명만 갖는다**(토큰, 비밀번호, 프록시 URL, chat id).
 그 외 모든 설정 — 기능 켜기/끄기, 수량·주기 같은 튜닝값 — 은
-각 모듈 `core/config.py`(`telegram_bot/core/config.py`·`web/core/config.py`)의
+각 모듈 `core/config.py`(`services/telegram_bot/core/config.py`·`services/web/core/config.py`)의
 리터럴 상수다(2026-08-23 정리, 2026-09-13 모듈별 분리). 값을 바꾸려면 코드를
 고치고 git에 커밋한다 — 서버 `.env`를 직접 고치던 예전 방식은 무엇을 언제
 왜 바꿨는지가 서버에만 남고 git 이력에는 없었다.
@@ -241,13 +241,13 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 
 | 자리 | 파일 |
 |---|---|
-| 순회·정규화·저장 | `web/polymarket/dashboard/` |
-| one-shot 진입점 | `web/polymarket/refresh.py` |
-| 읽기 repository | `web/polymarket/repository.py` |
-| 화면·API | `web/server.py`(`/polymarket`, `/api/polymarket/*`) |
+| 순회·정규화·저장 | `services/web/polymarket/dashboard/` |
+| one-shot 진입점 | `services/web/polymarket/refresh.py` |
+| 읽기 repository | `services/web/polymarket/repository.py` |
+| 화면·API | `services/web/server.py`(`/polymarket`, `/api/polymarket/*`) |
 | systemd 유닛 | `infra/systemd/stock-chatbot-polymarket-refresh.{service,timer}` |
 | 산출물 | `data/webpub/polymarket/`의 `current.json`·`status.json`·`generations/` |
-| 크기 실측 도구 | `web/tests/polymarket_manifest_size_probe.py` |
+| 크기 실측 도구 | `services/web/tests/polymarket_manifest_size_probe.py` |
 
 ### 8-1. 설치
 
@@ -357,7 +357,7 @@ sudo -u stockbot /srv/stock-chatbot/venv/bin/python /srv/stock-chatbot/web/tests
 ```
 
 고치는 방향은 **compact에서 목록·순위·필터·정렬이 읽지 않는 필드를 detail로
-내리는 것**이다(`web/polymarket/dashboard/models.py`의 `normalize_event`). detail은
+내리는 것**이다(`services/web/polymarket/dashboard/models.py`의 `normalize_event`). detail은
 byte-addressed라 옮기는 비용이 사실상 없다. 2026-09-01에 7개(`slug`·
 `category_reason`·`system_tags`·`liquidity_source`·`volume`·`market_count`·
 `runner_up_probability`)를 내려 826 → 638 B/event로 줄였다. 더 내릴 것이
@@ -404,9 +404,9 @@ sudo systemctl daemon-reload
 sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
 ```
 
-화면까지 걷어내려면 `web/server.py`의 `/polymarket`·`/api/polymarket/*` 라우트와
-`web/pages.py`의 `POLYMARKET_HTML`, `web/polymarket/dashboard/`,
-`web/polymarket/repository.py`를 지우고 웹을 재기동한다.
+화면까지 걷어내려면 `services/web/server.py`의 `/polymarket`·`/api/polymarket/*` 라우트와
+`services/web/pages.py`의 `POLYMARKET_HTML`, `services/web/polymarket/dashboard/`,
+`services/web/polymarket/repository.py`를 지우고 웹을 재기동한다.
 
 ## 9. 백업·복구·재부팅
 
@@ -518,8 +518,8 @@ Basic 인증도 TLS가 성립한 뒤에 처리된다.
 
 | 자리 | 파일 |
 |---|---|
-| 굽기(봇 안에서만 호출) | `web/export.py` |
-| 읽기 전용 웹(`GET`만) | `web/server.py` |
+| 굽기(봇 안에서만 호출) | `services/web/export.py` |
+| 읽기 전용 웹(`GET`만) | `services/web/server.py` |
 | systemd 유닛 | `infra/systemd/stock-chatbot-web.service` |
 | 프록시 설정 견본 | `infra/Caddyfile.example` |
 | 산출물 | `data/webpub/`의 `market.json`·`market_chart.png`·`research.json`·`meta.json` |
@@ -537,7 +537,7 @@ curl -s localhost:8788/api/meta        # 산출물 시각. 봇이 아직 굽기 
 ```
 
 봇과 독립이라 봇을 재기동해도 웹은 마지막 산출물을 계속 보여 준다. 코드 갱신
-(3절)으로 `web/server.py`가 바뀌었으면 이 유닛도 함께 재기동한다.
+(3절)으로 `services/web/server.py`가 바뀌었으면 이 유닛도 함께 재기동한다.
 
 ```bash
 sudo systemctl restart stock-chatbot-web
@@ -647,7 +647,7 @@ sudo -u stockbot ls -la /srv/stock-chatbot/data/webpub/
 
 | 겹 | 자리 | 무엇을 하나 | 한계 |
 |---|---|---|---|
-| 권고 | 앱의 `/robots.txt` (`web/pages/robots.py`) | `/api/` 전체와 AI 수집 봇에 Disallow | 봇이 스스로 지킬 때만 듣는다 |
+| 권고 | 앱의 `/robots.txt` (`services/web/pages/robots.py`) | `/api/` 전체와 AI 수집 봇에 Disallow | 봇이 스스로 지킬 때만 듣는다 |
 | 강제 | Caddy `@aibots` matcher (`infra/Caddyfile.example`) | 같은 UA 목록을 프록시 전에 `abort` | UA를 위장하면 잡지 못한다 |
 
 **두 목록은 같이 고친다.** 갈라지면 한쪽만 막힌 채로 돈다.
@@ -665,7 +665,7 @@ sudo infra/scripts/apply-caddy-bots.sh         # 백업 → 반영 → validate 
 ```
 
 **손으로 편집하지 않는다.** UA 목록은 견본(`infra/Caddyfile.example`)과 앱의
-robots.txt(`web/pages/robots.py`) 둘이 같아야 하는데, 편집기로 옮기면 목록을 고칠
+robots.txt(`services/web/pages/robots.py`) 둘이 같아야 하는데, 편집기로 옮기면 목록을 고칠
 때마다 어긋날 자리가 하나 더 생기고 어긋난 것을 알아챌 방법이 없다. 스크립트는
 견본의 `# BEGIN aibots` ~ `# END aibots` 사이를 그대로 복사한다.
 

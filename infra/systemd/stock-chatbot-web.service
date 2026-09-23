@@ -12,7 +12,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=MPLBACKEND=Agg
 Environment=WEBPUB_HOST=127.0.0.1
 Environment=WEBPUB_PORT=8788
-ExecStart=/srv/stock-chatbot/venv/bin/python -m web.server
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.server
 Restart=on-failure
 RestartSec=10
 MemoryMax=256M

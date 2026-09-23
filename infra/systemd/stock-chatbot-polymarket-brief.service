@@ -8,7 +8,7 @@ User=stockbot
 Group=stockbot
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/srv/stock-chatbot/venv/bin/python -m web.polymarket.sector_brief
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.polymarket.sector_brief
 Nice=10
 CPUWeight=20
 MemoryMax=384M

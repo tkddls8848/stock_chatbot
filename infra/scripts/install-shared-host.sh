@@ -15,8 +15,8 @@ if ! id "$APP_USER" >/dev/null 2>&1; then
 fi
 
 # 배치가 끝난 체크아웃인지 확인한다. 봇과 웹이 각자 자기 패키지를 갖는다.
-test -d "$APP_DIR/telegram_bot"
-test -d "$APP_DIR/web"
+test -d "$APP_DIR/services/telegram_bot"
+test -d "$APP_DIR/services/web"
 test -f "$APP_DIR/requirements.txt"
 test -f "$APP_DIR/.env"
 
@@ -77,7 +77,7 @@ fi
 # 프로세스마다 자기 설정을 따로 읽는다. 한쪽이 깨져도 다른 쪽은 뜨지만,
 # 설치 직후에는 둘 다 import되는지 확인한다.
 sudo -u "$APP_USER" "$APP_DIR/venv/bin/python" -c \
-  "import sys; sys.path.insert(0, '$APP_DIR'); import telegram_bot.core.config, web.core.config"
+  "import sys; sys.path.insert(0, '$APP_DIR'); import services.telegram_bot.core.config, services.web.core.config"
 
 if [ "$FIRST_INSTALL" = 1 ]; then
   ok "공유 호스트 런타임 설치 완료. 전환 시에만 서비스를 enable --now 한다."

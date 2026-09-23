@@ -18,24 +18,24 @@
 ## 실행과 검증
 
 ```powershell
-.\venv\Scripts\python.exe -m telegram_bot.main
+.\venv\Scripts\python.exe -m services.telegram_bot.main
 .\venv\Scripts\python.exe -m pytest -q
 .\venv\Scripts\python.exe -m pytest -q shorts/tests   # 루트 pytest에 안 잡힌다
-.\venv\Scripts\python.exe -m ruff check telegram_bot web conftest.py tests
+.\venv\Scripts\python.exe -m ruff check services conftest.py tests
 ```
 
 - Python 3.11+, `requirements.txt`, 개발 도구는 `requirements-dev.txt`.
 - **저장소 루트가 import root다.** 모든 명령을 루트에서 돌린다. 내부 import는
-  `from telegram_bot.core...`, `from telegram_bot.news...`, `from web.polymarket...`
+  `from services.telegram_bot.core...`, `from services.telegram_bot.news...`, `from services.web.polymarket...`
   형식이다.
 - 진입점은 넷이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
-  `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: telegram_bot`이 난다.
+  `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: services`가 난다.
   | 프로세스 | 명령 |
   |---|---|
-  | 텔레그램 봇(+8787 관리 웹) | `python -m telegram_bot.main` |
-  | 공개 웹 8788 | `python -m web.server` |
-  | 폴리마켓 순회 one-shot | `python -m web.polymarket.refresh` |
-  | 폴리마켓 줄글 one-shot | `python -m web.polymarket.sector_brief` |
+  | 텔레그램 봇(+8787 관리 웹) | `python -m services.telegram_bot.main` |
+  | 공개 웹 8788 | `python -m services.web.server` |
+  | 폴리마켓 순회 one-shot | `python -m services.web.polymarket.refresh` |
+  | 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |
 - **텔레그램 봇 폴더를 `telegram`으로 이름 붙이지 않는다.** `python-telegram-bot`이
   제공하는 최상위 모듈이 정확히 `telegram`이라, import root에 같은 이름을 두면
   19개 파일의 `from telegram import Update`가 전부 이 폴더를 집는다.
@@ -49,10 +49,10 @@
 
 ## 구조
 
-최상위는 **도메인 넷과 인프라 하나**다. **도메인끼리는 아무것도 공유하지 않는다** —
+최상위는 **도메인 넷과 인프라 하나**다(파이썬 도메인 `telegram_bot`·`web`은 `services/` 아래에 있다). **도메인끼리는 아무것도 공유하지 않는다** —
 `telegram_bot`·`web`은 서로를 import하지 않고, 둘 사이에 놓인 공용 패키지도 없다.
 각자 자기 `core/`(설정·시각·저장)와 `llm/`(Cloudflare 백엔드·분석기)을 갖는다.
-유일한 예외가 `web/export.py`로, 봇이 산출물을 굽는 쪽이라 봇에서 지연 import한다 —
+유일한 예외가 `services/web/export.py`로, 봇이 산출물을 굽는 쪽이라 봇에서 지연 import한다 —
 방향은 봇 → 웹 한쪽뿐이고 웹은 봇을 부르지 않는다. `shorts`는 파이썬 import 자체를
 하지 않고 공개 웹의 API만 HTTP로 읽는다.
 
@@ -66,36 +66,38 @@ terraform·호스트 스크립트는 넷이 한 인스턴스에 얹히는 문제
 ```text
 tests/                 저장소 자체의 검사. 도메인 테스트는 여기 두지 않는다
 
-telegram_bot/          텔레그램 봇 프로세스
-  main.py              조립, Telegram 앱, 스케줄러 — `python -m telegram_bot.main`
-  core/                이 프로세스의 설정·시각·원자적 저장·워커
-  llm/                 이 프로세스의 Cloudflare 백엔드와 분석기
-  prompts/             이 프로세스가 읽는 모델 프롬프트
-  features/            기능 등록과 명령 핸들러
-  handlers/            콜백 라우팅, 메뉴 구성, 인라인 네비게이션
-  news/                소스, 매시간 수집, 시장상황 보고서와 발행 판정, 감성
-  research/            뉴스 수집, 후보 발굴, 리서치 실행
-  briefing/            브리핑 생성과 A주 거래일 캘린더
-  stocks/              종목 DB와 시세
-  state/               발송·뉴스·시장 감성 상태
-  watchlist/           관심종목 상태
-  webadmin/            관리 웹 대시보드(터널 전용, 8787) — 봇과 같은 프로세스다
-  docs/  tests/
+services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 공용 계층이 아니다 —
+                       둘은 서로를 import하지 않는다(`services/web/export.py`만 예외)
+  telegram_bot/        텔레그램 봇 프로세스
+    main.py            조립, Telegram 앱, 스케줄러 — `python -m services.telegram_bot.main`
+    core/              이 프로세스의 설정·시각·원자적 저장·워커
+    llm/               이 프로세스의 Cloudflare 백엔드와 분석기
+    prompts/           이 프로세스가 읽는 모델 프롬프트
+    features/          기능 등록과 명령 핸들러
+    handlers/          콜백 라우팅, 메뉴 구성, 인라인 네비게이션
+    news/              소스, 매시간 수집, 시장상황 보고서와 발행 판정, 감성
+    research/          뉴스 수집, 후보 발굴, 리서치 실행
+    briefing/          브리핑 생성과 A주 거래일 캘린더
+    stocks/            종목 DB와 시세
+    state/             발송·뉴스·시장 감성 상태
+    watchlist/         관심종목 상태
+    webadmin/          관리 웹 대시보드(터널 전용, 8787) — 봇과 같은 프로세스다
+    docs/  tests/
 
-web/                   읽기 전용 공개 웹(별도 프로세스, 8788)
-  server.py            FastAPI 라우트, `GET`만 — `python -m web.server`
-  core/                이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
-  llm/                 줄글 브리프용 Cloudflare 백엔드와 분석기
-  prompts/             줄글 브리프 프롬프트
-  pages.py             화면(정적 HTML·CSS, 기동 시 1회 조립)
-  export.py            봇이 부르는 산출물 굽기 — 유일한 봇 → 웹 방향 의존
-  polymarket/          폴리마켓 화면을 먹이는 파이프라인. 봇과 무관한 one-shot이라
+  web/                 읽기 전용 공개 웹(별도 프로세스, 8788)
+    server.py          FastAPI 라우트, `GET`만 — `python -m services.web.server`
+    core/              이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
+    llm/               줄글 브리프용 Cloudflare 백엔드와 분석기
+    prompts/           줄글 브리프 프롬프트
+    pages.py           화면(정적 HTML·CSS, 기동 시 1회 조립)
+    export.py          봇이 부르는 산출물 굽기 — 유일한 봇 → 웹 방향 의존
+    polymarket/        폴리마켓 화면을 먹이는 파이프라인. 봇과 무관한 one-shot이라
                        여기 둔다 — 존재 이유가 이 웹 화면 하나다
-    dashboard/         Gamma 순회·정규화·generation 저장
-    refresh.py         3시간마다 도는 순회 — `python -m web.polymarket.refresh`
-    sector_brief.py    순회 성공 뒤 도는 줄글 — `python -m web.polymarket.sector_brief`
-    repository.py      server.py가 현재 generation을 읽는 자리
-  docs/  tests/
+      dashboard/       Gamma 순회·정규화·generation 저장
+      refresh.py       3시간마다 도는 순회 — `python -m services.web.polymarket.refresh`
+      sector_brief.py  순회 성공 뒤 도는 줄글 — `python -m services.web.polymarket.sector_brief`
+      repository.py    server.py가 현재 generation을 읽는 자리
+    docs/  tests/
 
 shorts/                쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지이고
                        이 저장소 코드를 import하지 않는다 — 공개 웹의
@@ -253,7 +255,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | 브리핑(briefing) | `NewsLog` | 종목별, count·평균만(verdict 없음) | `NEWS_LOG_RETENTION_DAYS=30`로 매 append마다 정리 |
   | `/market`(market_sentiment) | `MarketDigestStore` | 시장(국가) 단위, 그날 헤드라인 배치 재요약 | `MARKET_DIGEST_RETENTION_DAYS=30` |
   | `/research`(research) | 없음 — 캐시를 안 쓴다 | 실행마다 원문을 새로 수집해 LLM에 직접 투입 | 해당 없음 |
-  보고서 근거 기사는 `telegram_bot/news/report.py`가 `NewsLog`에 기록한다.
+  보고서 근거 기사는 `services/telegram_bot/news/report.py`가 `NewsLog`에 기록한다.
   **`signal_scoring`(`/view`)과 그 `PredictionLog`는 삭제했다.** 종목별
   up/down/neutral verdict는 평균 감성 임계값 하나로 만든 참고 뷰였고, 같은
   근거 기사를 `NewsLog`가 이미 더 많은 필드로 남긴다. 되살릴 일이 생기면
@@ -275,20 +277,20 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   이상 두 화면만 가진다. 되살리려면 git에서 꺼내는 별도 변경이며, 그것은
   "지금 열린 것만 본다"는 제품 결정을 되돌리는 일이다.
 - **현재 대시보드는 봇과 완전히 분리된 systemd one-shot이 굽는다.**
-  `web/polymarket/refresh.py`가 3시간마다 Gamma `/events/keyset`을
-  전수 순회해 `data/webpub/polymarket/`에 generation을 쓰고, `web/server.py`가
+  `services/web/polymarket/refresh.py`가 3시간마다 Gamma `/events/keyset`을
+  전수 순회해 `data/webpub/polymarket/`에 generation을 쓰고, `services/web/server.py`가
   `/polymarket`과 `/api/polymarket/*`로 그 파일만 내보낸다. 봇 프로세스도
   스케줄러도 이 경로를 모른다 — 봇이 죽어도 화면은 마지막 generation을 계속
   보여 준다. 절차는 `infra/server-ops.md` 8절.
 - **`current.json`은 열린 event 전부를 한 파일에 담고 상한이 16 MiB다.**
-  이것은 임의의 숫자가 아니라 설계 판정 기준이다(`web/docs/polymarket-dashboard.md`
+  이것은 임의의 숫자가 아니라 설계 판정 기준이다(`services/web/docs/polymarket-dashboard.md`
   7-4). 넘으면 `write_generation`이 멈추고 current를 교체하지 않는다 —
   상한을 올려 넘기지 않는다. 공개 웹이 이 파일을 통째로 파이썬 객체로 올리고
   `MemoryMax=192M`이 걸려 있어, 올리면 화면이 비는 대신 웹 프로세스가 OOM으로
   죽는다. **compact에 필드를 추가하면 그 크기에 event 수(실측 21,872)가
   곱해진다** — 20 B짜리 필드 하나가 0.42 MiB다. 목록·순위·필터·정렬이 읽지
   않는 값은 detail로 내린다(detail은 byte-addressed라 한 행만 seek한다).
-  추가 전에 `web/tests/polymarket_manifest_size_probe.py`로 여유를 먼저 잰다.
+  추가 전에 `services/web/tests/polymarket_manifest_size_probe.py`로 여유를 먼저 잰다.
 - **두 one-shot은 봇의 학습 CPU 집계 밖이다. 대신 자기 예산을 스스로 지킨다.**
   별도 프로세스라 `burst_phase`·`is_burst_active`가 닿지 않는다. 유닛의
   `Nice=10`·`CPUWeight=20`은 **경쟁이 있을 때만** 양보시켜서, 새벽에 봇이
@@ -304,8 +306,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   승격 순간에 이미 들어와 있던 요청이 자기가 읽던 shard를 계속 seek할 수 있게
   하기 위한 것이다. 과거 조회는 만들지 않는다 — 화면은 "지금"만 본다.
 - **공개 웹은 봇과 다른 프로세스이고 `GET`만 가진다.** 봇이 산출물을 갱신할 때
-  `web/export.py`가 `data/webpub/`에 구워 두고(`market.json`·`market_chart.png`·
-  `research.json`·`meta.json`), `web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
+  `services/web/export.py`가 `data/webpub/`에 구워 두고(`market.json`·`market_chart.png`·
+  `research.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
   렌더하지 않는다 — `render_market_chart`는 dpi 160짜리 12×7.5인치 figure라 지인
   몇 명의 새로고침만으로 사전선별 보정이 밀린다. **실행 트리거는 웹에 열지 않는다**:
   `/research run`·`/market` 재계산은 텔레그램에만 둔다. Neurons가 링크를 받은 사람
@@ -318,7 +320,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **회원가입·계정별 상태, DB, SPA 빌드 파이프라인, 실시간 갱신은 만들지 않는다** —
   상태 파일이 단일 사용자 형식이고, 조회가 전부 "마지막 것 한 개"라 인덱스가 필요한
   질의가 없으며, 데이터가 분 단위로 바뀌지 않아 기준 시각을 적는 것으로 충분하다.
-  **화면(`web/pages.py`)은 정적 문자열이고 외부 폰트·CDN·프레임워크를 부르지
+  **화면(`services/web/pages.py`)은 정적 문자열이고 외부 폰트·CDN·프레임워크를 부르지
   않는다.** 페이지는 기동 시 한 번 조립되고 값은 브라우저가 `/api/*`에서 채운다 —
   이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고, 빌드
   산출물이 없어야 배포가 파일 복사로 끝나기 때문이다. 값을 넣을 때는 `esc()`를
@@ -328,23 +330,22 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보는 방향과 맞춘다. 서양식 녹/적으로 되돌리지 않는다.
 - 종목 canonical code는 시장마다 형식이 다르다. CN·HK는 **접두사 없는 숫자 코드**
   (`600519`, `00700`)이고, US·KR만 `US:NASDAQ:AAPL`·`KR:KOSPI:005930` 형식이다
-  (`telegram_bot/stocks/universe.py`의 `stock_key`). KR 6자리는 A주 코드와 겹치므로 US·KR에만
+  (`services/telegram_bot/stocks/universe.py`의 `stock_key`). KR 6자리는 A주 코드와 겹치므로 US·KR에만
   거래소를 붙인다 — 코드 문자열만으로 시장을 단정하지 않는다.
 
 - **뉴스·시장 검색(`/search`, `/api/search`)은 공개 산출물만 검색한다.**
-  `web/search.py`가 국가·기간·주제의 한·영·일·중 표기와 긍정/부정 조건을
+  `services/web/search.py`가 국가·기간·주제의 한·영·일·중 표기와 긍정/부정 조건을
   해석한다. 자유로운 질문의 답을 생성하는 챗봇은 아니며, 해석한 조건을 화면에
   드러낸다. 검색 요청에서는 LLM·외부 API·봇 상태·비공개 리서치를 읽지 않는다.
   일일 시장 요약은 `market.json`에서 읽고, 발행한 시장상황 보고서·주요 기사 제목은
-  봇이 `web/export.py`를 통해 `news.json`에 따로 굽는다. 뉴스 검색에 한해
+  봇이 `services/web/export.py`를 통해 `news.json`에 따로 굽는다. 뉴스 검색에 한해
   최근 30일, 최대 3,000건을 보존한다. 원문 본문·관심종목·학습용 필드는 내보내지
   않는다. URL은 수집 원본에서 가져오고, 검색 결과에는 출처·자료 날짜·갱신 시각을
   표시한다. 파일 변경 때만 검색 자료를 다시 읽으며 날짜 조건은 요청마다 적용한다.
 
-
 ## 기능 경계 — 가장 중요한 규칙
 
-**기능은 다른 기능을 import하지 않는다.** `telegram_bot/tests/test_feature_isolation.py`
+**기능은 다른 기능을 import하지 않는다.** `services/telegram_bot/tests/test_feature_isolation.py`
 가 AST로 검사해 위반하면 실패한다. 프레임워크(`features/base.py`·`registry.py`)와
 카탈로그 조립 지점(`features/__init__.py`)만 예외다.
 
@@ -359,7 +360,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 
 **모듈 경계를 넘는 공용 계층을 두지 않는다.** 최상위 모듈(`telegram_bot`, `web`,
 `shorts`)은 필요한 것을 **각자 자기 안에 구현한다.** 공유는 그 모듈 안에서만 한다
-— `telegram_bot/core`는 봇의 것이고 `web/core`는 웹의 것이며, 이름이 같아도 서로
+— `services/telegram_bot/core`는 봇의 것이고 `services/web/core`는 웹의 것이며, 이름이 같아도 서로
 다른 파일이다.
 
 이유는 장애 전파다. **한 모듈의 사정으로 고친 파일이 다른 모듈을 멈추면 안 된다.**
@@ -369,7 +370,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순회 one-shot까지
 끌어내렸다. 공용 계층 하나가 프로세스 둘의 기동 조건을 묶어 버린 것이다.
 
-**그래서 중복을 감수한다.** `telegram_bot/llm/backends.py`와 `web/llm/backends.py`는
+**그래서 중복을 감수한다.** `services/telegram_bot/llm/backends.py`와 `services/web/llm/backends.py`는
 지금 내용이 같다. 한쪽 버그를 고치면 다른 쪽에 따로 옮겨야 하고 **그 비용은
 의도한 것이다** — 옮길지 말지를 그때 판단할 수 있다는 뜻이고, 반대쪽은 판단 없이
 끌려간다. 옮길 때는 두 벌 다 고치고 양쪽 테스트를 돌린다.
@@ -384,7 +385,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 | 방법 | 쓸 때 | 실제 예 |
 |---|---|---|
-| 소유자를 **같은 모듈의 공용 계층**으로 옮긴다 | 그 지식이 특정 기능의 것이 아닐 때 | 종목명 토큰화 → `telegram_bot/stocks/naming.py` |
+| 소유자를 **같은 모듈의 공용 계층**으로 옮긴다 | 그 지식이 특정 기능의 것이 아닐 때 | 종목명 토큰화 → `services/telegram_bot/stocks/naming.py` |
 | **`FeatureSpec` 선언**으로 레지스트리가 중개한다 | 기능이 앱에 무언가를 기여할 때 | `/system` 화면 → `status_reports` |
 
 **한 모듈 안에서 결합 제거와 중복 회피가 부딪히면 결합 제거가 우선이다.** 단
@@ -399,7 +400,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 ## 그 밖의 확정 규칙
 
 - 환경 변수는 각 모듈의 `core/config.py`에서만 읽고 `.env.example`에 현재 키를 기록한다.
-  (`telegram_bot/core/config.py`, `web/core/config.py`. `shorts`는 자기 `config.py`.)
+  (`services/telegram_bot/core/config.py`, `services/web/core/config.py`. `shorts`는 자기 `config.py`.)
   운영자가 조정하지 않는 설정은 같은 모듈의 리터럴 상수로 둔다.
 - **사전선별 학습은 새 평가 자료에 필요한 작업량만 수행한다.** 고정 9% 목표와
   하루 4.32 CPU-hour 상한은 사용하지 않는다. 단일 낮은 우선순위 worker에서
@@ -428,7 +429,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   로그나 예외에 포함하지 않는다.
 - LLM JSON은 필수 필드를 엄격히 검사하고 현재 응답 envelope만 처리한다.
 - **3시간 보고서는 응답 형식을 스키마로 강제한다(`response_format`).**
-  `telegram_bot/llm/news_report.py`의 `RESPONSE_FORMAT`이고, 이 경로에만 쓴다.
+  `services/telegram_bot/llm/news_report.py`의 `RESPONSE_FORMAT`이고, 이 경로에만 쓴다.
   **비용은 0이다** — 같은 입력을 구조화 없이/있이 부른 실측(2026-09-21)에서
   입력 토큰이 정확히 같았고(3,781·7,399), 네 점이
   `neurons ≈ 0.00463×입력 + 0.0304×출력`에 남는 몫 없이 맞는다. Cloudflare는
@@ -446,7 +447,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   Neurons만 두 배로 태운다. 회로 차단의 연속 실패로도 세지 않는다
   (`caller_fault`) — 한 호출자의 출력 예약 문제로 다른 LLM 작업까지 멈추면 안 된다.
 - **LLM에게 원문 URL을 받아 적게 하지 않는다.** URL은 파이썬 쪽에서 따라가다
-  표시 직전에 붙인다(`telegram_bot/news/utils.py`의 `<a href>`). 리서치 evidence도 모델은
+  표시 직전에 붙인다(`services/telegram_bot/news/utils.py`의 `<a href>`). 리서치 evidence도 모델은
   `news_items`의 id만 가리키고 서버가 되찾는다(`_news_payload`). Google News
   링크는 중앙값 286자의 base64라, 모델이 생성하게 두면 출력 예산의 3분의 1을
   먹고 정작 분석이 끝을 맺지 못한다.
@@ -459,10 +460,10 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   지우지 않는다. 공유 호스트와의 경계·계약 값과 앱 설치는 `infra/host-contract.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 셋이다: `telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
-  게시물 추적), `web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
+  현재 계획서는 셋이다: `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  게시물 추적), `services/web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
   대시보드로),
-  `web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
+  `services/web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
   이동 추적). 뒤 둘은 앞이 전제이지만 파일을 나눴다 — 대시보드 계획서가 먼저
   끝나 지워져도 줄글 계획은 남아야 한다.
   **계획서를 새로 파는 것은 주제가 기존 계획서와 독립일 때뿐이고, 다 끝나면 파일째
@@ -475,9 +476,9 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   저장된 타임스탬프를 `now()`와 비교할 때는 `ensure_jst()`로 감싼다 — aware 전환
   이전에 쓴 `data/` 파일에는 오프셋이 없어 그냥 비교하면 TypeError로 죽는다.
   예외는 셋뿐이다: Cloudflare 할당량 리셋은 UTC 00시 기준이고
-  (`telegram_bot/llm/backends.py`·`web/llm/backends.py`), 기사 시각은 소스 타임존을 `telegram_bot/news/utils.py`가 UTC +9로 변환하며,
+  (`services/telegram_bot/llm/backends.py`·`services/web/llm/backends.py`), 기사 시각은 소스 타임존을 `services/telegram_bot/news/utils.py`가 UTC +9로 변환하며,
   사전선별의 하루 CPU 사용량도 Neurons와 같은 UTC 00시에 리셋한다
-  (`telegram_bot/features/news_prefilter/cpu_usage.py`) — 날짜 경계를 맞춰 두면 할당량이
+  (`services/telegram_bot/features/news_prefilter/cpu_usage.py`) — 날짜 경계를 맞춰 두면 할당량이
   소진된 날을 다른 쪽 로그와 같은 일자로 읽을 수 있다.
 
 ## 리팩터링 방법
@@ -515,8 +516,8 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 ### 죽은 코드는 추측하지 말고 측정한다
 
-네 진입점(`telegram_bot.main`, `web.server`, `web.polymarket.refresh`,
-`web.polymarket.sector_brief`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
+네 진입점(`services.telegram_bot.main`, `services.web.server`, `services.web.polymarket.refresh`,
+`services.web.polymarket.sector_brief`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
 찾는다. 함수 안 지연 import는 그래프에 안 잡히므로 따로 확인한다.
 
 `news/{pipeline,preparation,delivery,selection}.py` 523줄이 이 방법으로 나왔다.
@@ -527,7 +528,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 테스트 통과만으로 갈음하지 않는다. 테스트가 덮지 않는 부분이 있다.
 
-`web/pages.py` 863줄을 여섯 파일로 나눌 때, 분리 전 모듈을 따로 import해 네 화면을
+`services/web/pages.py` 863줄을 여섯 파일로 나눌 때, 분리 전 모듈을 따로 import해 네 화면을
 렌더하고 새 패키지의 결과와 SHA-256을 비교했다 — 네 화면 모두 바이트 단위로
 동일했다. 이런 증명을 붙일 수 있으면 붙인다.
 
@@ -545,7 +546,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 `utils`·`helper`·`common`·`misc`·`manager`·`processor`는 피하고 도메인 단어를 쓴다.
 단 이 저장소의 확정 관례는 그대로 둔다 — `handlers.py`는 기능별 명령 구현 자리이고
-(6곳), `telegram_bot/news/utils.py`는 뉴스 표시·시각·자르기 계약이다.
+(6곳), `services/telegram_bot/news/utils.py`는 뉴스 표시·시각·자르기 계약이다.
 
 같은 개념에 같은 단어를 쓴다. `customer`/`client`/`user`처럼 섞지 않는다.
 

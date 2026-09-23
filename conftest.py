@@ -9,7 +9,7 @@ from pathlib import Path
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 TEST_TEMP_ROOT = WORKSPACE_ROOT / ".test-tmp"
 
-# 저장소 루트가 import root다. telegram_bot·web이 여기서 보인다.
+# 저장소 루트가 import root다. services.telegram_bot·services.web이 여기서 보인다.
 sys.path.insert(0, str(WORKSPACE_ROOT))
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "test-chat")

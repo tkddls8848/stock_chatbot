@@ -12,7 +12,7 @@ Group=stockbot
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 Environment=MPLBACKEND=Agg
-ExecStart=/srv/stock-chatbot/venv/bin/python -m telegram_bot.main
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.telegram_bot.main
 Restart=on-failure
 RestartSec=10
 MemoryHigh=768M
