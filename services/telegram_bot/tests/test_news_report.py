@@ -556,6 +556,23 @@ def test_failed_market_still_shows_its_headlines():
     assert "Headline 0" in section
 
 
+def test_highlights_show_only_title_and_sentiment():
+    """근거 기사에는 링크·발행 시각 없이 제목과 감성만 붙는다."""
+    item = {**_item(0), "url": "https://example.com/a"}
+    result = {
+        "analysis": "판단.",
+        "highlights": [{"index": 0, "title": "제목", "sentiment": 0.4, "impact": "high"}],
+    }
+
+    section = format_market_section("US", [item], result)
+
+    assert "href" not in section
+    assert section.split("\n\n")[-1].splitlines() == [
+        "• 제목",
+        "- 감성 : 긍정 +0.40 · 영향 높음",
+    ]
+
+
 # ── 전송 ──────────────────────────────────────────────
 
 def _send_app(tmp_path, *, bot=None, analyzer=None, memory=None):

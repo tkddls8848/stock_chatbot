@@ -241,7 +241,9 @@ def format_digest_article(
 
     # 야간 다이제스트는 제목만 옮기고 본문을 만들지 않는다. 빈 본문 줄을
     # 남기면 "- "만 있는 줄이 그대로 보인다.
-    text = f"• {alert}{safe_title} ({html.escape(published_time)})"
+    text = f"• {alert}{safe_title}"
+    if published_time:
+        text += f" ({html.escape(published_time)})"
     if content:
         text += f"\n- {html.escape(content)}"
     if sentiment_line:

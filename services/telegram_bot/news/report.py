@@ -266,18 +266,14 @@ def _headline_payload(items: list[dict]) -> list[dict]:
     return payload
 
 
-def _highlight_text(item: dict, highlight: dict) -> str:
-    formatted = format_china_time_as_jst(
-        item.get("published_at"),
-        item.get("published_date") or None,
-    )
+def _highlight_text(highlight: dict) -> str:
+    # 근거 기사는 제목과 감성만 적는다. 링크·발행 시각은 본문 판단의 각주로는
+    # 과해서 목록을 뉴스 나열처럼 보이게 했다.
     return format_digest_article(
         highlight["title"],
         "",
-        _report_time_label(formatted),
-        compact_sentiment_line(highlight["sentiment"], highlight["impact"]),
         "",
-        str(item.get("url") or ""),
+        compact_sentiment_line(highlight["sentiment"], highlight["impact"]),
     )
 
 
@@ -304,27 +300,14 @@ def format_market_section(
         # 제목만이라도 남긴다.
         lines.append("<i>요약 생성 실패 — 원문 제목만 표시합니다.</i>")
         for item in items[:_FALLBACK_HEADLINE_LIMIT]:
-            formatted = format_china_time_as_jst(
-                item.get("published_at"),
-                item.get("published_date") or None,
-            )
-            lines.append(
-                format_digest_article(
-                    str(item.get("title") or ""),
-                    "",
-                    _report_time_label(formatted),
-                    "",
-                    "",
-                    str(item.get("url") or ""),
-                )
-            )
+            lines.append(format_digest_article(str(item.get("title") or ""), "", ""))
         return "\n\n".join(lines)
 
     if result["analysis"]:
         lines.append(html.escape(result["analysis"]))
     shown = result["highlights"][:NEWS_REPORT_SHOWN_HIGHLIGHTS]
     for highlight in shown:
-        lines.append(_highlight_text(items[highlight["index"]], highlight))
+        lines.append(_highlight_text(highlight))
     hidden = len(result["highlights"]) - len(shown)
     if hidden > 0:
         lines.append(f"<i>이 판단이 읽은 기사 {hidden}건 더</i>")
