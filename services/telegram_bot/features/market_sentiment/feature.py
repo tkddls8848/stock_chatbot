@@ -60,7 +60,8 @@ FEATURE = FeatureSpec(
     commands=(
         CommandSpec("market", "시장 감성 지금 갱신", cmd_market),
     ),
-    menus=(MenuSpec("📊 시장 감성", "nav:market", 0, "📊 시장", 1),),
+    # 하단 메뉴에는 없다 — "🛠 웹 관리" 화면에서 연다.
+    menus=(MenuSpec("📊 시장 감성", "nav:market", 0),),
     install_services=_install_services,
     install_jobs=_install_jobs,
     data_files=(

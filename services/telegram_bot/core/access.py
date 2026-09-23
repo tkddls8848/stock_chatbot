@@ -84,7 +84,7 @@ _MENU_LABELS = {
     "market": "시장 감성 갱신",
     "watch": "관심종목 관리",
     "research": "리서치 관리",
-    "web": "웹 상태 조회",
+    "web": "웹 관리",
     "briefing": "브리핑 생성",
     "system": "시스템 상태 조회",
     "stockdb": "종목 DB 갱신",

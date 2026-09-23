@@ -66,7 +66,8 @@ FEATURE = FeatureSpec(
         CommandSpec("research", "리서치 주제·지금 실행", cmd_research, usage="show|set|clear|run"),
     ),
     menus=(
-        MenuSpec("🔎 리서치", "nav:research", 1, "🔎 리서치", 2),
+        # 하단 메뉴에는 없다 — "🛠 웹 관리" 화면에서 연다.
+        MenuSpec("🔎 리서치", "nav:research", 1),
     ),
     install_services=_install_services,
     install_jobs=_install_jobs,

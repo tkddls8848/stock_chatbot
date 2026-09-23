@@ -150,48 +150,9 @@ def test_menu_status_changes_only_target_button():
     assert buttons["nav:research:show"] == "주제 보기"
 
 
-def test_home_text_refreshes_persistent_menu_before_inline_home():
-    class Message:
-        text = "🏠 홈"
-
-        def __init__(self):
-            self.replies = []
-
-        async def reply_text(self, text, **kwargs):
-            self.replies.append((text, kwargs["reply_markup"]))
-
-    message = Message()
-    update = SimpleNamespace(effective_message=message)
-    context = SimpleNamespace(
-        user_data={},
-        bot_data={"feature_registry": _registry()},
-        application=None,
-    )
-
-    asyncio.run(handle_menu_text(update, context))
-
-    assert len(message.replies) == 2
-    assert "하단 메뉴" in message.replies[0][0]
-    labels = {
-        button.text
-        for row in message.replies[0][1].keyboard
-        for button in row
-    }
-    assert "📈 성과" not in labels
-    assert message.replies[1][1].inline_keyboard
-
-
-def test_persistent_market_button_refreshes_now_not_the_admin_menu(monkeypatch):
+def test_persistent_web_admin_button_opens_the_hub_not_the_admin_menu():
     """회귀: 이름 없는 persistent 버튼은 예전 코드에서 조용히 '⚙️ 관리' 화면으로
-    떨어졌다. '📊 시장'은 관리 패널 버튼이라 누르면 바로 시장 감성을 갱신한다."""
-    from services.telegram_bot.handlers import navigation
-
-    calls = []
-
-    async def fake_cmd_market(update, context):
-        calls.append(context.args)
-
-    monkeypatch.setattr(navigation, "cmd_market", fake_cmd_market)
+    떨어졌다. '🛠 웹 관리'는 리서치·시장 감성·웹 상태를 모은 허브를 연다."""
 
     class Message:
         def __init__(self, text):
@@ -202,7 +163,7 @@ def test_persistent_market_button_refreshes_now_not_the_admin_menu(monkeypatch):
             self.replies.append((text, kwargs.get("reply_markup")))
 
     registry = _registry()
-    message = Message("📊 시장")
+    message = Message("🛠 웹 관리")
     update = SimpleNamespace(effective_message=message)
     context = SimpleNamespace(
         user_data={},
@@ -212,8 +173,10 @@ def test_persistent_market_button_refreshes_now_not_the_admin_menu(monkeypatch):
 
     asyncio.run(handle_menu_text(update, context))
 
-    assert calls == [[]]
-    assert not any("<b>관리</b>" in text for text, _ in message.replies)
+    text, markup = message.replies[-1]
+    assert "<b>🛠 웹 관리</b>" in text
+    buttons = {button.callback_data for row in markup.inline_keyboard for button in row}
+    assert {"nav:research", "nav:market", "nav:web:status"} <= buttons
 
 
 def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):

@@ -130,7 +130,7 @@ def test_disabled_features_are_removed_from_both_menus():
     }
 
     assert inline_labels == {"🗂 종목 DB 갱신", "❔ 도움말", "⚙️ 시스템"}
-    assert persistent_labels == {"🏠 홈", "⚙️ 관리"}
+    assert persistent_labels == {"⚙️ 관리"}
 
 
 def test_registry_resolves_menu_ownership_and_persistent_labels():
@@ -139,7 +139,8 @@ def test_registry_resolves_menu_ownership_and_persistent_labels():
     assert registry.menu_owner("nav:market") == "market_sentiment"
     assert registry.menu_owner("nav:web") == "web_status"
     assert registry.menu_owner("nav:marketplace") is None
-    assert registry.persistent_callback("📊 시장") == "nav:market"
+    assert registry.persistent_callback("🛠 웹 관리") == "nav:web"
+    assert registry.persistent_callback("📊 시장") is None
     assert registry.persistent_callback("없는 메뉴") is None
 
 
@@ -211,9 +212,8 @@ def test_persistent_menu_matches_current_primary_workflows():
 
     rows = [[button.text for button in row] for row in persistent_menu(registry).keyboard]
 
+    # 텔레그램은 뉴스·브리핑을 받고 웹을 관리하는 곳이다. 두 줄·네 개만 둔다.
     assert rows == [
-        ["🏠 홈"],
-        ["⭐ 관심종목", "📊 시장"],
-        ["🔎 리서치", "📰 브리핑", "🌐 웹"],
-        ["⚙️ 관리"],
+        ["⭐ 관심종목", "📰 브리핑"],
+        ["⚙️ 관리", "🛠 웹 관리"],
     ]

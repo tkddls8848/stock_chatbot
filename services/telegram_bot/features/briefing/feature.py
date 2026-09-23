@@ -78,7 +78,7 @@ FEATURE = FeatureSpec(
         ),
     ),
     menus=(
-        MenuSpec("📰 브리핑", "nav:briefing", 1, "📰 브리핑", 2),
+        MenuSpec("📰 브리핑", "nav:briefing", 1, "📰 브리핑", 1),
     ),
     install_services=_install_services,
     install_jobs=_install_jobs,

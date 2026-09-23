@@ -20,6 +20,7 @@ from services.telegram_bot.handlers.menus import (
     persistent_menu,
     refresh_persistent_menu,
     research_menu,
+    web_admin_menu,
 )
 from services.telegram_bot.research.handlers import cmd_research
 from services.telegram_bot.watchlist.handlers import cmd_add, cmd_menu
@@ -54,7 +55,12 @@ async def _dispatch_primary_menu_action(
         await cmd_market(update, _context(context, []))
         return True
     if action == "web":
-        await cmd_web(update, _context(context, []))
+        send = message.edit_text if edit_message else message.reply_text
+        await send(
+            "<b>🛠 웹 관리</b>\n리서치·시장 감성은 예약으로 돕니다. 여기서는 지금 실행과 상태 확인만 합니다.",
+            parse_mode="HTML",
+            reply_markup=web_admin_menu(context.bot_data["feature_registry"]),
+        )
         return True
     if action == "watch":
         await cmd_menu(update, _context(context, []))
@@ -104,7 +110,9 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         edit_message=True,
     ):
         return True
-    if action.startswith("research:"):
+    if action == "web:status":
+        await cmd_web(update, _context(context, []))
+    elif action.startswith("research:"):
         command = action.split(":", 1)[1]
         if command == "set":
             context.user_data["menu_input"] = "research_topic"
@@ -132,14 +140,6 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     text = message.text or ""
     registry = context.bot_data["feature_registry"]
-    if text == "🏠 홈":
-        await refresh_persistent_menu(message, registry)
-        await message.reply_text(
-            "<b>주식 뉴스 봇</b>\n원하는 기능을 선택하세요.",
-            parse_mode="HTML",
-            reply_markup=main_menu(registry),
-        )
-        return
     callback_data = registry.persistent_callback(text)
     if callback_data is not None:
         required_feature = registry.menu_owner(callback_data)
