@@ -330,7 +330,8 @@ No  66%  █████████████░░░░░░░
 | `science_health` | 과학·건강 | Science, Space, Health, Medicine |
 | `weather_climate` | 날씨·기후 | Weather, Climate, Temperature |
 | `law_regulation` | 법률·규제 | Legal, Courts, Regulation |
-| `other` | 기타·미분류 | 대표 분야로 확정할 수 없는 모든 event |
+| `composite` | 복합 | 둘 이상 분야의 태그가 함께 걸린 event (`category_reason`에 구성 분야를 적는다) |
+| `other` | 기타·미분류 | 어느 분야 태그도 걸리지 않은 event |
 
 위 표는 시작점이지 완결 목록이 아니다. 0단계가 raw tag 빈도를 모은 뒤 2단계에서
 실제 allowlist와 대표 카테고리 precedence를 고정한다.

@@ -77,6 +77,39 @@ def test_candidates_keep_only_top_volume():
     assert [row["id"] for row in selected] == ["8", "7"]
 
 
+def test_candidates_drop_events_ending_soon(monkeypatch):
+    """곧 마감하는 시장은 결과 확정을 향해 수렴할 뿐이라 트렌드가 아니다."""
+    from datetime import datetime, timezone
+
+    from services.web.polymarket import trending
+
+    monkeypatch.setattr(
+        trending, "now", lambda: datetime(2026, 9, 24, 0, 0, tzinfo=timezone.utc)
+    )
+    soon = dict(_event(1), end_date="2026-09-25T00:00:00Z")      # 24시간 뒤
+    later = dict(_event(2), end_date="2026-09-28T00:00:00Z")     # 96시간 뒤
+    unknown = dict(_event(3), end_date=None)                    # 근거가 없으면 남긴다
+    selected = candidates([soon, later, unknown], min_volume=2_000.0, limit=10)
+    assert [row["id"] for row in selected] == ["2", "3"]
+
+
+def test_candidates_drop_sports_weather_and_their_composites():
+    from services.web.polymarket.dashboard.taxonomy import CATEGORY_TAGS
+
+    sports_tag = sorted(CATEGORY_TAGS["sports"])[0]
+    econ_tag = sorted(CATEGORY_TAGS["economy_finance"])[0]
+    geo_tag = sorted(CATEGORY_TAGS["geopolitics"])[0]
+    events = [
+        dict(_event(1), category="sports"),
+        dict(_event(2), category="weather_climate"),
+        dict(_event(3), category="composite", tags=[sports_tag, econ_tag]),
+        dict(_event(4), category="composite", tags=[geo_tag, econ_tag]),
+        _event(5),
+    ]
+    selected = candidates(events, min_volume=2_000.0, limit=10)
+    assert [row["id"] for row in selected] == ["4", "5"]
+
+
 def test_binary_move_survives_leader_flip():
     """leader가 Yes에서 No로 넘어간 주기가 가장 큰 이동인데 원값으로는 0에 가깝다."""
     before = snapshot([_event(1, leader="Yes", probability=0.55)])

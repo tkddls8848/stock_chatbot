@@ -105,6 +105,13 @@ POLYMARKET_TRENDING_CANDIDATE_LIMIT = 400
 # 이 미만은 후보로도 보지 않는다. 24시간 거래량이 없다시피 한 시장의 20pp 이동은
 # 참여자가 바뀐 것이 아니라 호가가 비어 있다는 뜻이다.
 POLYMARKET_TRENDING_MIN_VOLUME = 2000.0
+# 마감이 이 시간 안에 닥친 event는 후보에서 뺀다. 오늘 기온·특정일 코인 가격·경기
+# 결과처럼 결과가 곧 확정되는 시장은 확률이 0·1로 수렴하는 것이 당연해 이동이
+# 트렌드가 아니다(실측: 후보 400건 중 155건).
+POLYMARKET_TRENDING_MIN_HOURS_TO_END = 72
+# 이 분야는 후보로 보지 않는다. 경기·날씨는 거래량이 커도 시장 컨센서스가 아니다.
+# 복합 분야는 구성 분야 중 하나라도 여기 걸리면 뺀다.
+POLYMARKET_TRENDING_EXCLUDED_CATEGORIES = frozenset({"sports", "weather_climate"})
 # 화면에 조명할 건수. 한 화면에서 훑고 끝낼 수 있는 분량으로 둔다.
 POLYMARKET_TRENDING_SPOTLIGHT_LIMIT = 10
 # 이 아래 이동은 조명하지 않는다. 한 주기(4시간)에 2pp 미만은 컨센서스가 바뀐 것이 아니라

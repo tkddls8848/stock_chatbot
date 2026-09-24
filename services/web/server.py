@@ -212,7 +212,7 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
         category: Literal[
             "politics", "geopolitics", "economy_finance", "crypto",
             "technology_ai", "business", "sports", "culture",
-            "science_health", "weather_climate", "law_regulation", "other",
+            "science_health", "weather_climate", "law_regulation", "composite", "other",
         ] | None = None,
         tag: str | None = None,
         region: str | None = None,

@@ -21,14 +21,17 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from services.web.core.clock import now, today
 from services.web.core.config import (
     POLYMARKET_TRENDING_CANDIDATE_LIMIT,
+    POLYMARKET_TRENDING_EXCLUDED_CATEGORIES,
     POLYMARKET_TRENDING_FILE,
     POLYMARKET_TRENDING_LIST_LIMIT,
+    POLYMARKET_TRENDING_MIN_HOURS_TO_END,
     POLYMARKET_TRENDING_MIN_VOLUME,
     POLYMARKET_TRENDING_MOVE_FLOOR,
     POLYMARKET_TRENDING_SPOTLIGHT_LIMIT,
@@ -36,6 +39,7 @@ from services.web.core.config import (
 )
 from services.web.core.storage import write_json_atomic
 from services.web.polymarket.dashboard.models import title_probability
+from services.web.polymarket.dashboard.taxonomy import CATEGORY_TAGS
 
 logger = logging.getLogger(__name__)
 
@@ -54,17 +58,50 @@ def _number(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _ends_soon(event: dict[str, Any], horizon: datetime) -> bool:
+    """마감이 `horizon` 전이면 True. 마감을 읽지 못하면 걸러낼 근거가 없어 False다."""
+    raw = event.get("end_date")
+    if not isinstance(raw, str) or not raw:
+        return False
+    try:
+        end = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if end.tzinfo is None:
+        return False
+    return end < horizon
+
+
+def _excluded_category(event: dict[str, Any], excluded: frozenset[str]) -> bool:
+    """제외 분야이거나, 복합 분야인데 구성 분야 하나가 제외 분야면 True.
+
+    목록용 event에는 `category_reason`이 없어 복합의 구성은 tags로 다시 잰다.
+    """
+    category = event.get("category")
+    if category in excluded:
+        return True
+    if category != "composite":
+        return False
+    tags = set(event.get("tags") or ())
+    return any(tags & CATEGORY_TAGS.get(key, set()) for key in excluded)
+
+
 def candidates(
     events: list[dict[str, Any]],
     *,
     min_volume: float = POLYMARKET_TRENDING_MIN_VOLUME,
     limit: int = POLYMARKET_TRENDING_CANDIDATE_LIMIT,
+    min_hours_to_end: float = POLYMARKET_TRENDING_MIN_HOURS_TO_END,
+    excluded_categories: frozenset[str] = POLYMARKET_TRENDING_EXCLUDED_CATEGORIES,
 ) -> list[dict[str, Any]]:
     """이동을 추적할 event를 거래량 상위부터 고른다.
 
     `data_status`가 정상인 것만 본다. 확률을 읽지 못한 event의 이동은 값이
     아니라 결측의 변화이고, 유동성이 0인 event의 이동은 호가 한 건이다.
+    곧 마감하는 event와 경기·날씨 분야도 뺀다 — 결과 확정을 향한 수렴은
+    컨센서스의 이동이 아니다.
     """
+    horizon = now() + timedelta(hours=min_hours_to_end)
     rows = [
         event
         for event in events
@@ -72,6 +109,8 @@ def candidates(
         and event.get("id") is not None
         and event.get("data_status") == "ok"
         and (_number(event.get("volume24hr")) or 0.0) >= min_volume
+        and not _ends_soon(event, horizon)
+        and not _excluded_category(event, excluded_categories)
     ]
     rows.sort(key=lambda event: _number(event.get("volume24hr")) or 0.0, reverse=True)
     return rows[:limit]

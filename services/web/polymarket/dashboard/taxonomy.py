@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-TAXONOMY_VERSION = "2026-08-30.1"
+TAXONOMY_VERSION = "2026-09-24.1"
 NAMED_CATEGORY_TARGET = 0.90
 
 CATEGORY_LABELS = {
@@ -19,6 +19,8 @@ CATEGORY_LABELS = {
     "science_health": "과학·건강",
     "weather_climate": "날씨·기후",
     "law_regulation": "법률·규제",
+    # 둘 이상 분야에 걸린 event. 미분류(`other`)와 달리 어디에 속하는지는 안다.
+    "composite": "복합",
     "other": "기타·미분류",
 }
 
@@ -95,8 +97,8 @@ def classify(tags: list[dict[str, str]]) -> dict[str, Any]:
         category = candidates[0]
         reason = "tag:" + sorted(slugs & CATEGORY_TAGS[category])[0]
     elif len(candidates) > 1:
-        category = "other"
-        reason = "ambiguous:" + ",".join(sorted(candidates))
+        category = "composite"
+        reason = "composite:" + ",".join(sorted(candidates))
     else:
         category = "other"
         reason = "unmapped"
@@ -112,7 +114,7 @@ def classify(tags: list[dict[str, str]]) -> dict[str, Any]:
 
 # ── 섹터 줄글 브리프의 감시 태그 ───────────────────────────────────────────
 # 이 목록은 `classify()`가 매기는 category와 **독립이다.** classify는 둘 이상
-# 분야에 걸린 event를 `other`로 보내는데, 지정학과 경제가 동시에 걸린 event가
+# 분야에 걸린 event를 `composite`로 보내는데, 지정학과 경제가 동시에 걸린 event가
 # 바로 브리프가 보려는 것이라 그 경로로는 잡히지 않는다. 그래서 브리프는
 # category를 보지 않고 tags를 직접 본다 — detail seek도 필요 없고 classify를
 # 건드리지 않아 대시보드의 다른 분야 숫자도 움직이지 않는다.
