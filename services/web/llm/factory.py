@@ -1,8 +1,8 @@
-"""공개 웹의 LLM 조립 지점.
+"""웹의 LLM 조립 지점.
 
-**공개 웹이 LLM을 부르는 곳은 폴리마켓 one-shot 둘뿐이다** — 섹터 줄글
-브리프와 자연어 검색용 event 주석. 둘 다 순회 뒤에 돌고, 화면 요청은 LLM을
-부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
+**웹이 LLM을 부르는 곳은 셋이다** — 예측 컨센서스 one-shot 둘(섹터 줄글 브리프,
+자연어 검색용 event 주석)은 순회 뒤에 돌고, 개인 화면의 조언은 잠금을 연 사람이
+`POST /api/portfolio/advice`로 요청할 때만 돈다. 공개 화면 요청은 LLM을 부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
 닮았지만 각자 소유다 — 봇이 번역기나 리서치 분석기의 조립을 바꿔도 이 파일은
 움직이지 않는다.
 """
@@ -23,6 +23,9 @@ from services.web.core.config import (
     POLYMARKET_BRIEF_NUM_PREDICT,
     POLYMARKET_BRIEF_PROMPT_FILE,
     POLYMARKET_BRIEF_TIMEOUT,
+    PORTFOLIO_ADVICE_NUM_PREDICT,
+    PORTFOLIO_ADVICE_PROMPT_FILE,
+    PORTFOLIO_ADVICE_TIMEOUT,
     require_cloudflare_credentials,
 )
 from services.web.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
@@ -73,4 +76,21 @@ def build_polymarket_annotator() -> PolymarketAnnotator:
         ),
         prompt_file=POLYMARKET_ANNOTATE_PROMPT_FILE,
         num_predict=POLYMARKET_ANNOTATE_NUM_PREDICT,
+    )
+
+
+def build_portfolio_advisor():
+    """개인 화면의 조언 해석기. 자격증명이 없으면 ConfigurationError — 조언은 진단만 남는다."""
+    # 지연 import: advisor가 llm.backends를 읽으므로 모듈 머리에서 부르면 순환한다.
+    from services.web.portfolio.advisor import PortfolioAdvisor
+
+    require_cloudflare_credentials()
+    return PortfolioAdvisor(
+        backend=build_backend(
+            "portfolio_advice",
+            model=CLOUDFLARE_MODEL,
+            timeout=PORTFOLIO_ADVICE_TIMEOUT,
+        ),
+        prompt=PORTFOLIO_ADVICE_PROMPT_FILE.read_text(encoding="utf-8"),
+        num_predict=PORTFOLIO_ADVICE_NUM_PREDICT,
     )

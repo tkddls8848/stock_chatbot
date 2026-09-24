@@ -463,7 +463,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | 저장 | `storage/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`storage/public/`)·뉴스 검색·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
   | 노출 | `/portfolio`는 noindex, `robots.txt`에서 막고, 응답에 `Cache-Control: no-store`를 붙인다 |
   | API 모양 | **주소는 명사(자원)이고 동작은 HTTP 메서드가 정한다.** 동사 주소(`/login`·`/advise`·`/run`)를 만들지 않는다. `session`(`POST` 잠금 해제·`DELETE` 잠금), `assets`(`GET` 목록·`POST` 추가, `/assets/{id}`에 `PUT`·`DELETE`), `watchlist`(`GET`·`PUT` 전체 교체), `advice`(`POST` 새 조언 생성·`GET` 최근 목록, `/advice/latest`·`/advice/{id}`에 `GET`)다. 생성이 수십 초 걸려도 `POST /advice`는 완성된 조언을 `201`로 돌려준다 — 한 사람이 쓰는 화면이라 작업 큐를 두지 않는다. 하루 상한에 닿으면 `429`, 이미 생성 중이면 `409`다 |
-  | 봇 접근 | 봇은 HTTP나 비밀번호 없이 `storage/portfolio/`를 파일로 읽는다(관심종목·`/system` 상태). 쓰는 것은 `watchlist.json` 하나(잠금)이고 자산·조언은 읽기만 한다. 웹 코드를 import하지 않는다. 잠금은 브라우저 앞의 문이지 같은 서버 프로세스 사이의 경계가 아니다 |
+  | 봇 접근 | 봇은 HTTP나 비밀번호 없이 `storage/portfolio/`를 파일로 읽는다(관심종목, `/web`의 마지막 조언 시각·외부 자료 상태). 쓰는 것은 `watchlist.json` 하나(잠금)이고 자산·조언은 읽기만 한다. 웹 코드를 import하지 않는다. 잠금은 브라우저 앞의 문이지 같은 서버 프로세스 사이의 경계가 아니다 |
   **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advice`가
   금감원 예적금 금리(`FSS_API_KEY`), 한국은행 ECOS 금리(`ECOS_API_KEY`), 국토부
   실거래가(`MOLIT_API_KEY`)를 읽고, 규칙 진단(자산군 비중·편중, 만기 도래, 보유 금리와

@@ -68,7 +68,7 @@ def require_cloudflare_credentials() -> None:
     ]
     if missing:
         raise ConfigurationError(
-            f"폴리마켓 LLM one-shot에 필요한 {', '.join(missing)}이(가) .env에 비어 있습니다"
+            f"웹 LLM 기능(예측 줄글·검색 주석·자산 조언)에 필요한 {', '.join(missing)}이(가) .env에 비어 있습니다"
         )
 
 
@@ -179,3 +179,52 @@ POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS = 4000.0
 # 모델에 넘기는 설명(description) 길이. 제목만으로는 무엇을 거는지 모호한
 # event가 있어 앞부분만 붙인다. 뒷부분은 대개 판정 규칙의 세부다.
 POLYMARKET_ANNOTATE_DESCRIPTION_CHARS = 300
+
+
+# ── 개인 화면: 전체 자산 포트폴리오 어드바이저(/portfolio) ────────────────────
+# 규칙은 code_guide.md의 「개인 화면」. 공개 화면과 섞지 않는다.
+# 비밀번호 하나로 여는 간단한 잠금이다. 비어 있으면 개인 화면 전체가 503으로
+# 닫힌다 — 빈 비밀번호로 열리지 않는다.
+PORTFOLIO_PASSWORD = os.environ.get("PORTFOLIO_PASSWORD", "").strip()
+PORTFOLIO_SESSION_COOKIE = "nunchi_portfolio"
+# 잠금 해제 쿠키의 수명. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가
+# 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다.
+PORTFOLIO_SESSION_MAX_AGE_SECONDS = 14 * 24 * 3600
+# 비밀번호 추측을 늦춘다. 이 창 안에서 이만큼 틀리면 잠시 429로 막는다.
+PORTFOLIO_LOGIN_MAX_FAILURES = 5
+PORTFOLIO_LOGIN_WINDOW_SECONDS = 600
+PORTFOLIO_ASSETS_FILE = PORTFOLIO_DIR / "assets.json"
+# 봇과 같이 쓰는 파일(봇은 리서치 자동 적용만 쓴다). 잠금 파일 이름은 봇과 같아야 한다.
+PORTFOLIO_WATCHLIST_FILE = PORTFOLIO_DIR / "watchlist.json"
+PORTFOLIO_ADVICE_DIR = PORTFOLIO_DIR / "advice"
+PORTFOLIO_MAX_ASSETS = 200
+PORTFOLIO_MAX_WATCHLIST = 200
+
+# 조언은 요청할 때만 만든다. 반복 클릭 비용을 하루 상한으로 막는다(최근 24시간이
+# 아니라 한국 시간 달력 하루).
+PORTFOLIO_ADVICE_MAX_DAILY = 10
+PORTFOLIO_ADVICE_HISTORY_LIMIT = 30
+PORTFOLIO_ADVICE_PROMPT_FILE = PROMPT_DIR / "portfolio_advice_ko.txt"
+PORTFOLIO_ADVICE_TIMEOUT = 180
+PORTFOLIO_ADVICE_NUM_PREDICT = 2048
+
+# 외부 시장 자료. 키가 비면 그 항목만 "자료 없음"으로 두고 나머지로 진행한다.
+FSS_API_KEY = os.environ.get("FSS_API_KEY", "").strip()      # 금융감독원 금융상품통합비교공시
+ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "").strip()    # 한국은행 ECOS
+MOLIT_API_KEY = os.environ.get("MOLIT_API_KEY", "").strip()  # 국토교통부 실거래가(공공데이터포털)
+FSS_BASE_URL = "https://finlife.fss.or.kr/finlifeapi"
+ECOS_BASE_URL = "https://ecos.bok.or.kr/api"
+MOLIT_APT_TRADE_URL = (
+    "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade"
+)
+MARKET_DATA_TIMEOUT = 15
+# 실거래가 중앙값을 낼 때 거슬러 보는 달 수. 한 달만 보면 거래가 몇 건 없는 동이 많다.
+MOLIT_LOOKBACK_MONTHS = 3
+
+# 규칙 진단의 문턱. 숫자는 여기서 만들고 LLM은 해석만 한다.
+PORTFOLIO_CLASS_CONCENTRATION = 0.6    # 한 자산군이 이 비중을 넘으면 편중
+PORTFOLIO_SINGLE_CONCENTRATION = 0.3   # 한 자산이 이 비중을 넘으면 편중
+PORTFOLIO_MATURITY_WINDOW_DAYS = 90    # 이 안에 만기가 오면 알린다
+PORTFOLIO_RATE_GAP_PP = 0.5            # 보유 예적금 금리가 시중 최고보다 이만큼 낮으면 알린다
+PORTFOLIO_LTV_WARNING = 0.6            # 부동산 대출 비율
+PORTFOLIO_MIN_LIQUID_SHARE = 0.1       # 예적금 비중이 이보다 낮으면 유동성 부족

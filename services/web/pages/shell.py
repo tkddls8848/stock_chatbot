@@ -337,6 +337,7 @@ _NAV_LINKS = (
     ("/search", "뉴스 검색"),
     ("/forecast", "예측 컨센서스"),
     ("/research", "리서치"),
+    ("/portfolio", "내 자산"),
     ("/about", "정보"),
 )
 
@@ -408,7 +409,7 @@ _SITE_FOOT = (
     "수집할 때 한국 시간으로 바꿉니다.</dd>"
     "<dt>갱신</dt><dd>뉴스 주기마다 갱신하며, 화면의 값은 마지막 계산 시점에 고정됩니다.</dd>"
     "<dt>원본 자료</dt><dd><code>/api/market</code> · <code>/api/research</code> · "
-    "<code>/api/meta</code> · <code>/market_chart.png</code> — 읽기만 할 수 있고 바꾸는 기능은 없습니다.</dd>"
+    "<code>/api/meta</code> · <code>/market_chart.png</code> — 읽기만 할 수 있고 바꾸는 기능은 없습니다. 비밀번호로 잠긴 개인 화면(내 자산)은 공개 자료에 섞이지 않습니다.</dd>"
     "</dl></div>"
     "<div class='sfin'><span class='sf-links'>"
     "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/forecast'>예측 컨센서스</a>"

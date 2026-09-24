@@ -2,18 +2,22 @@
 
 봇은 웹 코드를 import하지 않는다. shorts처럼 **공개 웹의 GET API를 HTTP로** 읽는다 —
 웹 프로세스가 죽었으면 그 사실 자체가 가장 먼저 보여야 할 상태이기도 하다.
+개인 화면(`/portfolio`)은 잠겨 있으므로 HTTP로 읽지 않고, 공유 저장소의
+`storage/portfolio/advice/latest.json`을 파일로 읽는다(마지막 조언 시각·외부 자료 상태만).
 """
 
 import asyncio
 import html
+import json
 import logging
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from services.telegram_bot.core.config import WEB_STATUS_BASE_URL, WEB_STATUS_TIMEOUT_SECONDS
+from services.telegram_bot.core.config import PORTFOLIO_DIR, WEB_STATUS_BASE_URL, WEB_STATUS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,25 @@ def _get(path: str, fetch: Callable[..., Any]) -> dict[str, Any] | None:
     except ValueError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+_SOURCE_LABELS = {"deposit_rates": "금감원", "market_rates": "한국은행", "real_estate": "국토부"}
+_SOURCE_STATES = {"ok": "정상", "missing_key": "키 없음", "error": "실패"}
+
+
+def portfolio_status_line(folder: Path = PORTFOLIO_DIR) -> str:
+    """마지막 자산 조언의 시각과 외부 자료 상태. 조언 본문·자산은 텔레그램에 옮기지 않는다."""
+    try:
+        latest = json.loads((folder / "advice" / "latest.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "자산 조언: 아직 없음"
+    except (OSError, ValueError):
+        return "자산 조언: 기록 파일을 읽지 못함"
+    sources = " · ".join(
+        f"{_SOURCE_LABELS.get(k, k)} {_SOURCE_STATES.get(v, v)}" for k, v in (latest.get("sources") or {}).items()
+    )
+    body = "본문 있음" if latest.get("llm_status") == "ok" else "진단만"
+    return html.escape(f"자산 조언: {_stamp(latest.get('created_at'))} · {body} · {sources}")
 
 
 def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
@@ -77,6 +100,7 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
     if index.get("total"):
         # 예측 질문 검색용 주석 진행률이다. 뉴스 검색(/search)과는 별개다.
         lines.append(f"예측 질문 한국어 검색 준비: {int(index.get('annotated') or 0):,}/{int(index['total']):,}건")
+    lines.append(portfolio_status_line())
     return "\n".join(lines)
 
 

@@ -247,7 +247,7 @@ def test_caddy_bot_block_spares_search_crawlers_browsers_and_shorts():
 def test_forecast_screen_never_names_the_source_service():
     # 한국에서 공식적으로 접근이 막힌 서비스라 화면·주소·외부 링크에 이름을 드러내지 않는다.
     client = TestClient(server.build_app())
-    for path in ("/", "/forecast", "/search", "/research", "/about", "/robots.txt"):
+    for path in ("/", "/forecast", "/search", "/research", "/about", "/portfolio", "/robots.txt"):
         body = client.get(path).text
         assert "폴리마켓" not in body
         assert "polymarket" not in body.lower(), path

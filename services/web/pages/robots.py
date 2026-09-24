@@ -84,6 +84,7 @@ ROBOTS_TXT = (
     "\n"
     "User-agent: *\n"
     "Disallow: /api/\n"
+    "Disallow: /portfolio\n"
     "Disallow: /*?\n"
     "Crawl-delay: 10\n"
     "\n"

@@ -611,7 +611,7 @@ sudo ls -l /var/lib/caddy/.local/share/caddy/certificates/*/*/          # 발급
 echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/null | openssl x509 -noout -dates
 ```
 
-### 11-3. 인증 (없음)
+### 11-3. 인증 (공개 화면은 없음, 개인 화면은 비밀번호)
 
 리서치면(`/research`, `/api/research`)은 2026-09-24까지 Caddy `basicauth`로 `friend` 계정만
 열었다. 운영자 결정으로 없앴다 — 이제 누구나 종목명·`add`/`watch`·confidence가 담긴
@@ -620,6 +620,24 @@ echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/
 
 다시 잠가야 하면 git 이력에서 `infra/Caddyfile.example`의 `@research` 블록과
 `set-caddy-password.sh`를 꺼내 되살리고 11-2대로 다시 렌더링한다.
+
+**개인 화면(`/portfolio`, `/api/portfolio/*`)만 잠긴다.** Caddy가 아니라 웹 앱이 연다 —
+루트 `.env`의 `PORTFOLIO_PASSWORD` 하나다. 비어 있으면 개인 화면 전체가 503이다.
+비밀번호를 바꾸고 웹을 재기동하면 이미 열린 브라우저도 모두 잠긴다(쿠키가 비밀번호의
+HMAC이다). 틀린 비밀번호는 IP당 10분에 5번까지이고 넘으면 429다.
+
+조언의 외부 자료 키도 루트 `.env`에 둔다. 비어 있으면 그 항목만 "키 없음"으로 돈다.
+
+| 키 | 발급처 | 주의 |
+|---|---|---|
+| `FSS_API_KEY` | 금융감독원 금융상품통합비교공시 오픈API | 예적금 금리 |
+| `ECOS_API_KEY` | 한국은행 ECOS 오픈API | 기준금리·국고채·회사채 |
+| `MOLIT_API_KEY` | 공공데이터포털 "국토교통부 아파트 매매 실거래가 자료" | **디코딩(Decoding) 키**를 넣는다. 인코딩 키는 한 번 더 인코딩돼 인증에 실패한다 |
+
+```bash
+curl -s localhost:8788/api/portfolio/session           # {"configured": true, "unlocked": false}
+cat /srv/stock-chatbot/storage/portfolio/advice/latest.json | head -20   # 마지막 조언의 sources·llm_status
+```
 
 ### 11-4. 장애
 

@@ -99,3 +99,18 @@ def test_web_status_says_when_the_web_is_down():
         raise requests.ConnectionError("refused")
 
     assert "웹이 응답하지 않습니다" in web_status.build_web_status(fetch)
+
+
+def test_web_status_reads_portfolio_advice_from_the_shared_file(tmp_path):
+    import json
+
+    from services.telegram_bot.features.web_status import handlers as web_status
+
+    assert web_status.portfolio_status_line(tmp_path) == "자산 조언: 아직 없음"
+    (tmp_path / "advice").mkdir()
+    (tmp_path / "advice" / "latest.json").write_text(json.dumps({
+        "created_at": "2026-09-24T15:23:00+09:00", "llm_status": "ok", "text": "비밀 조언 본문",
+        "sources": {"deposit_rates": "ok", "market_rates": "missing_key"}}), encoding="utf-8")
+    line = web_status.portfolio_status_line(tmp_path)
+    assert line == "자산 조언: 2026-09-24 15:23 · 본문 있음 · 금감원 정상 · 한국은행 키 없음"
+    assert "비밀" not in line

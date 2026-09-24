@@ -1,7 +1,8 @@
-"""읽기 전용 공개 웹.
+"""웹 서버: 공개 화면과 잠긴 개인 화면(`/portfolio`).
 
-별도 프로세스로 실행하며 ``storage/public`` 산출물만 읽는다. 인증과 TLS는 이
-프로세스 앞단의 Caddy가 담당한다.
+별도 프로세스로 실행한다. 공개 라우트는 ``storage/public`` 산출물만 `GET`으로 내보내고,
+쓰기·실행은 비밀번호로 잠긴 `/api/portfolio/*`(`services/web/portfolio/routes.py`)에만
+있다. TLS는 이 프로세스 앞단의 Caddy가 담당한다.
 """
 
 from __future__ import annotations
@@ -10,13 +11,32 @@ import json
 import os
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from services.web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML, ROBOTS_TXT
+from services.web.pages.portfolio import PORTFOLIO_HTML
 from services.web.pages.search import SEARCH_HTML
-from services.web.core.config import PUBLIC_DIR
+from services.web.core.config import (
+    PORTFOLIO_ADVICE_DIR,
+    PORTFOLIO_ADVICE_HISTORY_LIMIT,
+    PORTFOLIO_ADVICE_MAX_DAILY,
+    PORTFOLIO_ASSETS_FILE,
+    PORTFOLIO_LOGIN_MAX_FAILURES,
+    PORTFOLIO_LOGIN_WINDOW_SECONDS,
+    PORTFOLIO_MAX_ASSETS,
+    PORTFOLIO_MAX_WATCHLIST,
+    PORTFOLIO_PASSWORD,
+    PORTFOLIO_SESSION_COOKIE,
+    PORTFOLIO_SESSION_MAX_AGE_SECONDS,
+    PORTFOLIO_WATCHLIST_FILE,
+    PUBLIC_DIR,
+)
 from services.web.polymarket.repository import PolymarketRepository, make_etag
+from services.web.portfolio.auth import LoginThrottle
+from services.web.portfolio.routes import build_router
+from services.web.portfolio.service import AdviceService
+from services.web.portfolio.store import AdviceStore, AssetStore, WatchlistStore
 from services.web.search import NewsSearch
 
 POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
@@ -30,9 +50,50 @@ def _read_json(name: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def build_app() -> FastAPI:
+def build_portfolio_router(*, password: str = PORTFOLIO_PASSWORD, **overrides: Any) -> APIRouter:
+    """설정값으로 개인 화면 라우터를 만든다. 테스트는 저장소·비밀번호·조언 서비스를 바꿔 끼운다."""
+    from services.web.llm.factory import build_portfolio_advisor
+
+    assets = overrides.pop("assets", None) or AssetStore(PORTFOLIO_ASSETS_FILE)
+    advice_store = overrides.pop("advice_store", None) or AdviceStore(PORTFOLIO_ADVICE_DIR)
+    advice = overrides.pop("advice", None) or AdviceService(
+        assets=assets, advice=advice_store, public_dir=PUBLIC_DIR,
+        max_daily=PORTFOLIO_ADVICE_MAX_DAILY, history_limit=PORTFOLIO_ADVICE_HISTORY_LIMIT,
+        advisor_factory=build_portfolio_advisor,
+    )
+    return build_router(
+        password=password,
+        cookie_name=PORTFOLIO_SESSION_COOKIE,
+        max_age=PORTFOLIO_SESSION_MAX_AGE_SECONDS,
+        throttle=overrides.pop("throttle", None)
+        or LoginThrottle(PORTFOLIO_LOGIN_MAX_FAILURES, PORTFOLIO_LOGIN_WINDOW_SECONDS),
+        assets=assets,
+        watchlist=overrides.pop("watchlist", None) or WatchlistStore(PORTFOLIO_WATCHLIST_FILE),
+        advice_store=advice_store,
+        advice=advice,
+        max_assets=PORTFOLIO_MAX_ASSETS,
+        max_watchlist=PORTFOLIO_MAX_WATCHLIST,
+    )
+
+
+def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
     search_repository = NewsSearch(PUBLIC_DIR)
+    app.include_router(portfolio_router or build_portfolio_router())
+
+    @app.middleware("http")
+    async def private_no_store(request: Request, call_next):
+        # 개인 화면은 어떤 캐시(브라우저·프록시)에도 남기지 않는다.
+        response = await call_next(request)
+        if request.url.path.startswith(("/portfolio", "/api/portfolio")):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+    @app.get("/portfolio", response_class=HTMLResponse)
+    def portfolio_page() -> str:
+        # 화면은 정적 껍데기다. 값은 잠금을 연 뒤 브라우저가 /api/portfolio/*에서 채운다.
+        return PORTFOLIO_HTML
 
     @app.get("/search", response_class=HTMLResponse)
     def search_page() -> str:
