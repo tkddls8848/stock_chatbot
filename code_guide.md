@@ -91,7 +91,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
   web/                 주력 서비스(별도 프로세스, 8788). 공개 화면 + 인증된 개인 화면
     server.py          FastAPI 라우트. 공개는 `GET`만, 쓰기는 `/api/portfolio/*` 인증 경로만
                        — `python -m services.web.server`
-    portfolio/         개인 화면: 토큰 인증, 자산·관심종목 저장, 외부 시장 데이터
+    portfolio/         개인 화면: 비밀번호 잠금, 자산·관심종목 저장, 외부 시장 데이터
                        (금감원·ECOS·국토부), 규칙 진단, 조언 생성
     core/              이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
     llm/               줄글 브리프용 Cloudflare 백엔드와 분석기
@@ -386,11 +386,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   않는 규칙은 다음과 같다.
   | 항목 | 기준 |
   |---|---|
-  | 인증 | 단일 사용자 토큰 `PORTFOLIO_TOKEN` 하나. `POST /api/portfolio/login`이 상수 시간 비교 뒤 HttpOnly·Secure·SameSite=Strict 세션 쿠키를 준다. 회원가입·계정별 상태는 여전히 만들지 않는다 |
-  | 경로 | 쓰기·실행은 `/api/portfolio/*`에만 둔다. 인증 없는 요청은 전부 401이고, 토큰이 설정되지 않았으면 개인 화면 전체가 503으로 닫힌다 — 빈 토큰으로 열리지 않는다 |
+  | 인증 | **간단한 잠금이다.** 비밀번호 하나(`PORTFOLIO_PASSWORD`)를 잠금 화면에 넣으면 `POST /api/portfolio/login`이 `hmac.compare_digest`로 비교하고 HttpOnly·Secure·SameSite=Strict 쿠키를 준다. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다. 로그아웃은 쿠키 삭제다. 회원가입·계정·2단계 인증·OAuth·세션 DB는 만들지 않는다 — 한 사람이 쓰는 화면을 지나가는 사람에게서 닫는 것이 목적이다 |
+  | 범위 | 잠금은 개인 자산과 관심종목 관리 둘 다에 걸린다. 화면 `/portfolio`와 `/api/portfolio/*` 전부가 대상이고 공개 화면에는 걸지 않는다 |
+  | 경로 | 쓰기·실행은 `/api/portfolio/*`에만 둔다. 잠금을 풀지 않은 요청은 전부 401이다. 비밀번호가 설정되지 않았으면 개인 화면 전체가 503으로 닫힌다 — 빈 비밀번호로 열리지 않는다 |
   | 저장 | `data/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`data/webpub/`)·뉴스 검색·`export.py`·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
   | 노출 | `/portfolio`는 noindex, `robots.txt`에서 막고, 응답에 `Cache-Control: no-store`를 붙인다 |
-  | 봇 접근 | 봇은 같은 토큰으로 HTTP만 쓴다(관심종목 동기화·리서치 적용·`/system` 상태). 웹 코드를 import하지 않는다 |
+  | 봇 접근 | 봇은 같은 비밀번호를 `Authorization: Bearer` 헤더로 보내 HTTP만 쓴다(관심종목 동기화·리서치 적용·`/system` 상태). 웹 코드를 import하지 않는다 |
   **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advise`가
   금감원 예적금 금리(`FSS_API_KEY`), 한국은행 ECOS 금리(`ECOS_API_KEY`), 국토부
   실거래가(`MOLIT_API_KEY`)를 읽고, 규칙 진단(자산군 비중·편중, 만기 도래, 보유 금리와
