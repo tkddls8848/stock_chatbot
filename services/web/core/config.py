@@ -161,7 +161,10 @@ POLYMARKET_ANNOTATE_NUM_PREDICT = 4096
 POLYMARKET_ANNOTATE_TIMEOUT = 180
 # 한 실행의 호출 상한. 백필이 하루 예산을 첫 주기에 몰아 쓰지 않고 4시간
 # 주기마다 나눠 쓰게 하고, 유닛의 TimeoutStartSec 안에 끝나게 한다.
-POLYMARKET_ANNOTATE_MAX_BATCHES_PER_RUN = 8
+# 주기를 3→4시간으로 늘리며(하루 8→6회) 20% 올렸다(8→10). 하루 처리량 64→60배치로
+# 거의 같고, 하루 Neurons 상한은 그대로라 비용은 늘지 않는다. TimeoutStartSec 안에
+# 끝나는지는 배포 뒤 annotate_status.json의 실행 시간으로 확인한다.
+POLYMARKET_ANNOTATE_MAX_BATCHES_PER_RUN = 10
 # 최근 24시간 Neurons 상한. 무료 한도(하루 10,000)를 봇·섹터 줄글(하루
 # 1,500~2,500)과 함께 쓴다. 첫 백필(약 5만) 동안 올릴지는 봇 사용량을 보고
 # 여기서 정한다 — 튜닝값이라 .env가 아니라 이력이 남는 상수로 둔다.
