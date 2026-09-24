@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import socket
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -11,6 +12,7 @@ from telegram.ext import Application, ContextTypes
 
 from services.telegram_bot.core.clock import JST
 from services.telegram_bot.core.config import (
+    DEFAULT_SOCKET_TIMEOUT_SECONDS,
     FEATURES_ENABLED,
     RUNTIME_LOCK_FILE,
     TELEGRAM_BOT_TOKEN,
@@ -116,6 +118,8 @@ async def _stop_scheduler(app: Application) -> None:
 
 
 def main() -> None:
+    # 타임아웃 없이 여는 외부 연결(akshare 등)이 무한정 붙잡지 않게 한다(config 주석).
+    socket.setdefaulttimeout(DEFAULT_SOCKET_TIMEOUT_SECONDS)
     single_instance_lock = _acquire_single_instance_lock(RUNTIME_LOCK_FILE)
     if single_instance_lock is None:
         logger.error("이미 실행 중인 봇 인스턴스가 있어 시작하지 않습니다.")
