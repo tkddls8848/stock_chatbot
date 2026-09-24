@@ -1,4 +1,4 @@
-"""리서치 화면(`/research`). Caddy가 Basic 인증으로 잠그는 면이다."""
+"""리서치 화면(`/research`). 다른 면과 같이 공개다(2026-09-24 인증을 없앴다)."""
 
 from services.web.pages.shell import (
     DISCLAIMER,

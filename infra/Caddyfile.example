@@ -1,14 +1,11 @@
-# Caddy는 TLS와 인증을 처리하고, 내부 전용 웹 프로세스에만 프록시한다.
-# 첫 줄을 실제 도메인으로 바꾸고 PASSWORD_HASH를 `caddy hash-password` 출력으로
-# 교체한다. `http://` 접두사는 쓰지 않는다 — 붙이면 자동 HTTPS가 꺼진다.
-# 지시어는 `basicauth`다(`basic_auth`가 아니다) — 공유 호스트의 Caddy는 우분투
-# 기본 저장소판 2.6.2이고, `basic_auth`는 2.8부터다. 2.6에서는 파싱에 실패한다.
-# 절차는 infra/server-ops.md 11절.
+# Caddy는 TLS를 처리하고, 내부 전용 웹 프로세스에만 프록시한다.
+# 첫 줄을 실제 도메인으로 바꾼다. `http://` 접두사는 쓰지 않는다 — 붙이면 자동
+# HTTPS가 꺼진다. 절차는 infra/server-ops.md 11절.
 #
-# 면을 나눈다: 시장 컨센서스와 현재 Polymarket 전체 대시보드는 열고,
-# 종목명·액션·confidence가 들어가는 리서치만 잠근다. noindex는 모두에 붙인다 — 열람은 자유롭게 두되
-# 검색 결과에는 쌓지 않는다. **검색 크롤러 자체는 막지 않는다**: 막으면 크롤러가
-# noindex를 읽지 못해 URL만 색인에 남을 수 있다. 막는 것은 부하를 만드는 /api/ 면과
+# 인증은 없다. 리서치면의 Basic 인증도 2026-09-24에 없앴다 — 모든 면이 공개다.
+# noindex는 모두에 붙인다 — 열람은 자유롭게 두되 검색 결과에는 쌓지 않는다.
+# **검색 크롤러 자체는 막지 않는다**: 막으면 크롤러가 noindex를 읽지 못해 URL만
+# 색인에 남을 수 있다. 막는 것은 부하를 만드는 /api/ 면과
 # AI 수집 봇뿐이고, 그 목록은 앱의 robots.txt(services/web/pages/robots.py)와 아래 @aibots가
 # 나눠 갖는다 — robots.txt는 권고라 지키는 봇에만 듣고, 무시하는 봇은 여기서 끊긴다.
 # 두 목록은 같이 고친다.
@@ -32,11 +29,6 @@ example.com {
     @aibots header_regexp User-Agent "(?i)(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic-ai|CCBot|Google-Extended|PerplexityBot|Bytespider|Amazonbot|meta-externalagent|FacebookBot|Applebot-Extended|cohere-ai|Diffbot|ImagesiftBot|Omgilibot|YouBot|Timpibot|AhrefsBot|SemrushBot|MJ12bot|DotBot|DataForSeoBot)"
     abort @aibots
     # END aibots
-
-    @research path /research /research/* /api/research /api/research/*
-    basicauth @research {
-        friend PASSWORD_HASH
-    }
 
     reverse_proxy 127.0.0.1:8788
 }

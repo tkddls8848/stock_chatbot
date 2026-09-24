@@ -111,7 +111,7 @@ infra/                 인프라 코드 전부. 네 도메인이 한 인스턴�
   systemd/             유닛·타이머·cron 전부(봇·웹·폴리마켓·쇼츠·백업). 실행 계정은 ubuntu
   scripts/             봇을 뺀 앱 유닛·백업 cron 설치, 앱 점검, Caddy, 작업 트리 정리
   host-contract.md     공유 호스트(remote_coding)와의 경계·계약 값·설치(배포서)
-  Caddyfile.example    TLS·Basic 인증 프록시 견본
+  Caddyfile.example    TLS 프록시 견본(인증 없음)
   server-ops.md        떠 있는 서버를 상대로 반복하는 절차서
 
 data/                  실행 중 생성되는 상태·캐시. `data/<feature>/`. Git 제외
@@ -340,10 +340,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   리서치·시장 감성의 "지금 실행"은 텔레그램 관리 패널에만 둔다. Neurons가 링크를 받은 사람
   수만큼 나가고, 리서치 상태(`sight`·`history`)가 단일 사용자 형식이라 동시 실행이
   서로의 맥락을 덮기 때문이다. 봇 프로세스 안의 관리 웹(8787)은 없앴다(2026-09-24) —
-  쓰기 API를 가진 면을 하나 줄인다. 8788도 방화벽에 열지 않는다 — TLS와 Basic 인증은 앞단 Caddy가 맡는다
-  (`https://nunchi.live`. 절차는 `infra/server-ops.md` 11절). **인증은 면을 나눈다** —
-  국가별 감성 집계는 열고, 종목명·`add`/`watch`·confidence가 담기는 `/research`만
-  잠근다. 잠금이 지키는 것은 시스템이 아니라 내용이다.
+  쓰기 API를 가진 면을 하나 줄인다. 8788도 방화벽에 열지 않는다 — TLS는 앞단 Caddy가 맡는다
+  (`https://nunchi.live`. 절차는 `infra/server-ops.md` 11절). **인증은 없다** — 리서치면의
+  Basic 인증도 운영자 결정으로 없앴다(2026-09-24). 종목명·`add`/`watch`·confidence가 담긴
+  리서치 결과까지 모든 면이 공개이고, noindex만 붙는다.
   **회원가입·계정별 상태, DB, SPA 빌드 파이프라인, 실시간 갱신은 만들지 않는다** —
   상태 파일이 단일 사용자 형식이고, 조회가 전부 "마지막 것 한 개"라 인덱스가 필요한
   질의가 없으며, 데이터가 분 단위로 바뀌지 않아 기준 시각을 적는 것으로 충분하다.

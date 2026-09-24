@@ -504,29 +504,20 @@ Neurons가 링크를 받은 사람 수만큼 나가고, 리서치 상태는 단�
 
 공개 주소는 **`https://nunchi.live`**(Route 53 등록, A 레코드가 고정 IP를 가리킨다).
 
-**면을 나눠 둔다.** 잠금은 시스템이 아니라 **내용**을 지킨다 — 웹은 미리 구운 파일만
-내보내므로 공개돼도 Neurons가 나가지 않고, 쓰기 라우트가 없어 인증이 새도 잃는 것은
-열람뿐이다. 그런데 리서치 산출물에는 종목명·`add`/`watch`·confidence가 들어간다.
-색인되면 면책 문구와 무관하게 밖에서는 종목 추천으로 읽히고 되돌릴 수 없다.
+**인증은 없다.** 모든 면(시장·뉴스 검색·폴리마켓·리서치·정보)이 공개다. 리서치면의
+Basic 인증도 2026-09-24에 없앴다(11-3). 웹은 미리 구운 파일만 내보내므로 공개돼도
+Neurons가 나가지 않고, 쓰기 라우트가 없어 잃는 것은 열람뿐이다.
 
-| 경로 | 내용 | 인증 |
-|---|---|---|
-| `/`, `/about`, `/market_chart.png`, `/api/market`, `/api/meta` | 국가별 감성 집계 | 없음 |
-| `/research`, `/api/research` | `sight`, 종목별 액션·confidence | `friend` 계정 |
-
-두 면 모두 `X-Robots-Tag: noindex, nofollow`를 받는다. **검색 크롤러 자체는 막지
+모든 면이 `X-Robots-Tag: noindex, nofollow`를 받는다. **검색 크롤러 자체는 막지
 않는다** — 막으면 크롤러가 noindex를 읽지 못해 URL만 색인에 남을 수 있다.
-공개면의 nav에는 리서치 링크가 그대로 있어서, 익명 방문자가 누르면 브라우저
-인증창이 뜬다(의도된 동작이다).
 
 **대신 크롤·AI 트래픽은 두 겹으로 막는다**(11-6).
 
 ```text
-브라우저 ── https://nunchi.live:443 ── Caddy (TLS + Basic 인증) ── http://127.0.0.1:8788 ── webpub
+브라우저 ── https://nunchi.live:443 ── Caddy (TLS) ── http://127.0.0.1:8788 ── webpub
 ```
 
 내부 구간이 HTTP인 것은 loopback이라 인터넷으로 평문이 나가지 않기 때문이다.
-Basic 인증도 TLS가 성립한 뒤에 처리된다.
 
 | 자리 | 파일 |
 |---|---|
@@ -567,21 +558,18 @@ sudo apt-get update && sudo apt-get install -y caddy
 설치 직후의 Caddy는 기본 환영 페이지를 80번에 띄운다. `/etc/caddy/Caddyfile`을
 `infra/Caddyfile.example` 형태로 **먼저 바꾼 뒤** 기동한다.
 
-**손으로 쓰지 않는다.** 스크립트가 견본을 렌더링한다 — 바꿀 것은 도메인·사설
-IP·비밀번호 해시 셋뿐이고, 나머지(스킴 없는 첫 줄, `@research` matcher, `bind`)는
-견본이 이미 맞춰 두었다. 빠뜨리면 자동 HTTPS가 꺼지거나, 사이트 전체가 잠기거나,
-443을 Tailscale과 다투다 기동하지 못한다.
+**손으로 쓰지 않는다.** 스크립트가 견본을 렌더링한다 — 바꿀 것은 도메인·사설 IP
+둘뿐이고, 나머지(스킴 없는 첫 줄, `bind`)는 견본이 이미 맞춰 두었다. 빠뜨리면 자동
+HTTPS가 꺼지거나 443을 Tailscale과 다투다 기동하지 못한다.
 
 ```bash
 ip -4 -o addr show | awk '{print $2, $4}'    # 사설 NIC 주소를 확인한다
-hash="$(caddy hash-password)"                # 프롬프트로 입력받는다. 히스토리에 평문이 남지 않는다
-sudo /srv/stock-chatbot/infra/scripts/install-caddyfile.sh \
-    --domain nunchi.live --bind <사설 IP> --hash "$hash"
+sudo /srv/stock-chatbot/infra/scripts/install-caddyfile.sh --domain nunchi.live --bind <사설 IP>
 journalctl -u caddy -n 30 --no-pager | grep -i certificate
 ```
 
 스크립트가 백업·`caddy validate`·reload까지 하고, validate가 실패하면 되돌린다.
-`--dry-run`으로 만들어질 내용을 먼저 볼 수 있다(해시는 가린다).
+`--dry-run`으로 만들어질 내용을 먼저 볼 수 있다.
 
 **인스턴스가 바뀌면 사설 IP도 바뀐다.** 공인 고정 IP를 그대로 옮겨 붙여도 사설 NIC
 주소는 새로 받는다. 2026-09-23 v2 이관 때는 호스트의 복원 스크립트가 `bind` 값을 새
@@ -602,23 +590,15 @@ sudo ls -l /var/lib/caddy/.local/share/caddy/certificates/*/*/          # 발급
 echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/null | openssl x509 -noout -dates
 ```
 
-### 11-3. 비밀번호 교체
+### 11-3. 인증 (없음)
 
-접근 로그의 방문 수가 지인 수와 맞지 않으면 먼저 바꾼다.
+리서치면(`/research`, `/api/research`)은 2026-09-24까지 Caddy `basicauth`로 `friend` 계정만
+열었다. 운영자 결정으로 없앴다 — 이제 누구나 종목명·`add`/`watch`·confidence가 담긴
+리서치 결과를 본다. noindex는 그대로라 검색 결과에는 쌓이지 않는다. 비밀번호 교체
+스크립트(`set-caddy-password.sh`)도 함께 지웠다.
 
-```bash
-sudo /srv/stock-chatbot/infra/scripts/set-caddy-password.sh --password-stdin
-journalctl -u caddy --since today --no-pager | grep -c '"status":200'
-```
-
-프롬프트로 새 비밀번호를 두 번 받아 해시로 바꿔 넣는다. **평문은 인자로 받지
-않는다** — 셸 히스토리와 `ps`에 그대로 남는다. 이미 해시를 들고 있으면
-`--hash "$(caddy hash-password)"`를 쓴다. `basicauth` 블록의 그 사용자 줄 하나만
-바꾸고, 백업·validate·reload는 스크립트가 한다. 끝나면 **옛 해시가 담긴 백업
-파일을 지운다** — 경로는 스크립트가 알려 준다.
-
-그래도 계속되면 443을 닫고(1절) SSH 터널로 되돌린다 —
-`ssh -L 8788:127.0.0.1:8788 ubuntu@<고정 IP>`.
+다시 잠가야 하면 git 이력에서 `infra/Caddyfile.example`의 `@research` 블록과
+`set-caddy-password.sh`를 꺼내 되살리고 11-2대로 다시 렌더링한다.
 
 ### 11-4. 장애
 
@@ -644,8 +624,7 @@ ls -la /srv/stock-chatbot/data/webpub/
 |---|---|---|
 | 웹 부하로 학습이 지연된다 | 사전선별 `중단=load`가 지속된다(7절) | 프로세스별 CPU와 굽는 주기를 점검한다 |
 | 메모리 압박 | 스왑 사용이 상시, OOM kill | 웹 프로세스를 이 인스턴스에서 뺀다 |
-| 리서치면 남용 | 인증 성공 로그가 지인 수와 맞지 않는다 | 11-3의 비밀번호 교체 |
-| 공개면 남용 | 익명 트래픽이 스크레이퍼 수준으로 는다 | `basic_auth`의 `@research` matcher를 빼 전면 잠금. 계속되면 443을 닫고 터널로 되돌린다 |
+| 공개면 남용 | 익명 트래픽이 스크레이퍼 수준으로 는다 | 11-6의 봇 차단을 넓힌다. 계속되면 443을 닫고 터널로 되돌린다 |
 | 산출물이 낡는다 | `meta.json` 시각이 하루 이상 밀린다 | 봇 쪽 굽기 경로가 실패하고 있다. 11-4를 본다 |
 
 443을 닫아도 잃는 것은 열람뿐이다 — 봇도 `stock-chatbot-web`도 그대로 돌고,
