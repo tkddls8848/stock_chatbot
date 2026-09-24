@@ -55,13 +55,18 @@
 
 ## 구조
 
-최상위는 **도메인 넷과 인프라 하나**다(파이썬 도메인 `telegram_bot`·`web`은 `services/` 아래에 있다). **도메인끼리는 아무것도 공유하지 않는다** —
-`telegram_bot`·`web`은 서로를 import하지 않고, 둘 사이에 놓인 공용 패키지도 없다.
-각자 자기 `core/`(설정·시각·저장)와 `llm/`(Cloudflare 백엔드·분석기)을 갖는다.
-유일한 예외가 `services/web/export.py`로, 봇이 산출물을 굽는 쪽이라 봇에서 지연 import한다 —
-방향은 봇 → 웹 한쪽뿐이고 웹은 봇을 부르지 않는다. `shorts`는 파이썬 import 자체를
-하지 않고 공개 웹의 API만 HTTP로 읽는다.
-봇은 쇼츠를 import하지 않고 쇼츠 CLI를 하위 프로세스로 불러 운영한다(아래 `/shorts`).
+최상위는 **도메인 넷과 인프라 하나, 그리고 공유 저장소 하나**다(파이썬 도메인
+`telegram_bot`·`web`은 `services/` 아래에 있다).
+
+**코드는 분리하고 데이터는 공유한다.** 도메인끼리는 코드를 하나도 공유하지 않는다 —
+`telegram_bot`·`web`·`shorts`는 서로를 import하지 않고, 둘 사이에 놓인 공용 패키지도
+없다. 예외도 없다(예전 봇 → 웹 `services/web/export.py` 지연 import는 없앴다 — 봇이
+자기 코드로 `storage/public/`에 쓴다). 각자 자기 `core/`(설정·시각·저장)와
+`llm/`(Cloudflare 백엔드·분석기)을 갖는다. **데이터는 최상위 `storage/` 하나에 모아
+전부가 같이 쓴다.** `storage/`는 NAS처럼 보는 **파일 계약**이지 코드 계층이 아니다 —
+여기에 파이썬 파일을 두지 않고, 각 모듈은 자기 `core/storage.py`로 읽고 쓴다.
+봇은 쇼츠 CLI를 하위 프로세스로 불러 운영하고(아래 `/shorts`), 쇼츠는 공개 웹의
+API를 HTTP로 읽는다.
 
 **도메인은 자기 코드·테스트·계획서를 자기 폴더 안에 둔다. 인프라 코드는 전부
 `infra/`에 있다.** 도메인 안에 `deploy/`를 두지 않는다 — systemd 유닛·Caddy·
@@ -74,7 +79,7 @@
 tests/                 저장소 자체의 검사. 도메인 테스트는 여기 두지 않는다
 
 services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 공용 계층이 아니다 —
-                       둘은 서로를 import하지 않는다(`services/web/export.py`만 예외)
+                       둘은 서로를 import하지 않는다(예외 없음)
   telegram_bot/        텔레그램 봇 프로세스
     main.py            조립, Telegram 앱, 스케줄러 — `python -m services.telegram_bot.main`
     core/              이 프로세스의 설정·시각·원자적 저장·워커
@@ -87,7 +92,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
     briefing/          브리핑 생성과 A주 거래일 캘린더
     stocks/            종목 DB와 시세
     state/             발송·뉴스·시장 감성 상태
-    watchlist/         웹이 가진 관심종목의 로컬 사본(웹 API로 동기화)
+    watchlist/         `storage/portfolio/watchlist.json` 읽기와 리서치 적용(잠금 쓰기)
     docs/  tests/
 
   web/                 주력 서비스(별도 프로세스, 8788). 공개 화면 + 인증된 개인 화면
@@ -99,7 +104,6 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
     llm/               줄글 브리프용 Cloudflare 백엔드와 분석기
     prompts/           줄글 브리프 프롬프트
     pages.py           화면(정적 HTML·CSS, 기동 시 1회 조립)
-    export.py          봇이 부르는 산출물 굽기 — 유일한 봇 → 웹 방향 의존
     polymarket/        폴리마켓 화면을 먹이는 파이프라인. 봇과 무관한 one-shot이라
                        여기 둔다 — 존재 이유가 이 웹 화면 하나다
       dashboard/       Gamma 순회·정규화·generation 저장
@@ -122,8 +126,38 @@ infra/                 인프라 코드 전부. 네 도메인이 한 인스턴�
   Caddyfile.example    TLS 프록시 견본(인증 없음)
   server-ops.md        떠 있는 서버를 상대로 반복하는 절차서
 
-data/                  실행 중 생성되는 상태·캐시. `data/<feature>/`. Git 제외
+storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같이 쓰는 데이터 전부. Git 제외
+  public/              공개 화면이 내보내는 산출물(옛 `data/webpub/`)
+  portfolio/           개인 자산·관심종목·조언. 공개 화면이 절대 내보내지 않는다
+  bot/<feature>/       봇 내부 상태·캐시(옛 `data/<feature>/`)
+  shorts/              쇼츠 산출물·제작 기록
 ```
+
+### 공유 저장소 `storage/`
+
+| 규칙 | 내용 |
+|---|---|
+| 위치 | 저장소 루트의 `storage/`가 기본이고, 각 모듈의 `core/config.py`가 같은 환경변수 `STORAGE_DIR`로 바꾼다(NAS 마운트 경로 등). 모듈마다 따로 읽는다 — 공용 설정 파일을 만들지 않는다 |
+| 계약 | 공유되는 것은 **파일 경로와 JSON 형식**이다. 형식을 바꾸면 쓰는 쪽·읽는 쪽 코드와 테스트를 같은 커밋에서 고친다. 현재 형식만 지원한다 |
+| 쓰는 쪽 하나 | **파일마다 쓰는 쪽(소유자)은 하나다.** 나머지는 읽기만 한다. 아래 표가 소유자다. 소유자가 아닌 모듈이 쓰고 싶으면 소유자를 옮기지 말고 그 파일을 쓰는 모듈에 맡긴다 |
+| 예외 | `portfolio/watchlist.json`만 쓰는 쪽이 둘(웹 화면 편집, 봇 리서치 자동 적용)이다. 둘 다 `portfolio/watchlist.lock`을 `O_CREAT|O_EXCL`로 잡고(60초 넘은 잠금은 죽은 것으로 보고 치운다) **다시 읽은 뒤** 고쳐 쓴다. `flock`은 NFS·SMB에서 믿을 수 없어 쓰지 않는다 |
+| 원자성 | 전부 각 모듈 `core/storage.py`의 원자적 쓰기(같은 폴더 임시 파일 → `os.replace`)다. 임시 파일을 다른 파일시스템에 두면 원자성이 깨지므로 `storage/` 전체가 한 파일시스템이어야 한다 |
+| 읽는 쪽 | 파일이 없거나 형식이 틀리면 "자료 없음"으로 다루고 상태 화면에 드러낸다. 추측으로 메우지 않는다 |
+| 노출 | 공개 라우트는 `storage/public/`만 내보낸다. `portfolio/`·`bot/`·`shorts/`를 공개 라우트에 연결하지 않는다 |
+| 백업 | 백업 cron은 `storage/` 하나를 떠 간다 |
+
+| 경로 | 쓰는 쪽 | 읽는 쪽 |
+|---|---|---|
+| `public/market.json`·`market_chart.png`·`research.json`·`news.json`·`meta.json` | 봇 | 웹 |
+| `public/polymarket/` | 예측 컨센서스 one-shot(웹 도메인) | 웹, 봇 `/web` |
+| `portfolio/assets.json`·`advice/` | 웹 | 웹 |
+| `portfolio/watchlist.json` | 웹·봇(잠금) | 웹, 봇(수집·사전선별·리서치·브리핑) |
+| `bot/<feature>/` | 봇 | 봇 |
+| `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
+
+옛 `data/`는 없다. 서버 이전은 코드가 아니라 절차다 — `data/webpub`→`storage/public`,
+`data/<feature>`→`storage/bot/<feature>`로 한 번 옮긴다(`infra/server-ops.md`).
+옛 경로를 읽는 대체 분기를 만들지 않는다.
 
 기능 카탈로그 순서는 의존 순서다. `FeatureSpec`을 추가할 때 명령, 메뉴,
 callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기본값과
@@ -296,8 +330,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보기·바꾸기·비우기(`/research`), 지금 실행(`/research run`·`/market`), 웹 상태
   (`/web`)만 갖는다. 결과 전체와 근거는 텔레그램에 다시 그리지 않고 웹에서 본다.
 - **리서치의 관심종목 추가·삭제는 묻지 않고 적용한다**(`research/job.py`의
-  `apply_actions`). 관심종목의 원본은 웹이 가지므로 적용은 인증된
-  `PUT /api/portfolio/watchlist`로 웹에 쓰고, 성공한 뒤에만 로컬 사본을 갱신한다.
+  `apply_actions`). 적용은 `storage/portfolio/watchlist.json`에 잠금을 잡고 쓴다
+  (공유 저장소 표의 예외).
   실제로 바뀐 것이 있을 때만 짧은 알림 한 통을 보낸다. 한 번에 바뀌는 수는 분석기의 `RESEARCH_MAX_NEW_ACTIONS`와 `collect_actions`의 걸러내기가
   제한한다. 예약 실행과 패널 실행이 겹치면 잠금으로 줄을 세운다 — 두 분석이 같은
   history를 읽고 서로의 결과를 덮지 않게 한다.
@@ -312,8 +346,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | `/shorts done` | 현재 수정본을 검수 완료로 기록한다 |
   **봇은 쇼츠를 import하지 않는다.** 쇼츠는 이 저장소 코드를 import하지 않는 별개
   패키지이고 반대 방향도 같다. 봇은 쇼츠 CLI를 **쇼츠 자기 venv의 하위 프로세스로**
-  부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태는 쇼츠가 쓰는 출력 폴더의 기록 파일을
-  읽는다. 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
+  부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태는 쇼츠가 `storage/shorts/`에 쓰는
+  기록 파일을 읽는다. 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
   줄을 세운다 — 예약 제작과 패널 실행·편집이 겹치면 같은 산출물 폴더를 서로 덮는다.
   제작·재렌더는 수 분이 걸리므로 접수 안내 뒤 백그라운드로 돌고 끝나면 채팅으로
   알린다(수동 브리핑과 같은 방식). 로컬 브라우저 검수 패널(`--browser`)과 대화형
@@ -321,12 +355,11 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   업로드는 지금처럼 자동화하지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
-- **관심종목의 원본은 웹의 개인 화면이다.** 추가·삭제는 `/portfolio`에서 하고,
-  텔레그램의 관심종목 추가·삭제 명령·메뉴는 없앴다. 봇의 수집·사전선별·리서치·브리핑은
-  관심종목을 계속 읽으므로 봇은 `watchlist/`에 로컬 사본을 두고, 예약 작업 직전과
-  `WATCHLIST_SYNC_INTERVAL_MINUTES`마다 인증된 `GET /api/portfolio/watchlist`로
-  갱신한다. 웹이 응답하지 않으면 마지막 사본으로 돌고 `/system`에 동기화 실패를
-  표시한다 — 관심종목이 비었다고 조용히 판정하지 않는다. 사본은 봇이 직접 고치지 않는다.
+- **관심종목은 `storage/portfolio/watchlist.json` 한 벌이다.** 사람의 추가·삭제는 웹
+  `/portfolio`에서 하고, 텔레그램의 관심종목 추가·삭제 명령·메뉴는 없앴다. 봇의
+  수집·사전선별·리서치·브리핑은 같은 파일을 직접 읽는다 — 사본·HTTP 동기화를 두지
+  않는다. 파일이 없거나 깨졌으면 `/system`에 드러내고, 관심종목이 비었다고 조용히
+  판정하지 않는다.
 - **`/start`와 하단 메뉴는 브리핑·관리·웹 관리의 같은 세 진입점을 쓴다.**
   리서치·시장 감성 갱신과 쇼츠 운영은 웹 관리 안에서, 시스템 상태·종목 DB 갱신은 관리 안에서
   연다. 수동 브리핑은 접수 안내 후 백그라운드에서 하나만 실행하며, 생성 중에도
@@ -347,11 +380,11 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   같은 규칙을 따르고, 줄글 브리프는 `FORBIDDEN_COPY`가 이름이 들어간 응답을 버린다.
   `test_webpub.py`가 공개 화면에, `shorts/tests/test_scenario.py`가 영상 공개 설명에
   이름이 다시 들어오는 것을 막는다. **내부 모듈·폴더·환경변수·systemd 유닛·데이터 경로
-  (`services/web/polymarket/`, `POLYMARKET_*`, `data/webpub/polymarket/`)와 계획서는
+  (`services/web/polymarket/`, `POLYMARKET_*`, `storage/public/polymarket/`)와 계획서는
   사용자에게 보이지 않으므로 그대로 둔다** — 바꾸면 배포 절차만 흔들린다.
 - **현재 대시보드는 봇과 완전히 분리된 systemd one-shot이 굽는다.**
   `services/web/polymarket/refresh.py`가 3시간마다 Gamma `/events/keyset`을
-  전수 순회해 `data/webpub/polymarket/`에 generation을 쓰고, `services/web/server.py`가
+  전수 순회해 `storage/public/polymarket/`에 generation을 쓰고, `services/web/server.py`가
   `/forecast`와 `/api/forecast/*`로 그 파일만 내보낸다. 봇 프로세스도
   스케줄러도 이 경로를 모른다 — 봇이 죽어도 화면은 마지막 generation을 계속
   보여 준다. 절차는 `infra/server-ops.md` 8절.
@@ -390,7 +423,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   하기 위한 것이다. 과거 조회는 만들지 않는다 — 화면은 "지금"만 본다.
 - **공개 화면은 봇과 다른 프로세스이고 `GET`만 가진다.** 쓰기·실행이 있는 곳은
   아래 개인 화면(`/portfolio`) 하나뿐이고, 그 예외는 인증 뒤에만 열린다.
-  봇이 산출물을 갱신할 때 `services/web/export.py`가 `data/webpub/`에 구워 두고(`market.json`·`market_chart.png`·
+  봇이 산출물을 갱신할 때 자기 코드로 `storage/public/`에 구워 두고(`market.json`·`market_chart.png`·
   `research.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
   렌더하지 않는다 — `render_market_chart`는 dpi 160짜리 12×7.5인치 figure라 지인
   몇 명의 새로고침만으로 사전선별 보정이 밀린다. **실행 트리거는 웹에 열지 않는다**:
@@ -427,10 +460,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | 인증 | **간단한 잠금이다.** 비밀번호 하나(`PORTFOLIO_PASSWORD`)를 잠금 화면에 넣으면 `POST /api/portfolio/session`이 `hmac.compare_digest`로 비교하고 HttpOnly·Secure·SameSite=Strict 쿠키를 준다. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다. 로그아웃은 `DELETE /api/portfolio/session`(쿠키 삭제)이다. 회원가입·계정·2단계 인증·OAuth·세션 DB는 만들지 않는다 — 한 사람이 쓰는 화면을 지나가는 사람에게서 닫는 것이 목적이다 |
   | 범위 | 잠금은 개인 자산과 관심종목 관리 둘 다에 걸린다. 화면 `/portfolio`와 `/api/portfolio/*` 전부가 대상이고 공개 화면에는 걸지 않는다 |
   | 경로 | 쓰기·실행은 `/api/portfolio/*`에만 둔다. 잠금을 풀지 않은 요청은 전부 401이다. 비밀번호가 설정되지 않았으면 개인 화면 전체가 503으로 닫힌다 — 빈 비밀번호로 열리지 않는다 |
-  | 저장 | `data/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`data/webpub/`)·뉴스 검색·`export.py`·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
+  | 저장 | `storage/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`storage/public/`)·뉴스 검색·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
   | 노출 | `/portfolio`는 noindex, `robots.txt`에서 막고, 응답에 `Cache-Control: no-store`를 붙인다 |
   | API 모양 | **주소는 명사(자원)이고 동작은 HTTP 메서드가 정한다.** 동사 주소(`/login`·`/advise`·`/run`)를 만들지 않는다. `session`(`POST` 잠금 해제·`DELETE` 잠금), `assets`(`GET` 목록·`POST` 추가, `/assets/{id}`에 `PUT`·`DELETE`), `watchlist`(`GET`·`PUT` 전체 교체), `advice`(`POST` 새 조언 생성·`GET` 최근 목록, `/advice/latest`·`/advice/{id}`에 `GET`)다. 생성이 수십 초 걸려도 `POST /advice`는 완성된 조언을 `201`로 돌려준다 — 한 사람이 쓰는 화면이라 작업 큐를 두지 않는다. 하루 상한에 닿으면 `429`, 이미 생성 중이면 `409`다 |
-  | 봇 접근 | 봇은 같은 비밀번호를 `Authorization: Bearer` 헤더로 보내 HTTP만 쓴다(관심종목 동기화·리서치 적용·`/system` 상태). 웹 코드를 import하지 않는다 |
+  | 봇 접근 | 봇은 HTTP나 비밀번호 없이 `storage/portfolio/`를 파일로 읽는다(관심종목·`/system` 상태). 쓰는 것은 `watchlist.json` 하나(잠금)이고 자산·조언은 읽기만 한다. 웹 코드를 import하지 않는다. 잠금은 브라우저 앞의 문이지 같은 서버 프로세스 사이의 경계가 아니다 |
   **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advice`가
   금감원 예적금 금리(`FSS_API_KEY`), 한국은행 ECOS 금리(`ECOS_API_KEY`), 국토부
   실거래가(`MOLIT_API_KEY`)를 읽고, 규칙 진단(자산군 비중·편중, 만기 도래, 보유 금리와
@@ -451,7 +484,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   해석한다. 자유로운 질문의 답을 생성하는 챗봇은 아니며, 해석한 조건을 화면에
   드러낸다. 검색 요청에서는 LLM·외부 API·봇 상태·비공개 리서치를 읽지 않는다.
   일일 시장 요약은 `market.json`에서 읽고, 발행한 시장상황 보고서·주요 기사 제목은
-  봇이 `services/web/export.py`를 통해 `news.json`에 따로 굽는다. 뉴스 검색에 한해
+  봇이 `storage/public/news.json`에 따로 굽는다. 뉴스 검색에 한해
   최근 30일, 최대 3,000건을 보존한다. 원문 본문·관심종목·학습용 필드는 내보내지
   않는다. URL은 수집 원본에서 가져오고, 검색 결과에는 출처·자료 날짜·갱신 시각을
   표시한다. 파일 변경 때만 검색 자료를 다시 읽으며 날짜 조건은 요청마다 적용한다.
@@ -474,7 +507,9 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 **모듈 경계를 넘는 공용 계층을 두지 않는다.** 최상위 모듈(`telegram_bot`, `web`,
 `shorts`)은 필요한 것을 **각자 자기 안에 구현한다.** 공유는 그 모듈 안에서만 한다
 — `services/telegram_bot/core`는 봇의 것이고 `services/web/core`는 웹의 것이며, 이름이 같아도 서로
-다른 파일이다.
+다른 파일이다. **`storage/`는 이 규칙의 예외가 아니다** — 공유하는 것은 파일이지
+코드가 아니다. 두 모듈이 같은 파일을 읽는다고 그 파일을 읽는 함수를 공용 패키지로
+빼지 않는다. 각자 자기 `core/storage.py`로 읽고, 형식은 테스트로 맞춘다.
 
 이유는 장애 전파다. **한 모듈의 사정으로 고친 파일이 다른 모듈을 멈추면 안 된다.**
 예전 `shared/core/config.py`가 정확히 그랬다. 최상단에서
@@ -529,7 +564,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   부하·긴급 작업 대기 이유와 trial 진행은 상태 화면에 표시한다.
 - **리서치·시장상황 보고서·시장 컨센서스 우선권은 유지한다.** `burst_phase` 동안
   배경 학습을 시작하지 않고 실행 중인 학습도 다음 CPU 조각 경계에서 양보한다.
-- 상태 파일은 `data/<feature>/`에 둔다. 설정은 상태 파일에 저장하지 않는다.
+- 봇 상태 파일은 `storage/bot/<feature>/`에 둔다(공유 저장소 표). 설정은 상태 파일에 저장하지 않는다.
 - **상태 파일은 그 모듈의 `core/storage.py`가 주는 원자적 쓰기로만 저장한다.** 대상 파일을 직접
   열어 쓰면 그 순간 내용이 비고, 실패하면 잘린 JSON이 남아 다음 기동이 상태를
   통째로 잃는다. 저장 실패를 로그로 삼키지 않는다 — 호출자가 반환값으로 판단하는
@@ -592,7 +627,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   브리핑과 종목 DB 갱신이 9시간 늦게 돌았다(2026-09-24까지). 작업마다 `timezone`을
   붙이지 않는다 — 새 작업이 또 빠뜨린다. `test_scheduled_jobs.py`가 지킨다.
   저장된 타임스탬프를 `now()`와 비교할 때는 `ensure_jst()`로 감싼다 — aware 전환
-  이전에 쓴 `data/` 파일에는 오프셋이 없어 그냥 비교하면 TypeError로 죽는다.
+  이전에 쓴 상태 파일에는 오프셋이 없어 그냥 비교하면 TypeError로 죽는다.
   예외는 셋뿐이다: Cloudflare 할당량 리셋은 UTC 00시 기준이고
   (`services/telegram_bot/llm/backends.py`·`services/web/llm/backends.py`), 기사 시각은 소스 타임존을 `services/telegram_bot/news/utils.py`가 UTC +9로 변환하며,
   사전선별의 하루 CPU 사용량도 Neurons와 같은 UTC 00시에 리셋한다
