@@ -345,11 +345,25 @@ def test_outside_quiet_hours_the_run_proceeds(tmp_path, monkeypatch):
     assert analyzer.calls
 
 
-def test_the_shipped_quiet_hours_skip_only_0300():
-    """06시를 거르면 기상 후 첫 화면이 미장 마감 전 상태가 된다."""
+def test_the_shipped_quiet_hours_skip_only_0400():
+    """08시를 거르면 기상 후 첫 화면이 미장 마감 전 상태가 된다."""
     from services.web.core.config import POLYMARKET_BRIEF_QUIET_HOURS
 
-    assert set(POLYMARKET_BRIEF_QUIET_HOURS) == {3}
+    assert set(POLYMARKET_BRIEF_QUIET_HOURS) == {4}
+
+
+def test_quiet_hours_are_real_timer_slots():
+    """timer 슬롯에 없는 시각은 영영 오지 않아 정지가 조용히 사라진다."""
+    import re
+    from pathlib import Path
+
+    from services.web.core.config import POLYMARKET_BRIEF_QUIET_HOURS
+
+    timer = Path(__file__).resolve().parents[3] / "infra/systemd/stock-chatbot-polymarket-refresh.timer"
+    line = next(x for x in timer.read_text(encoding="utf-8").splitlines() if x.startswith("OnCalendar="))
+    slots = {int(h) for h in re.search(r"\s([\d,]+):00:00", line).group(1).split(",")}
+    assert slots == {0, 4, 8, 12, 16, 20}
+    assert set(POLYMARKET_BRIEF_QUIET_HOURS) <= slots
 
 
 def test_missing_generation_is_a_quiet_exit(tmp_path):

@@ -29,7 +29,7 @@ event마다 LLM이 한국어 요약·검색 키워드를 **미리** 달아 두�
 ## 2. 전체 흐름
 
 ```text
-refresh (3시간)            ─ current.json 교체
+refresh (4시간)            ─ current.json 교체
   └ OnSuccess
      annotate (신규)        ─ 새로 생겼거나 제목이 바뀐 event만 LLM 주석
                               → data/webpub/polymarket/search_index.json
@@ -61,7 +61,7 @@ refresh (3시간)            ─ current.json 교체
   빠지는 게 많다. 그래서 한국어·영어 표기와 동의어를 키워드로 따로 받는다.
 - **대분류는 새로 만들지 않는다.** `taxonomy.classify`의 12개 분류·태그·지역이 이미
   있다. `subtopic`은 그 아래 한 단계만 더한다.
-- **요약에 확률 숫자를 넣지 않는다.** 확률은 3시간마다 바뀌고, 모델이 방향을
+- **요약에 확률 숫자를 넣지 않는다.** 확률은 4시간마다 바뀌고, 모델이 방향을
   뒤집어 쓴 전례가 있다(`title_probability` docstring). 요약은 "무엇에 거는
   배팅인가"만 담는다. **그래야 한 번 만든 주석을 event가 닫힐 때까지 재사용할 수
   있고, 이것이 비용을 낮추는 핵심이다.**
@@ -80,7 +80,7 @@ refresh (3시간)            ─ current.json 교체
 - 한 호출에 25건을 묶는다(`POLYMARKET_ANNOTATE_BATCH_SIZE`). 시스템 프롬프트를 건마다
   되풀이하지 않기 위해서다. 더 묶으면 `max_tokens` 절단 한 번에 버리는 건수가 커진다.
   한 실행은 최대 8배치다 — 백필이 하루 예산을 첫 주기에 몰아 쓰지 않게 한다.
-- 응답 형식은 스키마로 강제한다(`response_format`). 3시간 보고서에서 추가 비용 0으로
+- 응답 형식은 스키마로 강제한다(`response_format`). 시장상황 보고서에서 추가 비용 0으로
   실측된 방식이다. `CLOUDFLARE_MODEL`을 바꾸면 JSON 모드 스모크를 다시 돌린다.
 - 모델은 **입력 번호로만** event를 가리킨다. id를 받아 적게 하지 않는다(리서치
   evidence와 같은 규칙).

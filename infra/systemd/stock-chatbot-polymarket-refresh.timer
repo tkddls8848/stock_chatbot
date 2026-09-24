@@ -1,12 +1,13 @@
 [Unit]
-Description=Refresh current Polymarket dashboard every three hours
+Description=Refresh current Polymarket dashboard every four hours
 
 [Timer]
 # 고정 캘린더로 둔다. OnUnitActiveSec은 기동 시각에 따라 슬롯이 밀려서
 # "몇 시에 갱신되나"를 화면·로그와 맞출 수 없다.
 # 타임존을 명시한다 — 호스트 설정에 기대면 서버를 옮길 때 하루 경계가 통째로
 # 밀린다(code_guide.md의 시각 규칙과 같은 이유).
-OnCalendar=*-*-* 00,03,06,09,12,15,18,21:00:00 Asia/Seoul
+# 4시간(하루 6회). 3시간에서 늘렸다(운영자 결정, 2026-09-24).
+OnCalendar=*-*-* 00,04,08,12,16,20:00:00 Asia/Seoul
 AccuracySec=1min
 Persistent=true
 Unit=stock-chatbot-polymarket-refresh.service

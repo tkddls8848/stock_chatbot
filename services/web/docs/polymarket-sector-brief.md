@@ -144,7 +144,7 @@ event는 `id`로 조인한다. 양쪽에 다 있는 것만 이동을 계산한�
 
 ### 3-4. 잡음 차단
 
-3시간은 짧고 대부분의 event는 거의 안 움직인다. `POLYMARKET_BRIEF_MOVE_THRESHOLD_PP`
+4시간은 짧고 대부분의 event는 거의 안 움직인다. `POLYMARKET_BRIEF_MOVE_THRESHOLD_PP`
 (초기 3.0) 미만은 "변화 없음"으로 묶어 개별 서술 대상에서 뺀다. 임계값이 없으면
 매 주기 그럴듯한 헛소리가 나온다 — 모델은 0.4pp 움직임에도 서사를 붙인다.
 
@@ -271,9 +271,9 @@ OnSuccess=stock-chatbot-polymarket-brief.service
 timer는 늘리지 않는다. refresh가 **성공했을 때만** 줄글이 돈다 — 순회가 실패한
 주기에는 새로 요약할 것도 없다. 순차 실행이라 메모리가 겹치지 않는다.
 
-**야간에는 줄글만 멈춘다.** `POLYMARKET_BRIEF_QUIET_HOURS`(초기 `{3}`)에 해당하는
+**야간에는 줄글만 멈춘다.** `POLYMARKET_BRIEF_QUIET_HOURS`(현재 `{4}`, 3시간 주기 때는 `{3}`)에 해당하는
 시각에는 LLM을 부르지 않고 `state: "skipped_quiet_hours"`로 종료한다. refresh는
-03시에도 계속 돌아 확률 숫자는 미장 마감 직전 구간을 놓치지 않는다.
+04시에도 계속 돌아 확률 숫자는 미장 마감 직전 구간을 놓치지 않는다.
 
 시각 판단은 `services/web/core/clock.py`의 `now()`만 쓴다.
 
@@ -288,7 +288,7 @@ Cloudflare가 죽은 날 확률 숫자까지 멈춘다.
 - **전부 실패하면 아무것도 쓰지 않는다.** 직전 `sector_brief.json`이 last-good으로
   남는다. 부분 성공일 때만 새로 쓴다.
 - 새로 쓸 때 실패한 그룹의 `previous` 항목은 **직전 값을 그대로 이어받는다.**
-  덮어쓰면 다음 주기의 이동이 6시간치가 되면서 3시간치인 척한다.
+  덮어쓰면 다음 주기의 이동이 8시간치가 되면서 4시간치인 척한다.
 - `current.json`이 없으면 조용히 종료한다.
 - Cloudflare 할당량 소진(`quota_exhausted`)은 재시도하지 않고 그 실행을 끝낸다.
 - 브리프가 없거나 낡아도 화면의 확률·순위·탐색기는 그대로 뜬다.

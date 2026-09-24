@@ -107,7 +107,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
     polymarket/        폴리마켓 화면을 먹이는 파이프라인. 봇과 무관한 one-shot이라
                        여기 둔다 — 존재 이유가 이 웹 화면 하나다
       dashboard/       Gamma 순회·정규화·generation 저장
-      refresh.py       3시간마다 도는 순회 — `python -m services.web.polymarket.refresh`
+      refresh.py       4시간마다 도는 순회 — `python -m services.web.polymarket.refresh`
       sector_brief.py  순회 성공 뒤 도는 줄글 — `python -m services.web.polymarket.sector_brief`
       annotate.py      순회 성공 뒤 도는 검색 주석 — `python -m services.web.polymarket.annotate`
       relevance.py     자연어 검색 점수(LLM 없음)
@@ -383,7 +383,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   (`services/web/polymarket/`, `POLYMARKET_*`, `storage/public/polymarket/`)와 계획서는
   사용자에게 보이지 않으므로 그대로 둔다** — 바꾸면 배포 절차만 흔들린다.
 - **현재 대시보드는 봇과 완전히 분리된 systemd one-shot이 굽는다.**
-  `services/web/polymarket/refresh.py`가 3시간마다 Gamma `/events/keyset`을
+  `services/web/polymarket/refresh.py`가 4시간마다(00·04·08·12·16·20시) Gamma `/events/keyset`을
   전수 순회해 `storage/public/polymarket/`에 generation을 쓰고, `services/web/server.py`가
   `/forecast`와 `/api/forecast/*`로 그 파일만 내보낸다. 봇 프로세스도
   스케줄러도 이 경로를 모른다 — 봇이 죽어도 화면은 마지막 generation을 계속
@@ -411,7 +411,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `annotate.py`가 새로 생겼거나 제목이 바뀐 event에만 한국어 요약·검색어·세부
   주제를 달아 `search_index.json`에 쌓고, `repository.py`가 그 위에서 파이썬만으로
   점수를 매긴다(맞은 낱말 수 → 칸 가중 → 거래량). 요약에는 확률을 넣지 않는다 —
-  3시간마다 바뀌는 값을 넣으면 한 번 단 주석을 다시 쓸 수 없다. 색인은
+  수집 주기마다 바뀌는 값을 넣으면 한 번 단 주석을 다시 쓸 수 없다. 색인은
   `current.json`에 넣지 않는다(건당 약 250 B × event 수). 주석 one-shot도 자기
   예산을 지킨다 — 최근 24시간 Neurons를 `annotate_status.json`에 더해
   `POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS`(4,000)에 닿으면 건너뛰고, 응답이 없는

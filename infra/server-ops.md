@@ -235,7 +235,7 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 
 **봇과 완전히 분리된 경로다.** 텔레그램 `/polymarket`, 08:35 스냅숏 job, 거시
 위험선호 컨센서스, 90일 이력, 승격 게이트, CLOB 백필은 2026-09-01에 모두
-철수했다. 지금 있는 것은 systemd timer가 3시간마다 굽는 **현재 스냅숏 하나**와
+철수했다. 지금 있는 것은 systemd timer가 4시간마다 굽는 **현재 스냅숏 하나**와
 그것을 내보내는 공개 웹 화면뿐이다. 봇을 재기동해도, 봇이 죽어 있어도 이
 화면은 마지막 generation을 계속 보여 준다.
 
@@ -260,12 +260,12 @@ sudo systemctl enable --now stock-chatbot-polymarket-refresh.timer
 systemctl list-timers | grep polymarket
 ```
 
-timer는 UTC +9 `00·03·06·09·12·15·18·21시` 고정 캘린더다(`OnCalendar`).
+timer는 UTC +9 `00·04·08·12·16·20시` 고정 캘린더다(2026-09-24 3시간 → 4시간)(`OnCalendar`).
 `Persistent=true`라 서버가 꺼져 있어 지나친 슬롯이 있으면 기동 직후 한 번
 따라잡는다.
 
 **refresh가 성공하면 섹터 줄글·트렌드 조명·검색 주석이 이어서 돈다**(`OnSuccess=`).
-세 유닛 다 `enable`하지 않는다 — timer가 아니라 refresh가 부른다. 03시에는 줄글만
+세 유닛 다 `enable`하지 않는다 — timer가 아니라 refresh가 부른다. 04시에는 줄글만
 건너뛰고(`POLYMARKET_BRIEF_QUIET_HOURS`) refresh와 트렌드는 그대로 돈다. 트렌드는
 LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주기를 건너뛰면 그 구간의
 이동이 영영 사라진다(스냅숏이 그 주기에만 남는다).
@@ -381,7 +381,7 @@ byte-addressed라 옮기는 비용이 사실상 없다. 2026-09-01에 7개(`slug
 `status.json`의 `rolling_cpu_seconds`·`rolling_requests`가 현재 합계다.
 
 의도된 정지이므로 systemd는 성공으로 본다. **한 번 뜨는 것은 정상이 아니다** —
-하루 8회 순회가 이 예산 안에 들어오도록 잡아 놓았으므로, 뜬다면 한 번이 예상보다
+하루 6회 순회가 이 예산 안에 들어오도록 잡아 놓았으므로, 뜬다면 한 번이 예상보다
 오래 돌았거나(정규화가 느려졌거나 event가 늘었거나) 실패가 반복되며 CPU를
 태우고 있다는 뜻이다. `cpu_samples`에서 어느 실행이 컸는지 본다.
 

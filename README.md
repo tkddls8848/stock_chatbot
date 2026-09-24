@@ -77,7 +77,7 @@ Polymarket 읽기 스모크도 같은 방식으로 제외되어 있습니다. Ga
 RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 ```
 
-폴리마켓 현재 대시보드는 봇과 별개인 systemd one-shot이 3시간마다 굽고, 공개
+폴리마켓 현재 대시보드는 봇과 별개인 systemd one-shot이 4시간마다 굽고, 공개
 웹이 그 산출물을 내보냅니다. 설치·상태·장애 절차는 `infra/server-ops.md` 8절에
 있습니다. compact manifest 크기는 다음으로 잽니다.
 

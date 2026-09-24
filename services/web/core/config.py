@@ -68,9 +68,9 @@ def require_cloudflare_credentials() -> None:
 # ── 현재 Polymarket 전체 웹 대시보드 ───────────────────────────────────────
 # 텔레그램·봇 scheduler와 독립된 systemd one-shot이 현재 열린 event를 읽는다.
 # G0(2026-08-30)에서 /events/keyset이 limit=500 요청을 100으로 잘라 221 page를
-# 반환했다. timer는 UTC +9 00·03·06…21시 고정 캘린더(하루 8회)라 공개 API
-# 요청은 219 x 8 = 약 1,750회/일로 3,000회 아래다. 3시간으로 둔 것은 요청
-# 때문이 아니라 줄글 브리프가 이 주기를 따라가기 때문이다
+# 반환했다. timer는 UTC +9 00·04·08·12·16·20시 고정 캘린더(하루 6회)라 공개 API
+# 요청은 219 x 6 = 약 1,300회/일로 3,000회 아래다. 주기는 요청 수가 아니라 줄글
+# 브리프가 이 주기를 따라가는 비용으로 정한다(2026-09-24 3시간 → 4시간)
 # (docs/polymarket-sector-brief.md 6절).
 POLYMARKET_BASE_URL = "https://gamma-api.polymarket.com"
 POLYMARKET_PROXY_URL = os.environ.get("POLYMARKET_PROXY_URL", "").strip()
@@ -100,7 +100,7 @@ POLYMARKET_TRENDING_CANDIDATE_LIMIT = 400
 POLYMARKET_TRENDING_MIN_VOLUME = 2000.0
 # 화면에 조명할 건수. 한 화면에서 훑고 끝낼 수 있는 분량으로 둔다.
 POLYMARKET_TRENDING_SPOTLIGHT_LIMIT = 10
-# 이 아래 이동은 조명하지 않는다. 3시간에 2pp 미만은 컨센서스가 바뀐 것이 아니라
+# 이 아래 이동은 조명하지 않는다. 한 주기(4시간)에 2pp 미만은 컨센서스가 바뀐 것이 아니라
 # 같은 자리에서 흔들린 것이다.
 POLYMARKET_TRENDING_MOVE_FLOOR = 0.02
 # 신규 진입·거래량 급증 목록의 길이. 조명이 주인공이고 이 둘은 곁들이다.
@@ -129,12 +129,14 @@ POLYMARKET_BRIEF_MIN_EVENTS = 5
 POLYMARKET_BRIEF_MIN_EVENTS_BY_GROUP = {"composite": 2}
 # 이 시각(UTC +9)에는 LLM을 부르지 않고 끝낸다. refresh는 계속 돌아 확률
 # 숫자는 갱신되고, 줄글만 멈춘다 — 비용의 실체는 LLM이고 API 순회는 공짜다.
-# 03시만 거른다. 그 시각 글은 06시에 덮이는데 그 사이 세 시간은 읽는 사람이
-# 자고 있어 읽힐 가능성이 하루 중 가장 낮다. 06시는 절대 거르지 않는다 —
-# 미장이 막 끝난 직후라 하루치가 확정된 시점이고 기상 후 첫 화면이 그것이다.
-# (KST 03시는 ET 14시로 장중이지만, 이 줄글은 변화 로그가 아니라 그 시점의
-#  현재 상태 요약이라 한 슬롯을 걸러도 06시 글에 그대로 반영된다.)
-POLYMARKET_BRIEF_QUIET_HOURS = frozenset({3})
+# 04시만 거른다. 그 시각 글은 08시에 덮이는데 그 사이 네 시간은 읽는 사람이
+# 자고 있어 읽힐 가능성이 하루 중 가장 낮다. 08시는 절대 거르지 않는다 —
+# 미장 마감(KST 05~06시) 뒤 하루치가 확정된 첫 슬롯이고 기상 후 첫 화면이 그것이다.
+# (KST 04시는 ET 15시로 장중이지만, 이 줄글은 변화 로그가 아니라 그 시점의
+#  현재 상태 요약이라 한 슬롯을 걸러도 08시 글에 그대로 반영된다.)
+# 값은 timer 슬롯 중 하나여야 한다 — 슬롯에 없는 시각은 영영 오지 않아 조용히
+# 아무것도 거르지 않는다(주기를 3→4시간으로 바꿀 때 {3}이 그렇게 될 뻔했다).
+POLYMARKET_BRIEF_QUIET_HOURS = frozenset({4})
 POLYMARKET_BRIEF_PROMPT_FILE = PROMPT_DIR / "polymarket_brief_ko.txt"
 POLYMARKET_BRIEF_TIMEOUT = 180
 # 단락 하나라 출력이 짧다. 다만 finish_reason=length는 재시도 없이 실패이므로
@@ -157,7 +159,7 @@ POLYMARKET_ANNOTATE_PROMPT_FILE = PROMPT_DIR / "polymarket_annotate_ko.txt"
 POLYMARKET_ANNOTATE_BATCH_SIZE = 25
 POLYMARKET_ANNOTATE_NUM_PREDICT = 4096
 POLYMARKET_ANNOTATE_TIMEOUT = 180
-# 한 실행의 호출 상한. 백필이 하루 예산을 첫 주기에 몰아 쓰지 않고 3시간
+# 한 실행의 호출 상한. 백필이 하루 예산을 첫 주기에 몰아 쓰지 않고 4시간
 # 주기마다 나눠 쓰게 하고, 유닛의 TimeoutStartSec 안에 끝나게 한다.
 POLYMARKET_ANNOTATE_MAX_BATCHES_PER_RUN = 8
 # 최근 24시간 Neurons 상한. 무료 한도(하루 10,000)를 봇·섹터 줄글(하루
