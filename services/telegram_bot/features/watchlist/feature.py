@@ -36,5 +36,5 @@ FEATURE = FeatureSpec(
         CallbackSpec(("add_", "remove:", "close"), handle_watchlist_callback),
     ),
     install_services=_install_services,
-    data_files=("data/watchlist/watchlist.json", "data/watchlist/watchlist_events.json"),
+    data_files=("storage/bot/watchlist/watchlist.json", "storage/bot/watchlist/watchlist_events.json"),
 )

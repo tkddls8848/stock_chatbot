@@ -152,10 +152,10 @@ def _publish_every_window(monkeypatch, tmp_path):
     보류로 빠져 무엇을 지키는 테스트인지 알 수 없게 된다.
     """
     monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 1)
-    from services.web import export
+    from services.telegram_bot import publish as export
 
-    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path / "webpub")
-    monkeypatch.setattr(export, "META_JSON", tmp_path / "webpub" / "meta.json")
+    monkeypatch.setattr(export, "NEWS_JSON", tmp_path / "public" / "news.json")
+    monkeypatch.setattr(export, "META_JSON", tmp_path / "public" / "meta.json")
 
 
 def _memory(tmp_path, **entries):
@@ -1420,7 +1420,7 @@ def test_report_exports_only_published_news_to_public_search(tmp_path):
         item["published_at"] = datetime.now(JST).isoformat()
         item["url"] = "https://example.com/article"
     asyncio.run(send_news_report(app))
-    payload = json.loads((tmp_path / "webpub" / "news.json").read_text(encoding="utf-8"))
+    payload = json.loads((tmp_path / "public" / "news.json").read_text(encoding="utf-8"))
     rows = payload["documents"]
     assert any(row["kind"] == "report" for row in rows)
     assert any(row["title"] == "한국어 제목 0" for row in rows)
@@ -1429,7 +1429,7 @@ def test_report_exports_only_published_news_to_public_search(tmp_path):
 
 
 def test_public_export_failure_does_not_repeat_telegram_delivery(tmp_path, monkeypatch):
-    from services.web import export
+    from services.telegram_bot import publish as export
 
     def fail(*args):
         raise OSError("disk full")

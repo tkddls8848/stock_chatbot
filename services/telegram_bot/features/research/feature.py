@@ -71,5 +71,5 @@ FEATURE = FeatureSpec(
     ),
     install_services=_install_services,
     install_jobs=_install_jobs,
-    data_files=("data/research/market_research.json",),
+    data_files=("storage/bot/research/market_research.json",),
 )

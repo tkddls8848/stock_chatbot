@@ -47,5 +47,5 @@ FEATURE = FeatureSpec(
     ),
     install_services=_install_services,
     install_jobs=_install_jobs,
-    data_files=("data/instruments/stock_db.json",),
+    data_files=("storage/bot/instruments/stock_db.json",),
 )

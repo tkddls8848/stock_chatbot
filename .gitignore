@@ -11,11 +11,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-data/*/*.json
-data/*/*.jsonl
-!data/.gitkeep
-data/runtime/bot.lock
-data/yfinance_cache/
+# 공유 저장소(NAS). 실행 중 생기는 데이터 전부이고 추적하지 않는다.
+# 옛 data/는 서버에서 storage/로 한 번 옮긴다(infra/server-ops.md 9-1).
+/storage/
+/data/
 
 *.log
 *.tmp

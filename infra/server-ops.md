@@ -134,7 +134,7 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 | 매시 정각 부근 | 뉴스 주기(60분) | 그 주기 한 번을 건너뛴다. 다음 주기가 같은 후보를 다시 본다 |
 
 시각은 전부 JST다(봇 스케줄러가 `timezone=JST`). 가장 안전한 창은 **11:00 ~ 23:00 사이의 정각 직후**다. 재부팅도 같은 기준으로
-잡는다 — `data/`는 영구 루트 디스크에 있어 재부팅으로 사라지지 않지만,
+잡는다 — `storage/`는 영구 루트 디스크에 있어 재부팅으로 사라지지 않지만,
 스냅숏 창을 덮으면 그날 하루치를 잃는다.
 
 ## 5. 설정 변경
@@ -246,7 +246,7 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 | 읽기 repository | `services/web/polymarket/repository.py` |
 | 화면·API | `services/web/server.py`(`/forecast`, `/api/forecast/*`) |
 | systemd 유닛 | `infra/systemd/stock-chatbot-polymarket-refresh.{service,timer}` |
-| 산출물 | `data/webpub/polymarket/`의 `current.json`·`status.json`·`generations/` |
+| 산출물 | `storage/public/polymarket/`의 `current.json`·`status.json`·`generations/` |
 | 크기 실측 도구 | `services/web/tests/polymarket_manifest_size_probe.py` |
 
 ### 8-1. 설치
@@ -271,7 +271,7 @@ LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주�
 이동이 영영 사라진다(스냅숏이 그 주기에만 남는다).
 
 검색 주석은 새로 생겼거나 제목이 바뀐 event에만 한국어 요약·검색어를 달아
-`data/webpub/polymarket/search_index.json`에 쌓는다. 진행과 예산은
+`storage/public/polymarket/search_index.json`에 쌓는다. 진행과 예산은
 `annotate_status.json`에 있다 — `annotated`/`total`이 채워진 비율이고,
 `rolling_neurons`가 최근 24시간 사용량이다. 상한
 (`POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS`)에 닿으면 `last_result`가
@@ -279,7 +279,7 @@ LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주�
 지우면 처음부터 다시 채우느라 약 3주치 예산을 다시 쓴다 — 지우지 않는다.
 색인이 비어 있어도 검색은 영문 제목·태그로 동작한다.
 
-트렌드 상태는 `data/webpub/polymarket/trending.json` 하나이고
+트렌드 상태는 `storage/public/polymarket/trending.json` 하나이고
 `curl -s localhost:8788/api/forecast/trending`으로 확인한다. `state`가
 `warming_up`이면 비교할 직전 스냅숏이 아직 없다는 뜻이라 **다음 주기에 저절로
 풀린다**. 이 파일을 지우면 그날 기준선도 함께 사라져 다음 주기가 기준선을 다시
@@ -298,8 +298,8 @@ journalctl -u stock-chatbot-polymarket-refresh -n 40 --no-pager
 
 ```bash
 curl -s localhost:8788/api/forecast/health
-cat /srv/stock-chatbot/data/webpub/polymarket/status.json
-ls /srv/stock-chatbot/data/webpub/polymarket/generations/
+cat /srv/stock-chatbot/storage/public/polymarket/status.json
+ls /srv/stock-chatbot/storage/public/polymarket/generations/
 ```
 
 | 보이는 것 | 뜻 |
@@ -407,7 +407,7 @@ event 21,872건에 89.8 MiB(swap 22.5 MiB)로 예산에 턱걸이였다. 여기�
 sudo systemctl disable --now stock-chatbot-polymarket-refresh.timer
 sudo rm /etc/systemd/system/stock-chatbot-polymarket-refresh.{service,timer}
 sudo systemctl daemon-reload
-sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
+sudo rm -rf /srv/stock-chatbot/storage/public/polymarket
 ```
 
 화면까지 걷어내려면 `services/web/server.py`의 `/forecast`·`/api/forecast/*` 라우트와
@@ -416,7 +416,7 @@ sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
 
 ## 9. 백업·복구·재부팅
 
-상태는 전부 `/srv/stock-chatbot/data/` 하위 JSON/JSONL이고 DB가 없다. 보호 장치는 셋이다.
+상태는 전부 `/srv/stock-chatbot/storage/` 하위 JSON/JSONL이고 DB가 없다. 보호 장치는 셋이다.
 
 | 장치 | 주기 | 자리 |
 |---|---|---|
@@ -430,9 +430,9 @@ tar tzf /var/backups/stock-chatbot/backup-$(date -u +%F).tgz | head             
 tar xzf /var/backups/stock-chatbot/backup-YYYY-MM-DD.tgz -C /tmp/restore        # 복구는 다른 경로에 풀고 골라 덮는다
 ```
 
-**재부팅으로 `data/`는 사라지지 않는다.** 영구 루트 디스크에 있어 reboot도
+**재부팅으로 `storage/`는 사라지지 않는다.** 영구 루트 디스크에 있어 reboot도
 stop/start도 보존한다. 사라지는 것은 인스턴스를 **삭제·재생성**할 때뿐이고,
-그때는 `data/`가 별도 볼륨이 아니라 루트 디스크에 있으므로 스냅샷/백업 tar에
+그때는 `storage/`가 별도 볼륨이 아니라 루트 디스크에 있으므로 스냅샷/백업 tar에
 없는 것은 전부 잃는다.
 
 재부팅으로 실제 손해가 나는 것은 셋뿐이다.
@@ -446,6 +446,27 @@ stop/start도 보존한다. 사라지는 것은 인스턴스를 **삭제·재생
 공유 호스트의 앱 런타임은 `cloud-init`이 아니라 `infra/scripts/install-shared-host.sh`가
 설치한다. 재부팅으로 다시 돌지 않으며, 다시 깔아야 하면 그 스크립트를 직접 실행한다
 (`infra/host-contract.md`).
+
+### 9-1. `data/` → `storage/` 이전 (한 번)
+
+2026-09-24에 데이터 폴더를 공유 저장소 `storage/`로 바꿨다(`code_guide.md`의
+「공유 저장소」). 코드는 옛 경로를 읽지 않으므로 **배포 전에** 서버에서 한 번 옮긴다.
+
+```bash
+cd /srv/stock-chatbot
+sudo systemctl stop stock-chatbot stock-chatbot-web stock-chatbot-polymarket-refresh.timer polymarket-shorts.timer
+mkdir -p storage/bot storage/portfolio storage/shorts
+mv data/webpub storage/public
+for d in data/*/; do mv "$d" storage/bot/; done        # news·instruments·research·… 
+mv storage/bot/watchlist/watchlist.json storage/portfolio/watchlist.json   # 관심종목은 공유 파일
+[ -d shorts/output ] && mv shorts/output/* storage/shorts/ && rmdir shorts/output
+rmdir data 2>/dev/null || ls -la data                  # 남은 것이 있으면 확인 후 정리
+# 배포(3절) → 백업 cron 다시 렌더(install-shared-host.sh) → 기동
+```
+
+NAS를 쓰려면 `.env`의 `STORAGE_DIR`에 마운트 경로를 넣는다. 봇·웹·one-shot·쇼츠가
+같은 값을 읽어야 하므로 루트 `.env`와 `shorts/.env` **둘 다** 고친다. 마운트 전체가 한
+파일시스템이어야 원자적 교체가 성립한다.
 
 ## 10. 장애 대응
 
@@ -525,7 +546,7 @@ Neurons가 나가지 않고, 쓰기 라우트가 없어 잃는 것은 열람뿐�
 | 읽기 전용 웹(`GET`만) | `services/web/server.py` |
 | systemd 유닛 | `infra/systemd/stock-chatbot-web.service` |
 | 프록시 설정 견본 | `infra/Caddyfile.example` |
-| 산출물 | `data/webpub/`의 `market.json`·`market_chart.png`·`research.json`·`meta.json` |
+| 산출물 | `storage/public/`의 `market.json`·`market_chart.png`·`research.json`·`meta.json` |
 
 ### 11-1. 웹 프로세스
 
@@ -613,7 +634,7 @@ echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/
 systemctl status stock-chatbot-web caddy --no-pager
 journalctl -u stock-chatbot-web -n 50 --no-pager
 journalctl -u stock-chatbot --no-pager | grep WEBPUB | tail -10   # 굽기 실패 여부
-ls -la /srv/stock-chatbot/data/webpub/
+ls -la /srv/stock-chatbot/storage/public/
 ```
 
 ### 11-5. 중단 기준

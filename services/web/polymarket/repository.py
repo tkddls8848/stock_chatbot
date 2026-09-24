@@ -11,10 +11,11 @@ from threading import Lock
 from typing import Any
 
 from services.web.core.clock import now
+from services.web.core.config import POLYMARKET_WEB_DIR
 from services.web.polymarket import relevance
 from services.web.polymarket.dashboard.storage import read_detail
 
-DEFAULT_ROOT = Path(__file__).resolve().parents[3] / "data" / "webpub" / "polymarket"
+DEFAULT_ROOT = POLYMARKET_WEB_DIR
 
 
 def _read_json(path: Path) -> dict[str, Any]:

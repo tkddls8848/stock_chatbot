@@ -133,8 +133,8 @@ def _app(store):
 
 
 def _quiet(monkeypatch, published, *, gaps=None, render_error=None):
-    """차트 렌더링과 웹 게시를 가짜로 바꾼다. 실제 data/webpub에 쓰지 않는다."""
-    from services.web import export
+    """차트 렌더링과 웹 게시를 가짜로 바꾼다. 실제 storage/public에 쓰지 않는다."""
+    from services.telegram_bot import publish as export
 
     async def fake_run_non_urgent(func, *args):
         if func is refresh.render_market_chart:

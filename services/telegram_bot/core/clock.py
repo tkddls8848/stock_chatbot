@@ -34,7 +34,7 @@ def ensure_jst(value: datetime) -> datetime:
     """저장된 타임스탬프를 JST aware로 정규화한다.
 
     오프셋이 없는 값은 JST로 간주한다. 이 앱이 기록한 시각은 언제나 JST이고,
-    aware로 바꾸기 전에 쓴 `data/` 파일에는 오프셋이 없기 때문이다. 이 정규화가
+    aware로 바꾸기 전에 쓴 상태 파일에는 오프셋이 없기 때문이다. 이 정규화가
     없으면 저장값(naive)과 `now()`(aware) 비교가 TypeError로 죽는다.
     """
     if value.tzinfo is None:

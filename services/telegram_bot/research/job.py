@@ -2,7 +2,7 @@
 
 정해진 시각(`RESEARCH_SCHEDULE_*`)에 한 번 돌고, 텔레그램 관리 패널의 "지금 실행"도
 같은 함수를 부른다. 주제는 텔레그램에서 바꾸고(`MarketViewManager.sight`), 결과는
-봇 상태와 웹 산출물(`data/webpub/research.json`)에 같은 한 벌로 남는다 — 브리핑과
+봇 상태와 웹 산출물(`storage/public/research.json`)에 같은 한 벌로 남는다 — 브리핑과
 웹 화면이 같은 결과를 읽는다.
 
 **관심종목 추가·삭제는 묻지 않고 적용한다.** 예전에는 결과마다 텔레그램 적용 버튼을
@@ -161,7 +161,7 @@ async def _run_research(app: Application) -> dict[str, Any] | None:
         manager.save_result, result, news_count=len(news_items), candidate_count=len(candidates)
     )
     try:
-        from services.web.export import publish_research
+        from services.telegram_bot.publish import publish_research
 
         await run_non_urgent(
             publish_research,

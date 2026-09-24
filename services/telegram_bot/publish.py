@@ -1,7 +1,10 @@
-"""공개 웹이 읽을 마지막 산출물을 파일로 내보낸다.
+"""공개 웹이 읽을 마지막 산출물을 공유 저장소(`storage/public/`)에 쓴다.
 
-이 모듈은 봇 안에서만 호출된다. 공개 웹은 이 파일들을 읽기만 하므로 웹 요청이
-LLM, matplotlib, 혹은 봇의 상태를 실행시키지 않는다.
+봇 코드다. 예전에는 웹 패키지(`services/web/export.py`)에 있어 봇이 웹을 지연
+import했는데, 공유 저장소로 옮기며 그 유일한 교차 import를 없앴다 — 봇은 자기
+`core/storage.py`로 쓰고, 웹은 같은 파일을 자기 코드로 읽기만 한다. 경로와
+JSON 형식이 둘 사이의 계약이고, 형식을 바꾸면 웹의 읽는 쪽 테스트를 함께 고친다.
+공개 웹 요청이 LLM, matplotlib, 혹은 봇의 상태를 실행시키지 않는 것은 그대로다.
 """
 
 from __future__ import annotations
@@ -12,17 +15,17 @@ import threading
 from typing import Any
 from datetime import date, timedelta
 
-from services.web.core.clock import now
-from services.web.core.config import DATA_DIR
-from services.web.core.storage import write_bytes_atomic, write_json_atomic
+from services.telegram_bot.core.clock import now
+from services.telegram_bot.core.config import PUBLIC_DIR
+from services.telegram_bot.core.storage import write_bytes_atomic, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
-WEBPUB_DIR = DATA_DIR / "webpub"
-MARKET_JSON = WEBPUB_DIR / "market.json"
-MARKET_CHART = WEBPUB_DIR / "market_chart.png"
-RESEARCH_JSON = WEBPUB_DIR / "research.json"
-META_JSON = WEBPUB_DIR / "meta.json"
+MARKET_JSON = PUBLIC_DIR / "market.json"
+MARKET_CHART = PUBLIC_DIR / "market_chart.png"
+RESEARCH_JSON = PUBLIC_DIR / "research.json"
+NEWS_JSON = PUBLIC_DIR / "news.json"
+META_JSON = PUBLIC_DIR / "meta.json"
 _META_LOCK = threading.Lock()
 _NEWS_LOCK = threading.Lock()
 
@@ -34,7 +37,7 @@ def publish_news(documents: list[dict[str, Any]]) -> None:
     """
     moment = now()
     cutoff = (moment.date() - timedelta(days=29)).isoformat()
-    target = WEBPUB_DIR / "news.json"
+    target = NEWS_JSON
     fields = (
         "id", "kind", "market", "title", "text", "date", "published_at",
         "source", "url", "sentiment",

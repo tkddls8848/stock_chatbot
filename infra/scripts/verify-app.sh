@@ -70,7 +70,7 @@ check "Telegram 롱폴링 연결 있음" bash -c \
     "sudo ss -tnp state established 2>/dev/null | grep -q \"\$(getent hosts api.telegram.org | awk '{print \$1}' | head -1)\""
 
 say "디스크"
-sudo du -sh "$APP_DIR/data" 2>/dev/null
+sudo du -sh "$APP_DIR/storage" 2>/dev/null
 
 if [ "$fail" -eq 0 ]; then
     ok "앱 점검 통과"

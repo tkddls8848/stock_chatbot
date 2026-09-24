@@ -299,7 +299,7 @@ def _research_app(collector, analyzer, *, bot=None):
 @pytest.fixture
 def _quiet_research(monkeypatch):
     """후보 발굴·웹 게시·관심종목 이벤트 기록을 막는다. 실제 data/에 쓰지 않는다."""
-    from services.web import export
+    from services.telegram_bot import publish as export
 
     monkeypatch.setattr(research_job, "build_research_candidate_universe", lambda *a, **k: [])
     monkeypatch.setattr(research_job, "collect_extra_candidates", lambda *a, **k: [])

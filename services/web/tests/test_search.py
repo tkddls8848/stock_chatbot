@@ -1,20 +1,18 @@
 """검색어 해석·실제 자료 검색·공개 경계·갱신·저장 실패를 검증한다."""
 
 import json
-from datetime import date, datetime
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
-from services.web import export, search, server
-from services.web.core.clock import JST
+from services.web import search, server
 from services.web.core.storage import write_json_atomic
 
 
 @pytest.fixture(autouse=True)
 def frozen(monkeypatch):
     monkeypatch.setattr(search, "today", lambda: date(2026, 9, 23))
-    monkeypatch.setattr(export, "now", lambda: datetime(2026, 9, 23, 12, tzinfo=JST))
 
 
 def article(key="jp", **changes):
@@ -115,34 +113,8 @@ def test_failed_read_keeps_last_good_and_exposes_original_update_time(tmp_path):
     assert repo.search("일본") == previous
 
 
-def test_export_keeps_only_public_fields_deduplicates_and_expires(tmp_path, monkeypatch):
-    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path)
-    monkeypatch.setattr(export, "META_JSON", tmp_path / "meta.json")
-    export.publish_news([article(chat_id="SECRET"), article("old", date="2026-08-01")])
-    export.publish_news([article(title="새 제목")])
-    payload = json.loads((tmp_path / "news.json").read_text(encoding="utf-8"))
-    assert len(payload["documents"]) == 1
-    assert payload["documents"][0]["title"] == "새 제목"
-    assert "SECRET" not in json.dumps(payload)
-
-
-def test_export_failure_preserves_existing_artifact(tmp_path, monkeypatch):
-    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path)
-    monkeypatch.setattr(export, "META_JSON", tmp_path / "meta.json")
-    export.publish_news([article()])
-    before = (tmp_path / "news.json").read_bytes()
-
-    def fail(*args, **kwargs):
-        raise OSError("full disk")
-
-    monkeypatch.setattr(export, "write_json_atomic", fail)
-    with pytest.raises(OSError):
-        export.publish_news([article("new")])
-    assert (tmp_path / "news.json").read_bytes() == before
-
-
 def test_search_routes_validation_empty_state_and_markup(tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
     client = TestClient(server.build_app())
     empty = client.get("/api/search", params={"q": "일본 금리"})
     assert empty.status_code == 200 and empty.json()["available_documents"] == 0
@@ -160,7 +132,7 @@ def test_search_routes_validation_empty_state_and_markup(tmp_path, monkeypatch):
     assert "action='/search'" not in client.get("/").text
 
 
-def test_export_and_server_use_repository_data_root():
-    from services.web.core.config import DATA_DIR
+def test_server_reads_the_shared_public_folder():
+    from services.web.core.config import PUBLIC_DIR, STORAGE_DIR
 
-    assert export.WEBPUB_DIR == server.WEBPUB_DIR == DATA_DIR / "webpub"
+    assert server.PUBLIC_DIR == PUBLIC_DIR == STORAGE_DIR / "public"

@@ -63,7 +63,7 @@ terraform -chdir=C:\Users\PSI\orca\remote_coding\terraform output -raw public_we
 - **공개 웹**: 유효한 DNS와 Caddy가 준비된 뒤 호스트의 `enable_public_web = true`로
   80/443을 연다. 앱 내부 포트(8788)는 어떤 경우에도 공인 방화벽에 열지 않는다.
   절차는 `server-ops.md` 11절.
-- **자동 스냅샷**: 영속 데이터(`/srv/stock-chatbot/data`)가 스냅샷에 함께 담긴다.
+- **자동 스냅샷**: 영속 데이터(`/srv/stock-chatbot/storage`)가 스냅샷에 함께 담긴다.
   시각을 옮기면 우리 백업 cron 시각도 함께 옮긴다.
 - **실행 계정**: 호스트가 만든 `ubuntu`를 쓴다. 계정을 바꾸려면 호스트 쪽 결정이 먼저다.
 

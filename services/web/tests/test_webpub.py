@@ -1,21 +1,26 @@
+import json
+
 from fastapi.testclient import TestClient
 
-from services.web import export, server
+from services.web import server
+
+
+# 봇(`services/telegram_bot/publish.py`)이 storage/public/에 쓰는 형식이다. 웹은 봇을
+# import하지 않으므로 계약 파일을 직접 써서 읽는 쪽을 검사한다. 형식을 바꾸면
+# 봇의 test_publish.py와 여기를 같은 커밋에서 고친다.
+def _write(root, name, payload):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def test_publish_market_and_serve_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path)
-    monkeypatch.setattr(export, "MARKET_JSON", tmp_path / "market.json")
-    monkeypatch.setattr(export, "MARKET_CHART", tmp_path / "market_chart.png")
-    monkeypatch.setattr(export, "META_JSON", tmp_path / "meta.json")
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
-
-    export.publish_market(
-        b"png-bytes",
-        {"KR": {"avg_sentiment": 0.2, "count": 12, "daily": []},
-         "JP": {"avg_sentiment": -0.1, "count": 15, "daily": []}},
-        7,
-    )
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
+    _write(tmp_path, "market.json", {
+        "generated_at": "2026-09-24T07:40:00+09:00", "lookback_days": 7,
+        "markets": {"KR": {"avg_sentiment": 0.2, "count": 12, "daily": []},
+                    "JP": {"avg_sentiment": -0.1, "count": 15, "daily": []}},
+    })
+    (tmp_path / "market_chart.png").write_bytes(b"png-bytes")
 
     client = TestClient(server.build_app())
     payload = client.get("/api/market").json()
@@ -33,13 +38,11 @@ def test_market_page_includes_japan_before_its_data_is_ready():
 
 
 def test_publish_research_preserves_full_result_and_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(export, "WEBPUB_DIR", tmp_path)
-    monkeypatch.setattr(export, "RESEARCH_JSON", tmp_path / "research.json")
-    monkeypatch.setattr(export, "META_JSON", tmp_path / "meta.json")
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
 
     result = {"summary": "시장 요약", "risks": ["변동성"]}
-    export.publish_research("반도체", result, [{"summary": "이전 결과"}])
+    _write(tmp_path, "research.json", {"generated_at": "2026-09-24T08:20:00+09:00", "sight": "반도체",
+                                       "last_result": result, "history": [{"summary": "이전 결과"}]})
 
     payload = TestClient(server.build_app()).get("/api/research").json()
     assert payload["sight"] == "반도체"
@@ -49,7 +52,7 @@ def test_publish_research_preserves_full_result_and_history(tmp_path, monkeypatc
 
 def test_public_pages_share_one_shell(tmp_path, monkeypatch):
     """세 화면이 같은 헤더·푸터를 쓰고 현재 위치를 표시한다."""
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
     client = TestClient(server.build_app())
 
     for path in ("/", "/research", "/about"):
@@ -65,7 +68,7 @@ def test_public_pages_share_one_shell(tmp_path, monkeypatch):
 
 def test_pages_are_built_once_and_do_not_touch_the_filesystem(tmp_path, monkeypatch):
     """페이지는 정적 문자열이다. 요청마다 다시 조립하거나 산출물을 읽지 않는다."""
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path / "missing")
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path / "missing")
     client = TestClient(server.build_app())
 
     first = client.get("/about").text
@@ -103,7 +106,7 @@ def test_pages_label_the_clock_as_korean_time():
 
 def test_market_chart_is_revalidated_instead_of_heuristically_cached(tmp_path, monkeypatch):
     """차트 URL은 고정이라 캐시 지시가 없으면 브라우저가 옛 그림을 계속 쓴다."""
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
     chart = tmp_path / "market_chart.png"
     chart.write_bytes(b"png-bytes")
 
@@ -130,7 +133,7 @@ def test_trending_route_hides_the_next_cycle_state(tmp_path, monkeypatch):
     """
     import json
 
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
     client = TestClient(server.build_app())
     assert client.get("/api/forecast/trending").status_code == 503
 
@@ -164,7 +167,7 @@ def test_robots_blocks_the_heavy_api_face_but_not_search_crawlers(tmp_path, monk
     남는다(`infra/server-ops.md` 11절). 그래서 막는 것은 부하를 만드는 `/api/`
     면과, 검색 색인과 다른 UA를 쓰는 AI 수집 봇뿐이다.
     """
-    monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
+    monkeypatch.setattr(server, "PUBLIC_DIR", tmp_path)
     response = TestClient(server.build_app()).get("/robots.txt")
 
     assert response.status_code == 200

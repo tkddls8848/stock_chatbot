@@ -137,10 +137,10 @@ FEATURE = FeatureSpec(
     install_services=_install_services,
     install_jobs=_install_jobs,
     data_files=(
-        "data/news_prefilter/event_memory.json",
-        "data/news_prefilter/observations.jsonl",
-        "data/news_prefilter/model.json",
-        "data/news_prefilter/cpu_budget.json",
+        "storage/bot/news_prefilter/event_memory.json",
+        "storage/bot/news_prefilter/observations.jsonl",
+        "storage/bot/news_prefilter/model.json",
+        "storage/bot/news_prefilter/cpu_budget.json",
     ),
 )
 

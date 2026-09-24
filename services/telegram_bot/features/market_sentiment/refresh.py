@@ -1,7 +1,7 @@
 """국가별 뉴스 감성의 예약 갱신.
 
 텔레그램 명령(`/market`)은 없앴다(2026-09-24). 정해진 시각에 빠진 날의 다이제스트를
-보충하고 차트를 그려 웹 산출물(`data/webpub/market.json`·`market_chart.png`)로 굽는다.
+보충하고 차트를 그려 웹 산출물(`storage/public/market.json`·`market_chart.png`)로 굽는다.
 결과는 `MarketDigestStore`와 웹 산출물에 같은 한 벌로 남는다.
 
 `MarketDigestStore`의 확정된 날(`final=True`)은 다시 계산하지 않으므로 같은 기간을
@@ -98,7 +98,7 @@ async def refresh_market_sentiment(
         return None
 
     image = await run_non_urgent(render_market_chart, ready, days)
-    from services.web.export import publish_market
+    from services.telegram_bot.publish import publish_market
 
     await run_non_urgent(publish_market, image.getvalue(), ready, days)
     logger.info("[MARKET] 시장 감성 갱신: %s", ", ".join(sorted(ready)))

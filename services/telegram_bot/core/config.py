@@ -11,9 +11,10 @@
     모델을 폐기·개명하면 이 값이 코드 배포 없이 즉시 바뀌어야 번역·분석이
     전부 죽는 걸 막을 수 있어서 env로 남긴다.
     다른 모듈은 여기서 상수를 import 하며 `os.environ`에 직접 접근하지 않는다.
-  - `data/<기능키>/*.json` = 봇이 수집·축적하는 데이터(관심종목, 전송 이력,
+  - `storage/bot/<기능키>/*.json` = 봇이 수집·축적하는 데이터(전송 이력,
     종목 DB 등)로, 소유 기능별 하위 디렉토리에 둔다. 설정값은 저장하지
-    않는다.
+    않는다. `storage/`는 웹·one-shot·쇼츠와 같이 쓰는 공유 저장소다
+    (`code_guide.md`의 「공유 저장소」).
 
 import 시 .env 로딩과 로깅 설정이 한 번 수행된다.
 """
@@ -31,6 +32,14 @@ pd.set_option("future.infer_string", False)
 BASE_DIR = Path(__file__).resolve().parents[3]
 
 load_dotenv(BASE_DIR / ".env")
+
+# 공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같은 경로를 각자 설정으로 읽는다.
+# 전체가 한 파일시스템이어야 원자적 교체(os.replace)가 성립한다.
+STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", "").strip() or BASE_DIR / "storage")
+# 공개 화면이 내보내는 산출물. 봇은 여기에 쓰고 웹은 읽기만 한다.
+PUBLIC_DIR = STORAGE_DIR / "public"
+# 개인 화면의 자산·관심종목·조언. 공개 라우트는 이 폴더를 내보내지 않는다.
+PORTFOLIO_DIR = STORAGE_DIR / "portfolio"
 
 
 class ConfigurationError(RuntimeError):
@@ -85,9 +94,9 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 # raw API 쪽 telegram 로거라 둘은 WARNING에 그대로 둔다.
 logging.getLogger("telegram.ext").setLevel(logging.INFO)
 
-# 데이터는 코드와 같은 기준으로 소유 기능 키의 하위 디렉토리에 둔다.
+# 봇 내부 상태는 소유 기능 키의 하위 디렉토리에 둔다.
 # (news/, watchlist/, instruments/, research/, runtime/)
-DATA_DIR          = BASE_DIR / "data"
+DATA_DIR          = STORAGE_DIR / "bot"
 SENT_IDS_FILE     = DATA_DIR / "news" / "sent_ids.json"
 NEWS_LOG_FILE     = DATA_DIR / "news" / "news_log.json"
 NEWS_REPORT_QUEUE_FILE = DATA_DIR / "news" / "news_report_queue.json"
@@ -441,7 +450,7 @@ BRIEFING_MARKET_CLOSE_MINUTE = 0
 BRIEFING_NEWS_MAX_ITEMS = 14
 
 # ── 예약 리서치·시장 감성(JST 기준 cron) ─────────────────
-# 둘 다 정해진 시각에 돌고, 결과는 웹(data/webpub)과 봇이 같은 한 벌을 읽는다.
+# 둘 다 정해진 시각에 돌고, 결과는 웹(storage/public)과 봇이 같은 한 벌을 읽는다.
 # 텔레그램은 웹의 관리 패널이다 — 주제 조작과 "지금 실행"만 거기서 한다.
 # 리서치는 모닝 브리핑(08:50) 전에 끝나야 브리핑이 그날 결과를 쓴다.
 # 한 번에 LLM 호출 한 번이지만 뉴스 수집·후보 구성까지 수 분이 걸린다.

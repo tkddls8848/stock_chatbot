@@ -105,9 +105,9 @@ FEATURE = FeatureSpec(
     install_services=_install_services,
     install_jobs=_install_jobs,
     data_files=(
-        "data/news/sent_ids.json",
-        "data/news/news_log.json",
-        "data/news/news_report_queue.json",
-        "data/news/news_report_memory.json",
+        "storage/bot/news/sent_ids.json",
+        "storage/bot/news/news_log.json",
+        "storage/bot/news/news_report_queue.json",
+        "storage/bot/news/news_report_memory.json",
     ),
 )

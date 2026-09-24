@@ -1,6 +1,6 @@
 """읽기 전용 공개 웹.
 
-별도 프로세스로 실행하며 ``data/webpub`` 산출물만 읽는다. 인증과 TLS는 이
+별도 프로세스로 실행하며 ``storage/public`` 산출물만 읽는다. 인증과 TLS는 이
 프로세스 앞단의 Caddy가 담당한다.
 """
 
@@ -15,17 +15,16 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 
 from services.web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML, ROBOTS_TXT
 from services.web.pages.search import SEARCH_HTML
-from services.web.core.config import DATA_DIR
+from services.web.core.config import PUBLIC_DIR
 from services.web.polymarket.repository import PolymarketRepository, make_etag
 from services.web.search import NewsSearch
 
-WEBPUB_DIR = DATA_DIR / "webpub"
-POLYMARKET_REPOSITORY = PolymarketRepository(WEBPUB_DIR / "polymarket")
+POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
 
 
 def _read_json(name: str) -> dict[str, Any]:
     try:
-        value = json.loads((WEBPUB_DIR / name).read_text(encoding="utf-8"))
+        value = json.loads((PUBLIC_DIR / name).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
@@ -33,7 +32,7 @@ def _read_json(name: str) -> dict[str, Any]:
 
 def build_app() -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
-    search_repository = NewsSearch(WEBPUB_DIR)
+    search_repository = NewsSearch(PUBLIC_DIR)
 
     @app.get("/search", response_class=HTMLResponse)
     def search_page() -> str:
@@ -210,7 +209,7 @@ def build_app() -> FastAPI:
 
     @app.get("/market_chart.png")
     def market_chart(request: Request) -> Response:
-        path = WEBPUB_DIR / "market_chart.png"
+        path = PUBLIC_DIR / "market_chart.png"
         if not path.is_file():
             raise HTTPException(status_code=404, detail="시장 산출물이 아직 없습니다.")
         # URL은 고정이고 파일만 새로 구워진다. 캐시 지시가 없으면 브라우저가

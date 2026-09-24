@@ -18,10 +18,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = BASE_DIR / "data"
 PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 load_dotenv(BASE_DIR / ".env")
+
+# 공유 저장소(NAS). 봇·one-shot·쇼츠와 같은 경로를 각자 설정으로 읽는다
+# (`code_guide.md`의 「공유 저장소」). 봇 설정을 import하지 않는다.
+STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", "").strip() or BASE_DIR / "storage")
+# 공개 라우트가 내보내는 유일한 폴더.
+PUBLIC_DIR = STORAGE_DIR / "public"
+# 개인 화면(/portfolio)의 자산·관심종목·조언. 공개 라우트에 연결하지 않는다.
+PORTFOLIO_DIR = STORAGE_DIR / "portfolio"
 
 
 class ConfigurationError(RuntimeError):
@@ -75,7 +82,7 @@ def require_cloudflare_credentials() -> None:
 POLYMARKET_BASE_URL = "https://gamma-api.polymarket.com"
 POLYMARKET_PROXY_URL = os.environ.get("POLYMARKET_PROXY_URL", "").strip()
 POLYMARKET_TIMEOUT = 20
-POLYMARKET_WEB_DIR = DATA_DIR / "webpub" / "polymarket"
+POLYMARKET_WEB_DIR = PUBLIC_DIR / "polymarket"
 POLYMARKET_WEB_LOW_LIQUIDITY = float(
     os.environ.get("POLYMARKET_WEB_LOW_LIQUIDITY", "1000")
 )

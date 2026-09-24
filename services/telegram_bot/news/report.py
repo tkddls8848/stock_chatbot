@@ -582,7 +582,7 @@ async def _send_news_report(app: Application) -> None:
         logger.error("[NEWS REPORT] 보고서 %d조각이 빠진 채 확정합니다.", failed)
 
     try:
-        from services.web.export import publish_news
+        from services.telegram_bot.publish import publish_news
 
         await asyncio.to_thread(publish_news, _public_news(published, closed_at))
     except Exception:

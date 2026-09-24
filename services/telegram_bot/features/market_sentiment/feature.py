@@ -65,6 +65,6 @@ FEATURE = FeatureSpec(
     install_services=_install_services,
     install_jobs=_install_jobs,
     data_files=(
-        "data/market_sentiment/daily_digest.json",
+        "storage/bot/market_sentiment/daily_digest.json",
     ),
 )
