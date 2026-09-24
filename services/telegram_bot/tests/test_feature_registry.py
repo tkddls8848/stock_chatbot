@@ -212,8 +212,8 @@ def test_persistent_menu_matches_current_primary_workflows():
 
     rows = [[button.text for button in row] for row in persistent_menu(registry).keyboard]
 
-    # 텔레그램은 뉴스·브리핑을 받고 웹을 관리하는 곳이다. 두 줄·네 개만 둔다.
+    # 텔레그램은 뉴스·브리핑을 받고 웹을 관리하는 곳이다. 관심종목 편집은 웹으로 옮겼다.
     assert rows == [
-        ["⭐ 관심종목", "📰 브리핑"],
+        ["📰 브리핑"],
         ["⚙️ 관리", "🛠 웹 관리"],
     ]

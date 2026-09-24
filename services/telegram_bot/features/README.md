@@ -9,7 +9,7 @@
 | `instruments` | 종목 데이터베이스와 일별 갱신 |
 | `sector_summary` | 시세·자금흐름·섹터 요약 데이터 |
 | `news_prefilter` | 번역 전 로컬 사건 메모리·후보 점수화(Neurons 0) |
-| `watchlist` | 관심종목 추가·삭제·목록 |
+| `watchlist` | 관심종목 공유 파일(`storage/portfolio/watchlist.json`) 읽기와 리서치 자동 적용. 편집은 웹 `/portfolio` |
 | `news_summary` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 4시간 시장상황 보고서 |
 | `market_sentiment` | 날짜별 시장 감성 백필·집계·차트를 예약 갱신해 웹에 굽는다(`/market`은 지금 갱신) |
 | `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용, 결과를 웹에 굽는다(`/research`는 주제·지금 실행) |

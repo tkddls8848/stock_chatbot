@@ -23,13 +23,67 @@ def test_second_instance_returns_none_instead_of_raising(tmp_path):
         first.close()
 
 
-def test_new_watchlist_starts_empty(tmp_path):
+def test_new_watchlist_starts_empty_without_writing(tmp_path):
+    # 파일의 주인은 웹 편집 화면이다. 봇이 읽기만 하다가 빈 파일을 만들지 않는다.
     state_file = tmp_path / "watchlist.json"
 
     manager = WatchlistManager(state_file)
 
     assert asyncio.run(manager.get_all()) == {}
-    assert json.loads(state_file.read_text(encoding="utf-8")) == {}
+    assert not state_file.exists()
+
+
+def test_watchlist_sees_edits_made_by_the_web(tmp_path):
+    state_file = tmp_path / "watchlist.json"
+    manager = WatchlistManager(state_file)
+    state_file.write_text(json.dumps({"600519": "귀주모태주"}), encoding="utf-8")
+    assert asyncio.run(manager.get_all()) == {"600519": "귀주모태주"}
+
+
+def test_broken_watchlist_keeps_last_good_and_reports_it(tmp_path):
+    state_file = tmp_path / "watchlist.json"
+    state_file.write_text(json.dumps({"600519": "귀주모태주"}), encoding="utf-8")
+    manager = WatchlistManager(state_file)
+    state_file.write_text("{broken", encoding="utf-8")
+    assert asyncio.run(manager.get_all()) == {"600519": "귀주모태주"}
+    assert manager.last_error and "실패" in manager.status_line()
+
+
+def test_research_write_rereads_under_lock_and_keeps_web_edits(tmp_path):
+    state_file = tmp_path / "watchlist.json"
+    manager = WatchlistManager(state_file)
+    asyncio.run(manager.get_all())
+    # 봇이 마지막으로 읽은 뒤 웹이 한 종목을 더했다.
+    state_file.write_text(json.dumps({"00700": "텐센트"}), encoding="utf-8")
+    asyncio.run(manager.add("600519", "귀주모태주"))
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {"00700": "텐센트", "600519": "귀주모태주"}
+    assert not state_file.with_name("watchlist.json.lock").exists()
+
+
+def test_stale_lock_from_a_dead_process_is_cleared(tmp_path):
+    import os
+    import time
+
+    state_file = tmp_path / "watchlist.json"
+    lock = state_file.with_name("watchlist.json.lock")
+    lock.write_text("12345\n", encoding="utf-8")
+    old = time.time() - 120
+    os.utime(lock, (old, old))
+    manager = WatchlistManager(state_file)
+    asyncio.run(manager.add("600519", "귀주모태주"))
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {"600519": "귀주모태주"}
+
+
+def test_live_lock_times_out_instead_of_overwriting(tmp_path):
+    from services.telegram_bot.core.storage import FileLockTimeout, file_lock
+
+    lock = tmp_path / "x.lock"
+    with file_lock(lock):
+        try:
+            with file_lock(lock, timeout=0.1):
+                raise AssertionError("잠금을 두 번 잡았다")
+        except FileLockTimeout:
+            pass
 
 
 def test_watchlist_add_and_remove_use_injected_code_resolver(tmp_path):

@@ -13,8 +13,6 @@ from services.telegram_bot.handlers.navigation import (
     research_menu,
 )
 from services.telegram_bot.handlers.commands import configure_telegram_menu
-from services.telegram_bot.watchlist.handlers import cmd_menu, handle_watchlist_callback
-from services.telegram_bot.watchlist.keyboards import build_list_keyboard
 
 
 def _registry():
@@ -190,13 +188,9 @@ def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):
 
     called = {}
 
-    async def fake_cmd_menu(update, context):
-        called["watch"] = True
-
     async def fake_cmd_briefing(update, context):
         called["briefing"] = True
 
-    monkeypatch.setattr(navigation, "cmd_menu", fake_cmd_menu)
     monkeypatch.setattr(navigation, "cmd_briefing", fake_cmd_briefing)
 
     class Message:
@@ -209,7 +203,7 @@ def test_every_persistent_label_is_wired_in_handle_menu_text(monkeypatch):
 
     registry = _registry()
     _FALLBACK_TEXT = "<b>주식 뉴스 봇</b>\n원하는 기능을 선택하세요."
-    _STUBBED_ACTIONS = {"watch": "watch", "briefing": "briefing"}
+    _STUBBED_ACTIONS = {"briefing": "briefing"}
     labels = {
         item.persistent_label: item.callback_data
         for item in registry.menu_specs()
@@ -301,103 +295,12 @@ def test_callback_timeout_does_not_abort_button_action(monkeypatch, caplog):
     assert "동작은 계속" in caplog.text
 
 
-def test_menu_command_opens_delete_list_directly():
-    class Watchlist:
-        async def get_all(self):
-            return {"600519": "귀주모태주"}
-
-    class Message:
-        async def reply_text(self, text, **kwargs):
-            self.text = text
-            self.reply_markup = kwargs["reply_markup"]
-
-    message = Message()
-    update = SimpleNamespace(effective_message=message, callback_query=None)
-    context = SimpleNamespace(bot_data={"watchlist_manager": Watchlist()})
-    asyncio.run(cmd_menu(update, context))
-
-    buttons = {
-        button.callback_data: button.text
-        for row in message.reply_markup.inline_keyboard
-        for button in row
-    }
-    assert message.text.startswith("<b>관심종목 관리</b>")
-    assert buttons["remove:600519"] == "삭제: 귀주모태주 (600519)"
-    assert buttons["add_stock"] == "종목추가"
-
-
-def test_navigation_watch_opens_delete_list_directly():
-    class Watchlist:
-        async def get_all(self):
-            return {"600519": "귀주모태주"}
-
-    class Message:
-        async def edit_text(self, text, **kwargs):
-            self.text = text
-            self.reply_markup = kwargs["reply_markup"]
-
-    message = Message()
-    update = SimpleNamespace(
-        effective_message=message,
-        callback_query=SimpleNamespace(message=message),
-    )
-    context = SimpleNamespace(
-        user_data={},
-        bot_data={
-            "feature_registry": _registry(),
-            "watchlist_manager": Watchlist(),
-        },
-        application=None,
-    )
-    handled = asyncio.run(
-        handle_menu_callback(update, context, "nav:watch")
-    )
-    buttons = {
-        button.callback_data: button.text
-        for row in message.reply_markup.inline_keyboard
-        for button in row
-    }
-    assert handled is True
-    assert message.text.startswith("<b>관심종목 관리</b>")
-    assert buttons["remove:600519"] == "삭제: 귀주모태주 (600519)"
-    assert buttons["add_stock"] == "종목추가"
-
-
-def test_watchlist_add_button_opens_market_selector_directly():
-    keyboard = build_list_keyboard({"600519": "귀주모태주"})
-    add_button = next(
-        button
-        for row in keyboard.inline_keyboard
-        for button in row
-        if button.callback_data == "add_stock"
-    )
-    assert add_button.text == "종목추가"
-
-    class Message:
-        async def edit_text(self, text, **kwargs):
-            self.text = text
-            self.reply_markup = kwargs["reply_markup"]
-
-    message = Message()
-    context = SimpleNamespace(
-        user_data={"menu_input": "add_stock", "add_market": "CN:SH"},
-    )
-    handled = asyncio.run(
-        handle_watchlist_callback(
-            SimpleNamespace(message=message),
-            context,
-            "add_stock",
-        )
-    )
-    callbacks = {
-        button.callback_data
-        for row in message.reply_markup.inline_keyboard
-        for button in row
-    }
-    assert handled is True
-    assert message.text.startswith("<b>종목추가</b>")
-    assert "add_market:CN:SH" in callbacks
-    assert context.user_data == {}
+def test_watchlist_editing_is_not_offered_in_telegram():
+    """관심종목 편집은 웹 /portfolio로 옮겼다. 텔레그램에는 진입점이 없다."""
+    registry = _registry()
+    assert all(item.callback_data != "nav:watch" for item in registry.menu_specs())
+    names = {spec.name for feature in registry._enabled_specs for spec in feature.commands}
+    assert not ({"add", "list", "menu"} & names)
 
 
 def test_inline_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
@@ -441,7 +344,7 @@ def test_start_uses_same_renewed_entrypoints_as_bottom_menu():
     ))
     bottom, inline = replies
     assert [[button.text for button in row] for row in inline.inline_keyboard] == [
-        ["⭐ 관심종목", "📰 브리핑"], ["⚙️ 관리", "🛠 웹 관리"],
+        ["📰 브리핑"], ["⚙️ 관리", "🛠 웹 관리"],
     ]
     assert [[button.text for button in row] for row in bottom.keyboard] == [
         [button.text for button in row] for row in inline.inline_keyboard

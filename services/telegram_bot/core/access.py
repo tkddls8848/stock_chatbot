@@ -69,9 +69,6 @@ async def _finish_status(status_task, text: str, failure_message: str) -> None:
 _HANDLER_LABELS = {
     "cmd_start": "메뉴 열기",
     "cmd_help": "도움말 조회",
-    "cmd_menu": "관심종목 메뉴 조회",
-    "cmd_add": "관심종목 추가",
-    "cmd_list": "관심종목 목록 조회",
     "cmd_market": "시장 감성 갱신",
     "cmd_research": "리서치 관리",
     "cmd_web": "웹 상태 조회",
@@ -82,7 +79,6 @@ _HANDLER_LABELS = {
 
 _MENU_LABELS = {
     "market": "시장 감성 갱신",
-    "watch": "관심종목 관리",
     "research": "리서치 관리",
     "web": "웹 관리",
     "briefing": "브리핑 생성",
@@ -98,8 +94,6 @@ def request_label(update: Update, handler_name: str) -> str:
     data = str(getattr(query, "data", ""))
     if data.startswith("nav:"):
         return _MENU_LABELS.get(data.removeprefix("nav:").split(":", 1)[0], "메뉴 작업")
-    if data.startswith("remove:"):
-        return "관심종목 삭제"
     return _HANDLER_LABELS.get(handler_name, "요청 작업")
 
 

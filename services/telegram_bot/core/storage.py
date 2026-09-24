@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
@@ -59,3 +61,44 @@ def write_bytes_atomic(path: Path, data: bytes) -> None:
 
 def write_json_atomic(path: Path, payload: Any, *, indent: int | None = None) -> None:
     write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=indent))
+
+
+class FileLockTimeout(RuntimeError):
+    """다른 프로세스가 잠금을 오래 쥐고 있다."""
+
+
+@contextmanager
+def file_lock(path: Path, *, stale_seconds: float = 60.0, timeout: float = 10.0):
+    """다른 프로세스와 같이 쓰는 파일의 잠금(공유 저장소 `storage/`).
+
+    `flock`은 NFS·SMB 위에서 믿을 수 없어 잠금 파일을 `O_CREAT | O_EXCL`로 만든다 —
+    만들기에 성공한 쪽만 들어간다. 잠금을 쥔 채 죽은 프로세스가 영영 막지 않도록
+    `stale_seconds`보다 오래된 잠금은 죽은 것으로 보고 치운다. 잠금 안에서 할 일은
+    "다시 읽고 → 고치고 → 원자적으로 쓴다"뿐이라 수 초를 넘지 않는다.
+    같은 로직이 웹의 `core/storage.py`에도 있다 — 모듈끼리 코드를 공유하지 않는다.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime > stale_seconds:
+                    path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() >= deadline:
+                raise FileLockTimeout(str(path)) from None
+            time.sleep(0.05)
+            continue
+        try:
+            os.write(descriptor, f"{os.getpid()}\n".encode())
+        finally:
+            os.close(descriptor)
+        break
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)

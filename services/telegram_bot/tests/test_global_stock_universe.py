@@ -6,7 +6,6 @@ import services.telegram_bot.stocks.database as stock_database_module
 from services.telegram_bot.stocks import StockDatabase
 from services.telegram_bot.stocks.quotes import tencent_symbol, yahoo_symbol
 from services.telegram_bot.stocks.universe import parse_nasdaq_directory, stock_key
-from services.telegram_bot.watchlist.handlers import normalize_selected_stock_code
 
 
 def test_parse_nasdaq_directory_keeps_common_stock_and_exchange():
@@ -66,17 +65,7 @@ def test_stock_key_prevents_same_numeric_code_collisions():
     assert stock_key("US", "N", "ibm") == "US:NYSE:IBM"
 
 
-def test_selected_market_normalizes_only_its_expected_input():
-    assert normalize_selected_stock_code("CN:SH", "600519") == "600519"
-    assert normalize_selected_stock_code("HK:HKEX", "700") == "00700"
-    assert normalize_selected_stock_code("KR:KOSPI", "5930") == "KR:KOSPI:005930"
-    assert normalize_selected_stock_code("US:NASDAQ", "nvda") == "US:NASDAQ:NVDA"
-    assert normalize_selected_stock_code("US:NYSE", "ibm") == "US:NYSE:IBM"
-    assert normalize_selected_stock_code("US:NASDAQ", "005930") is None
-    assert normalize_selected_stock_code("malformed", "NVDA") is None
-
-
-def test_selected_codes_resolve_to_db_and_quote_provider_symbols(tmp_path):
+def test_canonical_codes_resolve_to_db_and_quote_provider_symbols(tmp_path):
     nasdaq_rows = parse_nasdaq_directory(
         "Symbol|Security Name|Test Issue|ETF\n"
         "NVDA|NVIDIA Corporation Common Stock|N|N\n",
@@ -106,18 +95,8 @@ def test_selected_codes_resolve_to_db_and_quote_provider_symbols(tmp_path):
     stock_db = StockDatabase(cache_file)
     stock_db.load()
 
+    # 관심종목 파일(웹이 편집)에 저장되는 정규 코드 형식이다.
     canonical = {
-        selection: normalize_selected_stock_code(selection, raw)
-        for selection, raw in (
-            ("CN:SH", "600519"),
-            ("HK:HKEX", "700"),
-            ("KR:KOSPI", "5930"),
-            ("US:NASDAQ", "nvda"),
-            ("US:NYSE", "ibm"),
-        )
-    }
-
-    assert canonical == {
         "CN:SH": "600519",
         "HK:HKEX": "00700",
         "KR:KOSPI": "KR:KOSPI:005930",

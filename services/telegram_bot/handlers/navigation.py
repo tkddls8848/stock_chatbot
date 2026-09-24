@@ -24,12 +24,11 @@ from services.telegram_bot.handlers.menus import (
     web_admin_menu,
 )
 from services.telegram_bot.research.handlers import cmd_research
-from services.telegram_bot.watchlist.handlers import cmd_add, cmd_menu
 
 
 def _context(context: ContextTypes.DEFAULT_TYPE, args: list[str]):
-    # user_data를 그대로 전달해야 프록시로 호출되는 핸들러(cmd_add 등)가
-    # add_market 같은 대화 상태에 접근할 수 있다(SimpleNamespace에는 기본으로 없음).
+    # user_data를 그대로 전달해야 프록시로 호출되는 핸들러가 menu_input 같은
+    # 대화 상태에 접근할 수 있다(SimpleNamespace에는 기본으로 없음).
     return SimpleNamespace(
         bot_data=context.bot_data,
         user_data=context.user_data,
@@ -61,9 +60,6 @@ async def _dispatch_primary_menu_action(
             parse_mode="HTML",
             reply_markup=web_admin_menu(context.bot_data["feature_registry"]),
         )
-        return True
-    if action == "watch":
-        await cmd_menu(update, _context(context, []))
         return True
     if action == "research":
         send = message.edit_text if edit_message else message.reply_text
@@ -135,7 +131,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     elif action == "help":
         await message.edit_text(
             "버튼을 눌러 기능을 실행하세요.\n"
-            "종목 코드와 리서치 주제만 일반 텍스트로 입력합니다.",
+            "리서치 주제만 일반 텍스트로 입력합니다. 관심종목·자산은 웹 /portfolio 에서 고칩니다.",
             reply_markup=main_menu(registry),
         )
     return True
@@ -167,10 +163,6 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             parse_mode="HTML",
             reply_markup=main_menu(registry),
         )
-        return
-
-    if context.user_data.get("add_market"):
-        await cmd_add(update, _context(context, [text.strip()]))
         return
 
     action = context.user_data.pop("menu_input", None)
