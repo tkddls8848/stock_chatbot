@@ -12,8 +12,10 @@ __pycache__/
 .ruff_cache/
 
 # 공유 저장소(NAS). 실행 중 생기는 데이터 전부이고 추적하지 않는다.
+# 디렉터리 자리만 .gitkeep으로 남긴다 — 받자마자 어디에 쌓이는지 보이게 한다.
 # 옛 data/는 서버에서 storage/로 한 번 옮긴다(infra/server-ops.md 9-1).
-/storage/
+/storage/*
+!/storage/.gitkeep
 /data/
 
 *.log
