@@ -174,6 +174,9 @@ def test_robots_blocks_the_heavy_api_face_but_not_search_crawlers(tmp_path, monk
     general = body.split("User-agent: GPTBot")[0]
     assert "User-agent: *" in general
     assert "Disallow: /api/" in general
+    # 검색어가 붙은 화면 주소는 조합이 무한하다. 화면 자체는 열어 둔다.
+    assert "Disallow: /*?\n" in general
+    assert "Disallow: /search\n" not in general and "Disallow: /polymarket\n" not in general
     # 전면 차단은 noindex를 읽을 통로까지 막는다.
     assert "Disallow: /\n" not in general
 
@@ -208,3 +211,31 @@ def test_robots_and_caddy_block_the_same_agents():
     assert any(line.strip() == "abort @aibots" for line in block)
     for agent in AI_AGENTS:
         assert agent in matcher[0]
+
+
+def test_caddy_bot_block_spares_search_crawlers_browsers_and_shorts():
+    """차단 정규식이 넓어지면서 지켜야 할 UA까지 끊지 않는가.
+
+    검색 크롤러가 막히면 noindex를 못 읽는다. 쇼츠는 공개 주소의 API를 기본
+    requests UA로 읽는다 — 막으면 쇼츠가 선다.
+    """
+    import re
+    from pathlib import Path
+
+    line = next(
+        line for line in (Path(__file__).resolve().parents[3] / "infra" / "Caddyfile.example")
+        .read_text(encoding="utf-8").splitlines()
+        if "@aibots header_regexp" in line
+    )
+    pattern = re.compile(line.split('"', 2)[1].removeprefix("(?i)"), re.IGNORECASE)
+
+    for spared in (
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+        "Mozilla/5.0 (compatible; Yeti/1.1; +http://naver.me/spd)",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
+        "python-requests/2.32.3",
+    ):
+        assert not pattern.search(spared), spared
+    for blocked in ("Mozilla/5.0 (compatible; GoogleOther)", "Scrapy/2.11 (+https://scrapy.org)"):
+        assert pattern.search(blocked), blocked

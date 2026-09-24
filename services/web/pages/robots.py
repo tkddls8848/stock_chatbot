@@ -17,6 +17,13 @@
    크롤러(Googlebot 등)에는 영향이 없다. `Google-Extended`가 정확히 그 분리를
    위해 존재하는 UA다.
 
+3. 검색어가 붙은 화면 주소(`/search?q=…`, `/polymarket?q=…&category=…`) — 조합이
+   사실상 무한한 URL 공간이라 크롤러가 끝없이 돈다. 화면 자체(`/search`,
+   `/polymarket`)는 열어 두고 `?`가 붙은 변형만 막는다(`Disallow: /*?`).
+
+**일반 HTTP 라이브러리(`python-requests`, `curl`)는 막지 않는다.** 쇼츠가 공개
+주소(`https://nunchi.live`)의 API를 기본 `requests` UA로 읽는다 — 막으면 쇼츠가 선다.
+
 robots.txt는 권고일 뿐이라 무시하는 봇에는 효과가 없다. 실제로 끊는 것은 앞단
 Caddy의 User-Agent matcher이고(`infra/Caddyfile.example`), 여기 목록과 그쪽
 목록은 **같이 고친다** — 갈라지면 한쪽만 막힌 채로 돈다.
@@ -51,16 +58,33 @@ AI_AGENTS = (
     "MJ12bot",
     "DotBot",
     "DataForSeoBot",
+    # 2026-09-24 추가: 검색 색인과 따로 도는 AI·수집 UA.
+    "GoogleOther",
+    "Google-CloudVertexBot",
+    "Meta-ExternalFetcher",
+    "Perplexity-User",
+    "MistralAI-User",
+    "DuckAssistBot",
+    "cohere-training-data-crawler",
+    "Webzio-Extended",
+    "PanguBot",
+    "Kangaroo Bot",
+    "PetalBot",
+    "BLEXBot",
+    "img2dataset",
+    "Scrapy",
 )
 
 ROBOTS_TXT = (
     "# nunchi.live — 읽기 전용 공개 웹\n"
     "#\n"
     "# 검색 크롤러는 막지 않는다. 막으면 X-Robots-Tag: noindex를 읽지 못해\n"
-    "# 내용 없이 URL만 색인에 남는다. 막는 것은 무거운 API 면과 AI 수집 봇뿐이다.\n"
+    "# 내용 없이 URL만 색인에 남는다. 막는 것은 무거운 API 면, 검색어가 붙은 화면\n"
+    "# 주소(조합이 무한하다), AI 학습·수집 봇이다.\n"
     "\n"
     "User-agent: *\n"
     "Disallow: /api/\n"
+    "Disallow: /*?\n"
     "Crawl-delay: 10\n"
     "\n"
     "# AI 학습·수집 봇. 검색 색인과 다른 UA라 noindex 전달에 영향을 주지 않는다.\n"

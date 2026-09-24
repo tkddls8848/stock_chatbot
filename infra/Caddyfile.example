@@ -26,7 +26,7 @@ example.com {
     # 우분투 저장소판 Caddy 2.6.2에는 없어 플러그인을 넣어 다시 빌드해야 한다.
     # 배포가 파일 복사로 끝나는 지금 구조를 깨므로 여기서는 하지 않는다.
     # 목록은 services/web/pages/robots.py의 AI_AGENTS와 같다. 한쪽만 고치지 않는다.
-    @aibots header_regexp User-Agent "(?i)(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic-ai|CCBot|Google-Extended|PerplexityBot|Bytespider|Amazonbot|meta-externalagent|FacebookBot|Applebot-Extended|cohere-ai|Diffbot|ImagesiftBot|Omgilibot|YouBot|Timpibot|AhrefsBot|SemrushBot|MJ12bot|DotBot|DataForSeoBot)"
+    @aibots header_regexp User-Agent "(?i)(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic-ai|CCBot|Google-Extended|PerplexityBot|Bytespider|Amazonbot|meta-externalagent|FacebookBot|Applebot-Extended|cohere-ai|Diffbot|ImagesiftBot|Omgilibot|YouBot|Timpibot|AhrefsBot|SemrushBot|MJ12bot|DotBot|DataForSeoBot|GoogleOther|Google-CloudVertexBot|Meta-ExternalFetcher|Perplexity-User|MistralAI-User|DuckAssistBot|cohere-training-data-crawler|Webzio-Extended|PanguBot|Kangaroo Bot|PetalBot|BLEXBot|img2dataset|Scrapy)"
     abort @aibots
     # END aibots
 
