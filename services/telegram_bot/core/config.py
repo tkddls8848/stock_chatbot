@@ -62,13 +62,12 @@ TELEGRAM_POOL_TIMEOUT_SECONDS = 10.0
 # getUpdates 재요청을 기본 10초보다 덜 자주 보내 CPU·네트워크 wakeup을 줄인다.
 TELEGRAM_POLL_TIMEOUT_SECONDS = 30
 TELEGRAM_CONCURRENT_UPDATES = 2
-# 타임아웃을 넘기지 않는 외부 호출(akshare 내부의 requests 등)의 소켓 기본 타임아웃.
-# 넘기지 않으면 OS 기본 연결 대기(약 2분)에 akshare 재시도 3회가 곱해져, 막힌 소스
-# 하나가 호출 하나를 수십 분 붙잡는다. 2026-09-24 공유 호스트에서 sina·eastmoney가
-# 응답하지 않자 리서치 한 번이 33분 걸렸고, 브리핑 버튼이 같은 조회에 묶여 동시 처리
-# 칸(위의 2)을 채우는 바람에 모든 버튼이 응답하지 않았다. 텔레그램 연결은 httpx가
-# 자기 타임아웃을 쓰므로 이 값의 영향을 받지 않는다.
-DEFAULT_SOCKET_TIMEOUT_SECONDS = 20
+# 타임아웃을 넘기지 않는 `requests` 호출(akshare 내부 등)에 채우는 (연결, 읽기) 초.
+# 없으면 응답 없는 소스 하나가 호출 하나를 수십 분 붙잡는다(core/http_timeout.py).
+# 연결 대기는 도메인의 주소마다·akshare 재시도마다 되풀이된다 — 서버 실측에서 연결
+# 10초가 막힌 sina 한 번에 94초였다. 5초로 둬 그 절반으로 줄인다. 막힌 뒤로는
+# QuoteService의 실패 쿨다운(15분)이 바로 돌려보낸다.
+DEFAULT_REQUESTS_TIMEOUT_SECONDS = (5.0, 30.0)
 TELEGRAM_STATUS_MAX_ATTEMPTS = 2
 TELEGRAM_STATUS_RETRY_DELAY_SECONDS = 0.5
 
