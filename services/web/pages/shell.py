@@ -335,7 +335,7 @@ tbody td,thead th{padding:var(--sp-3)}}
 _NAV_LINKS = (
     ("/", "시장"),
     ("/search", "뉴스 검색"),
-    ("/polymarket", "폴리마켓"),
+    ("/forecast", "예측 컨센서스"),
     ("/research", "리서치"),
     ("/about", "정보"),
 )
@@ -411,7 +411,7 @@ _SITE_FOOT = (
     "<code>/api/meta</code> · <code>/market_chart.png</code> — 읽기만 할 수 있고 바꾸는 기능은 없습니다.</dd>"
     "</dl></div>"
     "<div class='sfin'><span class='sf-links'>"
-    "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/polymarket'>폴리마켓</a>"
+    "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/forecast'>예측 컨센서스</a>"
     "<a href='/research'>리서치</a><a href='/about'>정보</a>"
     "</span><span>정보 제공 목적이며 투자 권유가 아닙니다.</span></div>"
     "</div></footer></body></html>"

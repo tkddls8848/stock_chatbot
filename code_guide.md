@@ -110,7 +110,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
 
 shorts/                쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지이고
                        이 저장소 코드를 import하지 않는다 — 공개 웹의
-                       `/api/polymarket/*`를 HTTP로만 읽는다
+                       `/api/forecast/*`를 HTTP로만 읽는다
   src/  docs/  tests/
 
 infra/                 인프라 코드 전부. 네 도메인이 한 인스턴스에 얹힌다
@@ -311,10 +311,20 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   CLOB 백필은 전부 제거했다(2026-09-01). `market_sentiment`는 이제 감성과
   이상 두 화면만 가진다. 되살리려면 git에서 꺼내는 별도 변경이며, 그것은
   "지금 열린 것만 본다"는 제품 결정을 되돌리는 일이다.
+- **화면·주소·영상에 출처 서비스 이름(Polymarket·폴리마켓)을 쓰지 않는다.** 한국은
+  공식적으로 이 서비스 접근을 막고 있다. 사용자가 보는 이름은 **"집단 예측 컨센서스"**이고
+  주소는 `/forecast`·`/api/forecast/*`다(예전 `/polymarket`은 넘겨주지 않고 404다).
+  원문 서비스로 가는 외부 링크를 두지 않고, 베팅·배팅·예측시장·거래량·유동성 대신
+  예측·참여 규모·참여 잔액으로 쓴다. 모델이 쓰는 문장(줄글 브리프·검색 주석·쇼츠 원고)도
+  같은 규칙을 따르고, 줄글 브리프는 `FORBIDDEN_COPY`가 이름이 들어간 응답을 버린다.
+  `test_webpub.py`가 공개 화면에, `shorts/tests/test_scenario.py`가 영상 공개 설명에
+  이름이 다시 들어오는 것을 막는다. **내부 모듈·폴더·환경변수·systemd 유닛·데이터 경로
+  (`services/web/polymarket/`, `POLYMARKET_*`, `data/webpub/polymarket/`)와 계획서는
+  사용자에게 보이지 않으므로 그대로 둔다** — 바꾸면 배포 절차만 흔들린다.
 - **현재 대시보드는 봇과 완전히 분리된 systemd one-shot이 굽는다.**
   `services/web/polymarket/refresh.py`가 3시간마다 Gamma `/events/keyset`을
   전수 순회해 `data/webpub/polymarket/`에 generation을 쓰고, `services/web/server.py`가
-  `/polymarket`과 `/api/polymarket/*`로 그 파일만 내보낸다. 봇 프로세스도
+  `/forecast`와 `/api/forecast/*`로 그 파일만 내보낸다. 봇 프로세스도
   스케줄러도 이 경로를 모른다 — 봇이 죽어도 화면은 마지막 generation을 계속
   보여 준다. 절차는 `infra/server-ops.md` 8절.
 - **`current.json`은 열린 event 전부를 한 파일에 담고 상한이 16 MiB다.**

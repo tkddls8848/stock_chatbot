@@ -54,7 +54,7 @@ class PolymarketWebClient:
 
     def _summary(self) -> dict[str, Any]:
         self.requests["summary"] += 1
-        result = self._get("api/polymarket/summary")
+        result = self._get("api/forecast/summary")
         state = (result.get("freshness") or {}).get("state")
         if not result.get("generation_id") or state not in {"normal", "warming_up"}:
             raise SourceError(f"대시보드 데이터가 최신 상태가 아닙니다: {state}")
@@ -72,7 +72,7 @@ class PolymarketWebClient:
         events, seen, total = [], set(), None
         for page in range(1, MAX_PAGES + 1):
             self.requests["pages"] += 1
-            payload = self._get("api/polymarket/events?" + urlencode({
+            payload = self._get("api/forecast/events?" + urlencode({
                 "status": "ok", "sort": "volume24hr", "order": "desc",
                 "page_size": PAGE_SIZE, "page": page,
             }))
@@ -102,7 +102,7 @@ class PolymarketWebClient:
                 break
         self.requests["trending"] += 1
         try:
-            trending = self._get("api/polymarket/trending")
+            trending = self._get("api/forecast/trending")
         except SourceError:
             trending = {}
         if str(trending.get("generation_id")) != generation or trending.get("state") != "ok":
@@ -113,7 +113,7 @@ class PolymarketWebClient:
         if self.requests["details"] >= MAX_DETAILS:
             raise SourceError("상세 조회 예산을 넘었습니다")
         self.requests["details"] += 1
-        result = self._get("api/polymarket/events/" + quote(event_id, safe=""))
+        result = self._get("api/forecast/events/" + quote(event_id, safe=""))
         if str(result.get("generation_id")) != generation_id or str(result.get("id")) != event_id:
             raise SourceError("상세 조회 중 generation 또는 이벤트 ID가 바뀌었습니다")
         return result

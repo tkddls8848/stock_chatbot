@@ -67,7 +67,7 @@ def _metric_values(scene: dict[str, Any]) -> tuple[str, str, int, int, int]:
     bullets = _bullet_map(scene)
     evidence = bullets.get("근거", "데이터 집계 중")
     if bullets.get("이벤트"):
-        evidence = f"{bullets['이벤트'].replace('건', '')} EVENT / 24H {bullets.get('24시간 거래량', '-')}"
+        evidence = f"{bullets['이벤트'].replace('건', '')} EVENT / 24H {bullets.get('24시간 참여 규모', '-')}"
     distribution = bullets.get("분포", bullets.get("합의", "강한 합의 0 / 경합 0"))
     event_match = re.search(r"([\d,]+)\s*EVENT", evidence, re.IGNORECASE)
     volume_match = re.search(r"24H\s+([^/]+)$", evidence, re.IGNORECASE)
@@ -118,21 +118,21 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
             <p class="eyebrow reveal">{kicker}</p>
             <h1 class="hero-title reveal">{title}</h1>
             <ol class="check-list">{checks}</ol>
-            <p class="disclaimer reveal">예측시장 가격 기반 · 사실 확정 및 투자 조언 아님</p>
+            <p class="disclaimer reveal">집단 예측 기반 · 사실 확정 및 투자 조언 아님</p>
           </div>"""
     elif scene.get("event_id"):
         bullets = _bullet_map(scene)
         content = f"""
           <div class="signal-layout">
             <div class="signal-head"><p class="eyebrow reveal">{kicker}</p><h1 class="signal-title reveal">{title}</h1></div>
-            <div class="decision reveal"><span>개별 베팅 현황</span><p>{html.escape(str(scene.get('body', '')))}</p></div>
+            <div class="decision reveal"><span>개별 예측 현황</span><p>{html.escape(str(scene.get('body', '')))}</p></div>
             <div class="metric-grid">
               <div class="metric reveal"><span>{html.escape(str(scene.get('metric_label', '')))}</span><strong>{html.escape(str(scene.get('metric', '')))}</strong><em>예 가격</em></div>
-              <div class="metric reveal"><span>이벤트 24시간 거래량</span><strong>{html.escape(bullets.get('24시간 거래량', ''))}</strong></div>
+              <div class="metric reveal"><span>이벤트 24시간 참여 규모</span><strong>{html.escape(bullets.get('24시간 참여 규모', ''))}</strong></div>
             </div>
             <div class="action reveal"><span>종료 예정</span><p>{html.escape(bullets.get('종료 예정', ''))}</p></div>
             <div class="action reveal"><span>CHECK</span><p>{html.escape(str(scene.get('takeaway', '')))}</p></div>
-            <p class="disclaimer reveal">{html.escape(str(scene.get('source_note', '')))} · 예측시장 가격</p>
+            <p class="disclaimer reveal">{html.escape(str(scene.get('source_note', '')))} · 집단 예측</p>
           </div>"""
     else:
         bullets = _bullet_map(scene)
@@ -151,7 +151,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
             </div>
             <div class="metric-grid">
               <div class="metric reveal"><span>분석 표본</span><strong>{events_text}</strong><em>EVENT</em></div>
-              <div class="metric reveal"><span>24시간 거래</span><strong>{html.escape(volume)}</strong><em>VOLUME</em></div>
+              <div class="metric reveal"><span>24시간 참여</span><strong>{html.escape(volume)}</strong><em>VOLUME</em></div>
             </div>
             <div class="distribution reveal">
               <div class="bar-row"><span>강한 합의</span><div class="bar"><i style="--bar:{strong_width}%"></i></div><strong>{strong}</strong></div>
@@ -166,7 +166,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
           {background_markup}
           <div class="scene-grid"></div>
           <div class="corner corner-a"></div><div class="corner corner-b"></div>
-          <header><span>NUNCHI / POLYMARKET</span><span>{index:02d} / {total:02d}</span></header>
+          <header><span>NUNCHI / FORECAST</span><span>{index:02d} / {total:02d}</span></header>
           {content}
           <footer><span>CONSENSUS INTELLIGENCE</span><div class="progress"><i style="width:{progress}%"></i></div></footer>
         </div>
@@ -217,7 +217,7 @@ def _index_html(
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1080, height=1920" />
-    <title>Polymarket Daily Executive Brief</title>
+    <title>Forecast Consensus Daily Brief</title>
     <script src="node_modules/gsap/dist/gsap.min.js"></script>
     <style>
       * {{ box-sizing:border-box; }}

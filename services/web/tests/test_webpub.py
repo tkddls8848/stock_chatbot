@@ -132,7 +132,7 @@ def test_trending_route_hides_the_next_cycle_state(tmp_path, monkeypatch):
 
     monkeypatch.setattr(server, "WEBPUB_DIR", tmp_path)
     client = TestClient(server.build_app())
-    assert client.get("/api/polymarket/trending").status_code == 503
+    assert client.get("/api/forecast/trending").status_code == 503
 
     target = tmp_path / "polymarket" / "trending.json"
     target.parent.mkdir(parents=True)
@@ -151,7 +151,7 @@ def test_trending_route_hides_the_next_cycle_state(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    payload = client.get("/api/polymarket/trending").json()
+    payload = client.get("/api/forecast/trending").json()
     assert payload["spotlight"][0]["basis_change"] == 0.2
     assert "baseline" not in payload
     assert "previous" not in payload
@@ -239,3 +239,15 @@ def test_caddy_bot_block_spares_search_crawlers_browsers_and_shorts():
         assert not pattern.search(spared), spared
     for blocked in ("Mozilla/5.0 (compatible; GoogleOther)", "Scrapy/2.11 (+https://scrapy.org)"):
         assert pattern.search(blocked), blocked
+
+
+def test_forecast_screen_never_names_the_source_service():
+    # 한국에서 공식적으로 접근이 막힌 서비스라 화면·주소·외부 링크에 이름을 드러내지 않는다.
+    client = TestClient(server.build_app())
+    for path in ("/", "/forecast", "/search", "/research", "/about", "/robots.txt"):
+        body = client.get(path).text
+        assert "폴리마켓" not in body
+        assert "polymarket" not in body.lower(), path
+        assert "베팅" not in body and "배팅" not in body, path
+    assert client.get("/polymarket").status_code == 404
+    assert client.get("/api/polymarket/summary").status_code == 404

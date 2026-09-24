@@ -153,8 +153,8 @@ def build_scenario(
     shown_stamp = datetime.fromisoformat(source_stamp).strftime("%m/%d %H:%M %z")
     scenes = [Scene(
         kind="intro", title=scripts[0]["headline"], kicker=f"BETTING ISSUES / {production_date:%m.%d}",
-        body=f"거래가 활발한 시장 이슈 {len(issues)}개",
-        narration=f"{scripts[0]['headline']}. 예측시장에서 거래가 활발한 이슈 {len(issues)}개를 살펴보겠습니다.",
+        body=f"참여가 활발한 예측 이슈 {len(issues)}개",
+        narration=f"{scripts[0]['headline']}. 집단 예측에서 참여가 활발한 이슈 {len(issues)}개를 살펴보겠습니다.",
         metric=str(len(issues)), metric_label="선정한 개별 이슈",
         takeaway="질문과 조건을 함께 읽습니다", source_note=f"자료 기준 {shown_stamp}",
         evidence=(issues[0]["title"],),
@@ -171,9 +171,8 @@ def build_scenario(
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         end_text = deadline.strftime("%Y-%m-%d %H:%M %z")
         volume = _money(issue["volume24hr"])
-        evidence.extend((f"이벤트 24시간 거래량: {issue['volume24hr']} USD",
-                         f"이벤트 종료 예정: {end_text} (개별 판정 시각과 다를 수 있음)",
-                         f"원문: {issue['source_url']}"))
+        evidence.extend((f"이벤트 24시간 참여 규모: {issue['volume24hr']} USD",
+                         f"이벤트 종료 예정: {end_text} (개별 판정 시각과 다를 수 있음)"))
         evidence.extend(f"관련 뉴스 제목: {n['title']} / {n['url']}" for n in issue["news"] if n["id"] in script["news_ids"])
         status = ". ".join(bets) + "."
         scenes.append(Scene(
@@ -183,21 +182,21 @@ def build_scenario(
                        f"{end_sentence(to_polite_text(script['context']))} "
                        f"{end_sentence(to_polite_text(script['watch_point']))}"),
             accent=("gold", "blue", "red")[index % 3],
-            bullets=(f"24시간 거래량 · {volume}", f"종료 예정 · {end_text}",
-                     f"표시 시장 · 유효 {issue['valid_market_count']}개 중 거래량 상위 {len(bets)}개"),
+            bullets=(f"24시간 참여 규모 · {volume}", f"종료 예정 · {end_text}",
+                     f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 참여 규모 상위 {len(bets)}개"),
             visual_query=_VISUAL_QUERIES[issue["sector"]],
             metric=issue["markets"][0]["yes"], metric_label=script["market_labels"][0]["label"],
             probability=issue["markets"][0]["yes_probability"],
             takeaway=script["watch_point"], source_note=f"자료 기준 {shown_stamp}",
             evidence=tuple(evidence), selection_note=issue["selection"]["reason"],
-            source_url=issue["source_url"], event_id=issue["id"],
+            event_id=issue["id"],
             market_ids=tuple(m["id"] for m in issue["markets"]),
         ))
     scenes.append(Scene(
-        kind="outro", title="가격은 예측입니다", kicker="CHECK THE CONDITIONS",
+        kind="outro", title="확률은 예측입니다", kicker="CHECK THE CONDITIONS",
         body="각 질문의 조건과 판정 규칙을 확인하세요.",
-        narration="표시한 값은 예측시장 가격입니다. 질문별 조건과 판정 규칙을 확인하세요. 투자 조언은 아닙니다.",
-        metric="조건", metric_label="확률과 함께 확인", takeaway="거래량은 참여자 수가 아닙니다",
+        narration="표시한 값은 집단 예측 확률입니다. 질문별 조건과 판정 규칙을 확인하세요. 투자 조언은 아닙니다.",
+        metric="조건", metric_label="확률과 함께 확인", takeaway="참여 규모는 참여자 수가 아닙니다",
         source_note=f"자료 기준 {shown_stamp}",
     ))
     return Scenario(production_date.isoformat(), snapshot.generation_id, source_stamp, tuple(scenes),

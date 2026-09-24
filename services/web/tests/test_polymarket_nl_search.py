@@ -387,7 +387,7 @@ def test_the_etag_changes_when_only_the_index_changes(tmp_path, monkeypatch):
     repository = _repository(tmp_path, [_event(1, "Fed?")], {})
     monkeypatch.setattr(server, "POLYMARKET_REPOSITORY", repository)
     client = TestClient(server.build_app())
-    first = client.get("/api/polymarket/events", params={"q": "연준"})
+    first = client.get("/api/forecast/events", params={"q": "연준"})
     assert first.json()["total"] == 0
 
     index = tmp_path / "pm" / "search_index.json"
@@ -396,7 +396,7 @@ def test_the_etag_changes_when_only_the_index_changes(tmp_path, monkeypatch):
     stat = index.stat()
     os.utime(index, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     second = client.get(
-        "/api/polymarket/events", params={"q": "연준"},
+        "/api/forecast/events", params={"q": "연준"},
         headers={"if-none-match": first.headers["etag"]},
     )
 

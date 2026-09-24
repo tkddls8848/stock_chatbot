@@ -8,8 +8,8 @@
 읽지 못해 내용 없이 URL만 색인에 남는다(`infra/server-ops.md` 11절). 그래서
 막는 것은 둘뿐이다.
 
-1. `/api/` — 부하의 실체다. `/api/polymarket/events`는 필터·정렬·페이지 조합이
-   사실상 무한한 URL 공간이고, `/api/polymarket/events/{id}`는 event 22,000건이
+1. `/api/` — 부하의 실체다. `/api/forecast/events`는 필터·정렬·페이지 조합이
+   사실상 무한한 URL 공간이고, `/api/forecast/events/{id}`는 event 22,000건이
    각각 detail shard를 seek한다. 크롤러가 이 둘을 훑으면 1 GiB 인스턴스에서
    순회 one-shot·봇과 CPU를 다툰다. 화면이 읽는 값이므로 사람이 보는 데는
    지장이 없다 — 브라우저는 robots.txt를 읽지 않는다.
@@ -17,9 +17,9 @@
    크롤러(Googlebot 등)에는 영향이 없다. `Google-Extended`가 정확히 그 분리를
    위해 존재하는 UA다.
 
-3. 검색어가 붙은 화면 주소(`/search?q=…`, `/polymarket?q=…&category=…`) — 조합이
+3. 검색어가 붙은 화면 주소(`/search?q=…`, `/forecast?q=…&category=…`) — 조합이
    사실상 무한한 URL 공간이라 크롤러가 끝없이 돈다. 화면 자체(`/search`,
-   `/polymarket`)는 열어 두고 `?`가 붙은 변형만 막는다(`Disallow: /*?`).
+   `/forecast`)는 열어 두고 `?`가 붙은 변형만 막는다(`Disallow: /*?`).
 
 **일반 HTTP 라이브러리(`python-requests`, `curl`)는 막지 않는다.** 쇼츠가 공개
 주소(`https://nunchi.live`)의 API를 기본 `requests` UA로 읽는다 — 막으면 쇼츠가 선다.

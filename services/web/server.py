@@ -64,7 +64,7 @@ def build_app() -> FastAPI:
     def about_page() -> str:
         return ABOUT_HTML
 
-    @app.api_route("/polymarket", methods=["GET", "HEAD"], response_class=HTMLResponse)
+    @app.api_route("/forecast", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def polymarket_page() -> str:
         return POLYMARKET_HTML
 
@@ -101,9 +101,9 @@ def build_app() -> FastAPI:
 
     def require_manifest() -> None:
         if not POLYMARKET_REPOSITORY.load():
-            raise HTTPException(status_code=503, detail="Polymarket 현재 generation이 없습니다.")
+            raise HTTPException(status_code=503, detail="예측 컨센서스 현재 수집분이 없습니다.")
 
-    @app.api_route("/api/polymarket/summary", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/summary", methods=["GET", "HEAD"])
     def polymarket_summary(request: Request, include_flagged: bool = False) -> Response:
         require_manifest()
         return polymarket_json(
@@ -113,14 +113,14 @@ def build_app() -> FastAPI:
             {"include_flagged": include_flagged},
         )
 
-    @app.api_route("/api/polymarket/categories", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/categories", methods=["GET", "HEAD"])
     def polymarket_categories(request: Request) -> Response:
         require_manifest()
         return polymarket_json(
             request, POLYMARKET_REPOSITORY.categories(), "categories"
         )
 
-    @app.api_route("/api/polymarket/sector-brief", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/sector-brief", methods=["GET", "HEAD"])
     def polymarket_sector_brief(request: Request) -> Response:
         payload = _read_json("polymarket/sector_brief.json")
         # previous는 다음 실행이 이동을 계산할 기준일 뿐이다. 화면이 쓰지 않고
@@ -130,7 +130,7 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="아직 섹터 브리프가 없습니다.")
         return polymarket_json(request, payload, "sector_brief")
 
-    @app.api_route("/api/polymarket/trending", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/trending", methods=["GET", "HEAD"])
     def polymarket_trending(request: Request) -> Response:
         payload = _read_json("polymarket/trending.json")
         # baseline·previous는 다음 주기가 이동을 계산할 상태일 뿐이다. 화면이
@@ -141,12 +141,12 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="아직 트렌드 집계가 없습니다.")
         return polymarket_json(request, payload, "trending")
 
-    @app.api_route("/api/polymarket/health", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/health", methods=["GET", "HEAD"])
     def polymarket_health(request: Request) -> Response:
         payload = POLYMARKET_REPOSITORY.health()
         return polymarket_json(request, payload, "health")
 
-    @app.api_route("/api/polymarket/events", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/events", methods=["GET", "HEAD"])
     def polymarket_events(
         request: Request,
         category: Literal[
@@ -200,7 +200,7 @@ def build_app() -> FastAPI:
         )
         return polymarket_json(request, payload, "events", known_query)
 
-    @app.api_route("/api/polymarket/events/{event_id}", methods=["GET", "HEAD"])
+    @app.api_route("/api/forecast/events/{event_id}", methods=["GET", "HEAD"])
     def polymarket_event_detail(event_id: str, request: Request) -> Response:
         require_manifest()
         payload = POLYMARKET_REPOSITORY.detail(event_id)

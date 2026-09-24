@@ -73,11 +73,11 @@ def test_web_status_reads_the_public_api(monkeypatch):
     payloads = {
         "/api/meta": {"market_generated_at": "2026-09-24T07:40:03+09:00",
                       "research_generated_at": "2026-09-24T08:21:10+09:00"},
-        "/api/polymarket/health": {"freshness": {"state": "normal", "last_success_at": "2026-09-24T06:01:00+09:00"},
+        "/api/forecast/health": {"freshness": {"state": "normal", "last_success_at": "2026-09-24T06:01:00+09:00"},
                                    "last_result": "success"},
-        "/api/polymarket/sector-brief": {"written_at": "2026-09-24T06:03:00+09:00"},
-        "/api/polymarket/trending": {"written_at": "2026-09-24T06:02:00+09:00"},
-        "/api/polymarket/events?page_size=1": {"search_index": {"annotated": 1400, "total": 19070}},
+        "/api/forecast/sector-brief": {"written_at": "2026-09-24T06:03:00+09:00"},
+        "/api/forecast/trending": {"written_at": "2026-09-24T06:02:00+09:00"},
+        "/api/forecast/events?page_size=1": {"search_index": {"annotated": 1400, "total": 19070}},
     }
 
     def fetch(url, timeout):
@@ -88,8 +88,8 @@ def test_web_status_reads_the_public_api(monkeypatch):
     assert "시장 감성: 2026-09-24 07:40" in text
     assert "리서치: 2026-09-24 08:21" in text
     # 정상 결과(success)는 "마지막 시도"를 덧붙이지 않는다.
-    assert "폴리마켓 수집: 2026-09-24 06:01 · 제때 갱신\n" in text
-    assert "폴리마켓 배팅 한국어 검색 준비: 1,400/19,070건" in text
+    assert "예측 컨센서스 수집: 2026-09-24 06:01 · 제때 갱신\n" in text
+    assert "예측 질문 한국어 검색 준비: 1,400/19,070건" in text
 
 
 def test_web_status_says_when_the_web_is_down():

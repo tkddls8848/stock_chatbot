@@ -309,7 +309,7 @@ Cloudflare가 죽은 날 확률 숫자까지 멈춘다.
 
 ## 9. 화면
 
-`GET /api/polymarket/sector-brief` (`previous` 제외). `/polymarket` 상단에 섹션을
+`GET /api/forecast/sector-brief` (`previous` 제외). `/polymarket` 상단에 섹션을
 붙인다.
 
 - 그룹마다 라벨 · 표본 수 · 순이동 pp · 단락.

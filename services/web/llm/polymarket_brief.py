@@ -22,14 +22,15 @@ logger = logging.getLogger(__name__)
 MAX_PARAGRAPH_CHARS = 1200
 MIN_PARAGRAPH_CHARS = 60
 
-FORBIDDEN_COPY = re.compile(r"베팅|배팅|돈을\s*걸|수익\s*(?:기회|보장)|이득|매수|매도|가입\s*하세요")
+# 출처 서비스 이름은 화면에 쓰지 않는다(`code_guide.md`). 모델이 입력 밖에서 끌어올 수 있어 막는다.
+FORBIDDEN_COPY = re.compile(r"(?i)polymarket|폴리마켓|예측\s*시장|베팅|배팅|돈을\s*걸|수익\s*(?:기회|보장)|이득|매수|매도|가입\s*하세요")
 OUTLOOK_MARKERS = re.compile(r"판단|갈리|엇갈|우세|불확실|단정|어렵|제한|확신|한쪽|차이|분산|신중|경합|혼재|무게|기대")
 
 
 def validate_editorial(paragraph: str, totals: dict[str, Any]) -> None:
     sentences = re.split(r"(?<=[.!?])\s+", paragraph)
     if FORBIDDEN_COPY.search(paragraph):
-        raise PolymarketBriefError("금지어: 베팅·배팅·수익·참여 유도 표현을 제거하십시오")
+        raise PolymarketBriefError("금지어: 출처 서비스 이름·예측시장·베팅·배팅·수익·참여 유도 표현을 제거하십시오")
     if any(not re.search(r"(?<!니)다\.$", sentence) for sentence in sentences):
         raise PolymarketBriefError("문체: 모든 문장을 ~이다/~한다/~있다/~이룬다의 해라체 평서문으로 끝내십시오")
     opening = sentences[0]

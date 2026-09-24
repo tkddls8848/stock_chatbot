@@ -497,3 +497,12 @@ def test_invalid_correction_is_not_accepted(tmp_path):
     raw = "전체적으로 기업과 암호자산 관련 이벤트에 대한 예측이 주를 이룬다. 상위 질문에서는 여러 기업과 자산에 대한 질문이 포함되어 있다."
     with pytest.raises(PolymarketBriefError, match="전체 요약"):
         _analyzer(tmp_path, raw).analyze("주식", {"event_count": 20}, [{"title": "t"}])
+
+
+@pytest.mark.parametrize("name", ["Polymarket", "폴리마켓", "예측시장"])
+def test_a_paragraph_naming_the_source_service_is_rejected(tmp_path, name):
+    from services.web.llm import PolymarketBriefError
+    raw = (f"전체적으로 {name} 참여자들의 전망이 엇갈려 하나의 방향으로 묶기 어렵다. "
+           "상위 질문에서 참여자들은 정책 변경 가능성을 25%로 보고 있다.")
+    with pytest.raises(PolymarketBriefError, match="금지어"):
+        _analyzer(tmp_path, raw).analyze("거시·통화", {"event_count": 20}, [{"title": "t"}])

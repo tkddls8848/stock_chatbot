@@ -56,27 +56,27 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
         f"리서치: {_stamp(meta.get('research_generated_at'))}",
         f"뉴스 검색(/search) 자료: {_stamp(meta.get('news_generated_at'))}",
     ]
-    health = _get("/api/polymarket/health", fetch)
+    health = _get("/api/forecast/health", fetch)
     if health is None:
-        lines.append("폴리마켓: 자료 없음")
+        lines.append("예측 컨센서스: 자료 없음")
     else:
         freshness = health.get("freshness") or {}
         state = _FRESHNESS.get(str(freshness.get("state")), str(freshness.get("state") or "미상"))
         lines.append(
-            f"폴리마켓 수집: {_stamp(freshness.get('last_success_at'))} · {state}"
+            f"예측 컨센서스 수집: {_stamp(freshness.get('last_success_at'))} · {state}"
             # 정상 결과는 적지 않는다. 예산 초과·실패 같은 예외만 보인다.
             + (f" · 마지막 시도 {html.escape(str(health['last_result']))}"
                if health.get("last_result") not in (None, "ok", "success") else "")
         )
-    brief = _get("/api/polymarket/sector-brief", fetch)
-    lines.append(f"폴리마켓 줄글: {_stamp((brief or {}).get('written_at'))}")
-    trending = _get("/api/polymarket/trending", fetch)
-    lines.append(f"폴리마켓 트렌드: {_stamp((trending or {}).get('written_at'))}")
-    events = _get("/api/polymarket/events?page_size=1", fetch)
+    brief = _get("/api/forecast/sector-brief", fetch)
+    lines.append(f"예측 컨센서스 줄글: {_stamp((brief or {}).get('written_at'))}")
+    trending = _get("/api/forecast/trending", fetch)
+    lines.append(f"예측 컨센서스 트렌드: {_stamp((trending or {}).get('written_at'))}")
+    events = _get("/api/forecast/events?page_size=1", fetch)
     index = (events or {}).get("search_index") or {}
     if index.get("total"):
-        # 폴리마켓 배팅 검색용 주석 진행률이다. 뉴스 검색(/search)과는 별개다.
-        lines.append(f"폴리마켓 배팅 한국어 검색 준비: {int(index.get('annotated') or 0):,}/{int(index['total']):,}건")
+        # 예측 질문 검색용 주석 진행률이다. 뉴스 검색(/search)과는 별개다.
+        lines.append(f"예측 질문 한국어 검색 준비: {int(index.get('annotated') or 0):,}/{int(index['total']):,}건")
     return "\n".join(lines)
 
 

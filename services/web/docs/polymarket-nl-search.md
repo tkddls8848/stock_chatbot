@@ -8,7 +8,7 @@
 
 ## 1. 무엇을 만드나
 
-지금 탐색기의 검색(`/api/polymarket/events?q=`)은 **제목·태그에 그 글자열이 그대로
+지금 탐색기의 검색(`/api/forecast/events?q=`)은 **제목·태그에 그 글자열이 그대로
 들어 있는지**만 본다(`services/web/polymarket/repository.py`의 `events`). event 제목은
 영어이고 질문은 한국어라, "트럼프 관세가 한국에 미칠 영향" 같은 질문은 사실상
 0건이다.

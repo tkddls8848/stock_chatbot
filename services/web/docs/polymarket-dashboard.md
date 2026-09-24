@@ -74,7 +74,7 @@ polymarket/refresh.py
     ↓ 현재 generation 원자적 승격
 data/webpub/polymarket/current.json + detail shards
     ↓ 읽기 전용
-webpub FastAPI → /polymarket, /api/polymarket/*
+webpub FastAPI → /polymarket, /api/forecast/*
 ```
 
 분리의 의미는 다음과 같다.
@@ -437,7 +437,7 @@ unavailable > liquidity_missing > no_liquidity > low_liquidity > ok
 
 ## 6. 웹 화면 정보 구조
 
-경로는 `https://nunchi.live/polymarket`이다. 첫 화면은 필터를 누르지 않아도 현재
+경로는 `https://nunchi.live/forecast`이다. 첫 화면은 필터를 누르지 않아도 현재
 전체 범위와 분야별 활동을 답해야 한다.
 
 ### 6-1. 기본 화면
@@ -647,12 +647,12 @@ CPU-second와 max RSS를 `refresh_status.json`에 기록하고 rolling 24h 합�
 | 경로 | 내용 |
 |---|---|
 | `GET /polymarket` | 대시보드 HTML |
-| `GET /api/polymarket/summary` | freshness, 회계, 상단 지표, 카테고리 집계 |
-| `GET /api/polymarket/events` | 검색·필터·정렬·페이지 event 목록 |
-| `GET /api/polymarket/events/{event_id}` | detail shard에서 읽은 전체 현재 결과 |
-| `GET /api/polymarket/categories` | 카테고리·raw tag·지역 필터 값 |
-| `GET /api/polymarket/health` | 마지막 성공·실패·자원·coverage 상태 |
-| `GET /api/polymarket/trending` | 그날 기준선 대비 움직인 베팅 (`services/web/polymarket/trending.py`가 굽는다) |
+| `GET /api/forecast/summary` | freshness, 회계, 상단 지표, 카테고리 집계 |
+| `GET /api/forecast/events` | 검색·필터·정렬·페이지 event 목록 |
+| `GET /api/forecast/events/{event_id}` | detail shard에서 읽은 전체 현재 결과 |
+| `GET /api/forecast/categories` | 카테고리·raw tag·지역 필터 값 |
+| `GET /api/forecast/health` | 마지막 성공·실패·자원·coverage 상태 |
+| `GET /api/forecast/trending` | 그날 기준선 대비 움직인 베팅 (`services/web/polymarket/trending.py`가 굽는다) |
 
 webpub은 compact manifest만 메모리에 둔다. mtime이 바뀌었을 때 새 immutable 인덱스를
 만들고 detail은 byte range로 읽는다. 7-4 임계 초과 분기가 발동하면 compact
@@ -754,7 +754,7 @@ infra/systemd/stock-chatbot-polymarket-refresh.timer
 ### 10-2. 수정 파일과 문서 계약
 
 ```text
-services/web/server.py             /polymarket와 /api/polymarket/*
+services/web/server.py             /polymarket와 /api/forecast/*
 services/web/pages.py       nav와 공통 shell
 services/web/core/config.py           현재 웹에 필요한 literal·env만 유지
 .env.example              POLYMARKET_WEB_LOW_LIQUIDITY와 proxy

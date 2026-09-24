@@ -177,22 +177,20 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
     headline = (
         " ".join(scenario.scenes[0].title.split())
         if scenario.scenes and scenario.scenes[0].evidence
-        else f"{scenario.lead_label} {scenario.lead_volume} 거래, 전망도 확실할까?"
+        else f"{scenario.lead_label} {scenario.lead_volume} 참여, 전망도 확실할까?"
         if scenario.lead_label and scenario.lead_volume
-        else "지난 24시간 예측시장에서 돈이 몰린 곳"
+        else "지난 24시간 집단 예측이 몰린 곳"
     )
     return {
         "title": f"{headline} | {stamp} #Shorts",
         "description": (
-            "거래가 활발하고 시장 관련성이 높은 개별 예측시장 이슈를 골랐습니다.\n\n"
+            "참여가 활발하고 시장 관련성이 높은 개별 집단 예측 이슈를 골랐습니다.\n\n"
             f"오늘 다룬 이슈: {', '.join(labels)}\n"
             f"원자료 기준 시각: {scenario.source_written_at}\n"
-            + "\n".join(scene.source_url for scene in scenario.scenes if scene.source_url) + "\n"
-            +
-            "확률은 Polymarket 참여자의 베팅 가격이 암시하는 값이며, 사실 확정이나 "
-            "투자 조언이 아닙니다.\n\n#폴리마켓 #예측시장 #시장컨센서스 #Shorts"
+            "확률은 해외 집단 예측 참여자들의 전망을 모은 값이며, 사실 확정이나 "
+            "투자 조언이 아닙니다.\n\n#집단예측 #컨센서스 #경제전망 #Shorts"
         ),
-        "tags": ["폴리마켓", "예측시장", "시장 컨센서스", "경제", "지정학", "Shorts"],
+        "tags": ["집단 예측", "컨센서스", "경제 전망", "경제", "지정학", "Shorts"],
     }
 
 

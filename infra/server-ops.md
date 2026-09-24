@@ -244,7 +244,7 @@ active에서도 미평가 기사는 음성이 아니며 불일치율은 품질 �
 | 순회·정규화·저장 | `services/web/polymarket/dashboard/` |
 | one-shot 진입점 | `services/web/polymarket/refresh.py` |
 | 읽기 repository | `services/web/polymarket/repository.py` |
-| 화면·API | `services/web/server.py`(`/polymarket`, `/api/polymarket/*`) |
+| 화면·API | `services/web/server.py`(`/forecast`, `/api/forecast/*`) |
 | systemd 유닛 | `infra/systemd/stock-chatbot-polymarket-refresh.{service,timer}` |
 | 산출물 | `data/webpub/polymarket/`의 `current.json`·`status.json`·`generations/` |
 | 크기 실측 도구 | `services/web/tests/polymarket_manifest_size_probe.py` |
@@ -280,7 +280,7 @@ LLM을 부르지 않아 야간에도 멈출 이유가 없고, 여기서 한 주�
 색인이 비어 있어도 검색은 영문 제목·태그로 동작한다.
 
 트렌드 상태는 `data/webpub/polymarket/trending.json` 하나이고
-`curl -s localhost:8788/api/polymarket/trending`으로 확인한다. `state`가
+`curl -s localhost:8788/api/forecast/trending`으로 확인한다. `state`가
 `warming_up`이면 비교할 직전 스냅숏이 아직 없다는 뜻이라 **다음 주기에 저절로
 풀린다**. 이 파일을 지우면 그날 기준선도 함께 사라져 다음 주기가 기준선을 다시
 세운다 — 확률 숫자와 화면 나머지는 영향받지 않는다.
@@ -297,7 +297,7 @@ journalctl -u stock-chatbot-polymarket-refresh -n 40 --no-pager
 ### 8-2. 상태 확인
 
 ```bash
-curl -s localhost:8788/api/polymarket/health
+curl -s localhost:8788/api/forecast/health
 cat /srv/stock-chatbot/data/webpub/polymarket/status.json
 ls /srv/stock-chatbot/data/webpub/polymarket/generations/
 ```
@@ -410,7 +410,7 @@ sudo systemctl daemon-reload
 sudo rm -rf /srv/stock-chatbot/data/webpub/polymarket
 ```
 
-화면까지 걷어내려면 `services/web/server.py`의 `/polymarket`·`/api/polymarket/*` 라우트와
+화면까지 걷어내려면 `services/web/server.py`의 `/forecast`·`/api/forecast/*` 라우트와
 `services/web/pages.py`의 `POLYMARKET_HTML`, `services/web/polymarket/dashboard/`,
 `services/web/polymarket/repository.py`를 지우고 웹을 재기동한다.
 
@@ -632,8 +632,8 @@ ls -la /srv/stock-chatbot/data/webpub/
 
 ### 11-6. 크롤·AI 봇 트래픽
 
-부하의 실체는 화면이 아니라 `/api/`다. `/api/polymarket/events`는 필터·정렬·페이지
-조합이 사실상 무한한 URL 공간이고, `/api/polymarket/events/{event_id}`는 열린 event
+부하의 실체는 화면이 아니라 `/api/`다. `/api/forecast/events`는 필터·정렬·페이지
+조합이 사실상 무한한 URL 공간이고, `/api/forecast/events/{event_id}`는 열린 event
 22,000건이 각각 detail shard를 seek한다. 크롤러가 이 둘을 훑으면 1 GiB 인스턴스에서
 순회 one-shot·봇과 CPU를 다툰다.
 
@@ -682,7 +682,7 @@ robots.txt(`services/web/pages/robots.py`) 둘이 같아야 하는데, 편집기
 curl -sS -A "GPTBot" -o /dev/null -w '%{http_code}\n' https://nunchi.live/
 curl -sS -o /dev/null -w '%{http_code}\n' https://nunchi.live/
 curl -s https://nunchi.live/robots.txt | head -8
-curl -sS -o /dev/null -w '%{http_code}\n' https://nunchi.live/polymarket
+curl -sS -o /dev/null -w '%{http_code}\n' https://nunchi.live/forecast
 ```
 
 IP 단위 rate limit은 두지 않는다. 우분투 저장소판 Caddy 2.6.2에 없는 기능이라

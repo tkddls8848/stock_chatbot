@@ -151,26 +151,26 @@ def render_frame(
     if beat == "metric" or scene.kind in {"intro", "outro"}:
         draw.rounded_rectangle((72, 754, 878, 1050), radius=22, fill="#F0EDE4")
         _text_block(draw, scene.metric_label or "MARKET SNAPSHOT", font_path, (108, 788, 836, 854), size=27, color="#455057")
-        _text_block(draw, scene.metric or labels.get("24시간 거래량", "CHECK"), font_path, (100, 860, 836, 1035), size=144, color="#101B20")
+        _text_block(draw, scene.metric or labels.get("24시간 참여 규모", "CHECK"), font_path, (100, 860, 836, 1035), size=144, color="#101B20")
         if scene.probability is not None or scene.volume_share > 0:
             draw.rounded_rectangle((72, 1084, 878, 1098), radius=6, fill="#354348")
             share = scene.probability if scene.probability is not None else scene.volume_share
             if share > 0:
                 draw.rectangle((72, 1084, 72 + round(806 * min(1, share)), 1098), fill=accent)
             note = labels.get("이벤트", "") + (" 이벤트 / " if labels.get("이벤트") else "")
-            note = "개별 질문의 예 가격 / 사실 확정 아님" if scene.probability is not None else note + f"선정 분야 거래 중 {scene.volume_share:.1%}"
+            note = "개별 질문의 예 확률 / 사실 확정 아님" if scene.probability is not None else note + f"선정 분야 참여 중 {scene.volume_share:.1%}"
             draw.text((72, 1120), note, font=_font(font_path, 25), fill="#AEBCC1")
         _text_block(draw, scene.takeaway or scene.body, font_path, (72, 1184, 878, 1318), size=42)
     else:
         draw.text((72, 760), "무엇을 예상하나", font=_font(font_path, 29), fill=accent)
         _text_block(draw, scene.body, font_path, (72, 826, 878, 1174), size=44)
         draw.line((72, 1204, 878, 1204), fill="#354348", width=2)
-        detail_note = (f"이벤트 24시간 거래량 {labels.get('24시간 거래량', '-')}\n종료 예정 {labels.get('종료 예정', '-')}"
+        detail_note = (f"이벤트 24시간 참여 규모 {labels.get('24시간 참여 규모', '-')}\n종료 예정 {labels.get('종료 예정', '-')}"
                        if scene.event_id else f"{scene.metric} USD  /  이벤트 {labels.get('이벤트', '-')}")
         _text_block(draw, detail_note,
                     font_path, (72, 1224, 878, 1310), size=30, color="#AEBCC1")
 
-    draw.text((72, FOOTER_Y), "Polymarket / 예측시장 가격 · 투자 조언 아님",
+    draw.text((72, FOOTER_Y), "집단 예측 컨센서스 · 투자 조언 아님",
               font=_font(font_path, 22), fill="#AEBCC1")
     draw.text((72, FOOTER_Y + 37), scene.source_note + (" / AI 배경" if background_path else ""),
               font=_font(font_path, 21), fill=accent)

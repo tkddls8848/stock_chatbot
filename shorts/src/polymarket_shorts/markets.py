@@ -8,7 +8,6 @@ from decimal import Decimal
 import math
 import re
 from typing import Any
-from urllib.parse import quote
 
 from .client import Snapshot, SourceError
 
@@ -128,7 +127,7 @@ def shortlist(snapshot: Snapshot) -> tuple[list[dict[str, Any]], dict[str, Any]]
         "scanned": len(snapshot.events), "excluded": dict(excluded),
         "eligible_by_sector": eligible, "shortlisted": len(candidates),
         "movement_coverage": "공개 trending에 있는 동일 세대 이벤트만; 미관측은 변동 없음이 아님",
-        "interest_proxy": "24시간 거래량·유동성; 고유 참여자 수나 검색량을 뜻하지 않음",
+        "interest_proxy": "24시간 참여 규모·유동성; 고유 참여자 수나 검색량을 뜻하지 않음",
     }
 
 
@@ -163,5 +162,4 @@ def prepare_issue(candidate: dict[str, Any], detail: dict[str, Any], news: list[
         **candidate, "generation_id": detail["generation_id"],
         "description": str(detail["description"])[:12000],
         "markets": markets[:2], "valid_market_count": len(markets), "news": news,
-        "source_url": "https://polymarket.com/event/" + quote(str(detail["slug"]), safe=""),
     }
