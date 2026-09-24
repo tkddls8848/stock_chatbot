@@ -89,7 +89,7 @@ def test_web_status_reads_the_public_api(monkeypatch):
     assert "리서치: 2026-09-24 08:21" in text
     # 정상 결과(success)는 "마지막 시도"를 덧붙이지 않는다.
     assert "폴리마켓 수집: 2026-09-24 06:01 · 제때 갱신\n" in text
-    assert "한국어 검색 준비: 1,400/19,070건" in text
+    assert "폴리마켓 배팅 한국어 검색 준비: 1,400/19,070건" in text
 
 
 def test_web_status_says_when_the_web_is_down():

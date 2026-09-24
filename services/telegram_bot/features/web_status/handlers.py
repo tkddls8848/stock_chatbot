@@ -54,7 +54,7 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
         "<b>🌐 웹 상태</b> (한국 시간)",
         f"시장 감성: {_stamp(meta.get('market_generated_at'))}",
         f"리서치: {_stamp(meta.get('research_generated_at'))}",
-        f"뉴스 검색 자료: {_stamp(meta.get('news_generated_at'))}",
+        f"뉴스 검색(/search) 자료: {_stamp(meta.get('news_generated_at'))}",
     ]
     health = _get("/api/polymarket/health", fetch)
     if health is None:
@@ -75,7 +75,8 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
     events = _get("/api/polymarket/events?page_size=1", fetch)
     index = (events or {}).get("search_index") or {}
     if index.get("total"):
-        lines.append(f"한국어 검색 준비: {int(index.get('annotated') or 0):,}/{int(index['total']):,}건")
+        # 폴리마켓 배팅 검색용 주석 진행률이다. 뉴스 검색(/search)과는 별개다.
+        lines.append(f"폴리마켓 배팅 한국어 검색 준비: {int(index.get('annotated') or 0):,}/{int(index['total']):,}건")
     return "\n".join(lines)
 
 
