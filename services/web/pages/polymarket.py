@@ -3,7 +3,6 @@
 화면 문구에 출처 서비스 이름·베팅·거래 표현을 쓰지 않는다(`code_guide.md`)."""
 
 from services.web.pages.shell import (
-    DISCLAIMER,
     I_BARS,
     I_CHART,
     I_LAYERS,
@@ -100,7 +99,6 @@ _POLYMARKET_MAIN = (
  <div class='pm-pages'><button type='button' class='pm-btn' id='pm-prev'>이전</button><span id='pm-page'>–</span><button type='button' class='pm-btn' id='pm-next'>다음</button></div></section>
 <dialog class='pm-detail' id='pm-detail'><div class='pm-detail-in'><div class='pm-detail-head'><h2 id='pm-detail-title'>Event 상세</h2><button type='button' class='pm-btn' id='pm-detail-close' aria-label='상세 닫기'>닫기</button></div><div id='pm-detail-body'></div></div></dialog>
 """
-    + DISCLAIMER
 )
 
 _POLYMARKET_SCRIPT = (

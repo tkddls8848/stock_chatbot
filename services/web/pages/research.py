@@ -1,7 +1,6 @@
 """리서치 화면(`/research`). 다른 면과 같이 공개다(2026-09-24 인증을 없앴다)."""
 
 from services.web.pages.shell import (
-    DISCLAIMER,
     I_CHART,
     I_DOC,
     I_LAYERS,
@@ -66,7 +65,6 @@ _RESEARCH_MAIN = (
   관련도와 판단 수치는 모델이 매긴 값이라 사실 확인을 대신하지 않습니다.</p>
 </div></div>
 """
-    + DISCLAIMER
 )
 
 _RESEARCH_SCRIPT = (

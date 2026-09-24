@@ -1,7 +1,6 @@
 """정보 화면(`/about`)."""
 
 from services.web.pages.shell import (
-    DISCLAIMER,
     I_DOC,
     I_LAYERS,
     I_PLUG,
@@ -100,7 +99,6 @@ _ABOUT_MAIN = (
         "직전 산출물이 그대로 남아 있습니다. 값이 오래되었을 수 있으니 화면 위쪽의 "
         "<b>기준 시각</b>을 먼저 확인해 주세요.</p>",
     )
-    + DISCLAIMER
 )
 
 _ABOUT_SCRIPT = "<script>" + JS_UTIL + "</script>"

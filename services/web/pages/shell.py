@@ -283,8 +283,6 @@ line-height:1.8}
 /* 꼬리말 */
 .foot{color:var(--faint);font-size:var(--fs-xs);text-align:center;padding:var(--sp-6) 0 var(--sp-7);
 line-height:2}
-.asof-note{max-width:var(--w-wide);margin:0 auto;padding:0 var(--sp-5) 30px;color:var(--faint);
-font-size:var(--fs-2xs);text-align:center}
 .sitefoot{border-top:1px solid var(--line);padding:20px 0 36px}
 .sf-mast{display:grid;gap:var(--sp-3);padding-bottom:var(--sp-4);margin-bottom:14px;
 border-bottom:1px solid var(--line2)}
@@ -392,10 +390,6 @@ _ASOF = (
     "</div></div>"
 )
 
-_FOOT_NOTE = (
-    "<div class='asof-note'>이 페이지의 모든 수치는 실시간이 아니라 마지막으로 "
-    "계산한 값입니다. 인용하기 전에 화면 위쪽의 기준 시각을 확인해 주세요.</div>"
-)
 
 _SITE_FOOT = (
     "<footer class='sitefoot'><div class='wrap'>"
@@ -424,8 +418,7 @@ def page(title: str, active: str, main: str, script: str = "") -> str:
         _head(title)
         + _header(active)
         + _ASOF
-        + "<main id='main' tabindex='-1' class='wrap page'>" + main + "</main>"
-        + _FOOT_NOTE
+        + "<main id='main' tabindex='-1' class='wrap page'>" + main + DISCLAIMER + "</main>"
         + script
         + _SITE_FOOT
     )
@@ -442,9 +435,13 @@ def sec(glyph: str, title: str, body: str) -> str:
     )
 
 
+# 모든 화면 본문 끝에 한 번 붙는 꼬리말. 예전에는 면책(foot, 화면마다 직접 붙임)과
+# 기준 시각 안내(asof-note, 본문 밖)가 따로 있어 같은 말을 두 번 했고, 면책이 빠진
+# 화면(검색·자산)도 있었다. 뼈대가 한 곳에서 붙인다 — 화면 파일은 붙이지 않는다.
 DISCLAIMER = (
-    "<div class='foot'>정보 제공 목적이며 투자 권유가 아닙니다. 값은 갱신 시점에 "
-    "고정된 기록이며, 투자 판단과 책임은 이용자 본인에게 있습니다.</div>"
+    "<div class='foot'>정보 제공 목적이며 투자 권유가 아닙니다. 모든 수치는 실시간이 "
+    "아니라 마지막으로 계산한 값이므로, 인용하기 전에 화면 위쪽의 기준 시각을 확인해 "
+    "주세요. 투자 판단과 책임은 이용자 본인에게 있습니다.</div>"
 )
 
 

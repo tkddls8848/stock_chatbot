@@ -1,7 +1,6 @@
 """시장 컨센서스 화면(`/`)."""
 
 from services.web.pages.shell import (
-    DISCLAIMER,
     I_BARS,
     I_CHART,
     JS_UTIL,
@@ -47,7 +46,6 @@ _MARKET_MAIN = (
   </div>
 </div>
 """
-    + DISCLAIMER
 )
 
 _MARKET_SCRIPT = (
