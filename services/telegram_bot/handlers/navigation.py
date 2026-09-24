@@ -16,6 +16,7 @@ from services.telegram_bot.features.web_status.handlers import cmd_web
 from services.telegram_bot.handlers.menus import (
     _back,
     _keyboard,
+    admin_menu,
     main_menu,
     persistent_menu,
     refresh_persistent_menu,
@@ -47,8 +48,7 @@ async def _dispatch_primary_menu_action(
 ) -> bool:
     """인라인·하단 고정 메뉴가 공유하는 최상위 기능 진입점.
 
-    `system`은 인라인에서 상태를 실행하고 하단 메뉴에서는 관리 허브를 열어
-    동작이 다르므로 각 호출부가 명시적으로 처리한다.
+    /start와 하단 메뉴는 같은 관리 허브를 연다.
     """
     if action == "market":
         # 관리 패널: 누르면 바로 갱신해 웹에 굽는다. 차트는 웹에서 본다.
@@ -75,6 +75,13 @@ async def _dispatch_primary_menu_action(
         return True
     if action == "briefing":
         await cmd_briefing(update, _context(context, []))
+        return True
+    if action == "system":
+        send = message.edit_text if edit_message else message.reply_text
+        await send(
+            "<b>⚙️ 관리</b>", parse_mode="HTML",
+            reply_markup=admin_menu(context.bot_data["feature_registry"]),
+        )
         return True
     return False
 
@@ -119,7 +126,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await message.edit_text("저장할 리서치 주제를 입력하세요.", reply_markup=_keyboard(_back()))
         else:
             await cmd_research(update, _context(context, [command]))
-    elif action == "system":
+    elif action == "system:show":
         await cmd_system(update, _context(context, []))
     elif action.startswith("system:"):
         await cmd_system(update, _context(context, [action.split(":", 1)[1]]))
@@ -155,19 +162,11 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             edit_message=False,
         ):
             return
-        if action == "system":
-            await message.reply_text("<b>관리</b>", parse_mode="HTML", reply_markup=_keyboard([
-                [("시스템 상태", "nav:system"), ("종목 DB 갱신", "nav:stockdb")], *_back()
-            ]))
-        else:
-            # 알 수 없는 persistent 버튼 — 새 메뉴를 추가할 때 이 분기를 잊으면
-            # 예전에는 조용히 "⚙️ 관리" 화면으로 잘못 떨어졌다. 그 대신 홈으로
-            # 보내 틀린 화면이 아니라 눈에 띄는 결과가 나오게 한다.
-            await message.reply_text(
-                "<b>주식 뉴스 봇</b>\n원하는 기능을 선택하세요.",
-                parse_mode="HTML",
-                reply_markup=main_menu(registry),
-            )
+        await message.reply_text(
+            "<b>주식 뉴스 봇</b>\n원하는 기능을 선택하세요.",
+            parse_mode="HTML",
+            reply_markup=main_menu(registry),
+        )
         return
 
     if context.user_data.get("add_market"):
@@ -176,6 +175,7 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     action = context.user_data.pop("menu_input", None)
     if action is None:
+        await refresh_persistent_menu(message, registry)
         return
     if action == "research_topic":
         await cmd_research(update, _context(context, ["set", text.strip()]))

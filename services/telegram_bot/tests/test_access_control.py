@@ -426,6 +426,67 @@ def test_inline_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
     assert seen == [[]]
 
 
+def test_start_uses_same_renewed_entrypoints_as_bottom_menu():
+    from services.telegram_bot.features.system_admin.handlers import cmd_start
+
+    replies = []
+
+    async def reply(text, **kwargs):
+        replies.append(kwargs["reply_markup"])
+
+    message = SimpleNamespace(reply_text=reply)
+    asyncio.run(cmd_start(
+        SimpleNamespace(message=message),
+        SimpleNamespace(bot_data={"feature_registry": _registry()}),
+    ))
+    bottom, inline = replies
+    assert [[button.text for button in row] for row in inline.inline_keyboard] == [
+        ["⭐ 관심종목", "📰 브리핑"], ["⚙️ 관리", "🛠 웹 관리"],
+    ]
+    assert [[button.text for button in row] for row in bottom.keyboard] == [
+        [button.text for button in row] for row in inline.inline_keyboard
+    ]
+
+
+def test_unrecognized_old_button_refreshes_current_keyboard():
+    replies = []
+
+    async def reply(text, **kwargs):
+        replies.append(kwargs["reply_markup"])
+
+    asyncio.run(handle_menu_text(
+        SimpleNamespace(effective_message=SimpleNamespace(text="📊 시장", reply_text=reply)),
+        SimpleNamespace(bot_data={"feature_registry": _registry()}, user_data={}),
+    ))
+    assert "🛠 웹 관리" in [button.text for row in replies[0].keyboard for button in row]
+
+
+def test_inline_admin_opens_hub_then_system_status(monkeypatch):
+    from services.telegram_bot.handlers import navigation
+
+    markups, calls = [], []
+
+    async def edit(text, **kwargs):
+        markups.append(kwargs["reply_markup"])
+
+    async def system(update, context):
+        calls.append(context.args)
+
+    monkeypatch.setattr(navigation, "cmd_system", system)
+    message = SimpleNamespace(edit_text=edit)
+    update = SimpleNamespace(callback_query=SimpleNamespace(message=message))
+    context = SimpleNamespace(bot_data={"feature_registry": _registry()}, user_data={}, application=None)
+
+    async def run():
+        await handle_menu_callback(update, context, "nav:system")
+        callbacks = {button.callback_data for row in markups[0].inline_keyboard for button in row}
+        assert {"nav:system:show", "nav:stockdb"} <= callbacks
+        await handle_menu_callback(update, context, "nav:system:show")
+
+    asyncio.run(run())
+    assert calls == [[]]
+
+
 def test_persistent_briefing_button_runs_time_aware_briefing_directly(monkeypatch):
     from services.telegram_bot.handlers import navigation
 

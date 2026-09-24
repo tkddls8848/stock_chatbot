@@ -34,6 +34,17 @@ class _Bot:
         self.messages.append(kwargs)
 
 
+class _Application:
+    def __init__(self):
+        self.bot_data = {}
+        self.tasks = []
+
+    def create_task(self, coroutine, *, update, name):
+        task = asyncio.create_task(coroutine, name=name)
+        self.tasks.append(task)
+        return task
+
+
 def test_morning_briefing_success_reaches_telegram(monkeypatch):
     async def summary(_app, include_fund_flow):
         assert include_fund_flow is False
@@ -157,11 +168,79 @@ def test_briefing_without_argument_runs_automatically_selected_kind(monkeypatch)
     monkeypatch.setattr(briefing_service, "send_evening_briefing", evening)
     message = _Message()
     update = SimpleNamespace(effective_message=message, callback_query=None)
-    context = SimpleNamespace(args=[], application=object())
+    app = _Application()
+    context = SimpleNamespace(args=[], application=app)
 
-    asyncio.run(briefing_service.cmd_briefing(update, context))
+    async def run():
+        await briefing_service.cmd_briefing(update, context)
+        await asyncio.gather(*app.tasks)
+
+    asyncio.run(run())
 
     assert calls == [("intraday", True)]
+    assert "생성을 시작" in message.replies[0][0]
+
+
+def test_slow_briefing_leaves_menu_responsive_and_rejects_duplicate(monkeypatch):
+    from services.telegram_bot.features import ALL_FEATURES, build_feature_registry
+    from services.telegram_bot.handlers.navigation import handle_menu_text
+
+    async def run():
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def slow_action(_app, force):
+            calls.append(force)
+            started.set()
+            await release.wait()
+
+        monkeypatch.setattr(briefing_service, "select_briefing_kind", lambda: "intraday")
+        monkeypatch.setattr(briefing_service, "send_intraday_briefing", slow_action)
+        app = _Application()
+        app.bot_data["feature_registry"] = build_feature_registry(f.key for f in ALL_FEATURES)
+        context = SimpleNamespace(args=[], application=app, bot_data=app.bot_data, user_data={})
+        message = _Message()
+        message.text = "📰 브리핑"
+        update = SimpleNamespace(effective_message=message, callback_query=None)
+        await asyncio.wait_for(handle_menu_text(update, context), 1)
+        await asyncio.wait_for(started.wait(), 1)
+        assert "생성을 시작" in message.replies[0][0]
+        await asyncio.wait_for(handle_menu_text(update, context), 1)
+        assert "이미 생성 중" in message.replies[-1][0]
+
+        admin = _Message()
+        admin.text = "⚙️ 관리"
+        await asyncio.wait_for(handle_menu_text(SimpleNamespace(effective_message=admin), context), 1)
+        assert "관리" in admin.replies[0][0]
+        assert not app.tasks[0].done()
+        assert calls == [True]
+        release.set()
+        await asyncio.gather(*app.tasks)
+        assert app.bot_data["briefing_running"] is False
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("provider failed"), TimeoutError()])
+def test_background_briefing_reports_failure_and_allows_retry(monkeypatch, failure):
+    async def fail(_app, force):
+        raise failure
+
+    monkeypatch.setattr(briefing_service, "send_morning_briefing", fail)
+    app = _Application()
+    message = _Message()
+    context = SimpleNamespace(args=["morning"], application=app)
+    update = SimpleNamespace(effective_message=message, callback_query=SimpleNamespace(data="nav:briefing"))
+
+    async def run():
+        for _ in range(2):
+            await briefing_service.cmd_briefing(update, context)
+            await asyncio.gather(*app.tasks)
+            assert app.bot_data["briefing_running"] is False
+
+    asyncio.run(run())
+    assert len(app.tasks) == 2
+    assert "다시 시도" in message.replies[-1][0]
 
 
 class _MarketViewManager:

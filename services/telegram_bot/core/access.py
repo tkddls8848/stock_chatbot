@@ -126,7 +126,7 @@ def restricted(handler: Handler, show_status: bool = True) -> Handler:
         query = getattr(update, "callback_query", None)
         callback_data = str(getattr(query, "data", ""))
         suppress_menu_status = (
-            handler.__name__ in {"cmd_research", "cmd_market"}
+            handler.__name__ in {"cmd_research", "cmd_market", "cmd_briefing"}
             or callback_data == "nav:research:run"
             or callback_data == "nav:market"
             or callback_data == "nav:briefing"

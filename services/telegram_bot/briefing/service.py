@@ -5,6 +5,7 @@
 데이터 전용 브리핑으로 대체한다.
 """
 
+import asyncio
 import html
 import logging
 from datetime import datetime
@@ -24,7 +25,6 @@ from services.telegram_bot.core.config import (
     TELEGRAM_CHAT_ID,
     TELEGRAM_MESSAGE_LIMIT,
 )
-from services.telegram_bot.core.menu_status import set_menu_button_text
 from services.telegram_bot.core.telegram_html import truncate_html
 from services.telegram_bot.core.workers import run_non_urgent, wait_for_urgent_idle
 from services.telegram_bot.research.news import collect_global_market_news_items
@@ -34,6 +34,7 @@ from services.telegram_bot.stocks.quotes import format_sector_summary_text
 logger = logging.getLogger(__name__)
 
 _WEEKDAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
+_REQUEST_TIMEOUT_SECONDS = 300
 
 
 def select_briefing_kind(moment: datetime | None = None) -> str:
@@ -320,15 +321,38 @@ async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    query = getattr(update, "callback_query", None)
-    callback_data = str(getattr(query, "data", ""))
-    is_menu = callback_data in {"nav:briefing", f"nav:briefing:{command}"}
+    if app.bot_data.get("briefing_running"):
+        await message.reply_text("브리핑을 이미 생성 중입니다. 완료되면 이 채팅으로 보내드립니다.")
+        return
+
+    # await 전에 예약해 동시에 누른 두 요청도 하나만 실행한다.
+    app.bot_data["briefing_running"] = True
     label, action = selected
-    if is_menu:
-        await set_menu_button_text(message, callback_data, "◐ 생성 중")
     try:
-        await action(app, force=True)
+        app.create_task(
+            _run_requested_briefing(update, app, label, action),
+            update=update,
+            name="requested-briefing",
+        )
+    except Exception:
+        app.bot_data["briefing_running"] = False
+        raise
+
+
+async def _run_requested_briefing(update, app, label, action) -> None:
+    message = update.effective_message
+    try:
+        await message.reply_text(
+            f"⏳ {label} 브리핑 생성을 시작했습니다. 자료 조회에 몇 분 걸릴 수 있습니다.\n"
+            "완료되면 보내드립니다. 기다리는 동안 다른 메뉴를 사용할 수 있습니다."
+        )
+        async with asyncio.timeout(_REQUEST_TIMEOUT_SECONDS):
+            await action(app, force=True)
+    except TimeoutError:
+        logger.warning("[BRIEFING] 수동 실행 시간 초과")
+        await message.reply_text("브리핑 자료 조회가 지연되어 중단했습니다. 잠시 후 다시 시도해 주세요.")
+    except Exception:
+        logger.exception("[BRIEFING] 수동 실행 실패")
+        await message.reply_text("브리핑 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.")
     finally:
-        if is_menu:
-            restored_label = "📰 브리핑" if callback_data == "nav:briefing" else label
-            await set_menu_button_text(message, callback_data, restored_label)
+        app.bot_data["briefing_running"] = False

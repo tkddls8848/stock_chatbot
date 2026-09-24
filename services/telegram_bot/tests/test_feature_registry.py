@@ -129,7 +129,7 @@ def test_disabled_features_are_removed_from_both_menus():
         for button in row
     }
 
-    assert inline_labels == {"🗂 종목 DB 갱신", "❔ 도움말", "⚙️ 시스템"}
+    assert inline_labels == {"⚙️ 관리"}
     assert persistent_labels == {"⚙️ 관리"}
 
 

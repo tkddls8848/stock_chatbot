@@ -17,7 +17,10 @@ def _keyboard(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 def main_menu(registry) -> InlineKeyboardMarkup:
     grouped: dict[int, list[tuple[str, str]]] = {}
     for item in registry.menu_specs():
-        grouped.setdefault(item.row, []).append((item.label, item.callback_data))
+        if item.persistent_label:
+            grouped.setdefault(item.persistent_row, []).append(
+                (item.persistent_label, item.callback_data)
+            )
     return _keyboard([grouped[row] for row in sorted(grouped)])
 
 
@@ -25,7 +28,7 @@ def persistent_menu(registry) -> ReplyKeyboardMarkup:
     """채팅 입력창 위에 계속 표시되는 메뉴 진입 버튼. 두 줄·네 개로 둔다.
 
     텔레그램은 뉴스·브리핑을 받고 웹을 관리하는 곳이라, 자주 누르는 것만 남긴다.
-    전체 메뉴는 /start가 인라인으로 연다.
+    /start도 같은 진입 버튼을 인라인으로 연다.
     """
     grouped: dict[int, list[str]] = {}
     for item in registry.menu_specs():
@@ -75,6 +78,13 @@ def research_menu() -> InlineKeyboardMarkup:
         [("주제 변경", "nav:research:set"), ("주제 비우기", "nav:research:clear")],
         *_back(),
     ])
+
+
+def admin_menu(registry) -> InlineKeyboardMarkup:
+    rows = [[("시스템 상태", "nav:system:show")]]
+    if registry.is_enabled("instruments"):
+        rows[0].append(("종목 DB 갱신", "nav:stockdb"))
+    return _keyboard([*rows, *_back()])
 
 
 def system_menu(registry) -> InlineKeyboardMarkup:
