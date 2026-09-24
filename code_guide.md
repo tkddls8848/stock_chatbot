@@ -407,7 +407,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **화면(`services/web/pages.py`)은 정적 문자열이고 외부 폰트·CDN·프레임워크를 부르지
   않는다.** 페이지는 기동 시 한 번 조립되고 값은 브라우저가 `/api/*`에서 채운다 —
   이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된
-  `POST /api/portfolio/advise` 하나다), 빌드
+  `POST /api/portfolio/advice` 하나다), 빌드
   산출물이 없어야 배포가 파일 복사로 끝나기 때문이다. 값을 넣을 때는 `esc()`를
   거친다: 산출물에는 리서치 `reason`처럼 모델이 쓴 문자열이 그대로 들어 있다.
   화면은 **라이트 전용**이고(`color-scheme:light`) 감성의 부호는 **빨강이 긍정,
@@ -424,20 +424,21 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   않는 규칙은 다음과 같다.
   | 항목 | 기준 |
   |---|---|
-  | 인증 | **간단한 잠금이다.** 비밀번호 하나(`PORTFOLIO_PASSWORD`)를 잠금 화면에 넣으면 `POST /api/portfolio/login`이 `hmac.compare_digest`로 비교하고 HttpOnly·Secure·SameSite=Strict 쿠키를 준다. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다. 로그아웃은 쿠키 삭제다. 회원가입·계정·2단계 인증·OAuth·세션 DB는 만들지 않는다 — 한 사람이 쓰는 화면을 지나가는 사람에게서 닫는 것이 목적이다 |
+  | 인증 | **간단한 잠금이다.** 비밀번호 하나(`PORTFOLIO_PASSWORD`)를 잠금 화면에 넣으면 `POST /api/portfolio/session`이 `hmac.compare_digest`로 비교하고 HttpOnly·Secure·SameSite=Strict 쿠키를 준다. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다. 로그아웃은 `DELETE /api/portfolio/session`(쿠키 삭제)이다. 회원가입·계정·2단계 인증·OAuth·세션 DB는 만들지 않는다 — 한 사람이 쓰는 화면을 지나가는 사람에게서 닫는 것이 목적이다 |
   | 범위 | 잠금은 개인 자산과 관심종목 관리 둘 다에 걸린다. 화면 `/portfolio`와 `/api/portfolio/*` 전부가 대상이고 공개 화면에는 걸지 않는다 |
   | 경로 | 쓰기·실행은 `/api/portfolio/*`에만 둔다. 잠금을 풀지 않은 요청은 전부 401이다. 비밀번호가 설정되지 않았으면 개인 화면 전체가 503으로 닫힌다 — 빈 비밀번호로 열리지 않는다 |
   | 저장 | `data/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`data/webpub/`)·뉴스 검색·`export.py`·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
   | 노출 | `/portfolio`는 noindex, `robots.txt`에서 막고, 응답에 `Cache-Control: no-store`를 붙인다 |
+  | API 모양 | **주소는 명사(자원)이고 동작은 HTTP 메서드가 정한다.** 동사 주소(`/login`·`/advise`·`/run`)를 만들지 않는다. `session`(`POST` 잠금 해제·`DELETE` 잠금), `assets`(`GET` 목록·`POST` 추가, `/assets/{id}`에 `PUT`·`DELETE`), `watchlist`(`GET`·`PUT` 전체 교체), `advice`(`POST` 새 조언 생성·`GET` 최근 목록, `/advice/latest`·`/advice/{id}`에 `GET`)다. 생성이 수십 초 걸려도 `POST /advice`는 완성된 조언을 `201`로 돌려준다 — 한 사람이 쓰는 화면이라 작업 큐를 두지 않는다. 하루 상한에 닿으면 `429`, 이미 생성 중이면 `409`다 |
   | 봇 접근 | 봇은 같은 비밀번호를 `Authorization: Bearer` 헤더로 보내 HTTP만 쓴다(관심종목 동기화·리서치 적용·`/system` 상태). 웹 코드를 import하지 않는다 |
-  **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advise`가
+  **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advice`가
   금감원 예적금 금리(`FSS_API_KEY`), 한국은행 ECOS 금리(`ECOS_API_KEY`), 국토부
   실거래가(`MOLIT_API_KEY`)를 읽고, 규칙 진단(자산군 비중·편중, 만기 도래, 보유 금리와
   시중 최고 금리 차이, 부동산 레버리지)을 먼저 계산한 뒤, 그 결과와 공개 산출물의
   시장 요약을 LLM에 넣어 한 편의 조언을 쓴다. **숫자는 규칙 진단이 만들고 LLM은
   해석만 한다** — 모델이 쓴 금액·비율을 그대로 믿으면 검산할 수 없다. 외부 API 하나가
   실패하면 그 항목을 "자료 없음"으로 표시하고 나머지로 진행한다. 비용은 동시 실행
-  잠금 하나와 하루 상한 `PORTFOLIO_ADVISE_MAX_DAILY`로 막는다 — 공개 화면에 실행
+  잠금 하나와 하루 상한 `PORTFOLIO_ADVICE_MAX_DAILY`로 막는다 — 공개 화면에 실행
   트리거를 두지 않는 이유(링크를 받은 사람 수만큼 비용)가 인증으로 사라졌을 뿐,
   반복 클릭 비용은 남는다. 조언은 투자 권유가 아닌 참고 정보임을 화면에 밝힌다.
 - 종목 canonical code는 시장마다 형식이 다르다. CN·HK는 **접두사 없는 숫자 코드**
