@@ -407,7 +407,11 @@ NEWS_MARKET_BACKFILL_QUERIES = {
     "HK": "Hong Kong stock market",
     "US": "US stock market",
     "KR": "Korea stock market",
-    "JP": "日本株 日経平均 東証",
+    # 영어로 둔다. 날짜별 이력 조회(fetch_google_news_history)는 시장 로케일 없이
+    # 기본(en-US) 로케일로 부르는데, 일본어 질의는 그 로케일에서 0건이라 2026-09-24까지
+    # 감성 추이에 일본이 통째로 빠졌다. 영어 질의가 하루 17~25건으로 가장 많았다
+    # (일본어+ja 로케일 11~19건). 다른 시장도 전부 영어 질의다.
+    "JP": "Japan stock market",
     "EU": "European stock market",
     "RU": "Russia stock market",
     "TW": "Taiwan stock market",

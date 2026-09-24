@@ -156,7 +156,8 @@ def test_search_routes_validation_empty_state_and_markup(tmp_path, monkeypatch):
     assert "textContent=row.title" in body
     assert "textContent=row.text" in body
     assert "AbortController" in body
-    assert "action='/search'" in client.get("/").text
+    # 첫 화면(시장)에는 검색 바를 두지 않는다(2026-09-24 운영자 결정).
+    assert "action='/search'" not in client.get("/").text
 
 
 def test_export_and_server_use_repository_data_root():

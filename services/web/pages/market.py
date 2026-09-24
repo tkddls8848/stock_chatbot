@@ -18,11 +18,6 @@ _MARKET_MAIN = (
     + "<div class='sub2'>감성은 보도 논조의 방향이지 시세나 수익률이 아닙니다. "
     "<b>빨강이 긍정, 파랑이 부정</b>입니다.</div>"
     + """
-<form action='/search' method='get' role='search' style='display:flex;gap:8px;margin:24px 0'>
- <input name='q' type='search' maxlength='200' aria-label='뉴스·시장 자연어 검색'
- placeholder='최근 일주일 일본 금리 뉴스' style='flex:1;min-width:0;padding:12px;font:inherit;border:1px solid var(--line);border-radius:8px'>
- <button type='submit' style='padding:12px;font:inherit;white-space:nowrap'>뉴스 검색</button>
-</form>
 <div class='statstrip'>
   <div class='st'><div class='l'>기준 시각</div><div class='v ts' id='s-time'>–</div></div>
   <div class='st'><div class='l'>조회 기간</div><div class='v' id='s-days'>–</div></div>
