@@ -8,6 +8,7 @@ from services.telegram_bot.features.news_summary.feature import FEATURE as NEWS_
 from services.telegram_bot.features.registry import FeatureRegistry
 from services.telegram_bot.features.research.feature import FEATURE as RESEARCH
 from services.telegram_bot.features.sector_summary.feature import FEATURE as SECTOR_SUMMARY
+from services.telegram_bot.features.shorts.feature import FEATURE as SHORTS
 from services.telegram_bot.features.system_admin.feature import FEATURE as SYSTEM_ADMIN
 from services.telegram_bot.features.watchlist.feature import FEATURE as WATCHLIST
 from services.telegram_bot.features.web_status.feature import FEATURE as WEB_STATUS
@@ -23,6 +24,7 @@ ALL_FEATURES = (
     BRIEFING,          # 모닝·마감 브리핑
     SYSTEM_ADMIN,      # 시작·도움말·시스템 제어
     WEB_STATUS,        # 웹 산출물 갱신 상태(관리 패널)
+    SHORTS,            # 쇼츠 운영(관리 패널) — 쇼츠 CLI를 하위 프로세스로
 )
 
 

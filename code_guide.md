@@ -346,8 +346,9 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | `/shorts done` | 현재 수정본을 검수 완료로 기록한다 |
   **봇은 쇼츠를 import하지 않는다.** 쇼츠는 이 저장소 코드를 import하지 않는 별개
   패키지이고 반대 방향도 같다. 봇은 쇼츠 CLI를 **쇼츠 자기 venv의 하위 프로세스로**
-  부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태는 쇼츠가 `storage/shorts/`에 쓰는
-  기록 파일을 읽는다. 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
+  부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태도 CLI(`--status`)가 `storage/shorts/`를 읽어
+  stdout JSON 한 줄로 돌려준다 — 폴더 구조를 아는 것은 쇼츠뿐이다. 하위 프로세스에는
+  `STORAGE_DIR`과 PATH 같은 최소 환경만 넘긴다(봇의 토큰을 흘리지 않는다). 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
   줄을 세운다 — 예약 제작과 패널 실행·편집이 겹치면 같은 산출물 폴더를 서로 덮는다.
   제작·재렌더는 수 분이 걸리므로 접수 안내 뒤 백그라운드로 돌고 끝나면 채팅으로
   알린다(수동 브리핑과 같은 방식). 로컬 브라우저 검수 패널(`--browser`)과 대화형

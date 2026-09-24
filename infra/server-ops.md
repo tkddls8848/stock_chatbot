@@ -460,6 +460,7 @@ mv data/webpub storage/public
 for d in data/*/; do mv "$d" storage/bot/; done        # news·instruments·research·… 
 mv storage/bot/watchlist/watchlist.json storage/portfolio/watchlist.json   # 관심종목은 공유 파일
 [ -d shorts/output ] && mv shorts/output/* storage/shorts/ && rmdir shorts/output
+[ -d shorts/state ] && mv shorts/state storage/shorts/state
 rmdir data 2>/dev/null || ls -la data                  # 남은 것이 있으면 확인 후 정리
 # 배포(3절) → 백업 cron 다시 렌더(install-shared-host.sh) → 기동
 ```

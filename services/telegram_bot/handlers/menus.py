@@ -58,7 +58,7 @@ def _back() -> list[list[tuple[str, str]]]:
 
 
 def web_admin_menu(registry) -> InlineKeyboardMarkup:
-    """하단 "🛠 웹 관리"가 여는 허브. 켜진 기능의 버튼만 보인다."""
+    """하단 "🛠 웹 관리"가 여는 허브(리서치·시장 감성·웹 상태·쇼츠). 켜진 기능의 버튼만 보인다."""
     rows = []
     first = []
     if registry.is_enabled("research"):
@@ -67,7 +67,10 @@ def web_admin_menu(registry) -> InlineKeyboardMarkup:
         first.append(("📊 시장 감성 갱신", "nav:market"))
     if first:
         rows.append(first)
-    rows.append([("🌐 웹 상태", "nav:web:status")])
+    last = [("🌐 웹 상태", "nav:web:status")]
+    if registry.is_enabled("shorts"):
+        last.append(("🎬 쇼츠", "nav:shorts"))
+    rows.append(last)
     return _keyboard([*rows, *_back()])
 
 

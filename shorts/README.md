@@ -13,7 +13,7 @@
 
 ## 결과물
 
-한 번 실행하면 `output/YYYY-MM-DD/` 아래에 다음 파일이 생깁니다.
+한 번 실행하면 공유 저장소 `storage/shorts/YYYY-MM-DD/` 아래에 다음 파일이 생깁니다(`STORAGE_DIR`로 바꿀 수 있고, 봇·웹과 같은 값을 씁니다).
 
 - `polymarket-YYYY-MM-DD.mp4`: 1080×1920, H.264/AAC 세로 영상
 - `selection.json`: 전체 조회 수·제외 집계·후보 점수·최종 선정 이유·실제 API 및 모델 호출 수
@@ -99,6 +99,23 @@ Jev는 연결하지 않습니다. 후보 축소는 로컬 수치 계산으로 �
 다를 수 있습니다. 실제 조건은 함께 저장한 원문 링크에서 검수합니다. 숫자 검증은 번역의 의미 일치까지 보장하지 않으므로
 게시 전 원문 질문·한국어 선택지·원고를 함께 확인합니다.
 
+### 텔레그램에서 운영 (기준 절차)
+
+운영은 텔레그램 봇의 `/shorts`(또는 🛠 웹 관리 → 🎬 쇼츠)에서 합니다. 봇은 이 패키지를
+import하지 않고 이 venv의 파이썬으로 CLI를 하위 프로세스로 부릅니다.
+
+| 텔레그램 | 부르는 CLI |
+|---|---|
+| `/shorts` | `--status` (최근 제작일·현재 수정본·검수 상태 JSON) |
+| `/shorts run` · `run force` | 인자 없음 · `--force` |
+| `/shorts preview` | `--status`로 영상 경로를 받아 MP4를 채팅으로 보냄 |
+| `/shorts edit 수정할 내용` | `--edit "수정할 내용"` |
+| `/shorts done` | `--complete` |
+
+비대화형 명령은 stdout에 JSON 한 줄만 쓰고, 실패하면 stderr 마지막 줄에 이유를 남기고
+0이 아닌 코드로 끝납니다. 이 JSON이 봇과의 계약입니다(`src/polymarket_shorts/status.py`).
+아래 브라우저 패널과 대화형 검수는 개발용으로 남겨 둡니다.
+
 ### 브라우저 검수 패널
 
 기존 산출물을 영상 플레이어와 장면별 원고가 있는 로컬 패널에서 검수할 수 있습니다.
@@ -107,7 +124,7 @@ Jev는 연결하지 않습니다. 후보 축소는 로컬 수치 계산으로 �
 ```powershell
 cd C:\Users\PSI\orca\stock_chatbot
 $env:PYTHONPATH='shorts/src'
-.\venv\Scripts\python.exe -m polymarket_shorts.cli --browser shorts/output/2026-09-13
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --browser storage/shorts/2026-09-13
 ```
 
 브라우저가 자동으로 열립니다. 자연어 수정 요청을 보내면 새 음성·자막·MP4를 렌더하고
@@ -127,10 +144,10 @@ $env:PYTHONPATH='shorts/src'
 .\venv\Scripts\python.exe -m polymarket_shorts.cli --interactive
 
 # 기존 산출물 폴더에서 검수 이어가기
-.\venv\Scripts\python.exe -m polymarket_shorts.cli --workflow shorts/output/2026-09-13
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --workflow storage/shorts/2026-09-13
 
 # 제작 원고로 생성한 직후 검수
-.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan shorts/output/editorial-2026-09-13/editorial.json --interactive
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan storage/shorts/editorial-2026-09-13/editorial.json --interactive
 ```
 
 대화에는 원고와 MP4의 로컬 링크가 표시됩니다. 영상을 열어 본 뒤 수정할 내용을 입력합니다.
@@ -159,7 +176,7 @@ $env:PYTHONPATH='shorts/src'
 검수 원고만 출력하려면 다음 명령을 사용합니다.
 
 ```powershell
-.\venv\Scripts\python.exe -m polymarket_shorts.cli --review shorts/output/2026-09-13
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --review storage/shorts/2026-09-13
 ```
 
 `review.md`만 직접 수정해도 영상에는 반영되지 않습니다. 대화형 편집을 사용하거나
@@ -200,7 +217,7 @@ journalctl -u polymarket-shorts -n 100 --no-pager
 
 ```powershell
 $env:PYTHONPATH='shorts/src'
-.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan shorts/output/editorial-2026-09-13/editorial.json
+.\venv\Scripts\python.exe -m polymarket_shorts.cli --plan storage/shorts/editorial-2026-09-13/editorial.json
 ```
 
 `--plan`은 원자료를 다시 가져오거나 문장을 재요약하지 않습니다. 원고 폴더에 MP4와
@@ -268,5 +285,5 @@ HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합
 이미 생성한 MP4에는 소급 적용되지 않으며 다음 렌더부터 반영됩니다.
 
 - 1분을 넘는 쇼츠는 활성 저작권 클레임이 있으면 전 세계 차단될 수 있으므로 기본 영상에는 배경음악을 넣지 않습니다.
-- `output/`, `state/`, API 비밀값은 커밋하지 않습니다.
+- `storage/`(산출물·`storage/shorts/state/`), API 비밀값은 커밋하지 않습니다.
 - 테스트: `.venv/bin/python -m pytest -q`

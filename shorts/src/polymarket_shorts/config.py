@@ -43,6 +43,15 @@ def _media_binary(env_name: str, executable: str) -> str:
     return configured
 
 
+def _storage_dir() -> Path:
+    """공유 저장소(`storage/`). 봇·웹과 같은 `STORAGE_DIR`을 읽는다(`code_guide.md`의
+    「공유 저장소」). 비면 저장소 루트의 `storage/`다. 쇼츠 산출물은 `storage/shorts/`에
+    두고, 봇의 텔레그램 `/shorts`가 이 CLI의 `--status`로 그 상태를 묻는다.
+    """
+    configured = os.getenv("STORAGE_DIR", "").strip()
+    return Path(configured) if configured else PROJECT_DIR.parent / "storage"
+
+
 @dataclass(frozen=True)
 class Settings:
     web_url: str
@@ -74,8 +83,8 @@ class Settings:
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast").strip(),
             web_url=os.getenv("POLYMARKET_WEB_URL", "https://nunchi.live").rstrip("/"),
             timezone=ZoneInfo(os.getenv("SHORTS_TIMEZONE", "Asia/Seoul")),
-            output_dir=PROJECT_DIR / "output",
-            state_file=PROJECT_DIR / "state" / "published.json",
+            output_dir=_storage_dir() / "shorts",
+            state_file=_storage_dir() / "shorts" / "state" / "published.json",
             max_duration_seconds=maximum,
             target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "760"))),
             max_groups=min(5, max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5")))),

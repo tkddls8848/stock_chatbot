@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 from services.telegram_bot.briefing.service import cmd_briefing
 from services.telegram_bot.features.instruments.handlers import cmd_stockdb
 from services.telegram_bot.features.market_sentiment.handlers import cmd_market
+from services.telegram_bot.features.shorts.handlers import cmd_shorts
 from services.telegram_bot.features.system_admin.handlers import cmd_system
 from services.telegram_bot.features.web_status.handlers import cmd_web
 from services.telegram_bot.handlers.menus import (
@@ -115,6 +116,13 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return True
     if action == "web:status":
         await cmd_web(update, _context(context, []))
+    elif action == "shorts":
+        await cmd_shorts(update, _context(context, []))
+    elif action == "shorts:edit":
+        context.user_data["menu_input"] = "shorts_edit"
+        await message.edit_text("쇼츠를 어떻게 고칠지 한 번에 적어 보내세요.", reply_markup=_keyboard(_back()))
+    elif action.startswith("shorts:"):
+        await cmd_shorts(update, _context(context, [action.split(":", 1)[1]]))
     elif action.startswith("research:"):
         command = action.split(":", 1)[1]
         if command == "set":
@@ -171,6 +179,9 @@ async def handle_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     if action == "research_topic":
         await cmd_research(update, _context(context, ["set", text.strip()]))
+    elif action == "shorts_edit":
+        await cmd_shorts(update, _context(context, ["edit", *text.split()]))
+        return
     await message.reply_text(
         "하단 메뉴에서 다음 작업을 선택하세요.",
         reply_markup=persistent_menu(registry),

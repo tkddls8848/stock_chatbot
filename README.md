@@ -101,6 +101,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 | `/start`, `/help` | 사용 안내와 메뉴 표시 |
 | `/market` | 시장 감성 지금 갱신(웹 차트 다시 굽기) |
 | `/system watchlist` | 관심 종목 공유 파일 상태(편집은 웹 `/portfolio`) |
+| `/shorts` | 쇼츠 상태·`run`·`preview`·`edit 내용`·`done` |
 | `/research show\|set\|clear\|run` | 리서치 주제 보기·바꾸기·비우기, 지금 실행 |
 | `/web` | 웹 산출물 갱신 상태 |
 | `/briefing morning\|evening` | 브리핑 생성 |

@@ -19,6 +19,7 @@ EXPECTED_FEATURES = {
     "briefing",
     "system_admin",
     "web_status",
+    "shorts",
 }
 
 

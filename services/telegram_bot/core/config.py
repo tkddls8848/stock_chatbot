@@ -58,6 +58,7 @@ FEATURES_ENABLED = frozenset(
         "briefing",
         "system_admin",
         "web_status",
+        "shorts",
     }
 )
 
@@ -507,3 +508,21 @@ def _parse_allowed_chat_ids() -> frozenset[int]:
 
 # 여기 있는 chat_id에서 온 업데이트만 처리한다. 비면 위에서 기동이 멈춘다.
 ALLOWED_CHAT_IDS = _parse_allowed_chat_ids()
+
+
+# ── 쇼츠 운영(텔레그램 /shorts) ──────────────────────────
+# 쇼츠는 자기 venv를 가진 별개 패키지다. 봇은 import하지 않고 그 venv의 파이썬으로
+# CLI를 하위 프로세스로 부른다(code_guide.md). 산출물은 공유 저장소 storage/shorts/.
+SHORTS_PYTHON = Path(
+    os.environ.get("SHORTS_PYTHON", "").strip() or BASE_DIR / "shorts" / ".venv" / "bin" / "python"
+)
+SHORTS_WORKDIR = BASE_DIR
+# 예약 제작 시각. infra/systemd/polymarket-shorts.timer의 OnCalendar와 같아야 한다
+# (test_shorts_panel.py가 대조한다). 표시용이며 실행은 timer가 한다.
+SHORTS_SCHEDULE_HOUR = 21
+SHORTS_STATUS_TIMEOUT_SECONDS = 60
+# 제작은 이슈 선별·TTS·렌더까지 유닛의 TimeoutStartSec(20분)과 같게 둔다.
+SHORTS_RUN_TIMEOUT_SECONDS = 20 * 60
+SHORTS_EDIT_TIMEOUT_SECONDS = 15 * 60
+# 텔레그램 봇 API의 파일 업로드 상한. 넘으면 경로만 알린다.
+SHORTS_TELEGRAM_VIDEO_MAX_BYTES = 50 * 1024 * 1024
