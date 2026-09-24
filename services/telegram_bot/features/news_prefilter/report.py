@@ -98,7 +98,7 @@ def format_prefilter_report(report: dict) -> str:
         # 돌았는데 화면이 둘을 구분하지 않아 아무도 몰랐다.
         lines.append(
             "  ⛔ 라벨이 0건입니다. 학습이 시작될 수 없습니다 — "
-            "3시간 보고서가 highlights를 만들고 있는지, 그 결과가 "
+            "시장상황 보고서가 highlights를 만들고 있는지, 그 결과가 "
             "record_outcome으로 돌아오는지 확인하십시오(news/report.py)."
         )
     else:

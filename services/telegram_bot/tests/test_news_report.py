@@ -1030,7 +1030,7 @@ def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
     assert jobs["news_collection"]["trigger"] == "interval"
     assert jobs["news_collection"]["minutes"] == 60
     assert jobs["market_situation_report"]["trigger"] == "cron"
-    assert jobs["market_situation_report"]["hour"] == "*/3"
+    assert jobs["market_situation_report"]["hour"] == "*/4"
     assert jobs["market_situation_report"]["minute"] == 0
     assert jobs["market_situation_report"]["timezone"] is JST
 

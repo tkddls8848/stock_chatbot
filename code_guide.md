@@ -168,8 +168,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
 - 뉴스 수집은 `NEWS_COLLECTION_INTERVAL_MINUTES=60` 간격으로 모든 활성 소스를
   읽고 원문 제목만 `news_report_queue.json`에 저장한다(`collect_report_articles`).
   예약 실행 경로에서는 기사별 번역을 호출하지 않는다.
-- **시장상황 보고서는 UTC +9 기준 00·03·06·09·12·15·18·21시에 발행 여부를
-  판정한다. 3시간은 검토 주기이고 발행 주기가 아니다.** `send_news_report`가
+- **시장상황 보고서는 UTC +9 기준 00·04·08·12·16·20시에 발행 여부를
+  판정한다(`NEWS_REPORT_INTERVAL_HOURS=4`, 2026-09-24에 3시간에서 늘렸다). 4시간은 검토 주기이고 발행 주기가 아니다.** `send_news_report`가
   지난 구간 기사를 시장별로 묶어 시장마다 두 단계로 판정한다. ① 마지막 발행 뒤
   모은 기사가 `NEWS_REPORT_MIN_ARTICLES`(8)에 못 미치면 LLM을 부르지 않고
   보류한다. ② 모델이 직전 발행분 대비 새로 확인된 사실·방향 전환이 없다고
@@ -226,7 +226,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `MARKET_CHART_MARKETS`에 HK가 있는데 HK 기사를 내는 소스가 없어 구조적으로 늘
   비어 있었다(과거 조회용 `NEWS_MARKET_BACKFILL_QUERIES`에만 HK가 있었다).
   번체 로케일(`hl=zh-HK`)로 질의해야 현지 종목명이 본문에 남는다.
-  **이 칸이 차면 보고서가 검토하는 시장이 하나 늘어 3시간마다 LLM 호출도 하나
+  **이 칸이 차면 보고서가 검토하는 시장이 하나 늘어 4시간마다 LLM 호출도 하나
   늘어난다** — 비용은 기사 수가 아니라 시장 수에 비례한다.
 - **읽는 폭은 `NEWS_SOURCE_ARTICLE_LIMIT`가 정한다.** 소스를 이 깊이까지만 읽으므로
   여기서 잘린 기사는 다음 주기에도 보이지 않는다. 주기가 3배로 길어져 한 주기가
@@ -576,7 +576,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 - 번역·분석·브리핑은 Cloudflare Workers AI만 사용한다. 비밀값은 `.env`에만 두고
   로그나 예외에 포함하지 않는다.
 - LLM JSON은 필수 필드를 엄격히 검사하고 현재 응답 envelope만 처리한다.
-- **3시간 보고서는 응답 형식을 스키마로 강제한다(`response_format`).**
+- **시장상황 보고서는 응답 형식을 스키마로 강제한다(`response_format`).**
   `services/telegram_bot/llm/news_report.py`의 `RESPONSE_FORMAT`이고, 이 경로에만 쓴다.
   **비용은 0이다** — 같은 입력을 구조화 없이/있이 부른 실측(2026-09-21)에서
   입력 토큰이 정확히 같았고(3,781·7,399), 네 점이
