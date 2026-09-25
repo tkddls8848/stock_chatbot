@@ -48,7 +48,8 @@ def test_independent_probabilities_are_not_normalized(issue_source):
     _, candidate, detail, _, _ = issue_source
     detail["markets"][1].update(yes_probability=.8, no_probability=.2)
     issue = prepare_issue(candidate, detail, [])
-    assert [m["yes"] for m in issue["markets"]] == ["55%", "80%"]
+    # 유력한 선택지가 먼저 온다. 값은 정규화되지 않은 원래 확률이다.
+    assert [m["yes"] for m in issue["markets"]] == ["80%", "55%"]
 
 
 def test_inactive_or_invalid_prices_are_not_used(issue_source):

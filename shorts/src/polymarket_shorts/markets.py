@@ -157,7 +157,10 @@ def prepare_issue(candidate: dict[str, Any], detail: dict[str, Any], news: list[
         })
     if not markets:
         raise SourceError(f"이벤트 {candidate['id']}에 검증 가능한 개별 베팅이 없습니다")
-    markets.sort(key=lambda row: (-row["volume24hr"], row["id"]))
+    # 화면에 두 개만 나가므로 가장 유력한 선택지부터 고른다. 참여 규모 순으로 고르면
+    # 다지선다에서 거래가 몰리는 희박한 선택지가 먼저 뽑혀(실측 2026-09-25 연준 10월:
+    # "50bp 인하 0.25%"·"25bp 인하 0.45%"만 나오고 유력한 동결이 빠졌다) 핵심이 사라진다.
+    markets.sort(key=lambda row: (-row["yes_probability"], -row["volume24hr"], row["id"]))
     return {
         **candidate, "generation_id": detail["generation_id"],
         "description": str(detail["description"])[:12000],
