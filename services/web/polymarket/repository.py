@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 import math
@@ -11,8 +11,9 @@ from threading import Lock
 from typing import Any
 
 from services.web.core.clock import now
-from services.web.core.config import POLYMARKET_WEB_DIR
+from services.web.core.config import POLYMARKET_MIN_HOURS_TO_END, POLYMARKET_WEB_DIR
 from services.web.polymarket import relevance
+from services.web.polymarket.dashboard.models import ends_before
 from services.web.polymarket.dashboard.storage import read_detail
 
 DEFAULT_ROOT = POLYMARKET_WEB_DIR
@@ -166,11 +167,17 @@ class PolymarketRepository:
             or (include_flagged and event.get("price_status") == "ok")
         ]
         by_type: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        # **확률 순위에서는 마감이 임박한 event를 뺀다.** 5분짜리 가격 방향이나
+        # 오늘 밤 경기의 확률이 0.99인 것은 컨센서스가 굳은 것이 아니라 결과가
+        # 곧 나오는 것이다. 빼지 않으면 "가장 굳은 예측" 여덟 칸이 마감 시계를
+        # 재는 표가 된다. 전체 목록·검색·필터는 그대로 다 보여 준다.
+        horizon = now() + timedelta(hours=POLYMARKET_MIN_HOURS_TO_END)
         for event_type in ("binary", "exclusive_multi"):
             comparable = [
                 event for event in eligible
                 if event.get("event_type") == event_type
                 and isinstance(event.get("leader_probability"), (int, float))
+                and not ends_before(event, horizon)
             ]
             by_type[event_type] = {
                 "strong": sorted(
