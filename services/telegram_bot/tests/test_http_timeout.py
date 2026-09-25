@@ -5,8 +5,10 @@
 """
 
 import requests
+import pytest
 
 from services.telegram_bot.core.http_timeout import install_default_requests_timeout
+from services.telegram_bot.core import workers
 
 
 def _capture(monkeypatch):
@@ -45,3 +47,15 @@ def test_explicit_timeout_is_left_alone_and_install_is_idempotent(monkeypatch):
     requests.get("http://example.invalid/")
 
     assert seen == [3, (10.0, 30.0)]
+
+
+def test_shutdown_blocks_the_next_http_request_without_waiting(monkeypatch):
+    import threading
+
+    monkeypatch.setattr(workers, "_stopping", threading.Event())
+    seen = _capture(monkeypatch)
+    install_default_requests_timeout((5.0, 30.0))
+    workers.request_shutdown()
+    with pytest.raises(workers.WorkerStopping):
+        requests.get("http://example.invalid/", timeout=600)
+    assert seen == []

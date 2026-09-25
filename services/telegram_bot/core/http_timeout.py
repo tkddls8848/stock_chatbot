@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import requests
 
+from services.telegram_bot.core.workers import check_shutdown
+
 _MARKER = "_stock_chatbot_default_timeout"
 
 
@@ -27,6 +29,9 @@ def install_default_requests_timeout(timeout: tuple[float, float]) -> None:
         return
 
     def request(self, method, url, **kwargs):
+        # 취소된 코루틴의 수집 스레드도 다음 요청 경계에서 빠져나온다.
+        # 진행 중 요청과 호출자가 정한 타임아웃은 그대로 둔다.
+        check_shutdown()
         if kwargs.get("timeout") is None:
             kwargs["timeout"] = timeout
         return original(self, method, url, **kwargs)

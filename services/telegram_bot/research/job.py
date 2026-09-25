@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from telegram.ext import Application
@@ -26,7 +25,7 @@ from services.telegram_bot.core.config import (
     RESEARCH_MAX_CANDIDATES,
     TELEGRAM_CHAT_ID,
 )
-from services.telegram_bot.core.workers import burst_job, run_non_urgent, wait_for_urgent_idle
+from services.telegram_bot.core.workers import ShutdownThreadPool, burst_job, run_non_urgent, wait_for_urgent_idle
 from services.telegram_bot.research.candidates import build_research_candidate_universe
 from services.telegram_bot.research.discovery import collect_extra_candidates
 from services.telegram_bot.research.results import collect_actions
@@ -34,7 +33,7 @@ from services.telegram_bot.research.state import MarketViewManager
 from services.telegram_bot.watchlist.events import record_watchlist_event
 
 logger = logging.getLogger(__name__)
-_RESEARCH_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="research")
+_RESEARCH_EXECUTOR = ShutdownThreadPool(max_workers=1, thread_name_prefix="research")
 # 알림에 적는 주제 길이. 주제 전체는 웹에 있다.
 _TOPIC_PREVIEW_CHARS = 40
 

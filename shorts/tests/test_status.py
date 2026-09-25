@@ -1,6 +1,7 @@
 """텔레그램 `/shorts`가 하위 프로세스로 읽는 상태 JSON과 비대화형 명령."""
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -50,7 +51,7 @@ def test_status_follows_the_latest_day_and_its_current_revision(tmp_path):
     status = current_status(settings)
     assert status["date"] == "2026-09-24" and status["revision"] is True
     assert status["review_status"] == "pending" and status["video_bytes"] == 10
-    assert status["video_path"].endswith("revisions/abc/clip.mp4")
+    assert Path(status["video_path"]).parts[-3:] == ("revisions", "abc", "clip.mp4")
     assert status["metadata"]["title"] == "제목"
 
 
@@ -63,10 +64,12 @@ def test_status_reports_a_day_without_video(tmp_path):
 
 
 def _cli(tmp_path, *args):
+    env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP")
+           if key in os.environ}
+    env.update(PYTHONPATH=str(PROJECT_DIR / "src"), STORAGE_DIR=str(tmp_path), PYTHONIOENCODING="utf-8")
     return subprocess.run(
         [sys.executable, "-m", "polymarket_shorts.cli", *args],
-        capture_output=True, text=True, cwd=PROJECT_DIR,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(PROJECT_DIR / "src"), "STORAGE_DIR": str(tmp_path)},
+        capture_output=True, text=True, encoding="utf-8", cwd=PROJECT_DIR, env=env,
     )
 
 

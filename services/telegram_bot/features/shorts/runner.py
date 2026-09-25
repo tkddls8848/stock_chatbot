@@ -18,6 +18,8 @@ from typing import Any
 from services.telegram_bot.core.config import SHORTS_PYTHON, SHORTS_WORKDIR, STORAGE_DIR
 
 _PASSED_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ")
+# Windows의 Python/DLL 로더가 필요로 하는 OS 경로만 추가한다.
+_WINDOWS_ENV = ("SYSTEMROOT", "WINDIR", "TEMP", "TMP")
 _MAX_ERROR_CHARS = 400
 
 
@@ -32,7 +34,8 @@ class ShortsRunner:
     storage_dir: str = str(STORAGE_DIR)
 
     def _env(self) -> dict[str, str]:
-        env = {key: os.environ[key] for key in _PASSED_ENV if key in os.environ}
+        keys = _PASSED_ENV + (_WINDOWS_ENV if os.name == "nt" else ())
+        env = {key: os.environ[key] for key in keys if key in os.environ}
         env["STORAGE_DIR"] = self.storage_dir
         env["PYTHONUNBUFFERED"] = "1"
         return env
@@ -47,9 +50,12 @@ class ShortsRunner:
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            process.kill()
+        except (asyncio.TimeoutError, asyncio.CancelledError) as error:
+            if process.returncode is None:
+                process.kill()
             await process.wait()
+            if isinstance(error, asyncio.CancelledError):
+                raise
             raise ShortsError(f"{int(timeout // 60)}분 안에 끝나지 않아 멈췄습니다") from None
         if process.returncode != 0:
             detail = stderr.decode("utf-8", "replace").strip().splitlines()

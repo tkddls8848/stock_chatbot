@@ -5,7 +5,6 @@
 
 import html
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
 from urllib.parse import quote_plus, urlparse
@@ -17,6 +16,7 @@ import requests.exceptions
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from services.telegram_bot.core.config import NEWS_SOURCE_ARTICLE_LIMIT
+from services.telegram_bot.core.workers import ShutdownThreadPool
 
 def retry_on_network(func):
     # AkShare 1.18+는 curl_cffi로 요청을 보내므로 curl_cffi 예외도 재시도 대상에
@@ -350,7 +350,7 @@ def _fetch_google_news_market(market: str) -> list[GlobalArticle]:
 def fetch_google_news_global_articles() -> list[GlobalArticle]:
     """Public RSS source with market-specific queries."""
     markets = list(_REGIONAL_MARKET_QUERIES)
-    with ThreadPoolExecutor(max_workers=len(markets)) as executor:
+    with ShutdownThreadPool(max_workers=len(markets)) as executor:
         futures = {market: executor.submit(_fetch_google_news_market, market) for market in markets}
         groups = []
         for market in markets:
@@ -395,7 +395,7 @@ def fetch_google_news_stock_articles(market: str) -> list[GlobalArticle]:
         1,
         (NEWS_SOURCE_ARTICLE_LIMIT + len(queries) - 1) // len(queries),
     )
-    with ThreadPoolExecutor(max_workers=len(queries)) as executor:
+    with ShutdownThreadPool(max_workers=len(queries)) as executor:
         futures = [
             executor.submit(
                 _fetch_google_news_stock_query,

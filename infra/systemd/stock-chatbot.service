@@ -15,6 +15,10 @@ Environment=MPLBACKEND=Agg
 ExecStart=/srv/stock-chatbot/venv/bin/python -m services.telegram_bot.main
 Restart=on-failure
 RestartSec=10
+# 새 작업 차단 후 daemon 워커를 45초 기다린다(기본 HTTP 5+30초 포함).
+# 리서치의 명시 600초 요청은 남으면 포기한다. polling/Telegram 정리 여유 45초.
+TimeoutStopSec=90
+KillMode=control-group
 MemoryHigh=768M
 MemoryMax=1G
 NoNewPrivileges=true
