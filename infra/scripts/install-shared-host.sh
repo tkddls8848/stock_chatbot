@@ -54,7 +54,7 @@ for unit in \
   stock-chatbot-polymarket-refresh.timer \
   stock-chatbot-polymarket-brief.service \
   stock-chatbot-polymarket-trending.service \
-  stock-chatbot-polymarket-annotate.service; do
+  stock-chatbot-polymarket-annotate.service \n  polymarket-shorts.service \n  polymarket-shorts.timer; do
   install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "/etc/systemd/system/$unit"
 done
 
@@ -77,6 +77,16 @@ systemctl daemon-reload
 if [ "$FIRST_INSTALL" = 1 ]; then
   systemctl disable stock-chatbot.service stock-chatbot-web.service \
     stock-chatbot-polymarket-refresh.timer >/dev/null 2>&1 || true
+fi
+
+# 쇼츠는 하루 한 편이다(timer 21:00 한국 시간, 같은 날 두 번째 실행은 already_produced로
+# 끝난다). 쇼츠 자기 venv와 .env가 갖춰졌을 때만 켠다 — 없으면 매일 실패만 쌓인다.
+if [ -x "$APP_DIR/shorts/.venv/bin/python" ] && [ -f "$APP_DIR/shorts/.env" ]; then
+  sudo -u "$APP_USER" "$APP_DIR/shorts/.venv/bin/pip" install -q -e "$APP_DIR/shorts"
+  systemctl enable --now polymarket-shorts.timer >/dev/null
+  ok "쇼츠 timer 켜짐(하루 한 편)"
+else
+  warn "쇼츠 venv(shorts/.venv) 또는 shorts/.env 가 없어 쇼츠 timer 를 켜지 않았다."
 fi
 
 # 프로세스마다 자기 설정을 따로 읽는다. 한쪽이 깨져도 다른 쪽은 뜨지만,

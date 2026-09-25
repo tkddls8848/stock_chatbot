@@ -71,7 +71,7 @@ Workers AI API 토큰입니다. `shorts/.env.example`을 참고해 `shorts/.env`
 ```dotenv
 CLOUDFLARE_ACCOUNT_ID=계정_ID
 CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
-SHORTS_EDITOR_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+SHORTS_EDITOR_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
 ```
 
 ### 개별 베팅에서 영상까지

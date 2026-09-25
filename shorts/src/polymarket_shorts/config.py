@@ -69,7 +69,7 @@ class Settings:
     visuals_enabled: bool
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
-    editor_model: str = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    editor_model: str = "@cf/qwen/qwen3-30b-a3b-fp8"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -80,7 +80,7 @@ class Settings:
         return cls(
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
-            editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast").strip(),
+            editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),
             web_url=os.getenv("POLYMARKET_WEB_URL", "https://nunchi.live").rstrip("/"),
             timezone=ZoneInfo(os.getenv("SHORTS_TIMEZONE", "Asia/Seoul")),
             output_dir=_storage_dir() / "shorts",
