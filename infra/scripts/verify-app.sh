@@ -39,6 +39,17 @@ check "운영 .env 소유권·권한" bash -c \
 say "웹 (루프백 전용)"
 check "읽기 웹 localhost 200" curl -fsS "http://127.0.0.1:$WEB_PORT/"
 
+# 헤더는 HEAD로 읽어 본문을 전송하지 않는다. 루프백에는 TLS 전용 HSTS가 없다.
+web_headers=$(curl -fsSI "http://127.0.0.1:$WEB_PORT/")
+has_web_header() { printf '%s\n' "$web_headers" | tr -d '\r' | grep -Eiq "$1"; }
+check "웹 nosniff" has_web_header '^X-Content-Type-Options: nosniff$'
+check "웹 Referrer-Policy" has_web_header '^Referrer-Policy: strict-origin-when-cross-origin$'
+check "웹 Permissions-Policy" has_web_header '^Permissions-Policy: .*camera=\(\).*microphone=\(\).*geolocation=\(\)'
+check "웹 CSP 해시" has_web_header "^Content-Security-Policy: .*script-src 'sha256-.*style-src 'sha256-"
+check "웹 CSP 프레임 차단" has_web_header "^Content-Security-Policy: .*frame-ancestors 'none'"
+check "Caddy HSTS 설정" sudo grep -Eq 'header Strict-Transport-Security "max-age=31536000; includeSubDomains"' /etc/caddy/Caddyfile
+check "Caddy Server 헤더 제거" sudo grep -Eq 'header -Server' /etc/caddy/Caddyfile
+
 # 앞단 Caddy 의 봇 차단은 우리 견본이 출처다(infra/Caddyfile.example). 실제 설정이
 # 갈라지면 robots.txt 만 남고 강제는 사라지는데, 화면은 멀쩡해 보여 알아챌 수 없다.
 # 어긋나면 infra/scripts/apply-caddy-bots.sh 로 다시 맞춘다.

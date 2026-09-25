@@ -12,6 +12,7 @@ _MAIN = (
 .pf-hide{display:none!important}
 .pf-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r2);padding:16px;margin:12px 0}
 .pf-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pf-row-end{justify-content:flex-end}.pf-row-spaced{margin-top:10px}
 .pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .pf-card input,.pf-card select,.pf-btn{min-height:var(--ctl);border:1px solid var(--line);border-radius:var(--r1);
  background:var(--surface-1);color:var(--ink);padding:8px 10px;font:inherit;font-size:var(--fs-sm)}
@@ -50,7 +51,7 @@ _MAIN = (
  <p id='pf-lock-msg' class='pf-msg'></p>
 </div>
 <div id='pf-app' class='pf-hide'>
- <div class='pf-row' style='justify-content:flex-end'><button id='pf-logout' class='pf-btn' type='button'>잠그기</button></div>
+ <div class='pf-row pf-row-end'><button id='pf-logout' class='pf-btn' type='button'>잠그기</button></div>
  <section class='histbox'><div class='histh'><span class='phico'>"""
     + icon(I_LAYERS)
     + """</span>자산 구성</div><div id='pf-summary' class='pf-card'>불러오는 중…</div></section>
@@ -76,7 +77,7 @@ _MAIN = (
     <label class='pf-field k-real_estate'>대출 잔액(만원)<input name='loan_man' type='number' min='0' step='1'></label>
     <label class='pf-field'>메모<input name='note' maxlength='200'></label>
    </div>
-   <div class='pf-row' style='margin-top:10px'><button class='pf-btn pri' type='submit' id='pf-save'>추가</button><button class='pf-btn' type='button' id='pf-cancel'>새로 입력</button></div>
+   <div class='pf-row pf-row-spaced'><button class='pf-btn pri' type='submit' id='pf-save'>추가</button><button class='pf-btn' type='button' id='pf-cancel'>새로 입력</button></div>
    <p id='pf-form-msg' class='pf-msg'></p>
   </form>
  </section>
@@ -86,7 +87,7 @@ _MAIN = (
   <div class='pf-card'>
    <p class='pf-msg'>텔레그램 봇의 뉴스 수집·리서치·브리핑이 이 목록을 읽습니다. 리서치가 자동으로 넣고 빼기도 합니다.</p>
    <div class='pf-scroll' tabindex='0' role='region' aria-label='관심종목 표'><table class='pf-table' aria-label='관심종목 목록'><tbody id='pf-watch'></tbody></table></div>
-   <form id='pf-watch-form' class='pf-row' style='margin-top:10px'>
+   <form id='pf-watch-form' class='pf-row pf-row-spaced'>
     <select name='ex' aria-label='거래소'><option value='KR:KOSPI'>코스피</option><option value='KR:KOSDAQ'>코스닥</option><option value='US:NASDAQ'>나스닥</option><option value='US:NYSE'>뉴욕</option><option value='CN:SH'>상하이</option><option value='CN:SZ'>선전</option><option value='HK:HKEX'>홍콩</option></select>
     <input name='code' placeholder='종목 코드' maxlength='20' aria-label='관심종목 코드' required>
     <input name='name' placeholder='이름' maxlength='60' aria-label='관심종목 이름' required>
@@ -138,7 +139,7 @@ function renderAssets(){$('pf-assets').innerHTML=assets.map(a=>"<tr><td>"+esc(KI
  $('pf-assets').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('삭제할까요?'))return;await api('assets/'+encodeURIComponent(b.dataset.del),{method:'DELETE'});loadAssets()}))}
 function renderSummary(){const total=assets.reduce((s,a)=>s+(Number(a.value_krw)||0),0),loans=assets.reduce((s,a)=>s+(a.kind==='real_estate'?Number(a.loan_krw)||0:0),0);
  if(!total){$('pf-summary').textContent='자산을 입력하면 구성이 여기에 나옵니다.';return}
- $('pf-summary').innerHTML="<p><b>총자산 "+esc(won(total))+"</b> · 순자산 "+esc(won(total-loans))+"</p>"+Object.keys(KIND).map(k=>{const v=assets.filter(a=>a.kind===k).reduce((s,a)=>s+(Number(a.value_krw)||0),0),p=v/total*100;return "<div class='pf-cls'><span>"+KIND[k]+"</span><div class='pf-bar'><i style='width:"+p.toFixed(1)+"%'></i></div><span class='n'>"+p.toFixed(1)+"% · "+esc(won(v))+"</span></div>"}).join('')}
+ $('pf-summary').innerHTML="<p><b>총자산 "+esc(won(total))+"</b> · 순자산 "+esc(won(total-loans))+"</p>"+Object.keys(KIND).map(k=>{const v=assets.filter(a=>a.kind===k).reduce((s,a)=>s+(Number(a.value_krw)||0),0),p=v/total*100;return "<div class='pf-cls'><span>"+KIND[k]+"</span><div class='pf-bar'><i data-width='"+p.toFixed(1)+"%'></i></div><span class='n'>"+p.toFixed(1)+"% · "+esc(won(v))+"</span></div>"}).join('');$('pf-summary').querySelectorAll('[data-width]').forEach(el=>{el.style.width=el.dataset.width})}
 function syncKind(){const k=$('pf-kind').value;document.querySelectorAll('#pf-form [class*="k-"]').forEach(el=>el.classList.toggle('pf-hide',!el.classList.contains('k-'+k)))}
 $('pf-kind').addEventListener('change',syncKind);
 function resetForm(){editing=null;$('pf-form').reset();$('pf-save').textContent='추가';$('pf-form-msg').textContent='';syncKind()}

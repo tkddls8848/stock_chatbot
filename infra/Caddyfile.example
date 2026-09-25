@@ -16,6 +16,8 @@ example.com {
     encode zstd gzip
 
     header X-Robots-Tag "noindex, nofollow"
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header -Server
 
     # BEGIN aibots — infra/scripts/apply-caddy-bots.sh 가 이 두 줄 사이를 통째로
     # 호스트의 /etc/caddy/Caddyfile 에 옮긴다. 손으로 옮기면 견본과 실제 설정이
