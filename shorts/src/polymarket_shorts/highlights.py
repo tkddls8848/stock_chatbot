@@ -142,7 +142,9 @@ def _translation(text: str, source: str, field: str) -> None:
         raise HighlightError(f"{field}에 원문에 없는 퍼센트가 있습니다")
     known, written = _numbers(source), _numbers(text)
     if not written <= known:
-        raise HighlightError(f"{field}에 원문에 없는 숫자가 있습니다")
+        # 어느 숫자인지 적는다 — 교정 호출이 그 숫자만 고칠 수 있고, 로그로 원인을 바로 본다.
+        extra = ", ".join(sorted(written - known))
+        raise HighlightError(f"{field}에 원문에 없는 숫자가 있습니다({extra}): {text}")
     if field == "label":
         # Repeated calendar year can be omitted when a month/threshold still identifies the choice.
         required = {n for n in known if not re.fullmatch(r"20\d{2}", n)} if len(known) > 1 else known
