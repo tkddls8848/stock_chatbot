@@ -94,16 +94,37 @@ def validate_selection(payload: dict, candidates: list[dict], maximum: int, *, r
     return selected
 
 
+def _ask_checked(settings: Settings, *, system: str, user: str, max_tokens: int, check):
+    """의미 검증에 걸리면 사유를 붙여 **딱 한 번** 다시 묻는다.
+
+    검증(원문에 없는 숫자 금지 등)은 환각 방지라 풀지 않는다. 다만 한 필드의 위반으로
+    그날 제작 전체를 버리면 unit 재시작이 같은 입력으로 같은 실패를 되풀이한다(실측
+    2026-09-25: watch_point에 숫자). 잘린 응답(TruncatedError)은 LLMError라 여기서
+    잡지 않는다 — 같은 입력은 같은 자리에서 다시 끊긴다.
+    """
+    payload = chat_json(settings, system=system, user=user, max_tokens=max_tokens)
+    try:
+        return check(payload)
+    except HighlightError as error:
+        retry = (
+            f"{user}\n\n직전 응답이 검증에 실패했습니다: {error}\n"
+            "직전 응답의 해당 부분만 고쳐 같은 형식의 JSON 전체를 다시 반환하세요.\n"
+            f"직전 응답: {json.dumps(payload, ensure_ascii=False)}"
+        )
+        return check(chat_json(settings, system=system, user=retry, max_tokens=max_tokens))
+
+
 def select_issues(candidates: list[dict], settings: Settings, *, rejected: list | None = None) -> list[dict]:
     if not candidates:
         return []
     maximum = min(5, settings.max_groups)
     compact = [{key: row[key] for key in ("id", "title", "sector", "volume24hr", "liquidity", "end_date", "change", "score")}
                for row in candidates]
-    payload = chat_json(settings, system=SELECT_PROMPT,
-                        user=json.dumps({"max_issues": maximum, "candidates": compact}, ensure_ascii=False),
-                        max_tokens=2000)
-    return validate_selection(payload, candidates, maximum, rejected=rejected)
+    return _ask_checked(
+        settings, system=SELECT_PROMPT, max_tokens=2000,
+        user=json.dumps({"max_issues": maximum, "candidates": compact}, ensure_ascii=False),
+        check=lambda payload: validate_selection(payload, candidates, maximum, rejected=rejected),
+    )
 
 
 def _numbers(source: str) -> set[str]:
@@ -176,5 +197,7 @@ def write_issues(issues: list[dict], settings: Settings) -> list[dict]:
     } for issue in issues]
     budget = max(60, (settings.target_script_chars - 100) // len(issues))
     prompt = PROMPT + f"\n각 이슈의 질문·선택지·해설·확인점을 합쳐 약 {budget}자로 간결하게 쓰세요. 조건 보존이 길이보다 우선입니다."
-    payload = chat_json(settings, system=prompt, user=json.dumps(source, ensure_ascii=False), max_tokens=3500)
-    return validate_scripts(payload, issues)
+    return _ask_checked(
+        settings, system=prompt, user=json.dumps(source, ensure_ascii=False), max_tokens=3500,
+        check=lambda payload: validate_scripts(payload, issues),
+    )
