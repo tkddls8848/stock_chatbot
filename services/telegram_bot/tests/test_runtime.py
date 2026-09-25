@@ -265,7 +265,9 @@ asyncio.run(drain_workers(0.05))
 assert pending.cancelled()
 print("stopped")
 '''
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, timeout=5)
+    # 막힌 작업은 60초를 기다린다. 30초 안에 끝나면 join하지 않은 것이다 — 5초는
+    # 부하가 걸린 전체 실행에서 인터프리터 기동·import만으로 넘친 적이 있다.
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert b"stopped" in result.stdout and b"research_0" in result.stderr
 
