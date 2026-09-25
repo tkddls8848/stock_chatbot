@@ -20,6 +20,12 @@ class Scene:
     accent: str = "gold"
     bullets: tuple[str, ...] = ()
     visual_query: str = "business strategy presentation"
+    # 화면이 그리는 선택지. (이름, 정확한 예 확률 문자열, 그 확률 0~1)이고
+    # `body`는 같은 내용을 검수 기록용으로 옮겨 적은 글이다. 화면은 예·아니오
+    # 쌍 대신 '예' 확률 하나만 큰 숫자와 막대로 보여 준다 — 이지선다에서
+    # 아니오는 나머지라 두 번 적을 값이 아니고, 두 줄이 되면 어느 쪽 숫자를
+    # 봐야 하는지 한눈에 들어오지 않는다.
+    options: tuple[tuple[str, str, float], ...] = ()
     metric: str = ""
     metric_label: str = ""
     takeaway: str = ""
@@ -31,6 +37,11 @@ class Scene:
     source_url: str = ""
     event_id: str = ""
     market_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # 제작 원고(`scenario.json`)에서 되읽으면 리스트로 온다. 렌더가 카운트업
+        # 프레임마다 조각을 이어 붙이므로 여기서 튜플로 굳힌다.
+        object.__setattr__(self, "options", tuple(tuple(row) for row in self.options))
 
 
 @dataclass(frozen=True)
@@ -94,22 +105,26 @@ def build_scenario(
     scenes = [Scene(
         # 화면 문구도 한국어다. 예전 영문 kicker "BETTING ISSUES"는 화면에 베팅이라는
         # 말을 그대로 띄우고 있었다 — 쓰지 않기로 한 말이라 남길 이유가 없다.
+        #
+        # 도입은 훅이다. 예전에는 "선정한 개별 이슈 2"라는 큰 숫자 카드가 첫 화면을
+        # 차지했는데, 2라는 수는 계속 볼 이유가 되지 못한다. 그 자리에 오늘의 첫
+        # 질문을 띄워 바로 끌어들이고, 편수는 잔글씨 한 줄로 내린다.
         kind="intro", title=scripts[0]["headline"], kicker=f"오늘의 전망 · {production_date:%m.%d}",
-        body=f"참여가 활발한 예측 이슈 {len(issues)}개",
+        body=to_spoken_question(scripts[0]["question"]),
         narration=opening_line(scripts[0]["headline"], len(issues)),
-        metric=str(len(issues)), metric_label="선정한 개별 이슈",
-        takeaway="질문과 조건을 함께 읽습니다", source_note=f"자료 기준 {shown_stamp}",
+        bullets=(f"오늘의 질문 · {len(issues)}개",),
+        source_note=f"자료 기준 {shown_stamp}",
         evidence=(issues[0]["title"],),
     )]
     for index, (issue, script) in enumerate(zip(issues, scripts, strict=True)):
         if issue["id"] != script["id"]:
             raise ValueError("원고와 이벤트가 일치하지 않습니다")
-        bets, spoken = [], []
+        options, spoken = [], []
         evidence = [f"이벤트 질문: {issue['title']}", f"이벤트 설명: {issue['description']}"]
         for market, label in zip(issue["markets"], script["market_labels"], strict=True):
             if market["id"] != label["id"]:
                 raise ValueError("개별 질문과 확률이 일치하지 않습니다")
-            bets.append(f"{label['label']}: 예 {market['yes']}, 아니오 {market['no']}")
+            options.append((label["label"], market["yes"], market["yes_probability"]))
             spoken.append((label["label"], market["yes_probability"]))
             evidence.append(f"시장 {market['id']}: {market['question']} / 예 {market['yes']} / 아니오 {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
@@ -119,11 +134,13 @@ def build_scenario(
                          f"이벤트 종료 예정: {end_text} (개별 판정 시각과 다를 수 있음)"))
         evidence.extend(f"관련 뉴스 제목: {n['title']} / {n['url']}" for n in issue["news"] if n["id"] in script["news_ids"])
         # 화면은 정확한 수치를, 음성은 그 수치가 뜻하는 바를 맡는다. 확인점
-        # (`watch_point`)은 화면의 체크포인트로만 남긴다 — 장면마다 읽으면
-        # "…확인하세요"가 네댓 번 반복된다. 고지문은 마무리에서 한 번이다.
+        # (`watch_point`)은 화면에 넣지 않고 검수 기록에만 남긴다 — 장면마다
+        # 읽으면 "…확인하세요"가 네댓 번 반복되고, 말하지 않는 당부를 화면에만
+        # 띄우면 보는 것과 듣는 것이 어긋난다. 고지문은 마무리에서 한 번이다.
         scenes.append(Scene(
             kind="consensus", title=script["headline"], kicker=f"{index + 1:02d} · {issue['sector_label']}",
-            body="\n".join(bets),
+            body="\n".join(f"{label} — 예 {percent}" for label, percent, _ in options),
+            options=tuple(options),
             narration=" ".join(part for part in (
                 transition(index),
                 to_spoken_question(script["question"]),
@@ -131,21 +148,27 @@ def build_scenario(
                 end_sentence(to_polite_text(script["context"])),
             ) if part),
             accent=("gold", "blue", "red")[index % 3],
-            bullets=(f"24시간 참여 규모 · {volume}", f"종료 예정 · {end_text}",
-                     f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 참여 규모 상위 {len(bets)}개"),
+            # 잔글씨는 화면에 그대로 뜬다. 예전 "종료 예정 2026-10-01 03:59 +0000"은
+            # 시각 표기의 절반이 다음 줄로 넘어갔고, `+0000`은 읽는 사람에게 아무
+            # 뜻도 되지 못했다. 정확한 시각과 시간대는 근거와 검수 기록에 남는다.
+            bullets=(f"24시간 참여 규모 · {volume}",
+                     f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시",
+                     f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 상위 {len(options)}개"),
             visual_query=_VISUAL_QUERIES[issue["sector"]],
-            metric=issue["markets"][0]["yes"], metric_label=script["market_labels"][0]["label"],
-            probability=issue["markets"][0]["yes_probability"],
+            # 대표 수치는 화면이 그리는 첫 선택지와 같은 값에서 나온다 — 검수
+            # 기록(`review.md`)·검수 패널·내보내기가 이 셋을 읽는다.
+            metric=options[0][1], metric_label=options[0][0], probability=options[0][2],
             takeaway=script["watch_point"], source_note=f"자료 기준 {shown_stamp}",
             evidence=tuple(evidence), selection_note=issue["selection"]["reason"],
             event_id=issue["id"],
             market_ids=tuple(m["id"] for m in issue["markets"]),
         ))
+    # 마무리는 짧은 고지 한 줄이다. "조건"이라는 큰 글자 카드는 자리만 차지하고
+    # 아무것도 알려 주지 않았다. 화면 문구는 마무리 멘트와 같은 말을 한다.
     scenes.append(Scene(
-        kind="outro", title="확률은 예측입니다", kicker="조건부터 확인",
-        body="각 질문의 조건과 판정 규칙을 확인하세요.",
+        kind="outro", title="확률은 예측입니다", kicker="마무리",
+        body="질문마다 조건이 다릅니다.\n판정 규칙은 직접 확인하세요.",
         narration=CLOSING_LINE,
-        metric="조건", metric_label="확률과 함께 확인", takeaway="참여 규모는 참여자 수가 아닙니다",
         source_note=f"자료 기준 {shown_stamp}",
     ))
     return Scenario(production_date.isoformat(), snapshot.generation_id, source_stamp, tuple(scenes),

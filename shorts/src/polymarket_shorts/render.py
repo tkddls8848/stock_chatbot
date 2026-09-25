@@ -5,10 +5,9 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 import subprocess
-import textwrap
 from typing import Iterable, Sequence
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 from .scenario import Scenario, Scene
 from .tts import Word, locate
@@ -20,6 +19,7 @@ _COLORS = {
     "muted": "#BDB6A8",
     "panel": "#24231F",
     "line": "#444039",
+    "track": "#2B3A41",
     "gold": "#D4A84F",
     "red": "#E0645C",
     "blue": "#5E8FC9",
@@ -48,23 +48,50 @@ def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(path), size=size)
 
 
-# ── YouTube Shorts 안전 영역 ────────────────────────────
+# ── YouTube Shorts 안전 영역과 세로 배치 ─────────────────
 # 세로 1080x1920에서 플레이어 UI가 프레임을 덮는다. 위 ~180px은 검색·내비게이션,
 # 아래 ~350px은 채널명·제목·음원 바, 오른쪽 ~192px은 좋아요·댓글·공유 버튼 줄이다.
-# 그 밖에 그린 것은 실제 재생 화면에서 보이지 않는다 — 예전에는 고지문·출처·
-# 페이지 번호·진행바가 전부 아래 220px 안에 있어 넷 다 가려져 있었다.
+# 그 밖에 그린 것은 실제 재생 화면에서 보이지 않는다.
 #
-# 세로 순서는 본문 패널 → 고지문·출처 → 자막이다. 자막이 가장 아래이고
-# 진행바는 헤더 밑줄 자리로 올라가 있다. SAFE_BOTTOM보다 더 내리면 자막이
-# 채널명·제목 바에 가리므로 "최하단"은 여기까지다.
-SAFE_TOP = 200
+# 안전 영역을 지키느라 프레임의 아래 절반을 비워 두면 안 된다. 2026-09-23
+# 산출물이 정확히 그랬다 — 그림은 위 850px까지만 있고 그 아래는 #101B20 한 색,
+# 정보는 위쪽 40%에 몰리고 자막만 중간 높이에 작게 떠 있었다. 배경 사진은 이제
+# 프레임 전체를 덮고(`_background`), 본문은 SAFE_BOTTOM 바로 위까지 내려오며,
+# 자막은 쇼츠 관례대로 하단 1/3을 크게 차지한다. 안전 영역 아래에는 아무 글자도
+# 두지 않지만 사진은 계속 흐르므로 빈 띠가 생기지 않는다.
+#
+# 세로 순서: 헤더 → 제목 → 진행바 → 본문(선택지·문구) → 잔글씨 → 자막.
+SAFE_TOP = 190                          # 이 위는 검색·내비게이션 구역
 SAFE_BOTTOM = HEIGHT - 380              # 1540. 이 아래는 Shorts UI 구역
-PANEL_BOTTOM_MAX = SAFE_BOTTOM - 240    # 1300. 본문 패널의 바닥
-FOOTER_Y = PANEL_BOTTOM_MAX + 40        # 1340. 패널 아래, 자막 위
-CAPTION_MARGIN_V = HEIGHT - SAFE_BOTTOM  # 380. 자막 아래 끝을 안전 영역 바닥에 붙인다
+SAFE_LEFT = 72
+SAFE_RIGHT = WIDTH - 72                 # 1008. 상단은 오른쪽 버튼 줄이 닿지 않는다
+BODY_RIGHT = WIDTH - 202                # 878. 본문은 버튼 줄을 피해 좁게 쓴다
+TITLE_TOP, TITLE_BOTTOM = 318, 616
 PROGRESS_Y = 677                        # 헤더 밑줄 자리. 예전에는 1580이었다
-SAFE_LEFT = 82
-SAFE_RIGHT = WIDTH - 200
+BODY_TOP = 744
+BODY_BOTTOM = 1160
+META_Y = 1198                           # 참여 규모·종료 예정 같은 잔글씨
+# 선택지 한 줄 안에서 게이지가 앉는 높이(줄 높이의 비율)와 그 두께. 줄의 나머지
+# 20%는 다음 줄과의 간격이다 — 막대와 다음 줄 이름이 붙으면 둘이 한 덩어리로 보인다.
+OPTION_BAR_TOP = .80
+OPTION_BAR = 16
+FOOTER_Y = 1288                         # 고지문과 자료 기준. 자막 바로 위다
+CAPTION_MARGIN_V = HEIGHT - SAFE_BOTTOM  # 380. 자막 아래 끝을 안전 영역 바닥에 붙인다
+
+# ── 배경 사진 위에 얹는 어둠 ─────────────────────────────
+# (y, 불투명도)이고 사이는 선형이다. 제목이 앉는 위쪽은 옅게 두어 사진이 보이고,
+# 본문과 자막이 앉는 아래쪽은 짙게 깔아 글자가 읽힌다. 맨 아래는 다시 옅어져
+# Shorts UI 구역에서도 사진이 이어진다.
+_SCRIM = ((0, .62), (210, .42), (600, .48), (800, .76), (1480, .78), (1740, .66), (HEIGHT, .58))
+_SCRIM_RGB = (10, 19, 25)
+
+# 장면마다 같은 사진을 다르게 본다. 확대 여유 안에서 크롭 위치를 옮기고, 짝수
+# 장면은 좌우를 뒤집고, 장면의 accent 색으로 색조를 입힌다 — 새 미디어 소스도
+# 네트워크도 쓰지 않고 장면 성격에 따라 배경이 달라진다.
+_ZOOM = 1.16
+_TONE_STRENGTH = .5
+_BRIGHTNESS = (1.12, .95, 1.05, 1.0)
+
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, width: int) -> list[str]:
     """어절 경계에서 줄을 바꿔 '0회', '97.5%' 같은 수치를 한 덩어리로 남긴다."""
@@ -90,31 +117,92 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, wi
     return lines
 
 
-def _background(path: Path | None) -> Image.Image:
+def _background(path: Path | None, *, index: int, total: int, accent: str) -> Image.Image:
+    """저장된 배경 한 장을 장면마다 다르게 보이도록 잡는다.
+
+    쓸 수 있는 그림이 둘뿐이라 2026-09-23 산출물은 네 장면이 모두 같은 도시
+    야경이었다. 장면별 `visual_query`가 고르는 파일은 그대로 두고, 여기서
+    **크롭 위치·좌우 방향·색조·밝기**를 장면 번호와 accent로 정한다. 새 자산도,
+    생성 호출도, 네트워크도 없이 장면이 바뀐 것이 눈에 보인다.
+    """
     if path is None or not path.is_file():
-        return Image.new("RGB", (WIDTH, HEIGHT), "#151512")
+        return Image.new("RGB", (WIDTH, HEIGHT), "#101B20")
     with Image.open(path) as source:
-        image = ImageOps.fit(source.convert("RGB"), (WIDTH, HEIGHT), method=Image.Resampling.LANCZOS)
-    # Reframe the lower, illustrated part of the saved asset into the visible hero area.
-    hero = ImageOps.fit(image.crop((0, 1050, WIDTH, HEIGHT)), (WIDTH, 850))
-    image = Image.new("RGB", (WIDTH, HEIGHT), "#101B20")
-    image.paste(ImageEnhance.Brightness(hero).enhance(0.65), (0, 0))
-    return image
+        wide = ImageOps.fit(source.convert("RGB"), (round(WIDTH * _ZOOM), round(HEIGHT * _ZOOM)),
+                            method=Image.Resampling.LANCZOS)
+    # 확대 여유를 장면 순서대로 가로는 왼쪽→오른쪽, 세로는 아래→위로 훑는다.
+    share = (index - 1) / (total - 1) if total > 1 else .5
+    left = round((wide.width - WIDTH) * share)
+    top = round((wide.height - HEIGHT) * (1 - share))
+    frame = wide.crop((left, top, left + WIDTH, top + HEIGHT))
+    if index % 2 == 0:
+        frame = ImageOps.mirror(frame)
+    tone = Image.new("RGB", frame.size, _COLORS.get(accent, _COLORS["gold"]))
+    frame = Image.blend(frame, ImageChops.multiply(frame, tone), _TONE_STRENGTH)
+    return ImageEnhance.Brightness(frame).enhance(_BRIGHTNESS[index % len(_BRIGHTNESS)])
 
 
-def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8"):
-    """Fit all text inside a bounded box; never silently discard lines."""
+def _scrim(draw: ImageDraw.ImageDraw) -> None:
+    """배경 사진 위에 세로 그라데이션을 깔아 글자가 읽히게 한다."""
+    for (top, start), (bottom, stop) in zip(_SCRIM, _SCRIM[1:]):
+        for y in range(top, min(bottom, HEIGHT)):
+            share = (y - top) / max(1, bottom - top)
+            draw.line((0, y, WIDTH, y), fill=(*_SCRIM_RGB, round(255 * (start + (stop - start) * share))))
+
+
+def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8", center=False):
+    """Fit all text inside a bounded box; never silently discard lines.
+
+    `center`면 남는 세로 여백을 위아래로 나눈다. 한 줄짜리 제목을 위에 붙여 두면
+    제목과 진행바 사이에 200px짜리 구멍이 생긴다 — 칸의 크기는 가장 긴 문구에
+    맞춰 잡아야 하고, 짧은 문구는 그 안에서 가운데 선다.
+    """
     x, y, right, bottom = box
+    if not text.strip():
+        return
     for candidate in range(size, 25, -2):
         font = _font(font_path, candidate)
         lines = _wrap(draw, text, font, right - x)
         spacing = round(candidate * 1.4)
         if len(lines) * spacing <= bottom - y:
+            if center:
+                y += (bottom - y - len(lines) * spacing) // 2
             for line in lines:
                 draw.text((x, y), line, font=font, fill=color)
                 y += spacing
             return
     raise RenderError("화면 텍스트가 안전 영역을 넘습니다: " + text[:70])
+
+
+def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, shown: int) -> None:
+    """선택지를 이름 + 큰 '예' 확률 + 게이지 한 줄로 그린다.
+
+    예전 화면은 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%,
+    아니오 0.05%" 한 덩어리였다. 어색한 자리에서 줄이 바뀌고, 어느 숫자를
+    봐야 하는지도 알 수 없었다. 이지선다에서 아니오는 예의 나머지이므로 화면은
+    '예' 확률 하나만 크게 세우고 막대로 그 크기를 보여 준다.
+
+    `shown`은 지금까지 등장한 줄 수다. 빈 게이지 홈은 처음부터 전부 그려 두어,
+    줄이 하나씩 차오르는 동안에도 자리가 잡혀 있고 이미 뜬 줄이 밀리지 않는다.
+    """
+    x, top, right, bottom = box
+    height = (bottom - top) / max(1, len(scene.options))
+    for position, (label, percent, probability) in enumerate(scene.options):
+        y = top + position * height
+        bar_y = y + round(height * OPTION_BAR_TOP)
+        draw.rounded_rectangle((x, bar_y, right, bar_y + OPTION_BAR), radius=8, fill=_COLORS["track"])
+        if position >= shown:
+            continue
+        _text_block(draw, label, font_path, (x, y, right, y + round(height * .29)),
+                    size=40, color=_COLORS["ink"])
+        number = _font(font_path, round(height * .38))
+        number_y = y + round(height * .30)
+        draw.text((x, number_y), percent, font=number, fill=accent)
+        draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(height * .26)),
+                  "예", font=_font(font_path, 34), fill=_COLORS["muted"])
+        filled = round((right - x) * min(1.0, max(0.0, probability)))
+        if filled > OPTION_BAR:
+            draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=8, fill=accent)
 
 
 def render_frame(
@@ -125,57 +213,46 @@ def render_frame(
     index: int,
     total: int,
     background_path: Path | None = None,
-    beat: str = "detail",
+    shown: int | None = None,
     transparent: bool = False,
 ) -> None:
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     accent = _COLORS.get(scene.accent, _COLORS["gold"])
-    # Photographic upper half; opaque editorial lower half protects legibility.
-    draw.rectangle((0, 720, WIDTH, HEIGHT), fill="#101B20")
-    for y in range(520, 720):
-        draw.line((0, y, WIDTH, y), fill=(16, 27, 32, int((y - 520) / 200 * 255)))
-    draw.rounded_rectangle((72, 190, 195, 226), radius=7, fill=accent)
-    draw.text((87, 193), "NUNCHI", font=_font(font_path, 22), fill="#101B20")
-    draw.text((216, 193), "MARKET NOTES", font=_font(font_path, 23), fill="#F5F1E8")
-    draw.text((72, 258), scene.kicker, font=_font(font_path, 24), fill=accent)
-    _text_block(draw, scene.title, font_path, (72, 322, 878, 610), size=78)
-    draw.text((72, 657), f"{index:02d} / {total:02d}", font=_font(font_path, 26), fill="#F5F1E8")
+    _scrim(draw)
+    draw.rounded_rectangle((SAFE_LEFT, SAFE_TOP, SAFE_LEFT + 123, SAFE_TOP + 36), radius=7, fill=accent)
+    draw.text((SAFE_LEFT + 15, SAFE_TOP + 3), "NUNCHI", font=_font(font_path, 22), fill="#101B20")
+    draw.text((216, SAFE_TOP + 3), "MARKET NOTES", font=_font(font_path, 23), fill=_COLORS["ink"])
+    draw.text((SAFE_LEFT, 258), scene.kicker, font=_font(font_path, 26), fill=accent)
+    _text_block(draw, scene.title, font_path, (SAFE_LEFT, TITLE_TOP, SAFE_RIGHT, TITLE_BOTTOM),
+                size=86, center=True)
+    draw.text((SAFE_LEFT, 644), f"{index:02d} / {total:02d}", font=_font(font_path, 26), fill=_COLORS["ink"])
     # 진행 상태바. 화면 아래 끝은 자막 자리라 페이지 번호 옆으로 올렸다.
+    span = SAFE_RIGHT - 210
     for slot in range(total):
-        left = 210 + slot * (668 / total)
-        draw.rectangle((left, PROGRESS_Y, left + 668 / total - 8, PROGRESS_Y + 5),
+        left = 210 + slot * (span / total)
+        draw.rectangle((left, PROGRESS_Y, left + span / total - 8, PROGRESS_Y + 5),
                        fill=accent if slot < index else "#354348")
 
-    labels = dict(b.partition(" · ")[::2] for b in scene.bullets if " · " in b)
-    if beat == "metric" or scene.kind in {"intro", "outro"}:
-        draw.rounded_rectangle((72, 754, 878, 1050), radius=22, fill="#F0EDE4")
-        _text_block(draw, scene.metric_label or "MARKET SNAPSHOT", font_path, (108, 788, 836, 854), size=27, color="#455057")
-        _text_block(draw, scene.metric or labels.get("24시간 참여 규모", "CHECK"), font_path, (100, 860, 836, 1035), size=144, color="#101B20")
-        if scene.probability is not None or scene.volume_share > 0:
-            draw.rounded_rectangle((72, 1084, 878, 1098), radius=6, fill="#354348")
-            share = scene.probability if scene.probability is not None else scene.volume_share
-            if share > 0:
-                draw.rectangle((72, 1084, 72 + round(806 * min(1, share)), 1098), fill=accent)
-            note = labels.get("이벤트", "") + (" 이벤트 / " if labels.get("이벤트") else "")
-            note = "개별 질문의 예 확률 / 사실 확정 아님" if scene.probability is not None else note + f"선정 분야 참여 중 {scene.volume_share:.1%}"
-            draw.text((72, 1120), note, font=_font(font_path, 25), fill="#AEBCC1")
-        _text_block(draw, scene.takeaway or scene.body, font_path, (72, 1184, 878, 1318), size=42)
+    if scene.options:
+        _options_block(draw, scene, font_path, accent, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
+                       shown=len(scene.options) if shown is None else shown)
     else:
-        draw.text((72, 760), "무엇을 예상하나", font=_font(font_path, 29), fill=accent)
-        _text_block(draw, scene.body, font_path, (72, 826, 878, 1174), size=44)
-        draw.line((72, 1204, 878, 1204), fill="#354348", width=2)
-        detail_note = (f"이벤트 24시간 참여 규모 {labels.get('24시간 참여 규모', '-')}\n종료 예정 {labels.get('종료 예정', '-')}"
-                       if scene.event_id else f"{scene.metric} USD  /  이벤트 {labels.get('이벤트', '-')}")
-        _text_block(draw, detail_note,
-                    font_path, (72, 1224, 878, 1310), size=30, color="#AEBCC1")
+        _text_block(draw, scene.body, font_path, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
+                    size=66, center=True)
 
-    draw.text((72, FOOTER_Y), "집단 예측 컨센서스 · 투자 조언 아님",
-              font=_font(font_path, 22), fill="#AEBCC1")
-    draw.text((72, FOOTER_Y + 37), scene.source_note + (" / AI 배경" if background_path else ""),
-              font=_font(font_path, 21), fill=accent)
+    # 근거 잔글씨. 이벤트 참여 규모·종료 예정·표시한 선택지 수를 그대로 적는다.
+    _text_block(draw, " · ".join(b.replace(" · ", " ") for b in scene.bullets),
+                font_path, (SAFE_LEFT, META_Y, BODY_RIGHT, META_Y + 76), size=27, color=_COLORS["muted"])
+    draw.text((SAFE_LEFT, FOOTER_Y),
+              "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님" if scene.options
+              else "집단 예측 컨센서스 · 투자 조언 아님",
+              font=_font(font_path, 23), fill=_COLORS["muted"])
+    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note + (" · AI 배경" if background_path else ""),
+              font=_font(font_path, 22), fill=accent)
     if not transparent:
-        image = Image.alpha_composite(_background(background_path).convert("RGBA"), image).convert("RGB")
+        background = _background(background_path, index=index, total=total, accent=scene.accent)
+        image = Image.alpha_composite(background.convert("RGBA"), image).convert("RGB")
     image.save(path, "PNG")
 
 
@@ -220,14 +297,27 @@ def _drift_filter() -> str:
     )
 
 
+# 자막은 쇼츠 관례대로 하단 1/3을 크게 차지한다. 38은 1080 폭에서 본문보다 작아
+# 화면 중간에 떠 있는 주석처럼 보였다. 이 크기면 한 줄에 한글 13자쯤 들어가고,
+# 발화 한 덩어리(_PHRASE_CHARS)가 1~2줄로 떨어진다.
+CAPTION_FONT_SIZE = 56
+CAPTION_MARGIN_L = 72
+CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
+# 줄바꿈은 우리가 어절 경계에서 넣고 libass는 그대로 그린다(WrapStyle=2). libass는
+# 한글도 중국어·일본어처럼 아무 글자에서나 끊어서, "10월 금리 변동 없음과"가
+# "…없" / "음과 …"로 갈라졌다. 합성 볼드가 측정보다 넓어질 수 있어 여유를 둔다.
+CAPTION_WIDTH = round((WIDTH - CAPTION_MARGIN_L - CAPTION_MARGIN_R) * .92)
+
+
 def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
     escaped = path.resolve().as_posix().replace(":", "\\:").replace("'", "\\'")
     style = (
-        f"PlayResX={WIDTH},PlayResY={HEIGHT},FontName={font_name},FontSize=38,PrimaryColour=&H00F5F1E8,"
-        "OutlineColour=&H00151512,BorderStyle=1,Outline=3,Shadow=0,"
+        f"PlayResX={WIDTH},PlayResY={HEIGHT},FontName={font_name},FontSize={CAPTION_FONT_SIZE},"
+        "Bold=1,PrimaryColour=&H00F5F1E8,OutlineColour=&H00080D11,BackColour=&H96000000,"
+        "BorderStyle=1,Outline=5,Shadow=2,WrapStyle=2,"
         # MarginV는 아래 가장자리로부터의 거리다. 이 값이면 자막의 아래 끝이
         # SAFE_BOTTOM(1540)에 닿는다 — Shorts UI에 가리지 않는 가장 아래다.
-        f"Alignment=2,MarginV={CAPTION_MARGIN_V},MarginL=110,MarginR=230"
+        f"Alignment=2,MarginV={CAPTION_MARGIN_V},MarginL={CAPTION_MARGIN_L},MarginR={CAPTION_MARGIN_R}"
     )
     return f"subtitles='{escaped}':force_style='{style}'"
 
@@ -237,15 +327,22 @@ CAPTION_LEAD = 0.05
 # 장면이 바뀔 때는 더 일찍 넘긴다. tts가 넓혀 둔 장면 경계 쉼의 뒤쪽 이만큼이
 # 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
 SCENE_LEAD = 0.55
-_PHRASE_CHARS = 30
+# 한 자막에 담는 글자 수. 커진 자막(CAPTION_FONT_SIZE)에서 두 줄에 들어가는 양이다.
+_PHRASE_CHARS = 26
 _SENTENCE_END = (".", "?", "!")
+# 끊기 좋은 자리와 나쁜 자리. 쉼표는 말하는 사람이 이미 쉬는 자리이고 연결어미
+# ("…다르니")도 한 마디가 끝나는 자리다. 반대로 "…와·…과·…의"는 다음 말에 붙는
+# 조사라 그 뒤에서 끊으면 "숫자와" / "함께"처럼 한 덩어리가 갈라진다.
+_CLAUSE_END = re.compile(r"(?:니|고|며|면|서|는데|지만)$")
+_BINDING_END = ("와", "과", "의")
 
 # ── 움직임 ─────────────────────────────────────────────
 # 정지 카드를 20초씩 그대로 세워 두면 화면이 멈춘 것처럼 보인다. 움직임은 셋뿐이고
 # 전부 기존 렌더 경로 안에서 만든다 — 새 입력도, 새 의존성도, 새 네트워크도 없다.
 #
 # 1. 수치 카운트업: 큰 숫자가 0에서 제자리까지 차오른다. 정지 PNG 여러 장일 뿐이다.
-# 2. 화면 문구의 순차 등장: 선택지 줄이 말의 순서대로 하나씩 쌓인다.
+# 2. 선택지의 순차 등장: 선택지 줄이 말의 순서대로 하나씩 쌓이고, 새로 뜬 줄의
+#    숫자가 차오른다. 자리는 처음부터 잡혀 있어 이미 뜬 줄이 밀리지 않는다.
 # 3. 프레임 전체의 느린 흐름: 가장자리를 조금 잘라 내고 그 안에서 천천히 움직인다.
 COUNTUP_SECONDS = .72
 COUNTUP_STEPS = 8
@@ -330,9 +427,13 @@ def _phrases(
                 if index == sentence[-1] or not breakable(index):
                     continue
                 so_far = len(text_of(sentence[0], index))
-                # 쉼표는 말하는 사람이 이미 쉬는 자리다. 한도에 조금 못 미쳐도
-                # 거기서 끊는 편이 "…전망일 뿐, 정해진"보다 자연스럽다.
-                at_pause = text_of(group[0], index).endswith(",") and so_far >= cut - budget * .4
+                tail = text_of(group[0], index)
+                if tail.endswith(_BINDING_END):
+                    continue
+                # 쉼표·연결어미는 말하는 사람이 이미 쉬는 자리다. 한도에 조금 못
+                # 미쳐도 거기서 끊는 편이 "…전망일 뿐, 정해진"보다 자연스럽다.
+                at_pause = ((tail.endswith(",") or _CLAUSE_END.search(tail))
+                            and so_far >= cut - budget * .4)
                 if so_far >= cut or at_pause:
                     groups.append(group)
                     group, cut = [], max(cut, so_far) + budget
@@ -366,61 +467,85 @@ def _scene_durations(scenes: Sequence[Sequence[Phrase]], duration: float) -> lis
     return [stop - start for start, stop in zip(starts, starts[1:] + [duration])]
 
 
-def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path) -> None:
+def _caption_lines(draw, text: str, font: ImageFont.FreeTypeFont) -> list[str]:
+    """자막 한 덩어리를 폭에 맞추되 줄 길이를 고르게 나눈다.
+
+    앞줄을 끝까지 채우면 "…전망일" / "뿐," 처럼 뒷줄에 한 어절만 남는다. 줄 수가
+    늘지 않는 선까지 폭을 좁혀 보면 같은 줄 수로 가장 고르게 나뉜 자리가 나온다.
+    """
+    lines = _wrap(draw, text, font, CAPTION_WIDTH)
+    narrow = CAPTION_WIDTH
+    while len(lines) > 1 and narrow > 160:
+        candidate = _wrap(draw, text, font, narrow - 20)
+        if len(candidate) != len(lines):
+            break
+        narrow -= 20
+        lines = candidate
+    return lines
+
+
+def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path, *, font_path: Path) -> None:
+    """자막 파일. 줄바꿈은 여기서 어절 경계에 넣는다(`CAPTION_WIDTH` 참고)."""
     def stamp(seconds: float) -> str:
         ms = round(seconds * 1000)
         return f"{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02},{ms % 1000:03}"
 
+    draw = ImageDraw.Draw(Image.new("L", (1, 1)))
+    font = _font(font_path, CAPTION_FONT_SIZE)
     blocks = [
-        f"{index}\n{stamp(phrase.start)} --> {stamp(phrase.end)}\n{phrase.text}\n"
+        f"{index}\n{stamp(phrase.start)} --> {stamp(phrase.end)}\n"
+        + "\n".join(_caption_lines(draw, phrase.text, font)) + "\n"
         for index, phrase in enumerate((p for scene in scenes for p in scene), start=1)
     ]
     path.write_text("\n".join(blocks), encoding="utf-8")
 
 
-def _countup(scene: Scene, seconds: float) -> list[tuple[str, float, Scene]]:
-    """큰 수치가 0에서 제자리까지 차오르는 정지 프레임들.
+Beat = tuple[str, float, Scene, "int | None"]
+
+
+def _countup(scene: Scene, seconds: float, *, shown: int) -> list[Beat]:
+    """새로 뜬 선택지의 확률이 0에서 제자리까지 차오르는 정지 프레임들.
 
     올라가는 동안에는 정수만 보여 준다 — 소수점 둘째 자리까지 흔들리면 읽히지
     않고 어지럽기만 하다. 확정된 값은 마지막 프레임에 한 번 제대로 선다.
-    숫자가 아닌 화면 수치("조건")나 짧은 구간은 그대로 한 장이다.
+    숫자로 읽히지 않는 수치나 짧은 구간은 그대로 한 장이다.
     """
-    match = _METRIC_NUMBER.fullmatch(scene.metric.strip())
-    if scene.kind != "consensus" or not match or seconds < COUNTUP_MIN_BEAT:
-        return [("metric", seconds, scene)]
+    beat = f"option-{shown}"
+    label, percent, probability = scene.options[shown - 1]
+    match = _METRIC_NUMBER.fullmatch(percent.strip())
+    if not match or seconds < COUNTUP_MIN_BEAT:
+        return [(beat, seconds, scene, shown)]
     target, unit = float(match[1]), match[2]
     step = COUNTUP_SECONDS / COUNTUP_STEPS
     rising = [
-        ("metric", step, replace(
-            scene, metric=f"{target * n / COUNTUP_STEPS:.0f}{unit}",
-            probability=None if scene.probability is None
-            else scene.probability * n / COUNTUP_STEPS,
-        ))
+        (beat, step, replace(scene, options=(
+            scene.options[:shown - 1]
+            + ((label, f"{target * n / COUNTUP_STEPS:.0f}{unit}", probability * n / COUNTUP_STEPS),)
+            + scene.options[shown:]
+        )), shown)
         for n in range(COUNTUP_STEPS)
     ]
-    return rising + [("metric", seconds - COUNTUP_SECONDS, scene)]
+    return rising + [(beat, seconds - COUNTUP_SECONDS, scene, shown)]
 
 
-def _passages(body: str) -> list[str]:
-    """한 장면의 화면 문구를 뜨는 순서대로 나눈다.
+def _beats(scene: Scene, seconds: float) -> list[Beat]:
+    """한 장면을 화면이 바뀌는 순간들로 나눈다.
 
-    한 화면에 들어가는 여러 줄은 나누지 않고 **쌓는다** — 선택지 줄이 말의
-    순서대로 하나씩 더해져, 지금 무슨 얘기를 하는 중인지 화면이 같이 말한다.
-    한 화면에 안 들어갈 만큼 길면 예전처럼 화면을 나눠 넘긴다.
+    선택지가 있는 장면은 질문만 선 화면으로 열고, 선택지가 말의 순서대로 하나씩
+    쌓인다. 도입·마무리는 제목만 먼저 세운 뒤 문구를 얹는다 — 한 장을 20초씩
+    그대로 두면 화면이 멈춘 것처럼 보인다.
     """
-    passages, current = [], ""
-    for paragraph in body.splitlines():
-        for part in textwrap.wrap(paragraph, width=72, break_long_words=False, break_on_hyphens=False):
-            if current and len(current) + len(part) + 1 > 72:
-                passages.append(current)
-                current = ""
-            current = f"{current}\n{part}".strip()
-    if current:
-        passages.append(current)
-    if len(passages) == 1 and "\n" in passages[0]:
-        lines = passages[0].splitlines()
-        return ["\n".join(lines[:count + 1]) for count in range(len(lines))]
-    return passages or [body]
+    if scene.options:
+        opening = min(3.2, seconds * .35)
+        beats: list[Beat] = [("question", opening, scene, 0)]
+        share = (seconds - opening) / len(scene.options)
+        for shown in range(1, len(scene.options) + 1):
+            beats.extend(_countup(scene, share, shown=shown))
+        return beats
+    if seconds < 2 * COUNTUP_MIN_BEAT:
+        return [("card", seconds, scene, None)]
+    opening = min(2.2, seconds * .3)
+    return [("open", opening, replace(scene, body=""), None), ("card", seconds - opening, scene, None)]
 
 
 def render_video(
@@ -441,27 +566,17 @@ def render_video(
     scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
-    _write_captions(scene_phrases, captions)
+    _write_captions(scene_phrases, captions, font_path=font_path)
     frames, holds, timeline = [], [], []
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
     cursor, merging = 0.0, None
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
-        opening = min(3.0, seconds * .35)
-        # 편집자가 지정한 문장·수치 줄바꿈은 화면에서도 보존한다.
-        passages = _passages(scene.body)
-        weight = sum(len(passage) for passage in passages)
-        beats = _countup(scene, opening) + [
-            (f"detail-{part + 1}", (seconds - opening) * len(passage) / max(1, weight), replace(scene, body=passage))
-            for part, passage in enumerate(passages)
-        ]
-        if scene.kind != "consensus":
-            beats = [("metric", seconds, scene)]
-        for position, (beat, hold, display_scene) in enumerate(beats, start=1):
+        for position, (beat, hold, display_scene, shown) in enumerate(_beats(scene, seconds), start=1):
             frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                         background_path=selected[index - 1], beat=beat)
+                         background_path=selected[index - 1], shown=shown)
             frames.append(frame)
             holds.append(hold)
             # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가

@@ -60,14 +60,19 @@ TTS가 문장 사이에 두는 무음은 약 0.86초이고 장면 사이도 같�
 말이 시작된다.
 장면 길이는 실제 생성 음성으로 결정한다. 음성을 자르거나 겹치지 않는다.
 긴 설명은 화면을 나누되 내레이션은 온전히 유지한다. 전체 길이는 결과로 측정한다.
+도입은 오늘의 첫 질문을 띄우는 훅이고 마무리는 마무리 멘트와 같은 말을 하는 짧은
+고지다. 큰 숫자 카드로 이슈 개수나 "조건" 같은 말을 세우지 않는다.
+화면에는 말하지 않는 문구를 남기지 않는다 — 장면별 확인점은 검수 기록에만 둔다.
 
 [산출물]
 editorial.json: schema_version=1, date, generation_id, source_written_at,
 title, description, tags, central_question, source_files, editorial_checks, scenes.
 title·description·tags가 그대로 게시 문구가 되므로 검수 대상이다.
 scenes는 intro, consensus 5개, outro 순서이며 각 항목은 다음 필드를 가진다.
-kind, title, kicker, body(화면용), narration(전체 음성), metric, metric_label,
-takeaway, volume_share, source_note, visual_query, bullets,
+kind, title, kicker, body(화면 문구를 옮겨 적은 글), narration(전체 음성),
+options([선택지 이름, 예 확률 문자열, 그 확률 0~1] 배열. 이슈 화면은 이것을 이름 +
+큰 '예' 확률 + 막대로 그린다), metric, metric_label,
+takeaway(화면에 넣지 않는 확인점), volume_share, source_note, visual_query, bullets,
 sector_key(본문만), purpose, evidence(원자료 파일·필드·검수 결과), transition.
 검수: 5분야, 근거 보존, 숫자·조건 대조, 도입 질문에 대한 답, 미확인 사실 제거,
 완결 문장, 음성 보존. 이 파일을 확정한 뒤 렌더 중에는 원자료를 다시 가져오지 않는다.

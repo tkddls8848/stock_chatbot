@@ -31,7 +31,10 @@ changes의 scene은 현재 장면의 1부터 시작하는 번호다. 수정하�
 허용 필드: title, kicker, body, narration, takeaway, bullets(문자열 배열),
 accent(gold/blue/red), visual_query(shipping 또는 business strategy meeting).
 visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지=금융 도시다.
-화면 문구를 고칠 때 body와 takeaway를 함께 확인한다. metric, metric_label 등 수치는 유지한다.
+장면 배경의 크롭·방향·색조는 장면 번호와 accent가 정하므로 따로 지정하지 않는다.
+이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
+화면을 검수용으로 옮겨 적은 글이고, takeaway는 화면에 넣지 않는 확인점이다.
+options, metric, metric_label 등 수치는 유지한다.
 metadata는 수정할 title/description/tags만 넣는다. title은 날짜·#Shorts 포함 최종 게시 제목이다.
 scene_order는 최종 순서의 기존 장면 번호 배열이다. 중간 장면 삭제·순서 변경 가능하나
 첫 intro와 마지막 outro는 유지한다. 순서 변경이 없으면 현재 순서 전체를 넣는다.
