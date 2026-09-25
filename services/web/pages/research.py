@@ -116,4 +116,11 @@ fetch('/api/research').then(r=>r.json()).then(d=>{
 </script>"""
 )
 
-RESEARCH_HTML = page("리서치", "/research", _RESEARCH_MAIN, _RESEARCH_SCRIPT)
+RESEARCH_HTML = page(
+    "리서치",
+    "/research",
+    _RESEARCH_MAIN,
+    _RESEARCH_SCRIPT,
+    description="관심 주제를 놓고 후보 종목의 추가·주목·제외와 리스크, 반론을 정리한 마지막 분석 "
+    "한 건입니다. 투자 권유가 아닙니다.",
+)

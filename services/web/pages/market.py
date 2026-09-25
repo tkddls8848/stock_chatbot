@@ -38,7 +38,7 @@ _MARKET_MAIN = (
   <div class='histh'><span class='phico'>"""
     + icon(I_BARS)
     + """</span>국가별 수치</div>
-  <div class='tablewrap'>
+  <div class='tablewrap' tabindex='0' role='region' aria-label='국가별 감성 수치 표'>
     <table>
       <thead><tr><th>시장</th><th>분포</th><th class='r'>감성</th><th class='r'>기사</th><th class='r'>관측일</th></tr></thead>
       <tbody id='rows'><tr><td colspan='5' class='empty'>산출물을 불러오는 중…</td></tr></tbody>
@@ -82,4 +82,11 @@ fetch('/api/market').then(r=>r.json()).then(d=>{
 </script>"""
 )
 
-INDEX_HTML = page("시장 컨센서스", "/", _MARKET_MAIN, _MARKET_SCRIPT)
+INDEX_HTML = page(
+    "시장 컨센서스",
+    "/",
+    _MARKET_MAIN,
+    _MARKET_SCRIPT,
+    description="중국·홍콩·미국·한국·일본 뉴스를 시장별로 묶어 매긴 하루치 감성 점수와 그 추이입니다. "
+    "정보 제공 목적이며 투자 권유가 아닙니다.",
+)
