@@ -43,13 +43,13 @@ async def notify_quota_exhaustion(app) -> None:
     day = datetime.fromtimestamp(state.opened_at, tz=timezone.utc).date().isoformat()
     try:
         saved = json.loads(NOTICE_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
+        # 깨진 기록은 "보낸 적 없음"이다. 30초마다 같은 예외로 죽는 것보다 한 번 더 보내는 편이 낫다.
+        saved = {}
+    if not isinstance(saved, dict):
         saved = {}
     if saved.get("utc_date", "") >= day:
         return
-    # 발송 전에 예약한다. 발송 직후 죽어도 재기동이 중복 알림을 만들지 않는다.
-    # Telegram과 파일 저장은 하나의 트랜잭션이 아니므로 중복 방지를 우선한다.
-    write_json_atomic(NOTICE_FILE, {"utc_date": day})
     await app.bot.send_message(
         chat_id=TELEGRAM_CHAT_ID,
         text=(
@@ -60,3 +60,6 @@ async def notify_quota_exhaustion(app) -> None:
             "조치: Cloudflare 유료 전환 또는 같은 계정의 다른 사용처 확인"
         ),
     )
+    # 보낸 뒤에 기록한다. 발송이 실패하면 다음 주기(30초)가 다시 보낸다. 발송 직후
+    # 죽으면 재기동이 한 번 더 보낼 수 있지만, 운영 알림은 중복보다 누락이 비싸다.
+    write_json_atomic(NOTICE_FILE, {"utc_date": day})

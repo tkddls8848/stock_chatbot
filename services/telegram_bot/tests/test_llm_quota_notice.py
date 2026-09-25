@@ -99,28 +99,28 @@ def test_system_screen_uses_registered_llm_status_and_expiry(runtime):
     app.bot.send_message.assert_awaited_once()
 
 
-def test_save_failure_prevents_untracked_send(runtime, monkeypatch):
+def test_failed_send_is_retried_on_the_next_cycle(runtime):
+    """운영 알림은 중복보다 누락이 비싸다 — 발송이 실패하면 기록하지 않고 다시 보낸다."""
     stamp, app = runtime
     backend = exhaust(stamp)
-    def fail(*args, **kwargs):
-        raise OSError("disk full")
-    monkeypatch.setattr(llm_status, "write_json_atomic", fail)
-    with pytest.raises(OSError):
-        asyncio.run(llm_status.notify_quota_exhaustion(app))
-    app.bot.send_message.assert_not_awaited()
-    assert backend.circuit_state().reason == "quota_exhausted"
-
-
-def test_sending_is_reserved_before_network_for_restart_dedup(runtime):
-    stamp, app = runtime
-    backend = exhaust(stamp)
-    app.bot.send_message.side_effect = TimeoutError("delivery uncertain")
+    app.bot.send_message.side_effect = TimeoutError("delivery failed")
     with pytest.raises(TimeoutError):
         asyncio.run(llm_status.notify_quota_exhaustion(app))
+    assert not llm_status.NOTICE_FILE.exists()
     app.bot.send_message.side_effect = None
     asyncio.run(llm_status.notify_quota_exhaustion(app))
-    assert app.bot.send_message.await_count == 1
+    asyncio.run(llm_status.notify_quota_exhaustion(app))
+    assert app.bot.send_message.await_count == 2
     assert backend.circuit_state().reason == "quota_exhausted"
+
+
+def test_broken_notice_file_counts_as_not_sent(runtime):
+    stamp, app = runtime
+    exhaust(stamp)
+    llm_status.NOTICE_FILE.write_text("{broken", encoding="utf-8")
+    asyncio.run(llm_status.notify_quota_exhaustion(app))
+    assert app.bot.send_message.await_count == 1
+    assert json.loads(llm_status.NOTICE_FILE.read_text()) == {"utc_date": "2026-09-25"}
 
 
 def test_quota_monitor_is_installed_once_without_llm_calls(runtime):
