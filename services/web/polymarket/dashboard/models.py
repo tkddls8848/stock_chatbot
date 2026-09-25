@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import math
 from typing import Any
@@ -9,6 +10,10 @@ from typing import Any
 from services.web.polymarket.dashboard.taxonomy import classify, extract_tags
 
 PRICE_SUM_TOLERANCE = 0.05
+
+# 예/아니오로 읽는 라벨. 나머지 이름은 전부 **원문 그대로의 두 선택지**다.
+_YES_LABELS = frozenset({"yes", "예"})
+_NO_LABELS = frozenset({"no", "아니오"})
 
 
 def _number(value: Any) -> float | None:
@@ -32,21 +37,38 @@ def _array(value: Any) -> list[Any] | None:
 
 
 def _binary_prices(market: dict[str, Any]) -> dict[str, Any]:
+    """결과가 둘인 시장의 가격을 읽는다. **라벨이 Yes/No가 아니어도 읽는다.**
+
+    원문은 두 결과의 이름을 시장마다 다르게 준다 — `Up`/`Down`(5분 가격),
+    팀 이름(`Team A`/`Team B`), `Over`/`Under`. 예전에는 이름이 Yes/No가
+    아니면 가격을 통째로 버렸고, 그래서 가격이 멀쩡히 붙어 있는 시장이
+    "확률 읽기 불가"로 떨어졌다(2026-09-25 실측: 열린 event 19,054건 중
+    13,522건이 unavailable이고 그중 binary 4,206건의 대부분이 이 경우다).
+
+    `yes_probability`는 **첫 번째 결과**의 확률이고 `no_probability`는 두 번째
+    결과의 확률이다. 이름이 Yes/No일 때만 순서가 뒤집혀 와도 이름으로 맞춘다 —
+    필드 이름과 뜻(shorts·트렌드가 HTTP로 읽는 계약)은 그대로 두고, 그 확률이
+    어느 쪽 이름인지를 `yes_label`·`no_label`이 함께 알려 준다.
+    """
     outcomes = _array(market.get("outcomes"))
     prices = _array(market.get("outcomePrices"))
     result: dict[str, Any] = {
         "valid": False,
         "yes_probability": None,
         "no_probability": None,
+        "yes_label": None,
+        "no_label": None,
         "raw_price_sum": None,
         "warning": None,
     }
     if outcomes is None or prices is None or len(outcomes) != 2 or len(prices) != 2:
         result["warning"] = "missing_binary_prices"
         return result
-    labels = [str(value).strip().lower() for value in outcomes]
-    if set(labels) != {"yes", "no"}:
-        result["warning"] = "non_binary_outcomes"
+    labels = [str(value).strip() for value in outcomes]
+    lowered = [label.lower() for label in labels]
+    if not all(labels) or lowered[0] == lowered[1]:
+        # 두 쪽을 구분할 이름이 없으면 어느 확률이 어느 쪽인지 적을 수 없다.
+        result["warning"] = "unusable_outcome_labels"
         return result
     values = [_number(value) for value in prices]
     if any(value is None or not 0 <= value <= 1 for value in values):
@@ -58,12 +80,21 @@ def _binary_prices(market: dict[str, Any]) -> dict[str, Any]:
         result["warning"] = "price_sum_invalid"
         return result
     normalized = [float(value) / raw_sum for value in values]
-    by_label = dict(zip(labels, normalized, strict=True))
+    yes_side = next((index for index, label in enumerate(lowered) if label in _YES_LABELS), None)
+    no_side = next((index for index, label in enumerate(lowered) if label in _NO_LABELS), None)
+    if yes_side is not None and no_side is not None:
+        # 예/아니오 시장은 순서가 뒤집혀 와도 이름으로 맞추고, 화면·API가 오래
+        # 써 온 "Yes"/"No" 표기를 그대로 돌려준다.
+        first, yes_label, no_label = yes_side, "Yes", "No"
+    else:
+        first, yes_label, no_label = 0, labels[0], labels[1]
     result.update(
         {
             "valid": True,
-            "yes_probability": round(by_label["yes"], 8),
-            "no_probability": round(by_label["no"], 8),
+            "yes_probability": round(normalized[first], 8),
+            "no_probability": round(normalized[1 - first], 8),
+            "yes_label": yes_label,
+            "no_label": no_label,
         }
     )
     return result
@@ -82,10 +113,23 @@ def _market_detail(market: dict[str, Any]) -> dict[str, Any]:
         "volume24hr": _number(market.get("volume24hr")),
         "yes_probability": prices["yes_probability"],
         "no_probability": prices["no_probability"],
+        # 화면이 "예 52% · 아니오 48%"를 쓸지 "Up 52% · Down 48%"를 쓸지 정하는 값.
+        "yes_label": prices["yes_label"],
+        "no_label": prices["no_label"],
         "raw_price_sum": prices["raw_price_sum"],
         "price_warning": prices["warning"],
         "price_valid": prices["valid"],
     }
+
+
+def _open_child(market: dict[str, Any]) -> bool:
+    """컨센서스 계산에 넣을 자식인지.
+
+    **닫힌 자식의 가격은 예측이 아니라 결과(0 또는 1)다.** 다지선다 event는
+    자식이 하나씩 끝나도 event 자체는 열려 있어서, 끝난 자식을 그대로 섞으면
+    남은 후보들의 구성비가 뜻을 잃는다. `_liquidity`와 같은 기준으로 본다.
+    """
+    return market.get("closed") is not True and market.get("active") is not False
 
 
 def _event_type(event: dict[str, Any], market_count: int) -> str:
@@ -120,6 +164,14 @@ def _liquidity_status(value: float | None, low_liquidity: float) -> str:
 
 
 def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]:
+    """event 하나의 컨센서스. **가격을 읽을 수 없을 때만 unavailable이다.**
+
+    다지선다는 자식 하나가 닫혔거나 가격이 없다고 해서 event를 통째로 버리지
+    않는다. 그 자식을 빼고 남은 활성 자식으로 계산하고, 무엇을 뺐는지
+    `warnings`에 적는다. 활성 자식에 가격이 하나도 없을 때만 unavailable이다.
+    배타적 다지선다에서 남은 구성비가 1에서 크게 벗어나면 100% 구성비를 만들지
+    않는 기존 정책은 그대로다 — 그 합은 후보가 빠졌다는 뜻이다.
+    """
     result: dict[str, Any] = {
         "price_status": "unavailable",
         "leader": None,
@@ -136,7 +188,9 @@ def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]
         market = markets[0]
         yes = market["yes_probability"]
         no = market["no_probability"]
-        leader = "Yes" if yes >= no else "No"
+        # leader는 **원문 라벨 그대로**다. 예/아니오 시장이면 "Yes"/"No",
+        # 두 선택지에 이름이 있으면 그 이름("Up"·팀 이름)이다.
+        leader = market["yes_label"] if yes >= no else market["no_label"]
         result.update(
             {
                 "price_status": "ok",
@@ -148,21 +202,28 @@ def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]
         )
         return result
 
-    valid = [market for market in markets if market["price_valid"]]
+    active = [market for market in markets if _open_child(market)]
+    priced = [market for market in active if market["price_valid"]]
+    notes: list[str] = []
+    if len(active) != len(markets):
+        notes.append("closed_children_excluded")
+    if len(priced) != len(active):
+        notes.append("partial_child_prices")
+
     if event_type == "exclusive_multi":
-        if len(valid) != len(markets) or not markets:
-            result["warnings"] = ["missing_child_price"]
+        if not priced:
+            result["warnings"] = [*notes, "missing_child_price"]
             return result
-        raw_sum = sum(float(market["yes_probability"]) for market in markets)
+        raw_sum = sum(float(market["yes_probability"]) for market in priced)
         result["raw_yes_sum"] = round(raw_sum, 8)
         if abs(raw_sum - 1.0) > PRICE_SUM_TOLERANCE or raw_sum <= 0:
-            result["warnings"] = ["exclusive_price_sum_invalid"]
+            result["warnings"] = [*notes, "exclusive_price_sum_invalid"]
             return result
         ranked = sorted(
             (
                 (market["outcome_label"] or market["question"] or market["id"],
                  float(market["yes_probability"]) / raw_sum)
-                for market in markets
+                for market in priced
             ),
             key=lambda item: item[1],
             reverse=True,
@@ -175,16 +236,19 @@ def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]
                 "runner_up_probability": round(ranked[1][1], 8) if len(ranked) > 1 else None,
                 "leader_margin": round(ranked[0][1] - ranked[1][1], 8)
                 if len(ranked) > 1 else None,
+                "warnings": notes,
             }
         )
         return result
 
-    if event_type == "independent_multi" and valid:
+    if event_type == "independent_multi":
+        if not priced:
+            result["warnings"] = [*notes, "missing_child_price"]
+            return result
         result["price_status"] = "ok"
-        if len(valid) != len(markets):
-            result["warnings"] = ["partial_child_prices"]
+        result["warnings"] = notes
         return result
-    result["warnings"] = ["unknown_multi_type" if event_type == "unknown_multi" else "missing_child_price"]
+    result["warnings"] = ["unknown_multi_type"]
     return result
 
 
@@ -204,6 +268,14 @@ def title_probability(event: dict[str, Any]) -> float | None:
     `leader_probability`를 그대로 빼면 이동이 0에 가깝게 나오는데, 실제로는
     그 event가 반대편으로 넘어간 순간이다.
 
+    **두 선택지에 이름이 붙은 binary event는 제목이 명제가 아니라서 None이다.**
+    "Bitcoin Up or Down"·"Team A vs. Team B"의 제목은 참·거짓을 물은 것이
+    아니므로 "제목이 사실일 확률"이라는 값 자체가 없다. 이런 event는 다지선다와
+    같은 모양(`leader`는 앞선 선택지 이름, `leader_probability`는 그 확률)이므로
+    호출자는 그 둘을 함께 읽는다. 여기서 `leader_probability`를 그냥 돌려주면
+    1위가 `Up`에서 `Down`으로 넘어간 주기에 뺄셈이 0에 가깝게 나온다 — 바로 위
+    문단이 경계하는 그 오류다.
+
     이 함수는 숫자만 만지므로 `services.web.llm`을 부르지 않는 호출자도 쓸 수 있도록
     여기(정규화 계층)에 둔다.
     """
@@ -211,9 +283,35 @@ def title_probability(event: dict[str, Any]) -> float | None:
     if probability is None:
         return None
     leader = str(event.get("leader") or "").strip().lower()
-    if leader in {"no", "아니오"}:
+    if leader in _NO_LABELS:
         return round(1.0 - probability, 4)
+    if leader not in _YES_LABELS and event.get("event_type") == "binary":
+        return None
     return probability
+
+
+def ends_before(event: dict[str, Any], horizon: datetime) -> bool:
+    """정규화된 event의 마감이 `horizon` 이전이면 True.
+
+    **결과 확정을 향한 수렴은 컨센서스의 이동이 아니다.** 5분짜리 가격 방향,
+    오늘 밤 경기, 오늘 기온처럼 곧 끝나는 시장의 확률은 0·1로 빨려 들어가는
+    것이 당연하다. 그래서 "가장 굳은·팽팽한" 확률 순위(`repository.summary`)와
+    그날 이동 추적(`trending`)이 **같은 기준으로** 이 event들을 뺀다. 마감을
+    읽지 못하면 걸러낼 근거가 없어 False다.
+
+    시각은 호출자가 `horizon`으로 넘긴다 — 이 계층은 숫자만 만지고 `clock`을
+    부르지 않는다(`title_probability`와 같은 이유).
+    """
+    raw = event.get("end_date")
+    if not isinstance(raw, str) or not raw:
+        return False
+    try:
+        end = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if end.tzinfo is None:
+        return False
+    return end < horizon
 
 
 def normalize_event(

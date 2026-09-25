@@ -88,6 +88,14 @@ POLYMARKET_WEB_LOW_LIQUIDITY = float(
 )
 POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS = 900.0
 POLYMARKET_WEB_MAX_DAILY_REQUESTS = 3000
+# 마감이 이 시간 안에 닥친 event는 **확률 순위에서 뺀다.** 오늘 기온·5분짜리 코인
+# 가격 방향·오늘 밤 경기처럼 결과가 곧 확정되는 시장은 확률이 0·1로 수렴하는 것이
+# 당연해서, 그 수렴을 "가장 굳은 예측"이라고 부르면 순위가 마감 시계를 재는 표가
+# 된다. 그날 트렌드(`trending.py`)가 후보를 고를 때와 화면 순위 목록
+# (`repository.summary`)이 같은 값을 읽는다 — 두 곳이 다른 기준을 쓰면 같은 화면
+# 안에서 어떤 event는 순위에 있고 조명에는 없다(실측: 트렌드 후보 400건 중 155건).
+# 전체 목록·검색·필터에서는 빼지 않는다. 지금 열려 있는 질문은 다 보여 준다.
+POLYMARKET_MIN_HOURS_TO_END = 72
 
 
 
@@ -110,10 +118,8 @@ POLYMARKET_TRENDING_MIN_VOLUME = 50000.0
 # AI 개명 질문(24h 58,227달러·잔액 13,739달러)은 규모 하한만으로 남으므로
 # 잔액도 확인한다. log 규모 가중만으로는 상위 순서가 바뀌지 않아 도입하지 않는다.
 POLYMARKET_TRENDING_MIN_LIQUIDITY = 25000.0
-# 마감이 이 시간 안에 닥친 event는 후보에서 뺀다. 오늘 기온·특정일 코인 가격·경기
-# 결과처럼 결과가 곧 확정되는 시장은 확률이 0·1로 수렴하는 것이 당연해 이동이
-# 트렌드가 아니다(실측: 후보 400건 중 155건).
-POLYMARKET_TRENDING_MIN_HOURS_TO_END = 72
+# 마감이 임박한 event를 후보에서 빼는 기준은 위 `POLYMARKET_MIN_HOURS_TO_END`다.
+# 화면 순위와 같은 값을 읽는다.
 # 이 분야는 후보로 보지 않는다. 경기·날씨는 거래량이 커도 시장 컨센서스가 아니다.
 # 복합 분야는 구성 분야 중 하나라도 여기 걸리면 뺀다.
 POLYMARKET_TRENDING_EXCLUDED_CATEGORIES = frozenset({"sports", "weather_climate"})
