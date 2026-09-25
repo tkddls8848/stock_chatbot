@@ -7,12 +7,18 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import logging
 import os
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from services.web.pages import (
     ABOUT_HTML,
@@ -24,6 +30,7 @@ from services.web.pages import (
 )
 from services.web.pages.portfolio import PORTFOLIO_HTML
 from services.web.pages.search import SEARCH_HTML
+from services.web.pages.errors import ERROR_HTML
 from services.web.core.config import (
     PORTFOLIO_ADVICE_DIR,
     PORTFOLIO_ADVICE_HISTORY_LIMIT,
@@ -47,6 +54,55 @@ from services.web.portfolio.store import AdviceStore, AssetStore, WatchlistStore
 from services.web.search import NewsSearch
 
 POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
+logger = logging.getLogger(__name__)
+
+
+def _content_security_policy(html: str = "") -> str:
+    """정적 화면과 함께 기동 시 한 번만 계산한다. 공백도 해시 입력의 일부다."""
+    def hashes(tag: str) -> str:
+        blocks = re.findall(rf"<{tag}\b[^>]*>(.*?)</{tag}>", html, re.DOTALL | re.IGNORECASE)
+        return " ".join(sorted({
+            "'sha256-" + base64.b64encode(hashlib.sha256(block.encode()).digest()).decode() + "'"
+            for block in blocks
+        })) or "'none'"
+
+    # 차트는 같은 출처, 배경 질감은 data: SVG다. API 요청은 같은 출처만 허용한다.
+    return (
+        "default-src 'none'; base-uri 'none'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; "
+        "img-src 'self' data:; connect-src 'self'; "
+        "script-src " + hashes("script") + "; script-src-attr 'none'; "
+        "style-src " + hashes("style") + "; style-src-attr 'none'"
+    )
+
+
+_PAGE_CSP = {path: _content_security_policy(html) for path, html in {
+    "/": INDEX_HTML, "/forecast": POLYMARKET_HTML, "/research": RESEARCH_HTML,
+    "/about": ABOUT_HTML, "/terms": TERMS_HTML, "/search": SEARCH_HTML,
+    "/portfolio": PORTFOLIO_HTML,
+}.items()}
+_ERROR_CSP = {status: _content_security_policy(html) for status, html in ERROR_HTML.items()}
+_DEFAULT_CSP = _content_security_policy()
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+}
+# 브라우저의 기본 favicon 요청에 파일 없이 응답한다.
+_FAVICON = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="8" fill="#f5f2ea"/>'
+    '<path d="M6 23l7-8 5 4 8-12" fill="none" stroke="#75551b" stroke-width="3"/>'
+    '</svg>'
+)
+
+
+def _error_response(request: Request, status: int) -> Response:
+    if request.url.path.startswith("/api/"):
+        detail = "Not Found" if status == 404 else "Internal Server Error"
+        return JSONResponse({"detail": detail}, status_code=status)
+    return HTMLResponse(ERROR_HTML[status], status_code=status,
+                        headers={"Content-Security-Policy": _ERROR_CSP[status]})
 
 
 def _read_json(name: str) -> dict[str, Any]:
@@ -89,24 +145,49 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
     app.include_router(portfolio_router or build_portfolio_router())
 
     @app.middleware("http")
-    async def private_no_store(request: Request, call_next):
+    async def response_policy(request: Request, call_next):
+        try:
+            response = await call_next(request)
+        except Exception:
+            # 예외 메시지에는 비밀값이 섞일 수 있어 응답·로그 모두에 옮기지 않는다.
+            logger.error("웹 요청 처리 실패")
+            response = _error_response(request, 500)
+        response.headers.update(_SECURITY_HEADERS)
+        response.headers.setdefault(
+            "Content-Security-Policy", _PAGE_CSP.get(request.url.path, _DEFAULT_CSP)
+        )
         # 개인 화면은 어떤 캐시(브라우저·프록시)에도 남기지 않는다.
-        response = await call_next(request)
         if request.url.path.startswith(("/portfolio", "/api/portfolio")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        if request.method == "HEAD":
+            # Content-Length와 Set-Cookie를 포함한 GET 헤더는 그대로 보존한다.
+            head = Response(status_code=response.status_code)
+            head.raw_headers = response.raw_headers
+            return head
         return response
 
-    @app.get("/portfolio", response_class=HTMLResponse)
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        # API의 의도된 HTTP 오류(개인 저장소 손상 안내 포함)는 계약을 보존한다.
+        if exc.status_code in (404, 500) and not request.url.path.startswith("/api/"):
+            return _error_response(request, exc.status_code)
+        return await http_exception_handler(request, exc)
+
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"])
+    def favicon() -> Response:
+        return Response(_FAVICON, media_type="image/svg+xml")
+
+    @app.api_route("/portfolio", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def portfolio_page() -> str:
         # 화면은 정적 껍데기다. 값은 잠금을 연 뒤 브라우저가 /api/portfolio/*에서 채운다.
         return PORTFOLIO_HTML
 
-    @app.get("/search", response_class=HTMLResponse)
+    @app.api_route("/search", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def search_page() -> str:
         return SEARCH_HTML
 
-    @app.get("/api/search")
+    @app.api_route("/api/search", methods=["GET", "HEAD"])
     def search(
         q: str = Query(default="", max_length=200),
         market: Literal["", "CN", "HK", "US", "KR", "JP"] = "",
@@ -119,19 +200,19 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def index() -> str:
         return INDEX_HTML
 
-    @app.get("/research", response_class=HTMLResponse)
+    @app.api_route("/research", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def research_page() -> str:
         return RESEARCH_HTML
 
-    @app.get("/about", response_class=HTMLResponse)
+    @app.api_route("/about", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def about_page() -> str:
         return ABOUT_HTML
 
-    @app.get("/terms", response_class=HTMLResponse)
+    @app.api_route("/terms", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def terms_page() -> str:
         # 상단 메뉴에는 없고 모든 화면의 꼬리말에서만 닿는다.
         return TERMS_HTML
@@ -147,15 +228,15 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
         # Caddy다(infra/Caddyfile.example의 @aibots).
         return ROBOTS_TXT
 
-    @app.get("/api/market")
+    @app.api_route("/api/market", methods=["GET", "HEAD"])
     def market() -> dict[str, Any]:
         return _read_json("market.json")
 
-    @app.get("/api/research")
+    @app.api_route("/api/research", methods=["GET", "HEAD"])
     def research() -> dict[str, Any]:
         return _read_json("research.json")
 
-    @app.get("/api/meta")
+    @app.api_route("/api/meta", methods=["GET", "HEAD"])
     def meta() -> dict[str, Any]:
         return _read_json("meta.json")
 
@@ -280,7 +361,7 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="이 event가 현재 generation에 없습니다.")
         return polymarket_json(request, payload, "event_detail", {"event_id": event_id})
 
-    @app.get("/market_chart.png")
+    @app.api_route("/market_chart.png", methods=["GET", "HEAD"])
     def market_chart(request: Request) -> Response:
         path = PUBLIC_DIR / "market_chart.png"
         if not path.is_file():

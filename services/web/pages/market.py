@@ -29,8 +29,7 @@ _MARKET_MAIN = (
     + icon(I_CHART)
     + """</span>감성 추이</div>
   <div class='chartcard' id='chart'>
-    <img src='/market_chart.png' alt='국가별 시장 감성 추이 차트'
-      onerror="this.parentNode.innerHTML=&quot;<p class='empty'>차트가 아직 생성되지 않았습니다.</p>&quot;">
+    <img src='/market_chart.png' alt='국가별 시장 감성 추이 차트'>
   </div>
 </div>
 
@@ -52,9 +51,11 @@ _MARKET_SCRIPT = (
     "<script>" + JS_UTIL + """
 const LABELS={CN:'중국 본토',HK:'홍콩',US:'미국',KR:'한국',JP:'일본',EU:'유럽',OTHER:'기타'};
 const MARKETS=['CN','HK','US','KR','JP'];
-function bar(v){const w=Math.min(Math.abs(v),1)*50;const side=v>=0?'left:50%':'right:50%';
-  const color=v>=0?'var(--pos)':'var(--neg)';
-  return "<div class='bar'><i style='"+side+";width:"+w.toFixed(1)+"%;background:"+color+"'></i></div>";}
+const chart=document.querySelector('#chart img');
+const chartMissing=()=>{document.getElementById('chart').innerHTML="<p class='empty'>차트가 아직 생성되지 않았습니다.</p>";};
+chart.addEventListener('error',chartMissing);
+if(chart.complete&&!chart.naturalWidth)chartMissing();
+function bar(v){return "<div class='bar'><i data-sentiment='"+v+"'></i></div>";}
 fetch('/api/market').then(r=>r.json()).then(d=>{
   const markets=d.markets||{};
   const observed=Object.entries(markets);
@@ -76,6 +77,12 @@ fetch('/api/market').then(r=>r.json()).then(d=>{
       +"<td class='r'>"+(v.count||0)+"</td>"
       +"<td class='r'>"+days+"</td></tr>";
   }).join('');
+  body.querySelectorAll('[data-sentiment]').forEach(el=>{
+    const v=Number(el.dataset.sentiment);
+    el.style[v>=0?'left':'right']='50%';
+    el.style.width=(Math.min(Math.abs(v),1)*50).toFixed(1)+'%';
+    el.style.background=v>=0?'var(--pos)':'var(--neg)';
+  });
 }).catch(()=>{
   document.getElementById('rows').innerHTML="<tr><td colspan='5' class='empty'>산출물을 읽지 못했습니다.</td></tr>";
 });
