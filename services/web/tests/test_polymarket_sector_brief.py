@@ -513,6 +513,77 @@ def test_invalid_correction_is_not_accepted(tmp_path):
         _analyzer(tmp_path, raw).analyze("주식", {"event_count": 20}, [{"title": "t"}])
 
 
+# ── 오탐: 서버 실측으로 화면에서 빠진 정상 문장 ──────────────────────────────
+#
+# 매 4시간 주기마다 5그룹 중 1~3그룹이 "전체 요약: 주제 나열 대신 전망의 차이…"로
+# 두 번 연속 반려돼 화면에서 빠졌다. 원인은 규칙이 **낱말**만 보고 끝맺음을 보지
+# 않은 것이다 — 종속절의 "포함해"·"구성하기"까지 나열로 셌고, 전망을 설명하는
+# 낱말 목록이 좁아 같은 뜻의 다른 표현을 단서 없음으로 읽었다.
+
+@pytest.mark.parametrize("opening", [
+    # 종속절의 나열 낱말. 결론은 "묶기 어렵다"로 전망의 한계다.
+    "전체적으로 우세가 뚜렷한 질문과 경합이 이어지는 질문이 함께 포함돼 하나의 방향으로 묶기 어렵다.",
+    "전체적으로 참여자들의 판단이 한쪽으로 쏠리지 않아 분야 전체의 방향을 구성하기 어렵다.",
+    # 같은 뜻을 목록에 없던 낱말로 쓴 문장.
+    "전체적으로 참여자들의 시선이 금리 경로에 쏠려 있으나 방향은 아직 뚜렷하지 않다.",
+    "전체적으로 낙관과 비관이 팽팽히 맞서 어느 쪽도 우위를 잡지 못한다.",
+])
+def test_a_first_sentence_that_explains_the_outlook_is_not_an_inventory(tmp_path, opening):
+    raw = opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+
+    assert _analyzer(tmp_path, raw).analyze(
+        "거시·통화", {"event_count": 20}, [{"title": "t"}]) == raw
+
+
+def test_a_plain_declarative_ending_in_anida_is_not_honorific(tmp_path):
+    """프롬프트가 "사실 확정이 아니다"라고 쓰라고 지시하는데 `니다`만 보고 막았다."""
+    raw = ("전체적으로 참여자들의 전망이 엇갈려 하나로 묶기 어렵다. "
+           "이 수치는 참여자들의 집단 전망이며 사실 확정이 아니다.")
+
+    assert _analyzer(tmp_path, raw).analyze(
+        "거시·통화", {"event_count": 20}, [{"title": "t"}]) == raw
+
+
+@pytest.mark.parametrize("opening", [
+    "전체적으로 금과 원유에 대한 기대가 주를 이룬다.",
+    "전체적으로 기술·금융·원자재 등 다양한 주제로 구성되어 있다.",
+    "전체적으로 여러 예측 질문에 관심이 집중된다.",
+])
+def test_an_opening_that_ends_in_an_inventory_is_still_rejected(tmp_path, opening):
+    """나열을 허용해 품질을 떨어뜨리지 않는다. 끝맺음이 나열이면 그대로 반려다."""
+    from services.web.llm import PolymarketBriefError
+
+    raw = opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+
+    with pytest.raises(PolymarketBriefError, match="전체 요약"):
+        _analyzer(tmp_path, raw).analyze("주식", {"event_count": 20}, [{"title": "t"}])
+
+
+def test_the_two_overview_failures_name_different_causes(tmp_path):
+    """교정은 한 번뿐이라 사유가 뭉뚱그려지면 모델이 엉뚱한 곳을 고친다."""
+    from services.web.llm.polymarket_brief import PolymarketBriefError, validate_editorial
+
+    tail = " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+    reasons = []
+    for opening in ("전체적으로 금과 원유에 대한 기대가 주를 이룬다.",
+                    "전체적으로 여러 예측 질문이 열려 있다."):
+        with pytest.raises(PolymarketBriefError) as caught:
+            validate_editorial(opening + tail, {"event_count": 20})
+        reasons.append(str(caught.value))
+
+    assert reasons[0] != reasons[1]
+
+
+def test_the_prompt_states_the_first_sentence_predicate_contract():
+    """규칙이 끝맺음을 보므로 프롬프트도 끝맺음을 말해야 한다."""
+    from services.web.core.config import POLYMARKET_BRIEF_PROMPT_FILE
+
+    prompt = POLYMARKET_BRIEF_PROMPT_FILE.read_text(encoding="utf-8")
+
+    assert "첫 문장의 끝맺음이 곧 결론이다" in prompt
+    assert "주를 이룬다" in prompt
+
+
 @pytest.mark.parametrize("name", ["Polymarket", "폴리마켓", "예측시장"])
 def test_a_paragraph_naming_the_source_service_is_rejected(tmp_path, name):
     from services.web.llm import PolymarketBriefError

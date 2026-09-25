@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta
 
 import pytest
@@ -1128,22 +1129,93 @@ def test_a_repeated_highlight_index_is_dropped_not_fatal(tmp_path):
     assert [row["index"] for row in result["highlights"]] == [0]
 
 
-def test_the_first_attempt_still_retries_instead_of_salvaging(tmp_path):
-    """건져내기는 마지막 시도에서만 한다. 먼저 8건을 온전히 받을 기회를 준다."""
-    broken = {"index": 1, "sentiment": 0.1, "impact": "low", "mentioned_stocks": []}
+@pytest.mark.parametrize(
+    ("bad", "measured"),
+    [
+        # 서버 실측(2026-09-23~25, 48시간): 이 둘이 시장 보고서를 흔든 전부다.
+        ({"index": 1, "title": "같은 기사를 두 번", "sentiment": 0.2, "impact": "low",
+          "mentioned_stocks": []}, "news report highlight index repeats: 1"),
+        ({"index": 2, "sentiment": 0.1, "impact": "low", "mentioned_stocks": []},
+         "news report highlight missing title"),
+    ],
+)
+def test_one_defective_highlight_costs_neither_the_report_nor_a_second_call(
+    tmp_path, bad, measured, caplog
+):
+    """실측 실패 문구를 그대로 재현한다.
+
+    예전에는 첫 시도에서 이 한 줄이 응답 전체를 되돌려, 같은 시장에 LLM 호출이
+    두 번 나가고 두 번째마저 잘리면 400~500자 본문을 통째로 잃었다. 검사는
+    그대로 엄격하고 어긋난 행은 결과에 남지 않는다 — 버리는 것이지 통과가 아니다.
+    """
+    payload = _payload(indexes=(0, 1))
+    payload["highlights"].append(bad)
+    backend = _SequenceBackend([json.dumps(payload, ensure_ascii=False)])
+    analyzer = NewsReportAnalyzer(
+        backend=backend, prompt_file=_prompt_file(), num_predict=2048, max_highlights=8
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = analyzer.analyze(
+            "CN", "창",
+            [{"index": index, "title": "a"} for index in range(3)],
+        )
+
+    assert len(backend.calls) == 1
+    assert result["analysis"] == "현재 시장상황 요약이다."
+    assert [row["index"] for row in result["highlights"]] == [0, 1]
+    # 조용히 사라지지 않는다. 버린 건수와 사유가 로그에 남는다.
+    assert measured in caplog.text
+
+
+def test_a_highlight_list_with_nothing_valid_left_buys_exactly_one_retry(tmp_path):
+    """근거가 하나도 남지 않은 응답은 근거 목록이 아니다 — 그때만 다시 묻는다."""
+    dead = {"index": 9, "title": "범위 밖", "sentiment": 0, "impact": "low",
+            "mentioned_stocks": []}
     backend = _SequenceBackend(
-        [_bad_highlight_payload(broken), json.dumps(_payload(indexes=(0, 1)), ensure_ascii=False)]
+        [json.dumps({**_payload(indexes=()), "highlights": [dead]}, ensure_ascii=False),
+         json.dumps(_payload(indexes=(0,)), ensure_ascii=False)]
     )
     analyzer = NewsReportAnalyzer(
         backend=backend, prompt_file=_prompt_file(), num_predict=2048, max_highlights=8
     )
 
+    result = analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+
+    assert len(backend.calls) == 2
+    assert [row["index"] for row in result["highlights"]] == [0]
+
+
+def test_a_dropped_highlight_never_reaches_the_newslog_or_the_label(tmp_path):
+    """버린 행이 결과에 남으면 엉뚱한 기사에 감성·라벨이 붙는다."""
+    duplicate = {"index": 0, "title": "같은 기사를 두 번", "sentiment": 0.9,
+                 "impact": "high", "mentioned_stocks": []}
+    analyzer = _two_attempt_analyzer([_bad_highlight_payload(duplicate)])
+
     result = analyzer.analyze(
         "CN", "창", [{"index": 0, "title": "a"}, {"index": 1, "title": "b"}]
     )
 
-    assert len(backend.calls) == 2
-    assert [row["index"] for row in result["highlights"]] == [0, 1]
+    assert [row["index"] for row in result["highlights"]] == [0]
+    assert [row["title"] for row in result["highlights"]] == ["한국어 제목 0"]
+
+
+def test_the_prompt_forbids_the_two_defects_the_parser_drops():
+    """파서가 버리는 결함은 프롬프트가 먼저 막아야 버릴 일이 줄어든다."""
+    prompt = _prompt_file().read_text(encoding="utf-8")
+
+    assert "같은 index를 두 번 쓰지 않는다" in prompt
+    assert "비워 두지 않는다" in prompt
+
+
+def test_the_schema_does_not_carry_unverified_keywords():
+    """`uniqueItems`는 객체 전체가 같을 때만 중복이라 이 결함을 못 막고,
+    지원 여부가 불확실한 필드를 실으면 400으로 보고서가 통째로 실패한다."""
+    from services.telegram_bot.llm.news_report import RESPONSE_SCHEMA
+
+    highlights = RESPONSE_SCHEMA["properties"]["highlights"]
+    assert "uniqueItems" not in highlights
+    assert "minLength" not in highlights["items"]["properties"]["title"]
 
 
 def test_an_empty_report_still_falls_back_to_raw_titles(tmp_path):
