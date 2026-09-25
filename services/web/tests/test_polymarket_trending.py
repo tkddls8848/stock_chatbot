@@ -18,6 +18,8 @@
 
 import json
 
+import pytest
+
 from services.web.core.clock import today
 from services.web.polymarket.trending import (
     build,
@@ -28,7 +30,7 @@ from services.web.polymarket.trending import (
 )
 
 
-def _event(index, *, volume=10_000.0, probability=0.5, leader="Yes",
+def _event(index, *, volume=100_000.0, probability=0.5, leader="Yes",
            event_type="binary", status="ok"):
     return {
         "id": str(index),
@@ -75,6 +77,41 @@ def test_candidates_keep_only_top_volume():
     events = [_event(index, volume=float(index) * 1_000.0) for index in range(3, 9)]
     selected = candidates(events, min_volume=2_000.0, limit=2)
     assert [row["id"] for row in selected] == ["8", "7"]
+
+
+@pytest.mark.parametrize("volume,liquidity,eligible", [
+    (49_999.99, 100_000.0, False),
+    (50_000.0, 24_999.99, False),
+    (50_000.0, 25_000.0, True),
+    (100_000.0, None, False),
+    (None, 100_000.0, False),
+])
+def test_candidates_require_both_participation_floors(volume, liquidity, eligible):
+    event = dict(_event(1, volume=volume), liquidity=liquidity)
+    assert bool(candidates([event])) is eligible
+
+
+def test_build_does_not_fill_spotlight_with_thin_large_moves(tmp_path):
+    root = tmp_path / "polymarket"
+    target = tmp_path / "trending.json"
+    events = [
+        _event(1, volume=4_709.0),
+        _event(2, volume=32_147.0),
+        dict(_event(3, volume=58_227.0), liquidity=13_739.0),
+        _event(4, volume=79_138.0),
+        _event(5, volume=186_475.0),
+    ]
+    _write_manifest(root, events)
+    build(root=root, target=target)
+    _write_manifest(root, [
+        dict(event, leader_probability=0.8 if index < 3 else 0.53)
+        for index, event in enumerate(events)
+    ], generation_id="g2")
+    result = build(root=root, target=target)
+    assert result["candidate_count"] == 2
+    assert result["min_volume"] == 50_000.0
+    assert [row["id"] for row in result["spotlight"]] == ["5", "4"]
+    assert all(row["basis_change"] == 0.03 for row in result["spotlight"])
 
 
 def test_candidates_drop_events_ending_soon(monkeypatch):
@@ -209,18 +246,18 @@ def test_day_change_resets_baseline(tmp_path):
 def test_new_and_volume_lists(tmp_path):
     root = tmp_path / "polymarket"
     target = tmp_path / "trending.json"
-    _write_manifest(root, [_event(1, volume=10_000.0)])
+    _write_manifest(root, [_event(1, volume=100_000.0)])
     build(root=root, target=target)
 
     _write_manifest(
         root,
-        [_event(1, volume=25_000.0), _event(2, volume=9_000.0)],
+        [_event(1, volume=125_000.0), _event(2, volume=90_000.0)],
         generation_id="g2",
     )
     result = build(root=root, target=target)
     assert [row["id"] for row in result["new_entries"]] == ["2"]
     assert [row["id"] for row in result["volume_movers"]] == ["1"]
-    assert result["volume_movers"][0]["volume_change"] == 15_000.0
+    assert result["volume_movers"][0]["volume_change"] == 25_000.0
 
 
 def test_missing_current_generation_returns_none(tmp_path):
