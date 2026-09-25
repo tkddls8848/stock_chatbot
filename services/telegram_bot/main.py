@@ -23,6 +23,9 @@ from services.telegram_bot.core.config import (
     TELEGRAM_WRITE_TIMEOUT_SECONDS,
 )
 from services.telegram_bot.core.http_timeout import install_default_requests_timeout
+from services.telegram_bot.core.workers import (
+    ShutdownThreadPool, drain_workers, is_stopping, request_shutdown, reset_shutdown,
+)
 from services.telegram_bot.features import build_feature_registry
 from services.telegram_bot.handlers.commands import configure_telegram_menu
 
@@ -41,6 +44,39 @@ _ALLOWED_UPDATES = (
     Update.CALLBACK_QUERY,
 )
 _RUNTIME_STOPPED_KEY = "_runtime_stopped"
+
+
+class BotApplication(Application):
+    """PTB가 수동 작업 완료를 기다리기 *전에* 생산자와 작업을 멈춘다."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._runtime_tasks = set()
+
+    def create_task(self, coroutine, update=None, *, name=None):
+        task = super().create_task(coroutine, update=update, name=name)
+        self._runtime_tasks.add(task)
+        task.add_done_callback(self._runtime_tasks.discard)
+        return task
+
+    async def process_update(self, update):
+        # 정지 시 이미 큐에 있던 명령이 작업을 다시 시작하지 않게 한다.
+        if not is_stopping():
+            await super().process_update(update)
+
+    async def stop(self):
+        await _stop_scheduler(self)
+        tasks = set(self._runtime_tasks)
+        for key in ("shorts_tasks", "research_tasks"):
+            tasks.update(self.bot_data.get(key, ()))
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("수동 작업 %d개를 정리했습니다. Telegram 연결을 종료합니다.", len(tasks))
+        await super().stop()
+        await drain_workers()
+        logger.info("봇 종료 정리를 마쳤습니다.")
 
 
 def _acquire_single_instance_lock(lock_file: Path):
@@ -86,6 +122,8 @@ def build_scheduler() -> AsyncIOScheduler:
 
 
 async def _start_application(app: Application) -> None:
+    reset_shutdown()
+    asyncio.get_running_loop().set_default_executor(ShutdownThreadPool(thread_name_prefix="collection"))
     app.bot_data.pop(_RUNTIME_STOPPED_KEY, None)
     await configure_telegram_menu(app)
     scheduler = app.bot_data["scheduler"]
@@ -96,10 +134,9 @@ async def _stop_scheduler(app: Application) -> None:
     if app.bot_data.get(_RUNTIME_STOPPED_KEY):
         return
 
-    # 종료 정리의 시작점. 아래 완료 줄과 짝이다 — 둘 다 없으면 PTB의 stop
-    # 단계에서 멈춘 것이고, 시작만 있으면 이 함수 안에서 멈춘 것이다. 기존
-    # 완료 로그는 스케줄러가 돌던 경우에만 찍혀 이 구분에 쓸 수 없었다.
+    # PTB.stop의 수동 작업 대기보다 먼저 생산자를 중단한다.
     logger.info("종료 정리를 시작합니다.")
+    request_shutdown()
 
     scheduler = app.bot_data.get("scheduler")
     scheduler_was_running = scheduler is not None and scheduler.running
@@ -114,7 +151,7 @@ async def _stop_scheduler(app: Application) -> None:
             await asyncio.sleep(0)
         logger.info("작업 스케줄러를 종료했습니다.")
     app.bot_data[_RUNTIME_STOPPED_KEY] = True
-    logger.info("종료 정리를 마쳤습니다.")
+    logger.info("스케줄러 종료 정리를 마쳤습니다.")
 
 
 def main() -> None:
@@ -129,6 +166,7 @@ def main() -> None:
         feature_registry = build_feature_registry(FEATURES_ENABLED)
         app = (
             Application.builder()
+            .application_class(BotApplication)
             .token(TELEGRAM_BOT_TOKEN)
             .connect_timeout(TELEGRAM_CONNECT_TIMEOUT_SECONDS)
             .read_timeout(TELEGRAM_READ_TIMEOUT_SECONDS)

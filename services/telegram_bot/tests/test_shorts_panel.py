@@ -7,7 +7,7 @@
 import asyncio
 
 import re
-import stat
+import sys
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,28 +124,32 @@ def test_cli_errors_are_reported_not_raised():
 
 
 def _fake_python(tmp_path, body):
-    script = tmp_path / "python"
-    script.write_text("#!/bin/sh\n" + body, encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    return str(script)
+    package = tmp_path / "polymarket_shorts"
+    package.mkdir(exist_ok=True)
+    (package / "__init__.py").write_text("", encoding="utf-8", newline="\n")
+    (package / "cli.py").write_text(body, encoding="utf-8", newline="\n")
+    return sys.executable
 
 
 def test_runner_passes_only_a_minimal_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "secret-token")
-    python = _fake_python(tmp_path, 'printf \'{"token": "%s", "storage": "%s", "args": "%s"}\\n\' '
-                                    '"$TELEGRAM_BOT_TOKEN" "$STORAGE_DIR" "$*"\n')
+    python = _fake_python(tmp_path, 'import json, os, sys\n'
+                         'print(json.dumps({"token": os.getenv("TELEGRAM_BOT_TOKEN", ""), '
+                         '"storage": os.getenv("STORAGE_DIR"), "args": sys.argv[1:]}))\n')
     runner = ShortsRunner(python=python, workdir=str(tmp_path), storage_dir="/srv/storage")
     payload = asyncio.run(runner.call(["--status"], timeout=10))
-    assert payload == {"token": "", "storage": "/srv/storage", "args": "-m polymarket_shorts.cli --status"}
+    assert payload == {"token": "", "storage": "/srv/storage", "args": ["--status"]}
 
 
 def test_runner_turns_failures_into_short_errors(tmp_path):
-    python = _fake_python(tmp_path, 'echo "Traceback" >&2; echo "검수할 영상이 없습니다" >&2; exit 1\n')
+    python = _fake_python(tmp_path, 'import sys\n'
+                         'sys.stderr.buffer.write("Traceback\\n검수할 영상이 없습니다\\n".encode("utf-8"))\n'
+                         'sys.exit(1)\n')
     with pytest.raises(ShortsError, match="검수할 영상이 없습니다"):
         asyncio.run(ShortsRunner(python=python, workdir=str(tmp_path)).call(["--complete"], timeout=10))
     with pytest.raises(ShortsError, match="venv가 없습니다"):
         asyncio.run(ShortsRunner(python=str(Path(tmp_path) / "missing")).call([], timeout=1))
-    slow = _fake_python(tmp_path, "sleep 5\n")
+    slow = _fake_python(tmp_path, "import time\ntime.sleep(5)\n")
     with pytest.raises(ShortsError, match="끝나지 않아"):
         asyncio.run(ShortsRunner(python=slow, workdir=str(tmp_path)).call([], timeout=0.2))
 
@@ -157,3 +161,35 @@ def test_web_admin_hub_opens_shorts():
     registry = build_feature_registry(feature.key for feature in ALL_FEATURES)
     buttons = [b.callback_data for row in web_admin_menu(registry).inline_keyboard for b in row]
     assert "nav:shorts" in buttons
+
+
+def test_runner_cancellation_kills_and_reaps_the_child(monkeypatch):
+    process = SimpleNamespace(returncode=None, killed=False, reaped=False)
+
+    async def exercise():
+        started = asyncio.Event()
+
+        async def communicate():
+            started.set()
+            await asyncio.Event().wait()
+
+        def kill():
+            process.killed = True
+            process.returncode = -9
+
+        async def wait():
+            process.reaped = True
+
+        async def spawn(*args, **kwargs):
+            return process
+
+        process.communicate, process.kill, process.wait = communicate, kill, wait
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+        task = asyncio.create_task(ShortsRunner(python=sys.executable).call([], timeout=60))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert process.killed and process.reaped

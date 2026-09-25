@@ -83,6 +83,31 @@ check "Telegram 롱폴링 연결 있음" bash -c \
 say "디스크"
 sudo du -sh "$APP_DIR/storage" 2>/dev/null
 
+say "공개 산출물 신선도 (9시간 이내, 경고 전용)"
+# 실제 웹 설정을 읽어 STORAGE_DIR 재정의도 따른다. 산출물 부재·지연은
+# 서비스 점검의 실패 코드와 구분한다. 주석은 예산 때문에 지연될 수 있다.
+if freshness=$(cd "$APP_DIR" && "$APP_DIR/venv/bin/python" - <<'PY'
+from services.web.core.clock import now
+from services.web.core.config import POLYMARKET_WEB_DIR
+
+stamp = now().timestamp()
+for name in ("current.json", "trending.json", "sector_brief.json", "search_index.json"):
+    try:
+        age = stamp - (POLYMARKET_WEB_DIR / name).stat().st_mtime
+    except OSError:
+        print(f"warn {name} — 산출물 없음/읽기 실패")
+        continue
+    state = "ok" if 0 <= age <= 9 * 3600 else "warn"
+    print(f"{state} {name} — 갱신 {age / 3600:.1f}시간 전")
+PY
+); then
+    while IFS=' ' read -r state label; do
+        if [ "$state" = ok ]; then ok "$label"; else warn "$label"; fi
+    done <<< "$freshness"
+else
+    warn "공개 산출물 신선도 — 설정/시각을 읽지 못함"
+fi
+
 if [ "$fail" -eq 0 ]; then
     ok "앱 점검 통과"
 else

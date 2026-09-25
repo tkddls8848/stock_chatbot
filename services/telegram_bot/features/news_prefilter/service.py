@@ -13,7 +13,6 @@ import random
 import threading
 import time
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -22,6 +21,7 @@ from typing import Any
 
 from services.telegram_bot.core.clock import now
 from services.telegram_bot.core.storage import write_json_atomic
+from services.telegram_bot.core.workers import ShutdownThreadPool, check_shutdown
 from services.telegram_bot.features.news_prefilter.cpu_usage import CpuUsage
 from services.telegram_bot.features.news_prefilter.learning import (
     PENDING_CANDIDATE_LIMIT as _PENDING_CANDIDATE_LIMIT,
@@ -205,7 +205,7 @@ class NewsPrefilter:
         self._maintenance: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._file_lock = threading.RLock()
-        self._optimizer = ThreadPoolExecutor(
+        self._optimizer = ShutdownThreadPool(
             max_workers=1,
             thread_name_prefix="news-prefilter-cpu",
         )
@@ -746,8 +746,10 @@ class NewsPrefilter:
         }
 
     def _optimize_sync(self, cpu_seconds: float) -> OptimizationResult:
+        check_shutdown()
         started = time.thread_time()
         samples = self._learner.load_training_samples()
+        check_shutdown()
         result = optimize_for_cpu_budget(
             samples, dict(self._model),
             max(0.0, cpu_seconds - (time.thread_time() - started)),

@@ -230,6 +230,23 @@ def test_the_run_stops_once_the_budget_is_spent(tmp_path):
     assert saved["rolling_neurons"] == 60.0 and saved["pending"] == 6
 
 
+def test_budget_limited_backfill_indexes_largest_volume_before_low_volume(tmp_path):
+    root, index, status = _paths(tmp_path)
+    _write_current(root, [
+        _event(1, "Small?", volume=1),
+        _event(2, "Largest?", volume=1000),
+        _event(3, "Medium?", volume=100),
+    ])
+    annotator = _Annotator(usage=TokenUsage(neurons=30.0))
+    result = build(
+        root=root, index_path=index, status_path=status, annotator=annotator,
+        batch_size=1, max_daily_neurons=30,
+    )
+    assert result["state"] == "stopped_budget"
+    assert [event["title"] for event in annotator.calls[0]] == ["Largest?"]
+    assert list(json.loads(index.read_text(encoding="utf-8"))["events"]) == ["2"]
+
+
 def test_failed_calls_count_against_the_budget(tmp_path):
     root, index, status = _paths(tmp_path)
     _write_current(root, [_event(1, "Anything?")])
