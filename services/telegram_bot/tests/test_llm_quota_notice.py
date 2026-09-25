@@ -134,3 +134,18 @@ def test_quota_monitor_is_installed_once_without_llm_calls(runtime):
     assert job.trigger.interval.total_seconds() == 30
     assert job.max_instances == 1
     assert registry.status_report("llm").render is llm_status.render_llm_status
+
+
+def test_quota_poll_success_lines_are_filtered_but_other_jobs_and_errors_stay():
+    import logging
+
+    from services.telegram_bot.features.system_admin.feature import _QuietQuotaPoll
+
+    quiet = _QuietQuotaPoll()
+
+    def record(level, message):
+        return logging.LogRecord("apscheduler.executors.default", level, "", 0, message, (), None)
+
+    assert not quiet.filter(record(logging.INFO, 'Running job "notify_quota_exhaustion (trigger: interval)"'))
+    assert quiet.filter(record(logging.INFO, 'Running job "run_news_report_job (trigger: cron)"'))
+    assert quiet.filter(record(logging.ERROR, 'Job "notify_quota_exhaustion" raised an exception'))

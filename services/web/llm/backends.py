@@ -8,6 +8,7 @@
 """
 
 import json
+import re
 import logging
 import time
 from dataclasses import dataclass
@@ -269,7 +270,7 @@ class CloudflareWorkersAIBackend:
                 caller_fault=True,
                 detail=(
                     f"output stopped at max_tokens={max_tokens} "
-                    f"({usage.log_fragment()})"
+                    f"({usage.log_fragment()}; {self._truncation_hint(data, content)})"
                 ),
             )
 
@@ -308,6 +309,25 @@ class CloudflareWorkersAIBackend:
         first = choices[0] if isinstance(choices, list) and choices else None
         reason = first.get("finish_reason") if isinstance(first, dict) else None
         return reason if isinstance(reason, str) else None
+
+    @staticmethod
+    def _truncation_hint(data: Any, content: str) -> str:
+        """끊긴 응답의 모양만 남긴다. 원문은 담지 않는다.
+
+        상한까지 가는 응답은 드물고(실측 10일 190여 건 중 6건) 정상 응답은 상한의 절반도
+        쓰지 않는다. 같은 문장을 되풀이했는지, thinking이 새어 나왔는지를 구분해야
+        고칠 곳(반복 억제·thinking 억제·예약)을 정할 수 있다.
+        """
+        choices = (data or {}).get("choices") if isinstance(data, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else {}
+        message = first.get("message") if isinstance(first, dict) and isinstance(first.get("message"), dict) else {}
+        reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+        pieces = [piece.strip() for piece in re.split(r"[\n.。!?]+", content) if len(piece.strip()) >= 8]
+        top_repeat = max((pieces.count(piece) for piece in set(pieces)), default=0)
+        return (
+            f"content_chars={len(content)} reasoning_chars={len(reasoning) if isinstance(reasoning, str) else 0} "
+            f"max_sentence_repeat={top_repeat} think_tag={'<think>' in content}"
+        )
 
     @staticmethod
     def _empty_content_hint(data: Any) -> str:
