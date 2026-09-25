@@ -103,4 +103,11 @@ _ABOUT_MAIN = (
 
 _ABOUT_SCRIPT = "<script>" + JS_UTIL + "</script>"
 
-ABOUT_HTML = page("정보", "/about", _ABOUT_MAIN, _ABOUT_SCRIPT)
+ABOUT_HTML = page(
+    "정보",
+    "/about",
+    _ABOUT_MAIN,
+    _ABOUT_SCRIPT,
+    description="눈치가 어떤 사이트인지, 무엇을 보여 주고 무엇을 하지 않는지 정리했습니다. "
+    "뉴스에서 읽는 시장 감성을 주기마다 자동으로 기록합니다.",
+)

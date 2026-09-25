@@ -50,7 +50,7 @@ color-scheme:light;
 --w-wide:1200px;--w-text:860px;
 --fw-1:400;--fw-2:600;--fw-3:700;--fw-4:800;
 
---bg:#f1eee6;--ink:#2a2a24;--ink-soft:#45443c;--mut:#57554c;--faint:#6d6b60;
+--bg:#f1eee6;--ink:#2a2a24;--ink-soft:#45443c;--mut:#57554c;--faint:#656358;
 --line:rgba(80,74,56,.15);--line2:rgba(80,74,56,.08);
 --fill-1:rgba(150,124,70,.06);--fill-2:rgba(150,124,70,.10);
 --surface-1:rgba(251,249,244,.94);--surface-2:rgba(248,245,238,.90);--surface-3:#faf7f0;
@@ -61,8 +61,11 @@ color-scheme:light;
 
 --acc:#2b64b8;--acc-tint:#27568f;--acc-a10:rgba(43,100,184,.10);--acc-a40:rgba(43,100,184,.40);
 
-/* 한국 시장 관례: 빨강이 오름·호재, 파랑이 내림·악재 */
---pos:#b8323a;--neg:#2f66c0;--ok:#146b48;--warnc:#8f4511;
+/* 한국 시장 관례: 빨강이 오름·호재, 파랑이 내림·악재.
+   본문 대비는 바탕 그라데이션이 가장 짙어지는 #ebe7dc를 기준으로 4.5:1을
+   넘긴다 - `--faint`(#6d6b60)와 `--neg`(#2f66c0)가 거기서 4.33·4.49로
+   내려앉아 한 칸씩 어둡게 잡았다. 눈에 보이는 인상은 그대로다. */
+--pos:#b8323a;--neg:#2d62b8;--ok:#146b48;--warnc:#8f4511;
 
 --ease:cubic-bezier(.2,0,0,1);--dur-1:100ms;--dur-3:250ms;--dur-4:400ms;
 --elev-2:0 4px 12px -4px rgba(90,70,30,.10),0 12px 32px -16px rgba(60,55,40,.14);
@@ -82,7 +85,11 @@ font-family:var(--font-sans);text-rendering:optimizeLegibility;letter-spacing:-.
 .ico{display:inline-block;vertical-align:-.18em;flex:none}
 ::selection{background:var(--gold-a25);color:var(--ink)}
 a{color:inherit}
-:where(a,button,th,input,[tabindex]):focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+/* 키보드로 도는 사람이 지금 어디에 있는지 보이게 한다. 바깥으로 2px 띄워
+   어두운 버튼 위에서도 테두리가 페이지 바탕과 맞닿아 대비를 잃지 않는다. */
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,
+textarea:focus-visible,summary:focus-visible,dialog:focus-visible,[tabindex]:focus-visible{
+outline:2px solid var(--acc);outline-offset:2px}
 
 /* 배경 - 종이 위에 옅은 색 번짐, 격자, 입자를 겹친다. 단색 배경이면 카드와
    본문이 같은 평면에 붙어 보인다. */
@@ -109,6 +116,10 @@ background-size:200px}
 .skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--gold);color:var(--gold-ink);
 padding:10px var(--sp-4);border-radius:0 0 8px 0;font-weight:var(--fw-3);text-decoration:none}
 .skip:focus{left:0}
+/* 눈에는 보이지 않고 화면 낭독기만 읽는 글. 표 머리처럼 이름이 꼭 필요한데
+   화면에는 둘 자리가 없는 곳에만 쓴다. */
+.sr{display:inline-block;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+white-space:nowrap}
 main#main:focus{outline:none}
 
 /* 내비 - 종이 위에 떠 있는 알약 */
@@ -182,8 +193,10 @@ margin-bottom:var(--sp-3);letter-spacing:-.02em}
 .docbody p{margin:6px 0}.docbody b{color:var(--ink)}
 .docbody ul,.docbody ol{margin:6px 0;padding-left:22px}
 .docbody li{margin:var(--sp-1) 0}
+/* 주소·코드 줄은 띄어쓰기가 없어 좁은 화면에서 칸 밖으로 그대로 뻗는다. */
 .docbody code{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--gold-deep);
-background:var(--fill-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+background:var(--fill-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;
+overflow-wrap:anywhere}
 
 /* 단계 */
 .steps{list-style:none;counter-reset:s;margin:var(--sp-2) 0 0;padding:0;max-width:var(--w-text)}
@@ -219,20 +232,22 @@ font-variant-numeric:tabular-nums;line-height:1.15}
 .st .v.text{font-size:var(--fs-lg);letter-spacing:-.02em;overflow-wrap:anywhere}
 .st .v small{display:block;margin-top:2px;font-size:var(--fs-xs);font-weight:600;color:var(--mut)}
 
-/* 표 */
+/* 표. 규칙을 `.tablewrap` 안으로 묶는다 — 고정 폭·nowrap은 국가별 수치 표
+   하나를 위한 값인데, 맨 `table`·`thead th`·`tbody td`로 적혀 있던 동안
+   개인 화면의 표까지 끌고 가 360px에서 페이지를 193px 밀어냈다. */
 .tablewrap{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r3);
 overflow-x:auto;box-shadow:var(--elev-3);max-width:760px}
-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);min-width:520px}
-thead th{background:var(--surface-3);color:var(--mut);font-weight:600;text-align:left;
+.tablewrap table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);min-width:520px}
+.tablewrap thead th{background:var(--surface-3);color:var(--mut);font-weight:600;text-align:left;
 padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--line);white-space:nowrap;
 font-size:var(--fs-xs);letter-spacing:.06em}
-thead th.r{text-align:right}
-tbody td{padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--line2);white-space:nowrap;
-color:var(--ink-soft)}
-tbody tr:last-child td{border-bottom:0}
-tbody td.r{text-align:right;font-variant-numeric:tabular-nums}
-th.r,td.r{width:104px}
-thead th:nth-child(2),tbody td:nth-child(2){width:150px}
+.tablewrap thead th.r{text-align:right}
+.tablewrap tbody td{padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--line2);
+white-space:nowrap;color:var(--ink-soft)}
+.tablewrap tbody tr:last-child td{border-bottom:0}
+.tablewrap tbody td.r{text-align:right;font-variant-numeric:tabular-nums}
+.tablewrap th.r,.tablewrap td.r{width:104px}
+.tablewrap thead th:nth-child(2),.tablewrap tbody td:nth-child(2){width:150px}
 .nm{font-weight:700;color:var(--ink)}
 .cd{color:var(--faint);font-size:var(--fs-2xs);font-family:var(--font-mono);margin-top:1px}
 .pos{color:var(--pos)}.neg{color:var(--neg)}
@@ -258,8 +273,9 @@ border-radius:var(--r3);padding:var(--sp-4);box-shadow:var(--elev-2);overflow:hi
 .rc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
 background:linear-gradient(180deg,var(--gold),transparent)}
 .rt{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
-.rt b{font-size:var(--fs-md);color:var(--ink);letter-spacing:-.015em}
-.rt code{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--faint)}
+.rt b{font-size:var(--fs-md);color:var(--ink);letter-spacing:-.015em;overflow-wrap:anywhere}
+.rt code{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--faint);
+overflow-wrap:anywhere}
 .sc{margin-left:auto;display:flex;gap:var(--sp-3);color:var(--mut);font-size:var(--fs-xs);
 font-variant-numeric:tabular-nums;white-space:nowrap}
 .rz{color:var(--ink-soft);font-size:var(--fs-sm);margin:var(--sp-2) 0 0;line-height:1.7}
@@ -291,7 +307,7 @@ border-bottom:1px solid var(--line2)}
 color:var(--faint);font-size:var(--fs-2xs);line-height:1.55}
 .sf-cred dt{color:var(--mut);font-weight:var(--fw-2);white-space:nowrap}
 .sf-cred dd{margin:0}
-.sf-cred code{font-family:var(--font-mono);color:var(--mut)}
+.sf-cred code{font-family:var(--font-mono);color:var(--mut);overflow-wrap:anywhere}
 .sfin{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-5);align-items:center;
 justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .sf-links{display:flex;flex-wrap:wrap;gap:var(--sp-1) 18px}
@@ -310,7 +326,7 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .page{padding-top:var(--sp-6)}
 .histbox{margin-top:var(--sp-6)}
 .asof-x{margin-left:0;flex-basis:100%}
-tbody td,thead th{padding:var(--sp-3)}}
+.tablewrap tbody td,.tablewrap thead th{padding:var(--sp-3)}}
 @media(max-width:520px){
 .navin{height:auto;flex-wrap:wrap;padding-top:10px;padding-bottom:8px;border-radius:24px}
 .brand{flex-shrink:0;white-space:nowrap}
@@ -350,13 +366,28 @@ _MARK = (
 )
 
 
-def _head(title: str) -> str:
+def _head(title: str, description: str, path: str) -> str:
+    """제목·설명·주소를 한 번에 적는다.
+
+    `description`과 Open Graph는 같은 한 문장을 쓴다 — 카카오톡·슬랙이 붙이는
+    미리보기 카드와 검색 결과 요약이 서로 다른 말을 하면 안 된다. `og:image`는
+    두지 않는다: 이 프로세스는 바깥에서 파일을 부르지 않고 이미지 파일도 없어,
+    없는 주소를 적으면 미리보기가 깨진 그림 자리를 만든다.
+    """
+    full_title = title + " · " + SITE_BRAND_KO
     return (
         "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<meta name='color-scheme' content='light'>"
         "<meta name='robots' content='noindex'>"
-        "<title>" + title + " · " + SITE_BRAND_KO + "</title>" + _STYLE + "</head><body>"
+        "<meta name='description' content='" + description + "'>"
+        "<meta property='og:title' content='" + full_title + "'>"
+        "<meta property='og:description' content='" + description + "'>"
+        "<meta property='og:type' content='website'>"
+        "<meta property='og:locale' content='ko_KR'>"
+        "<meta property='og:site_name' content='" + SITE_BRAND_KO + "'>"
+        "<meta property='og:url' content='https://" + SITE_HOST + path + "'>"
+        "<title>" + full_title + "</title>" + _STYLE + "</head><body>"
         "<a class='skip' href='#main'>본문 바로가기</a>"
         "<div class='bg'></div><div class='bg-aurora'></div>"
         "<div class='bg-grid'></div><div class='bg-grain'></div>"
@@ -408,14 +439,17 @@ _SITE_FOOT = (
     "<div class='sfin'><span class='sf-links'>"
     "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/forecast'>예측 컨센서스</a>"
     "<a href='/research'>리서치</a><a href='/about'>정보</a>"
+    # 이용 조건은 상단 메뉴에 두지 않는다 — 매번 읽는 화면이 아니라 필요할 때
+    # 찾는 화면이라, 모든 화면의 꼬리말에서만 닿게 한다.
+    "<a href='/terms'>이용 조건·개인정보</a>"
     "</span><span>정보 제공 목적이며 투자 권유가 아닙니다.</span></div>"
     "</div></footer></body></html>"
 )
 
 
-def page(title: str, active: str, main: str, script: str = "") -> str:
+def page(title: str, active: str, main: str, script: str = "", *, description: str) -> str:
     return (
-        _head(title)
+        _head(title, description, active)
         + _header(active)
         + _ASOF
         + "<main id='main' tabindex='-1' class='wrap page'>" + main + DISCLAIMER + "</main>"

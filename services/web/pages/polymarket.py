@@ -18,12 +18,12 @@ _POLYMARKET_MAIN = (
     """<style>
 .pm-brief-g{border-top:1px solid var(--line2);padding:12px 0}.pm-brief-g:first-child{border-top:0}
 .pm-brief-h{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin-bottom:6px}
-.pm-brief-h b{font-size:var(--fs-md)}.pm-brief-h span{font-size:var(--fs-xs);color:var(--mut)}
+.pm-brief-h b{font-size:var(--fs-md);overflow-wrap:anywhere}.pm-brief-h span{font-size:var(--fs-xs);color:var(--mut)}
 .pm-brief-g p{margin:0;line-height:1.75}.pm-brief-g p.empty{color:var(--mut)}
 .pm-trend{display:grid;gap:8px}
 .pm-trend-row{display:grid;grid-template-columns:1fr auto auto;gap:6px 14px;align-items:center;width:100%;border:1px solid var(--line);border-radius:var(--r2);background:var(--surface-2);padding:12px 14px;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
 .pm-trend-row:hover{border-color:var(--gold-a40)}
-.pm-trend-row .t{font-weight:750}
+.pm-trend-row .t{font-weight:750;overflow-wrap:anywhere}
 .pm-trend-move{font-size:var(--fs-lg);font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pm-trend-now{font-size:var(--fs-sm);color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
 .pm-trend-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px}
@@ -33,17 +33,17 @@ _POLYMARKET_MAIN = (
 .pm-alert.warn{border-color:rgba(143,69,17,.35);color:var(--warnc)}
 .pm-bars,.pm-ranks,.pm-events{display:grid;gap:10px}.pm-bar{display:grid;grid-template-columns:minmax(110px,180px) 1fr minmax(78px,auto);gap:10px;align-items:center}
 .pm-bar-track{height:10px;background:var(--fill-2);border-radius:99px;overflow:hidden}.pm-bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#c59a3c);border-radius:99px}
-.pm-bar-label{font-weight:700}.pm-bar-value{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-xs);color:var(--mut)}
+.pm-bar-label{font-weight:700;overflow-wrap:anywhere}.pm-bar-value{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-xs);color:var(--mut)}
 .pm-catgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.pm-cat{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r2);padding:14px;text-align:left;color:var(--ink);cursor:pointer}
-.pm-cat b{display:block}.pm-cat span{font-size:var(--fs-xs);color:var(--mut)}.pm-rankgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pm-cat b{display:block;overflow-wrap:anywhere}.pm-cat span{font-size:var(--fs-xs);color:var(--mut)}.pm-rankgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .pm-panel{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r3);padding:16px}.pm-panel h3{font-size:var(--fs-sm);margin:0 0 10px}
-.pm-rank{display:block;width:100%;border:0;border-top:1px solid var(--line2);background:transparent;text-align:left;padding:9px 0;color:var(--ink);cursor:pointer}.pm-rank:first-child{border-top:0}.pm-rank small{display:block;color:var(--mut)}
+.pm-rank{display:block;width:100%;border:0;border-top:1px solid var(--line2);background:transparent;text-align:left;padding:9px 0;color:var(--ink);cursor:pointer}.pm-rank:first-child{border-top:0}.pm-rank small{display:block;color:var(--mut)}.pm-rank b{overflow-wrap:anywhere}
 .pm-controls{display:grid;grid-template-columns:2fr repeat(5,minmax(125px,1fr));gap:8px;margin:12px 0}.pm-controls input,.pm-controls select,.pm-btn{min-height:var(--ctl);border:1px solid var(--line);border-radius:var(--r1);background:var(--surface-1);color:var(--ink);padding:8px 10px;font:inherit;font-size:var(--fs-sm)}
 .pm-btn{cursor:pointer;font-weight:700}.pm-event{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r2);padding:14px;display:grid;grid-template-columns:1fr auto;gap:8px;cursor:pointer;text-align:left;color:var(--ink);font:inherit}.pm-event:hover{border-color:var(--gold-a40)}
-.pm-event-title{font-weight:750}.pm-sum{display:block;margin:2px 0 4px;color:var(--ink-soft);font-size:var(--fs-sm)}.pm-meta{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--mut);font-size:var(--fs-xs)}.pm-prob{font-size:var(--fs-lg);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pm-event-title{font-weight:750;overflow-wrap:anywhere}.pm-sum{display:block;margin:2px 0 4px;color:var(--ink-soft);font-size:var(--fs-sm);overflow-wrap:anywhere}.pm-meta{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--mut);font-size:var(--fs-xs)}.pm-prob{font-size:var(--fs-lg);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
 .pm-badge{display:inline-flex;padding:1px 7px;border-radius:99px;border:1px solid var(--line);font-size:var(--fs-2xs);font-weight:700}.pm-badge.ok{color:var(--ok)}.pm-badge.bad{color:var(--warnc)}
 .pm-pages{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--mut);font-size:var(--fs-sm)}.pm-detail{width:min(760px,calc(100% - 24px));max-height:85vh;border:1px solid var(--gold-a25);border-radius:var(--r3);background:var(--surface-3);color:var(--ink);padding:0;box-shadow:var(--elev-3)}
-.pm-detail::backdrop{background:rgba(35,32,24,.42)}.pm-detail-in{padding:22px}.pm-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:start}.pm-detail h2{font-size:var(--fs-lg);margin:0}
+.pm-detail::backdrop{background:rgba(35,32,24,.42)}.pm-detail-in{padding:22px}.pm-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:start}.pm-detail h2{font-size:var(--fs-lg);margin:0;overflow-wrap:anywhere}
 .pm-outcome{margin-top:10px}.pm-outcome-head{display:flex;justify-content:space-between;gap:10px;font-size:var(--fs-sm)}.pm-prog{height:9px;border-radius:99px;background:var(--fill-2);overflow:hidden}.pm-prog i{display:block;height:100%;background:var(--acc);border-radius:99px}.pm-source{font-size:var(--fs-xs);color:var(--mut);margin-top:14px}.pm-source a{color:var(--acc)}
 @media(max-width:900px){.pm-rankgrid{grid-template-columns:1fr}.pm-controls{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.pm-controls{grid-template-columns:1fr}.pm-event{grid-template-columns:1fr}.pm-prob{text-align:left}.pm-bar{grid-template-columns:100px 1fr}.pm-bar-value{grid-column:2;text-align:left}.links{overflow-x:auto}.navin{padding-right:8px}.brand{display:none}}
@@ -97,7 +97,7 @@ _POLYMARKET_MAIN = (
   <select id='pm-sort' name='sort' aria-label='정렬'><option value=''>기본(검색하면 관련도순)</option><option value='relevance'>관련도</option><option value='volume24hr'>24시간 참여 규모</option><option value='liquidity'>참여 잔액</option><option value='leader_probability'>1위 확률</option><option value='end_date'>종료일</option><option value='title'>제목</option></select>
  </form><div id='pm-result-meta' class='sub2' aria-live='polite'></div><div class='pm-events' id='pm-event-list'></div>
  <div class='pm-pages'><button type='button' class='pm-btn' id='pm-prev'>이전</button><span id='pm-page'>–</span><button type='button' class='pm-btn' id='pm-next'>다음</button></div></section>
-<dialog class='pm-detail' id='pm-detail'><div class='pm-detail-in'><div class='pm-detail-head'><h2 id='pm-detail-title'>Event 상세</h2><button type='button' class='pm-btn' id='pm-detail-close' aria-label='상세 닫기'>닫기</button></div><div id='pm-detail-body'></div></div></dialog>
+<dialog class='pm-detail' id='pm-detail' aria-labelledby='pm-detail-title'><div class='pm-detail-in'><div class='pm-detail-head'><h2 id='pm-detail-title'>Event 상세</h2><button type='button' class='pm-btn' id='pm-detail-close' aria-label='상세 닫기'>닫기</button></div><div id='pm-detail-body'></div></div></dialog>
 """
 )
 
@@ -139,4 +139,11 @@ document.getElementById('pm-controls').addEventListener('change',()=>{pmPage=1;l
 </script>"""
 )
 
-POLYMARKET_HTML = page("집단 예측 컨센서스", "/forecast", _POLYMARKET_MAIN, _POLYMARKET_SCRIPT)
+POLYMARKET_HTML = page(
+    "집단 예측 컨센서스",
+    "/forecast",
+    _POLYMARKET_MAIN,
+    _POLYMARKET_SCRIPT,
+    description="지금 열려 있는 해외 집단 예측 질문을 분야별로 정리한 현재 시점 기록입니다. "
+    "확률은 참여자들이 모은 예측이며 사실 보증이 아닙니다.",
+)

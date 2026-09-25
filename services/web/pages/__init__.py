@@ -9,6 +9,7 @@ from services.web.pages.market import INDEX_HTML
 from services.web.pages.polymarket import POLYMARKET_HTML
 from services.web.pages.research import RESEARCH_HTML
 from services.web.pages.robots import ROBOTS_TXT
+from services.web.pages.terms import TERMS_HTML
 
 __all__ = [
     "ABOUT_HTML",
@@ -16,4 +17,5 @@ __all__ = [
     "POLYMARKET_HTML",
     "RESEARCH_HTML",
     "ROBOTS_TXT",
+    "TERMS_HTML",
 ]

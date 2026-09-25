@@ -18,9 +18,15 @@ _MAIN = (
 .pf-btn{cursor:pointer;font-weight:700}.pf-btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 .pf-btn:disabled{opacity:.5;cursor:wait}
 .pf-field{display:flex;flex-direction:column;gap:4px;font-size:var(--fs-xs);color:var(--mut)}
+.pf-scroll{overflow-x:auto}
 .pf-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
 .pf-table th,.pf-table td{border-top:1px solid var(--line2);padding:8px 6px;text-align:left;vertical-align:top}
+.pf-table td{overflow-wrap:anywhere}
 .pf-table td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* 동작 칸은 금액과 달리 줄을 바꿔도 읽는 데 지장이 없다. 좁은 화면에서
+   버튼 두 개가 아래로 쌓이면 칸 폭이 버튼 하나 너비로 줄어든다. */
+.pf-table td.act{white-space:normal}
+.pf-table td.act .pf-btn{min-height:32px;padding:5px 8px}
 .pf-bar{height:10px;background:var(--fill-2,#e8e3d6);border-radius:99px;overflow:hidden}.pf-bar i{display:block;height:100%;background:var(--acc)}
 .pf-cls{display:grid;grid-template-columns:90px 1fr 110px;gap:10px;align-items:center;margin:6px 0;font-size:var(--fs-sm)}
 .pf-msg{font-size:var(--fs-sm);color:var(--mut);margin:8px 0}.pf-msg.err{color:var(--warnc)}
@@ -28,7 +34,8 @@ _MAIN = (
 .pf-find{margin:6px 0;padding-left:10px;border-left:3px solid var(--line);font-size:var(--fs-sm)}
 .pf-find.warn{border-color:var(--warnc)}
 .pf-hist button{background:none;border:0;color:var(--acc);cursor:pointer;padding:2px 0;font:inherit;font-size:var(--fs-sm)}
-@media(max-width:620px){.pf-cls{grid-template-columns:70px 1fr 90px}.pf-table .opt{display:none}}
+@media(max-width:620px){.pf-cls{grid-template-columns:70px 1fr 90px}.pf-table .opt{display:none}
+.pf-table th,.pf-table td{padding:8px 4px}}
 </style>"""
     + h1(I_SHIELD, "내 자산")
     + "<div class='disc'>주식·채권·예적금·부동산을 한곳에서 보고, 요청할 때 조언을 받습니다. "
@@ -50,7 +57,7 @@ _MAIN = (
  <section class='histbox'><div class='histh'><span class='phico'>"""
     + icon(I_SPEC)
     + """</span>자산 목록</div>
-  <div class='pf-card'><table class='pf-table'><thead><tr><th>구분</th><th>이름</th><th class='n'>평가액</th><th class='opt'>세부</th><th></th></tr></thead><tbody id='pf-assets'></tbody></table></div>
+  <div class='pf-card'><div class='pf-scroll' tabindex='0' role='region' aria-label='자산 목록 표'><table class='pf-table'><thead><tr><th>구분</th><th>이름</th><th class='n'>평가액</th><th class='opt'>세부</th><th><span class='sr'>동작</span></th></tr></thead><tbody id='pf-assets'></tbody></table></div></div>
   <form id='pf-form' class='pf-card'>
    <div class='pf-grid'>
     <label class='pf-field'>구분<select name='kind' id='pf-kind'><option value='stock'>주식</option><option value='bond'>채권</option><option value='deposit'>예적금</option><option value='real_estate'>부동산</option></select></label>
@@ -78,11 +85,11 @@ _MAIN = (
     + """</span>관심종목</div>
   <div class='pf-card'>
    <p class='pf-msg'>텔레그램 봇의 뉴스 수집·리서치·브리핑이 이 목록을 읽습니다. 리서치가 자동으로 넣고 빼기도 합니다.</p>
-   <table class='pf-table'><tbody id='pf-watch'></tbody></table>
+   <div class='pf-scroll' tabindex='0' role='region' aria-label='관심종목 표'><table class='pf-table' aria-label='관심종목 목록'><tbody id='pf-watch'></tbody></table></div>
    <form id='pf-watch-form' class='pf-row' style='margin-top:10px'>
     <select name='ex' aria-label='거래소'><option value='KR:KOSPI'>코스피</option><option value='KR:KOSDAQ'>코스닥</option><option value='US:NASDAQ'>나스닥</option><option value='US:NYSE'>뉴욕</option><option value='CN:SH'>상하이</option><option value='CN:SZ'>선전</option><option value='HK:HKEX'>홍콩</option></select>
-    <input name='code' placeholder='종목 코드' maxlength='20' required>
-    <input name='name' placeholder='이름' maxlength='60' required>
+    <input name='code' placeholder='종목 코드' maxlength='20' aria-label='관심종목 코드' required>
+    <input name='name' placeholder='이름' maxlength='60' aria-label='관심종목 이름' required>
     <button class='pf-btn' type='submit'>추가</button>
    </form>
    <p id='pf-watch-msg' class='pf-msg'></p>
@@ -126,7 +133,7 @@ function loadAll(){loadAssets();loadWatch();loadAdviceList()}
 async function loadAssets(){const d=await api('assets');assets=d.assets||[];renderAssets();renderSummary()}
 function detail(a){const p=[];if(a.market)p.push(a.market+(a.code?' '+a.code:''));if(a.rate_pct!=null)p.push(a.rate_pct+'%');if(a.maturity)p.push('만기 '+a.maturity);
  if(a.region_code)p.push('지역 '+a.region_code+(a.complex?' '+a.complex:''));if(a.area_m2)p.push(a.area_m2+'㎡');if(a.loan_krw)p.push('대출 '+won(a.loan_krw));return p.join(' · ')}
-function renderAssets(){$('pf-assets').innerHTML=assets.map(a=>"<tr><td>"+esc(KIND[a.kind]||a.kind)+"</td><td>"+esc(a.name)+"</td><td class='n'>"+esc(won(a.value_krw))+"</td><td class='opt'>"+esc(detail(a))+"</td><td class='n'><button class='pf-btn' data-edit='"+esc(a.id)+"'>수정</button> <button class='pf-btn' data-del='"+esc(a.id)+"'>삭제</button></td></tr>").join('')||"<tr><td colspan='5'>아직 입력한 자산이 없습니다.</td></tr>";
+function renderAssets(){$('pf-assets').innerHTML=assets.map(a=>"<tr><td>"+esc(KIND[a.kind]||a.kind)+"</td><td>"+esc(a.name)+"</td><td class='n'>"+esc(won(a.value_krw))+"</td><td class='opt'>"+esc(detail(a))+"</td><td class='n act'><button class='pf-btn' data-edit='"+esc(a.id)+"'>수정</button> <button class='pf-btn' data-del='"+esc(a.id)+"'>삭제</button></td></tr>").join('')||"<tr><td colspan='5'>아직 입력한 자산이 없습니다.</td></tr>";
  $('pf-assets').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>startEdit(b.dataset.edit)));
  $('pf-assets').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('삭제할까요?'))return;await api('assets/'+encodeURIComponent(b.dataset.del),{method:'DELETE'});loadAssets()}))}
 function renderSummary(){const total=assets.reduce((s,a)=>s+(Number(a.value_krw)||0),0),loans=assets.reduce((s,a)=>s+(a.kind==='real_estate'?Number(a.loan_krw)||0:0),0);
@@ -149,7 +156,7 @@ $('pf-form').addEventListener('submit',async e=>{e.preventDefault();const f=$('p
  try{await api(editing?'assets/'+encodeURIComponent(editing):'assets',{method:editing?'PUT':'POST',body:JSON.stringify(body)});resetForm();loadAssets()}
  catch(err){$('pf-form-msg').textContent=err.message;$('pf-form-msg').classList.add('err')}});
 async function loadWatch(){const d=await api('watchlist');watch=d.items||{};renderWatch()}
-function renderWatch(){$('pf-watch').innerHTML=Object.entries(watch).map(([c,n])=>"<tr><td>"+esc(n)+"</td><td>"+esc(c)+"</td><td class='n'><button class='pf-btn' data-wdel='"+esc(c)+"'>빼기</button></td></tr>").join('')||"<tr><td>관심종목이 없습니다.</td></tr>";
+function renderWatch(){$('pf-watch').innerHTML=Object.entries(watch).map(([c,n])=>"<tr><td>"+esc(n)+"</td><td>"+esc(c)+"</td><td class='n act'><button class='pf-btn' data-wdel='"+esc(c)+"'>빼기</button></td></tr>").join('')||"<tr><td>관심종목이 없습니다.</td></tr>";
  $('pf-watch').querySelectorAll('[data-wdel]').forEach(b=>b.addEventListener('click',()=>{const next={...watch};delete next[b.dataset.wdel];saveWatch(Object.entries(next).map(([code,name])=>({code,name})))}))}
 async function saveWatch(items){try{const d=await api('watchlist',{method:'PUT',body:JSON.stringify({items})});watch=d.items||{};renderWatch();$('pf-watch-msg').textContent=''}catch(err){$('pf-watch-msg').textContent=err.message;$('pf-watch-msg').classList.add('err')}}
 $('pf-watch-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target.elements,[market,exchange]=f.ex.value.split(':');
@@ -171,4 +178,11 @@ syncKind();boot();
 </script>"""
 )
 
-PORTFOLIO_HTML = page("내 자산", "/portfolio", _MAIN, _SCRIPT)
+PORTFOLIO_HTML = page(
+    "내 자산",
+    "/portfolio",
+    _MAIN,
+    _SCRIPT,
+    description="주식·채권·예적금·부동산을 한곳에서 보고 조언을 받는 개인 화면입니다. "
+    "비밀번호로 잠겨 있고 입력한 자산은 공개 화면에 나오지 않습니다.",
+)

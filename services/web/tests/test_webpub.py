@@ -1,4 +1,5 @@
 import json
+from html.parser import HTMLParser
 
 from fastapi.testclient import TestClient
 
@@ -247,10 +248,214 @@ def test_caddy_bot_block_spares_search_crawlers_browsers_and_shorts():
 def test_forecast_screen_never_names_the_source_service():
     # 한국에서 공식적으로 접근이 막힌 서비스라 화면·주소·외부 링크에 이름을 드러내지 않는다.
     client = TestClient(server.build_app())
-    for path in ("/", "/forecast", "/search", "/research", "/about", "/portfolio", "/robots.txt"):
+    for path in ("/", "/forecast", "/search", "/research", "/about", "/portfolio", "/terms",
+                 "/robots.txt"):
         body = client.get(path).text
         assert "폴리마켓" not in body
         assert "polymarket" not in body.lower(), path
         assert "베팅" not in body and "배팅" not in body, path
     assert client.get("/polymarket").status_code == 404
     assert client.get("/api/polymarket/summary").status_code == 404
+
+
+# ── 공유·접근성 ──────────────────────────────────────────────────────────────
+# 모든 공개 화면과 잠긴 개인 화면의 껍데기가 대상이다. 화면을 하나 더 만들면
+# 여기 목록에 넣는다 — 빠진 화면은 검사되지 않는다.
+SCREENS = ("/", "/search", "/forecast", "/research", "/portfolio", "/about", "/terms")
+
+
+def test_terms_screen_states_the_four_things_it_exists_for():
+    """이용 조건·투자 권유 아님·자료의 성격·개인정보 처리가 한 화면에 있다."""
+    client = TestClient(server.build_app())
+    page = client.get("/terms")
+
+    assert page.status_code == 200
+    body = page.text
+    assert "이용 조건" in body
+    assert "투자 권유" in body and "투자 자문이" in body
+    # 자료의 성격 셋을 모두 밝힌다.
+    assert "뉴스 집계" in body
+    assert "기계가 쓴 요약" in body
+    assert "집단 예측 컨센서스" in body
+    # 모델이 쓴 문장을 사실로 다루지 않는다는 경고.
+    assert "지어내기도" in body
+    # 개인정보: 공개 화면은 받지 않고, 쿠키는 잠금용 하나, 접속 기록은 운영 목적.
+    assert "공개 화면은 개인정보를 받지 않습니다" in body
+    assert "쿠키는 하나뿐입니다" in body
+    assert "접속 기록" in body and "서버 운영 목적" in body
+    # 운영자 연락처 상수가 없다. 없는 창구를 지어내지 않는다.
+    assert "문의" not in body
+    assert "@" not in server.TERMS_HTML.split("<body>", 1)[1]
+
+
+def test_terms_is_reachable_from_every_footer_and_absent_from_the_top_menu():
+    """매번 읽는 화면이 아니라 필요할 때 찾는 화면이다."""
+    from services.web.pages.shell import _NAV_LINKS
+
+    assert all(href != "/terms" for href, _ in _NAV_LINKS)
+
+    client = TestClient(server.build_app())
+    for path in SCREENS:
+        body = client.get(path).text
+        assert body.count("href='/terms'") == 1, path
+        # 꼬리말 안에 있어야 한다 — 본문에 흩어 놓으면 화면마다 자리가 달라진다.
+        assert "href='/terms'" in body.split("<footer", 1)[1], path
+
+
+def test_every_screen_carries_a_description_and_open_graph_tags():
+    """카카오톡·슬랙이 붙이는 미리보기 카드가 빈 채로 나가지 않게 한다."""
+    import re
+
+    client = TestClient(server.build_app())
+    seen_descriptions = set()
+    for path in SCREENS:
+        head = client.get(path).text.split("</head>", 1)[0]
+
+        description = re.search(r"<meta name='description' content='([^']+)'>", head)
+        assert description, path
+        assert len(description.group(1)) >= 40, path
+        seen_descriptions.add(description.group(1))
+
+        properties = dict(re.findall(r"<meta property='(og:[^']+)' content='([^']*)'>", head))
+        assert properties["og:type"] == "website", path
+        assert properties["og:locale"] == "ko_KR", path
+        assert properties["og:site_name"] == "눈치", path
+        assert properties["og:description"] == description.group(1), path
+        assert properties["og:title"].endswith(" · 눈치"), path
+        assert properties["og:url"] == "https://nunchi.live" + path, path
+        # 이미지 파일이 없다. 없는 주소를 적으면 미리보기가 깨진 그림 자리를 만든다.
+        assert "og:image" not in properties, path
+
+    # 화면마다 다른 설명을 쓴다 — 같은 문장을 돌려 쓰면 미리보기가 전부 같아진다.
+    assert len(seen_descriptions) == len(SCREENS)
+
+
+def test_body_text_colors_clear_the_contrast_floor():
+    """본문 글자색은 바탕 그라데이션이 가장 짙어지는 지점에서도 4.5:1을 넘긴다.
+
+    바탕이 단색이 아니라, 옅은 쪽(`#f5f2ea`)만 재면 아래쪽 꼬리말이 통과한
+    것처럼 보인다. 실제로 `--faint`·`--neg`가 짙은 쪽에서 4.33·4.49였다.
+    """
+    import re
+
+    from services.web.pages.shell import _STYLE
+
+    tokens = dict(re.findall(r"--([a-z0-9-]+):(#[0-9a-f]{6})", _STYLE))
+    darkest = re.search(r"linear-gradient\(180deg,#[0-9a-f]{6},#[0-9a-f]{6} 40%,(#[0-9a-f]{6})\)",
+                        _STYLE).group(1)
+
+    def luminance(color: str) -> float:
+        channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    background = luminance(darkest)
+    for name in ("ink", "ink-soft", "mut", "faint", "gold", "gold-deep", "gold-tint",
+                 "acc", "pos", "neg", "ok", "warnc"):
+        text = luminance(tokens[name])
+        high, low = max(text, background), min(text, background)
+        assert (high + 0.05) / (low + 0.05) >= 4.5, f"--{name} {tokens[name]} on {darkest}"
+
+
+class _ScreenParser(HTMLParser):
+    """화면 HTML에서 이름이 필요한 자리를 모은다.
+
+    `<script>`·`<style>` 안은 파서가 CDATA로 건너뛰므로, 브라우저가 나중에
+    그리는 조각은 여기 잡히지 않는다. 이 검사가 지키는 것은 **기동할 때 조립되는
+    정적 문자열**이고, 그게 이 저장소의 화면 전부다.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.unnamed: list[str] = []
+        self.headings = 0
+        self.lang = ""
+        self.skip_link = False
+        self._label_depth = 0
+        self._labelled_ids: set[str] = set()
+        self._controls: list[tuple[str, dict[str, str], bool]] = []
+        self._button: list | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key: (value or "") for key, value in attrs}
+        if tag == "html":
+            self.lang = values.get("lang", "")
+        elif tag == "label":
+            self._label_depth += 1
+            if values.get("for"):
+                self._labelled_ids.add(values["for"])
+        elif tag in ("input", "select", "textarea"):
+            if values.get("type") != "hidden":
+                self._controls.append((tag, values, self._label_depth > 0))
+        elif tag == "button":
+            self._button = [values, ""]
+        elif tag == "img":
+            if "alt" not in values:
+                self.unnamed.append("img src=" + values.get("src", "?"))
+        elif tag == "h1":
+            self.headings += 1
+        elif tag == "a":
+            if values.get("class") == "skip" and values.get("href") == "#main":
+                self.skip_link = True
+        elif tag in ("div", "section") and values.get("tabindex") == "0":
+            if not (values.get("aria-label") or values.get("aria-labelledby")):
+                self.unnamed.append("scrollable region class=" + values.get("class", "?"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "label":
+            self._label_depth = max(0, self._label_depth - 1)
+        elif tag == "button" and self._button is not None:
+            values, text = self._button
+            if not (text.strip() or values.get("aria-label") or values.get("aria-labelledby")):
+                self.unnamed.append("button id=" + (values.get("id") or values.get("class", "?")))
+            self._button = None
+
+    def handle_data(self, data: str) -> None:
+        if self._button is not None:
+            self._button[1] += data
+
+    def finish(self) -> "_ScreenParser":
+        for tag, values, inside_label in self._controls:
+            named = (
+                inside_label
+                or values.get("aria-label")
+                or values.get("aria-labelledby")
+                or values.get("id") in self._labelled_ids
+            )
+            if not named:
+                self.unnamed.append(tag + " name=" + values.get("name", values.get("id", "?")))
+        return self
+
+
+def _parse(html: str) -> _ScreenParser:
+    parser = _ScreenParser()
+    parser.feed(html)
+    return parser.finish()
+
+
+def test_every_screen_names_its_controls_and_offers_a_way_past_the_menu():
+    """라벨 없는 입력칸·이름 없는 버튼·건너뛰기 링크 누락을 정적으로 막는다.
+
+    `placeholder`는 라벨이 아니다 — 값을 적는 순간 사라지고, 화면 낭독기가
+    읽어 준다는 보장도 없다. 넘치는 표를 감싼 스크롤 칸도 이름이 있어야
+    키보드로 들어갔을 때 무엇을 미는 칸인지 알 수 있다.
+    """
+    client = TestClient(server.build_app())
+    for path in SCREENS:
+        screen = _parse(client.get(path).text)
+        assert screen.unnamed == [], (path, screen.unnamed)
+        assert screen.lang == "ko", path
+        assert screen.skip_link, path
+        # 제목이 둘이면 화면 낭독기의 목차가 갈라진다.
+        assert screen.headings == 1, path
+
+
+def test_keyboard_focus_stays_visible():
+    """포커스 표시를 지우지 않는다. 지우면 키보드로 도는 사람이 길을 잃는다."""
+    from services.web.pages.shell import _STYLE
+
+    assert "outline:2px solid var(--acc);outline-offset:2px}" in _STYLE
+    for selector in ("a:focus-visible", "button:focus-visible", "input:focus-visible",
+                     "select:focus-visible", "textarea:focus-visible", "[tabindex]:focus-visible"):
+        assert selector in _STYLE, selector
+    assert "outline:none" not in _STYLE.replace("main#main:focus{outline:none}", "")

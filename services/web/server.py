@@ -14,7 +14,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
-from services.web.pages import ABOUT_HTML, INDEX_HTML, POLYMARKET_HTML, RESEARCH_HTML, ROBOTS_TXT
+from services.web.pages import (
+    ABOUT_HTML,
+    INDEX_HTML,
+    POLYMARKET_HTML,
+    RESEARCH_HTML,
+    ROBOTS_TXT,
+    TERMS_HTML,
+)
 from services.web.pages.portfolio import PORTFOLIO_HTML
 from services.web.pages.search import SEARCH_HTML
 from services.web.core.config import (
@@ -123,6 +130,11 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
     @app.get("/about", response_class=HTMLResponse)
     def about_page() -> str:
         return ABOUT_HTML
+
+    @app.get("/terms", response_class=HTMLResponse)
+    def terms_page() -> str:
+        # 상단 메뉴에는 없고 모든 화면의 꼬리말에서만 닿는다.
+        return TERMS_HTML
 
     @app.api_route("/forecast", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def polymarket_page() -> str:

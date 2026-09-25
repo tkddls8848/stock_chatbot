@@ -13,7 +13,7 @@ font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;backgro
 .ns-examples{display:flex;flex-wrap:wrap;gap:8px}.ns-example{font-size:13px;cursor:pointer;padding:8px 10px}
 .ns-note{font-size:13px;color:var(--mut);line-height:1.8}.ns-results{display:grid;gap:12px;margin-top:20px}
 .ns-result{padding:20px;background:var(--surface-1);border:1px solid var(--line);border-radius:12px;scroll-margin-top:110px}
-.ns-result h2{font-size:17px;margin:8px 0}.ns-result p{margin:8px 0;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.ns-result h2{font-size:17px;margin:8px 0;overflow-wrap:anywhere}.ns-result p{margin:8px 0;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
 .ns-meta{font-size:12px;color:var(--mut)}.ns-result a{color:var(--ink);text-underline-offset:3px}
 .ns-pages{display:flex;justify-content:center;align-items:center;gap:14px;margin:24px 0}
 .ns-pages button:disabled{opacity:.4}.ns-result:target{outline:2px solid var(--gold)}
@@ -28,7 +28,7 @@ font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;backgro
  <option value=''>기간 자동 인식</option><option value='1'>오늘</option><option value='7'>최근 7일</option>
  <option value='30'>최근 30일</option></select><button type='submit'>검색</button>
 </form>
-<div class='ns-examples' aria-label='검색 예시'>
+<div class='ns-examples' role='group' aria-label='검색 예시'>
  <button class='ns-example' type='button'>최근 일주일 일본 금리 뉴스</button>
  <button class='ns-example' type='button'>미국 반도체 악재</button>
  <button class='ns-example' type='button'>어제 한국 시장</button>
@@ -96,4 +96,11 @@ const nsInitial=new URLSearchParams(location.search);for(const key of ['q','mark
 nsPage=Math.max(1,Math.min(1000,Number(nsInitial.get('page'))||1));nsSearch();
 </script>"""
 
-SEARCH_HTML = page("뉴스·시장 검색", "/search", _MAIN, _SCRIPT)
+SEARCH_HTML = page(
+    "뉴스·시장 검색",
+    "/search",
+    _MAIN,
+    _SCRIPT,
+    description="국가·기간·주제를 문장으로 적으면 발행된 뉴스 보고서와 시장 요약에서 찾아 줍니다. "
+    "최근 30일의 공개 자료만 검색합니다.",
+)
