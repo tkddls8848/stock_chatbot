@@ -24,20 +24,56 @@ MIN_PARAGRAPH_CHARS = 60
 
 # 출처 서비스 이름은 화면에 쓰지 않는다(`code_guide.md`). 모델이 입력 밖에서 끌어올 수 있어 막는다.
 FORBIDDEN_COPY = re.compile(r"(?i)polymarket|폴리마켓|예측\s*시장|베팅|배팅|돈을\s*걸|수익\s*(?:기회|보장)|이득|매수|매도|가입\s*하세요")
-OUTLOOK_MARKERS = re.compile(r"판단|갈리|엇갈|우세|불확실|단정|어렵|제한|확신|한쪽|차이|분산|신중|경합|혼재|무게|기대")
+# 첫 문장이 "전망이 어디서 갈리는가 / 무엇에 무게가 실리는가 / 왜 판단하기 어려운가"
+# 중 하나를 말했는지 보는 단서다. 프롬프트가 요구하는 세 갈래를 그대로 덮는다 —
+# 목록이 좁으면 같은 뜻을 다른 낱말로 쓴 정상 문장이 반려된다(실측: "…판단이
+# 한쪽으로 쏠려 있으나 방향은 뚜렷하지 않다"가 단서 없음으로 빠졌다).
+OUTLOOK_MARKERS = re.compile(
+    "판단|갈리|갈린|갈림|엇갈|우세|우위|압도|불확실|단정|어렵|제한|확신|한쪽|차이|"
+    "분산|신중|경합|혼재|무게|기대|쏠|기울|뚜렷|팽팽|맞서|상충|상반|대립|뒤섞|나뉘|제각"
+)
+# 주제 나열은 한국어에서 **문장 끝의 서술어**가 "무엇으로 이루어져 있다"일 때다.
+# 낱말만 보면 종속절에 쓰인 같은 낱말까지 걸려("경합 구간을 포함해 …", "한 방향으로
+# 구성하기 어렵다") 전망을 제대로 설명한 문장이 반려됐다 — 서버 실측에서 매 주기
+# 5그룹 중 1~3그룹이 이 검사로 화면에서 빠진 원인이다. 그래서 끝맺음만 본다.
+INVENTORY_PREDICATE = re.compile(
+    r"(?:주를\s*이(?:룬다|뤘다|루었다|루고\s*있다|룹니다)"
+    r"|(?:구성|포함|집중)(?:된다|됐다|되고\s*있다|돼\s*있다|되어\s*있다|됩니다))"
+    r"\s*[.!?]?$"
+)
+
+
+def _is_plain_declarative(sentence: str) -> bool:
+    """해라체 평서문으로 끝났는가.
+
+    존댓말 종결 `-ㅂ니다`는 앞 음절 받침이 ㅂ이다(입니다·합니다·습니다). `니다`만
+    보고 막으면 `아니다`처럼 멀쩡한 해라체까지 반려한다 — 프롬프트가 "사실 확정이
+    아니다"라고 쓰라고 지시하는 자리라 실제로 걸린다.
+    """
+    if not sentence.endswith("다."):
+        return False
+    stem = sentence[:-2]
+    if len(stem) >= 2 and stem.endswith("니"):
+        previous = stem[-2]
+        if "가" <= previous <= "힣" and (ord(previous) - 0xAC00) % 28 == 17:
+            return False
+    return True
 
 
 def validate_editorial(paragraph: str, totals: dict[str, Any]) -> None:
     sentences = re.split(r"(?<=[.!?])\s+", paragraph)
     if FORBIDDEN_COPY.search(paragraph):
         raise PolymarketBriefError("금지어: 출처 서비스 이름·예측시장·베팅·배팅·수익·참여 유도 표현을 제거하십시오")
-    if any(not re.search(r"(?<!니)다\.$", sentence) for sentence in sentences):
+    if any(not _is_plain_declarative(sentence) for sentence in sentences):
         raise PolymarketBriefError("문체: 모든 문장을 ~이다/~한다/~있다/~이룬다의 해라체 평서문으로 끝내십시오")
     opening = sentences[0]
     if not opening.startswith("전체적으로") or re.search(r"\d|%|퍼센트", opening):
         raise PolymarketBriefError("brief must begin with a qualitative sector overview")
-    inventory = re.search(r"주를\s*이(?:루|룬|룹)|구성|포함|다양한\s*주제|관심이\s*집중", opening)
-    if not OUTLOOK_MARKERS.search(opening) or inventory:
+    # 두 사유를 한 문장으로 합치면 1회뿐인 교정이 엉뚱한 곳을 고친다. 실측에서
+    # 모델은 이미 전망을 설명해 놓고도 같은 문구를 다시 받아 같은 실수를 반복했다.
+    if INVENTORY_PREDICATE.search(opening):
+        raise PolymarketBriefError("전체 요약: 나열로 끝맺지 말고 전망의 우세·경합 또는 판단의 한계를 결론으로 쓰십시오")
+    if not OUTLOOK_MARKERS.search(opening):
         raise PolymarketBriefError("전체 요약: 주제 나열 대신 전망의 차이·경합·우세 또는 판단의 한계를 설명하십시오")
     if 0 < int(totals.get("event_count") or 0) < 10 and not re.search(r"소수|표본|제한|어렵", opening):
         raise PolymarketBriefError("소수 표본: 첫 문장에 전체 방향을 판단하기 어렵다는 한계를 밝히십시오")

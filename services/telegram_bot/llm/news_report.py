@@ -33,6 +33,13 @@ _VALIDATION_ATTEMPTS = 2
 # **모델을 바꾸면(`CLOUDFLARE_MODEL`) 그 스모크를 다시 돌린다.** 지원하지 않는
 # 모델에 이 필드를 실으면 400으로 보고서가 통째로 실패한다. Cloudflare 문서가
 # 지원 목록에 올려 둔 모델이 실제로는 받지 않은 전례가 있어 문서로 갈음하지 않는다.
+#
+# **`uniqueItems`·`minLength`를 쓰지 않는다.** 실측된 결함 둘(같은 index 반복,
+# 빈 title)을 스키마로 막고 싶지만 `uniqueItems`는 객체 전체가 같을 때만 중복이라
+# title이 다른 같은 index를 걸러 주지 않고, `minLength`는 이 모델의 제약 디코딩이
+# 받는지 확인할 방법이 실호출뿐이다. 지원하지 않는 필드를 실으면 400으로 보고서가
+# 통째로 실패한다(문서로 갈음하지 않는다는 위 규칙과 같은 이유다). 그래서 둘 다
+# 프롬프트로 지시하고 파서가 그 행만 버린다.
 _IMPACT_ENUM = {"type": "string", "enum": ["high", "medium", "low"]}
 RESPONSE_SCHEMA = {
     "type": "object",
@@ -192,10 +199,10 @@ class NewsReportAnalyzer:
                 # 정상 응답의 JSON 형식·스키마가 잘못된 경우에만 다시 요청한다.
                 raise NewsReportError(str(exc)) from exc
 
-            # 마지막 시도에서는 근거 기사 한 줄이 어긋났다고 보고서를 버리지
-            # 않는다. 비싼 것은 analysis이고 highlight는 그 근거 목록이다.
-            # 실측(2026-09-02 CN, 하루 세 번)에서 8건 중 하나가 title이 없거나
-            # index가 겹쳐 400~500자 본문이 통째로 버려지고 원문 제목만 남았다.
+            # `salvage`는 "다시 물을 기회가 없다"는 뜻이다. 어긋난 근거 행은
+            # 어느 시도에서든 그 행만 버리고, 유효한 근거가 하나도 남지 않았을
+            # 때만 한 번 다시 묻는다(`_parse`). 깨진 JSON에서 본문만 건지는
+            # 것도 마지막 시도에서만 한다.
             last = attempt == _VALIDATION_ATTEMPTS
             try:
                 if not raw.strip():
@@ -290,8 +297,10 @@ class NewsReportAnalyzer:
             try:
                 parsed.append(self._parse_highlight(row, valid_indexes, seen))
             except NewsReportError as error:
-                if not salvage:
-                    raise
+                # **검사는 그대로 엄격하다.** 어긋난 행은 결과에도 NewsLog에도
+                # 사전선별 라벨에도 들어가지 않는다 — 통과시키는 것이 아니라
+                # 그 행만 버린다. 비싼 것은 analysis이고 highlight는 그 근거
+                # 목록이라, 한 줄 때문에 400~500자 본문을 버리지 않는다.
                 # 버린 건수를 남긴다. 남기지 않으면 근거 기사가 조용히 계속
                 # 사라져도 알 방법이 없다.
                 dropped.append(str(error))
@@ -301,6 +310,17 @@ class NewsReportAnalyzer:
                 len(dropped),
                 len(dropped) + len(parsed),
                 "; ".join(dropped),
+            )
+        if dropped and not parsed and not salvage:
+            # 유효한 근거가 하나도 남지 않은 응답은 근거 목록이 아니다 — 모델이
+            # index를 통째로 지어냈거나 한 기사만 되풀이한 것이다. 라벨 공급원이
+            # 이 호출 하나뿐이라 그때는 한 번 다시 묻는 값어치가 있다.
+            # **행 하나가 어긋났다고 다시 묻지는 않는다.** 실측(2026-09-23~25)의
+            # `highlight index repeats: 1` 4건·`missing title` 1건은 전부 남은
+            # 근거만으로 충분한 응답이었는데도 같은 시장에 호출이 두 번 나갔다.
+            raise NewsReportError(
+                f"news report kept no valid highlight of {len(dropped)}: "
+                + "; ".join(dropped)
             )
         if publish and not analysis.strip() and not parsed:
             # 발행이라면서 본문도 근거도 없다. 빈 섹션을 보내지 않는다 —
