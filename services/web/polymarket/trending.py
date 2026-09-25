@@ -32,6 +32,7 @@ from services.web.core.config import (
     POLYMARKET_TRENDING_FILE,
     POLYMARKET_TRENDING_LIST_LIMIT,
     POLYMARKET_TRENDING_MIN_HOURS_TO_END,
+    POLYMARKET_TRENDING_MIN_LIQUIDITY,
     POLYMARKET_TRENDING_MIN_VOLUME,
     POLYMARKET_TRENDING_MOVE_FLOOR,
     POLYMARKET_TRENDING_SPOTLIGHT_LIMIT,
@@ -90,6 +91,7 @@ def candidates(
     events: list[dict[str, Any]],
     *,
     min_volume: float = POLYMARKET_TRENDING_MIN_VOLUME,
+    min_liquidity: float = POLYMARKET_TRENDING_MIN_LIQUIDITY,
     limit: int = POLYMARKET_TRENDING_CANDIDATE_LIMIT,
     min_hours_to_end: float = POLYMARKET_TRENDING_MIN_HOURS_TO_END,
     excluded_categories: frozenset[str] = POLYMARKET_TRENDING_EXCLUDED_CATEGORIES,
@@ -97,7 +99,8 @@ def candidates(
     """이동을 추적할 event를 거래량 상위부터 고른다.
 
     `data_status`가 정상인 것만 본다. 확률을 읽지 못한 event의 이동은 값이
-    아니라 결측의 변화이고, 유동성이 0인 event의 이동은 호가 한 건이다.
+    아니라 결측의 변화다. 24시간 참여 규모와 참여 잔액 하한을 함께 적용해
+    얇은 질문의 큰 이동이 충분히 참여한 질문을 밀어내지 않게 한다.
     곧 마감하는 event와 경기·날씨 분야도 뺀다 — 결과 확정을 향한 수렴은
     컨센서스의 이동이 아니다.
     """
@@ -109,6 +112,7 @@ def candidates(
         and event.get("id") is not None
         and event.get("data_status") == "ok"
         and (_number(event.get("volume24hr")) or 0.0) >= min_volume
+        and (_number(event.get("liquidity")) or 0.0) >= min_liquidity
         and not _ends_soon(event, horizon)
         and not _excluded_category(event, excluded_categories)
     ]
