@@ -54,7 +54,9 @@ for unit in \
   stock-chatbot-polymarket-refresh.timer \
   stock-chatbot-polymarket-brief.service \
   stock-chatbot-polymarket-trending.service \
-  stock-chatbot-polymarket-annotate.service \n  polymarket-shorts.service \n  polymarket-shorts.timer; do
+  stock-chatbot-polymarket-annotate.service \
+  polymarket-shorts.service \
+  polymarket-shorts.timer; do
   install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "/etc/systemd/system/$unit"
 done
 
