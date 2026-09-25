@@ -75,6 +75,10 @@ check "백업 보관 ${BACKUP_RETENTION_DAYS}일" bash -c \
     "sudo grep -Fq -- '-mtime +$BACKUP_RETENTION_DAYS' /etc/cron.d/stock-chatbot-backup"
 
 say "봇 안정성"
+if sudo journalctl -u stock-chatbot.service -u 'stock-chatbot-polymarket-*' \
+    --since '24 hours ago' --no-pager -o cat 2>/dev/null | grep -F 'quota_exhausted' >/dev/null; then
+    warn "최근 24시간 LLM 할당량 소진 — Cloudflare 유료 전환 또는 같은 계정의 다른 사용처 확인"
+fi
 check "봇 재시작 5회 미만" bash -c \
     "[ \"\$(systemctl show stock-chatbot -p NRestarts --value)\" -lt 5 ]"
 check "Telegram 롱폴링 연결 있음" bash -c \

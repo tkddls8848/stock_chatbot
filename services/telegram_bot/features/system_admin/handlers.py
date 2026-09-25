@@ -44,7 +44,9 @@ def _usage(registry) -> str:
     return "|".join(names)
 
 
-def _format_system_status(registry, source_lines: list[str] | None = None) -> str:
+def _format_system_status(
+    registry, source_lines: list[str] | None = None, llm_line: str = "",
+) -> str:
     sources_part = ""
     if source_lines:
         sources_part = "\n\n<b>전역 뉴스 소스</b>\n" + "\n".join(
@@ -53,6 +55,7 @@ def _format_system_status(registry, source_lines: list[str] | None = None) -> st
     return (
         "<b>시스템 상태</b>\n\n"
         "추론: <b>Cloudflare Workers AI</b> (원격)"
+        f"\n{llm_line}"
         f"{sources_part}\n\n"
         "제어:\n" + _control_lines(registry)
     )
@@ -104,8 +107,10 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     registry = context.bot_data.get("news_registry")
     source_lines = registry.status_lines() if registry is not None else None
+    llm_spec = feature_registry.status_report("llm") if feature_registry is not None else None
+    llm_line = await llm_spec.render(context.bot_data) if llm_spec is not None else ""
     await message.reply_text(
-        _format_system_status(feature_registry, source_lines),
+        _format_system_status(feature_registry, source_lines, llm_line or ""),
         parse_mode="HTML",
         reply_markup=system_menu(feature_registry),
     )

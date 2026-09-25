@@ -13,8 +13,11 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
+from weakref import WeakSet
 
 import requests
+
+from services.telegram_bot.core.clock import now
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +459,28 @@ def _format_instant(epoch: float) -> str:
     )
 
 
+@dataclass(frozen=True)
+class CircuitState:
+    """응답 본문·자격증명을 포함하지 않는 운영 상태."""
+
+    reason: str
+    opened_at: float
+    open_until: float | None
+
+
+_backends: WeakSet = WeakSet()
+_last_quota_exhaustion: CircuitState | None = None
+
+
+def open_circuits() -> tuple[CircuitState, ...]:
+    return tuple(state for backend in list(_backends) if (state := backend.circuit_state()))
+
+
+def last_quota_exhaustion() -> CircuitState | None:
+    # 자정 직전 소진도 다음 관측 주기에서 알릴 수 있도록 해제 후에도 남긴다.
+    return _last_quota_exhaustion
+
+
 class ResilientBackend:
     """재시도와 회로 차단을 얹은 백엔드 래퍼.
 
@@ -473,7 +498,7 @@ class ResilientBackend:
         max_attempts: int = 2,
         failure_threshold: int = 3,
         cooldown_seconds: float = 300.0,
-        clock: Callable[[], float] = time.time,
+        clock: Callable[[], float] = lambda: now().timestamp(),
         sleep: Callable[[float], None] = time.sleep,
     ):
         self._backend = backend
@@ -486,6 +511,8 @@ class ResilientBackend:
         self._open_until = 0.0
         self._open_permanently = False
         self._open_reason = ""
+        self._opened_at = 0.0
+        _backends.add(self)
 
     @property
     def name(self) -> str:
@@ -501,6 +528,14 @@ class ResilientBackend:
         if self._clock() < self._open_until:
             return f"open({self._open_reason},until={_format_instant(self._open_until)})"
         return "closed"
+
+    def circuit_state(self) -> CircuitState | None:
+        if not self._circuit_open():
+            return None
+        return CircuitState(
+            self._open_reason, self._opened_at,
+            None if self._open_permanently else self._open_until,
+        )
 
     def generate(
         self,
@@ -562,14 +597,19 @@ class ResilientBackend:
         self._open_reason = ""
 
     def _record_failure(self, error: LLMBackendError) -> None:
+        global _last_quota_exhaustion
         if error.caller_fault:
             # 공급자는 정상 응답했다. 요청이 예약한 출력 한도가 모자란 것이라
             # 연속 실패로 세면 리서치 하나 때문에 뉴스 번역까지 멈춘다.
             return
 
         if error.quota_exhausted:
-            self._open_until = _next_utc_midnight(self._clock())
+            self._opened_at = self._clock()
+            self._open_until = _next_utc_midnight(self._opened_at)
             self._open_reason = "quota_exhausted"
+            _last_quota_exhaustion = CircuitState(
+                self._open_reason, self._opened_at, self._open_until,
+            )
             logger.warning(
                 "[LLM] provider=%s result=quota_exhausted circuit_open_until=%s",
                 self._backend.name,
@@ -578,6 +618,7 @@ class ResilientBackend:
             return
 
         if error.fatal:
+            self._opened_at = self._clock()
             self._open_permanently = True
             self._open_reason = error.reason
             logger.error(
@@ -599,7 +640,8 @@ class ResilientBackend:
         else:
             return
 
-        self._open_until = self._clock() + cooldown
+        self._opened_at = self._clock()
+        self._open_until = self._opened_at + cooldown
         self._open_reason = error.reason
         logger.warning(
             "[LLM] provider=%s result=%s consecutive_failures=%d circuit_open_until=%s",
