@@ -127,7 +127,7 @@ def _script(
             scene.body,
             "```",
             "",
-            f"**체크포인트** {scene.takeaway or '-'}",
+            f"**확인점(화면에 넣지 않음)** {scene.takeaway or '-'}",
             "",
             "**멘트**",
             "",

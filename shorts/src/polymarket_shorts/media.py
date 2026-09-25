@@ -20,14 +20,17 @@ _ALLOWED_LICENSES = ("cc0", "public domain", "cc by 4", "cc by 3", "cc by 2")
 ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "backgrounds"
 
 
+# `visual_query`가 가리키는 장면 성격을 저장된 두 배경 중 하나로 옮긴다. 예전에는
+# "shipping" 한 단어만 봐서 지정학·마무리까지 전부 같은 도시 야경으로 떨어졌다.
+# 장면마다 달라 보이게 하는 나머지(크롭·방향·색조)는 `render._background`가 한다.
+_TRADE_HINTS = ("shipping", "cargo", "container", "trade", "united nations", "security council")
+
+
 def background_for(kind: str, visual_query: str, root: Path = ASSET_DIR) -> Path | None:
     """Select a pre-generated local image without network or generation calls."""
-    filename = (
-        "global-trade.png"
-        if kind == "consensus" and "shipping" in visual_query.lower()
-        else "financial-city.png"
-    )
-    path = root / filename
+    query = visual_query.lower()
+    trade = kind == "outro" or (kind == "consensus" and any(hint in query for hint in _TRADE_HINTS))
+    path = root / ("global-trade.png" if trade else "financial-city.png")
     try:
         with Image.open(path) as image:
             image.verify()
