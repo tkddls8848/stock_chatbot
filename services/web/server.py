@@ -148,9 +148,10 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
     async def response_policy(request: Request, call_next):
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             # 예외 메시지에는 비밀값이 섞일 수 있어 응답·로그 모두에 옮기지 않는다.
-            logger.error("웹 요청 처리 실패")
+            # 경로와 예외 종류만 남긴다 — 그것도 없으면 어느 화면이 왜 깨졌는지 모른다.
+            logger.error("웹 요청 처리 실패 path=%s error=%s", request.url.path, type(exc).__name__)
             response = _error_response(request, 500)
         response.headers.update(_SECURITY_HEADERS)
         response.headers.setdefault(
