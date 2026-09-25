@@ -1,4 +1,4 @@
-"""영상 내레이션의 어조는 합쇼체 하나로 통일한다.
+"""영상 내레이션의 어조는 합쇼체 하나로 통일한다(`speech.py`).
 
 웹 단락은 **해라체**다(`services/web/prompts/polymarket_brief_ko.txt`가 그렇게 지시한다).
 읽는 화면에는 맞지만 영상은 말로 읽으므로 합쇼체여야 한다. 그대로 끼워 넣으면
@@ -9,7 +9,7 @@
 
 import pytest
 
-from polymarket_shorts.scenario import to_polite, to_polite_text
+from polymarket_shorts.speech import to_polite, to_polite_text
 
 
 @pytest.mark.parametrize(
@@ -56,7 +56,7 @@ def test_narration_never_mixes_plain_and_polite():
 
 def test_evidence_and_checkpoint_are_separated_by_a_sentence_end():
     """마침표가 없으면 TTS가 한 문장으로 읽어 '그쳤습니다 공급망과'로 들린다."""
-    from polymarket_shorts.scenario import end_sentence
+    from polymarket_shorts.speech import end_sentence
 
     assert end_sentence("35%에 그쳤습니다") == "35%에 그쳤습니다."
     assert end_sentence("이미 닫혔습니다.") == "이미 닫혔습니다."
@@ -81,3 +81,23 @@ def test_every_narration_prompt_forbids_a_lone_one_syllable_determiner():
     }
     for name, text in sources.items():
         assert "한 글자 관형사" in text, f"{name}에 규칙이 없습니다"
+
+
+def test_every_narration_prompt_splits_the_screen_from_the_voice():
+    """멘트를 쓰는 곳이 셋이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
+
+    2026-09-23 편집본이 "예 99.95%, 아니오 0.05%"를 그대로 낭독했다. 규칙 기반
+    경로(`speech.py`)는 이미 막았지만, 모델이 쓰는 경로도 같은 기준이어야 한다.
+    """
+    from polymarket_shorts import highlights, workflow
+    from polymarket_shorts.config import PROJECT_DIR
+
+    sources = {
+        "highlights.PROMPT": highlights.PROMPT,
+        "workflow.EDITOR_PROMPT": workflow.EDITOR_PROMPT,
+        "prompts/editorial_ko.txt": (PROJECT_DIR / "prompts" / "editorial_ko.txt").read_text(
+            encoding="utf-8"
+        ),
+    }
+    for name, text in sources.items():
+        assert "말로 푸는" in text or "말하듯" in text or "말로 묻듯" in text, f"{name}에 구어체 규칙이 없습니다"

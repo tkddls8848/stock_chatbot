@@ -1,3 +1,6 @@
+import re
+from dataclasses import replace
+
 from PIL import Image, ImageDraw
 
 from polymarket_shorts import render
@@ -101,10 +104,13 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert duration == 100.6
     assert "-shortest" not in captured["command"]
     assert "apad=pad_dur=0.6" in captured["command"]
-    assert bodies == ["첫 문장\n둘째 문장", "첫 문장\n둘째 문장"]
+    # 화면 문구는 한 줄씩 쌓여 뜬다 — 수치 화면 뒤에 첫 줄, 그다음 두 줄 모두.
+    assert bodies == ["첫 문장\n둘째 문장", "첫 문장", "첫 문장\n둘째 문장"]
     video_filter = captured["command"][captured["command"].index("-vf") + 1]
-    # Expand still frames before drawing subtitles so cues change within a scene.
-    assert video_filter.startswith("fps=30,subtitles=")
+    # Expand still frames, drift the whole card, then draw subtitles on top — the
+    # cues stay put while the card floats.
+    assert video_filter.startswith("fps=30,crop=")
+    assert video_filter.index("crop=") < video_filter.index("subtitles=")
     assert "overlay" not in video_filter
     assert captured["command"].count("-i") == 2  # Composited frames and audio only.
     assert captured["command"][captured["command"].index("-filter_threads") + 1] == "1"
@@ -184,3 +190,85 @@ def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path,
         assert accent(PROGRESS_Y + 2) > 200   # 진행바가 새 자리에 있다
         assert accent(1582) == 0              # 예전 자리에는 없다
         assert accent(SAFE_BOTTOM - 10) == 0  # 자막이 들어갈 띠는 비어 있다
+
+
+def test_a_long_sentence_splits_evenly_instead_of_leaving_a_scrap():
+    """앞에서부터 한도까지 채우면 꼬리에 "분위기입니다." 한 조각만 남는다."""
+    narration = "반면 9월 WTI 100달러 이상 쪽은 다섯 번에 한 번꼴로 봅니다."
+    words = tuple(
+        Word(start, start + .4, text)
+        for start, text in zip(
+            (0.0, 0.5, 1.0, 1.5, 2.2, 2.7, 3.2, 3.7, 4.0, 4.5),
+            ("반면", "9월", "WTI", "100달러", "이상", "쪽은", "다섯", "번에", "한", "번꼴로"),
+        )
+    ) + (Word(5.0, 5.6, "봅니다"),)
+
+    (phrases,) = render._phrases([narration], (words,), 7.0)
+
+    assert len(phrases) == 2
+    # 두 문구의 길이가 비슷하고, 어느 쪽도 어절을 반토막 내지 않는다.
+    assert abs(len(phrases[0].text) - len(phrases[1].text)) <= 6
+    assert " ".join(phrase.text for phrase in phrases) == narration
+
+
+def test_a_sentence_that_fits_stays_in_one_cue():
+    narration = "원유 가격은 에너지 비용과 연결됩니다."
+    words = tuple(
+        Word(start, start + .4, text)
+        for start, text in zip((0.0, 0.5, 1.0, 1.5), ("원유", "가격은", "에너지", "비용과"))
+    ) + (Word(2.0, 2.6, "연결됩니다"),)
+
+    (phrases,) = render._phrases([narration], (words,), 4.0)
+
+    assert [phrase.text for phrase in phrases] == [narration]
+
+
+def test_the_metric_counts_up_from_zero_before_it_settles():
+    """정지 카드가 20초씩 멈춰 있으면 화면이 죽는다. 수치는 차오르며 들어온다."""
+    scene = Scene("consensus", "10월 금리 결정", "01 · 거시·통화", "본문", "멘트",
+                  metric="55%", probability=.55)
+
+    beats = render._countup(scene, 3.0)
+
+    assert [beat for beat, _, _ in beats] == ["metric"] * (render.COUNTUP_STEPS + 1)
+    assert sum(hold for _, hold, _ in beats) == pytest.approx(3.0)
+    assert beats[0][2].metric == "0%" and beats[0][2].probability == 0
+    # 올라가는 동안에는 정수만 보여 주고, 확정된 값은 마지막에 한 번 제대로 선다.
+    assert all(re.fullmatch(r"\d+%", shown.metric) for _, _, shown in beats[:-1])
+    assert beats[-1][2] == scene
+
+
+def test_a_short_beat_or_a_word_metric_stays_a_single_frame():
+    scene = Scene("consensus", "제목", "기준", "본문", "멘트", metric="55%", probability=.55)
+
+    assert render._countup(scene, render.COUNTUP_MIN_BEAT - .01) == [("metric", render.COUNTUP_MIN_BEAT - .01, scene)]
+    words = replace(scene, metric="조건", kind="outro")
+    assert render._countup(words, 9.0) == [("metric", 9.0, words)]
+
+
+def test_captions_never_cut_a_word_the_voice_reported_in_pieces():
+    """edge-tts는 "25bp"를 "25"와 "bp"로 나눠 돌려준다. 그 사이는 끊지 않는다."""
+    narration = "10월 금리 변동 없음과 10월 금리 25bp 인상, 둘 다 정확히 반반입니다."
+    pieces = ("10월", "금리", "변동", "없음과", "10월", "금리", "25", "bp",
+              "인상", "둘", "다", "정확히", "반반입니다")
+    words = tuple(Word(n * .5, n * .5 + .4, text) for n, text in enumerate(pieces))
+
+    (phrases,) = render._phrases([narration], (words,), 8.0)
+
+    assert len(phrases) > 1  # 이 길이는 한 화면에 담기지 않는다
+    for phrase in phrases:
+        assert not phrase.text.endswith("25") and not phrase.text.startswith("bp")
+    assert " ".join(phrase.text for phrase in phrases) == narration
+
+
+def test_a_caption_prefers_the_comma_the_speaker_already_pauses_at():
+    narration = "여기 숫자는 사람들의 전망일 뿐, 정해진 결과도 투자 조언도 아닙니다."
+    pieces = ("여기", "숫자는", "사람들의", "전망일", "뿐", "정해진", "결과도", "투자",
+              "조언도", "아닙니다")
+    words = tuple(Word(n * .5, n * .5 + .4, text) for n, text in enumerate(pieces))
+
+    (phrases,) = render._phrases([narration], (words,), 7.0)
+
+    assert [phrase.text for phrase in phrases] == [
+        "여기 숫자는 사람들의 전망일 뿐,", "정해진 결과도 투자 조언도 아닙니다.",
+    ]
