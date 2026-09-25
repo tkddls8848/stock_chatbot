@@ -221,8 +221,8 @@ response_bytes, walk_seconds
 
 ## 3. 이벤트와 현재 컨센서스 모델
 
-Polymarket에서 market은 Yes/No로 거래되는 단위이고 event는 한 개 이상의 market을
-묶는 상위 단위다. 화면과 회계의 기본 행은 event다.
+Polymarket에서 market은 **결과 두 개로 거래되는 단위**이고 event는 한 개 이상의
+market을 묶는 상위 단위다. 화면과 회계의 기본 행은 event다.
 
 ### 3-1. 공통 가격 검증
 
@@ -230,12 +230,23 @@ Polymarket에서 market은 Yes/No로 거래되는 단위이고 event는 한 개 
 
 ```text
 PRICE_SUM_TOLERANCE = 0.05
-valid_binary_leg =
-  outcomes가 정확히 Yes/No이고
+valid_two_way_leg =
+  outcomes가 정확히 둘이고 서로 다른 이름을 가졌으며
   각 가격이 0..1이며
   abs(sum(outcome_prices) - 1.0) <= 0.05
 ```
 
+- **두 결과의 이름은 Yes/No만이 아니다.** 원문은 시장마다 다른 이름을 준다 —
+  `Up`/`Down`(5분 가격 방향), 팀 이름, `Over`/`Under`. 이름이 Yes/No가 아니라는
+  이유로 가격을 버리지 않는다. 2026-09-25 실측에서 열린 event 19,054건 중
+  13,522건이 `unavailable`이었고, 그중 binary 4,206건은 거의 전부가 이 경우였다.
+- `yes_probability`는 **첫 번째 결과**의 확률, `no_probability`는 두 번째 결과의
+  확률이다. 이름이 Yes/No일 때만 순서가 뒤집혀 와도 이름으로 맞춘다. 필드 이름과
+  뜻은 계약이므로 바꾸지 않는다(shorts·트렌드가 HTTP로 읽는다). 어느 확률이 어느
+  쪽 이름인지는 상세의 `yes_label`·`no_label`이 함께 알려 준다 — 화면은 이 값으로
+  "예 34% · 아니오 66%"와 "Up 52% · Down 48%"를 갈라 쓴다.
+- 두 이름이 비었거나 서로 같으면 어느 확률이 어느 쪽인지 적을 수 없다.
+  `unusable_outcome_labels` 경고와 함께 읽지 않는다.
 - tolerance 안이면 표시용 확률만 합 1로 정규화하고 `raw_price_sum`을 보존한다.
 - tolerance 밖이면 정상 이진 확률로 만들지 않고 `price_sum_invalid` 경고와
   `unavailable` 상태를 준다.
@@ -245,7 +256,7 @@ valid_binary_leg =
 
 ### 3-2. 단일 binary 이벤트
 
-market이 하나이고 유효한 Yes/No 가격이면 두 결과를 직접 표시한다.
+market이 하나이고 두 결과의 가격이 유효하면 두 결과를 직접 표시한다.
 
 ```text
 미국이 2026년에 경기침체에 들어갈까?
@@ -253,19 +264,31 @@ Yes 34%  ███████░░░░░░░░░░░░
 No  66%  █████████████░░░░░░░
 ```
 
-`leader_probability`는 `max(p_yes, p_no)`이고 `leader`는 그 결과다. 결측·범위 오류·
-가격 합 오류가 있으면 추정하지 않는다.
+`leader_probability`는 `max(p_yes, p_no)`이고 `leader`는 **그쪽 결과의 원문
+이름**이다 — 예/아니오 시장이면 `Yes`·`No`, 이름이 붙은 시장이면 `Up`이나 팀
+이름이다. 결측·범위 오류·가격 합 오류가 있으면 추정하지 않는다.
+
+**이름이 붙은 두 선택지 event는 제목이 참·거짓 명제가 아니다.** "Bitcoin Up or
+Down"의 제목에는 "사실로 판명될 확률"이 없으므로 `title_probability`는 `None`을
+준다(배타적 다지선다와 같은 모양이다 — 호출자는 `leader`와 `leader_probability`를
+함께 읽는다). 여기서 `leader_probability`를 그냥 돌려주면 1위가 `Up`에서 `Down`으로
+넘어간 주기에 트렌드의 뺄셈이 0에 가깝게 나온다.
 
 ### 3-3. 배타적 다지선다 이벤트
 
 자식 market이 여러 개이고 `negRisk is true`이면 각 자식의 Yes가 서로 배타적인
 결과라고 본다.
 
-- 모든 자식 Yes 가격이 유효하고 `abs(sum(yes_prices)-1) <= 0.05`일 때만 표시용
-  구성비를 정규화한다.
-- `raw_yes_sum`, outcome 수, 결측 수를 보존한다.
-- 하나라도 빠지거나 합이 tolerance 밖이면 정상인 100% 구성비를 만들지 않는다.
-  읽힌 raw Yes 가격은 상세에 남기되 event leader와 순위 표본에서는 제외한다.
+- **닫힌 자식과 가격이 없는 자식은 계산에서 뺀다.** 자식 하나가 끝났거나 아직
+  가격이 붙지 않았다고 해서 event를 통째로 버리지 않는다 — 닫힌 자식의 가격은
+  예측이 아니라 결과(0·1)이고, 나머지 자식의 가격은 멀쩡하다. 무엇을 뺐는지는
+  `closed_children_excluded`·`partial_child_prices` 경고로 남긴다.
+- 남은 활성 자식의 `abs(sum(yes_prices)-1) <= 0.05`일 때만 표시용 구성비를
+  정규화한다. `raw_yes_sum`, outcome 수, 결측 수를 보존한다.
+- 합이 tolerance 밖이면 정상인 100% 구성비를 만들지 않는다
+  (`exclusive_price_sum_invalid`). 그 합은 후보가 빠졌다는 뜻이다. 읽힌 raw Yes
+  가격은 상세에 남기되 event leader와 순위 표본에서는 제외한다.
+- **활성 자식에 가격이 하나도 없을 때만 `unavailable`이다.**
 - `leader_probability`는 정규화된 1위 확률, `runner_up_probability`는 2위 확률,
   `leader_margin`은 둘의 차이다.
 
@@ -274,8 +297,10 @@ No  66%  █████████████░░░░░░░
 자식 market이 여러 개이고 `negRisk is false`이면 서로 동시에 참일 수 있는 독립
 질문 묶음으로 처리한다.
 
-- 각 market의 Yes/No를 독립적으로 표시하고 합이 100%인 것처럼 쌓지 않는다.
+- 각 market의 두 결과를 독립적으로 표시하고 합이 100%인 것처럼 쌓지 않는다.
 - event 하나의 “1위 확률”이나 “팽팽함”으로 합성하지 않는다.
+- 여기서도 닫힌 자식과 가격 없는 자식은 빼고, **활성 자식 중 하나라도 가격이
+  읽히면** event는 읽힌 것이다. 하나도 없을 때만 `unavailable`이다.
 - 현재 확신 목록이 필요하면 event가 아니라 자식 binary market을 같은 유형끼리만
   비교하고 부모 event를 함께 표시한다.
 
