@@ -204,6 +204,22 @@ def _concat_file(frames: Iterable[Path], durations: Iterable[float], target: Pat
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _drift_filter() -> str:
+    """정지 카드가 숨 쉬게 하는 아주 느린 흐름.
+
+    자르는 창의 크기는 고정이고 위치만 매 프레임 계산된다 — FFmpeg의 crop은
+    출력 크기를 한 번만 정하므로 확대는 할 수 없고, 이동만 한다. 되돌려 키우는
+    비율은 1.5%라 글자가 무뎌지지 않는다.
+    """
+    period_x, period_y = DRIFT_PERIODS
+    return (
+        f"crop=w={WIDTH - 2 * DRIFT_MARGIN}:h={HEIGHT - 2 * DRIFT_MARGIN}"
+        f":x='{DRIFT_MARGIN}+{DRIFT_AMPLITUDE}*sin(2*PI*t/{period_x})'"
+        f":y='{DRIFT_MARGIN}+{DRIFT_AMPLITUDE}*sin(2*PI*t/{period_y})',"
+        f"scale={WIDTH}:{HEIGHT}"
+    )
+
+
 def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
     escaped = path.resolve().as_posix().replace(":", "\\:").replace("'", "\\'")
     style = (
@@ -218,11 +234,30 @@ def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
 
 # 자막은 자기 첫 단어보다 이만큼 먼저 뜬다. edge-tts의 문장 큐가 쓰던 값과 같다.
 CAPTION_LEAD = 0.05
-# 장면이 바뀔 때는 더 일찍 넘긴다. tts.SCENE_PAUSE_SECONDS로 넓혀 둔 쉼의 뒤쪽
-# 이만큼이 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
+# 장면이 바뀔 때는 더 일찍 넘긴다. tts가 넓혀 둔 장면 경계 쉼의 뒤쪽 이만큼이
+# 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
 SCENE_LEAD = 0.55
-_PHRASE_CHARS = 25
+_PHRASE_CHARS = 30
 _SENTENCE_END = (".", "?", "!")
+
+# ── 움직임 ─────────────────────────────────────────────
+# 정지 카드를 20초씩 그대로 세워 두면 화면이 멈춘 것처럼 보인다. 움직임은 셋뿐이고
+# 전부 기존 렌더 경로 안에서 만든다 — 새 입력도, 새 의존성도, 새 네트워크도 없다.
+#
+# 1. 수치 카운트업: 큰 숫자가 0에서 제자리까지 차오른다. 정지 PNG 여러 장일 뿐이다.
+# 2. 화면 문구의 순차 등장: 선택지 줄이 말의 순서대로 하나씩 쌓인다.
+# 3. 프레임 전체의 느린 흐름: 가장자리를 조금 잘라 내고 그 안에서 천천히 움직인다.
+COUNTUP_SECONDS = .72
+COUNTUP_STEPS = 8
+# 카운트업이 끝난 뒤에도 제자리 숫자가 머물 시간이 남아야 한다.
+COUNTUP_MIN_BEAT = 1.4
+# 잘라 내는 가장자리(px)와 그 안에서 움직이는 폭. 되돌려 키우는 비율이 1.5%라
+# 글자가 무뎌지지 않고, 자막은 이 뒤에 얹으므로 흔들리지 않는다.
+DRIFT_MARGIN = 8
+DRIFT_AMPLITUDE = 7
+# 가로·세로 주기(초). 서로 나누어떨어지지 않아 같은 자리로 돌아오지 않는다.
+DRIFT_PERIODS = (23, 31)
+_METRIC_NUMBER = re.compile(r"(\d+(?:\.\d+)?)(%?)$")
 
 
 @dataclass(frozen=True)
@@ -258,15 +293,51 @@ def _phrases(
         def text_of(first: int, last: int, starts=starts, ends=ends, narration=narration) -> str:
             return re.sub(r"\s+", " ", narration[starts[first]:ends[last]]).strip()
 
-        groups: list[list[int]] = []
-        group: list[int] = []
+        def breakable(at: int, starts=starts, words=words, narration=narration) -> bool:
+            """다음 단어와 사이에 공백이 있는가.
+
+            edge-tts는 한 어절도 여러 단어로 돌려준다 — "25bp"가 "25"와 "bp"로
+            나뉘어 왔다. 그 사이에서 자막을 끊으면 화면에 "…금리 25"와
+            "bp 인상,"이 따로 뜬다.
+            """
+            between = narration[starts[at] + len(words[at].text):starts[at + 1]]
+            return bool(re.search(r"\s", between))
+
+        # 먼저 문장으로 끊는다. 한 문장이 한 문구로 다 들어가면 그대로 띄운다.
+        sentences: list[list[int]] = []
+        sentence: list[int] = []
         for index in range(len(words)):
-            if group and (len(text_of(group[0], index)) > _PHRASE_CHARS
-                          or text_of(group[-1], group[-1]).endswith(_SENTENCE_END)):
+            sentence.append(index)
+            if text_of(index, index).endswith(_SENTENCE_END):
+                sentences.append(sentence)
+                sentence = []
+        if sentence:
+            sentences.append(sentence)
+
+        groups: list[list[int]] = []
+        for sentence in sentences:
+            length = len(text_of(sentence[0], sentence[-1]))
+            parts = max(1, -(-length // _PHRASE_CHARS))
+            if parts == 1 or len(sentence) < parts:
+                groups.append(sentence)
+                continue
+            # 긴 문장은 균등하게 나눈다. 앞에서부터 한도까지 채우면 꼬리에
+            # "분위기입니다." 한 조각만 남아 화면에 글자 몇 개가 덩그러니 뜬다.
+            budget = length / parts
+            group, cut = [], budget
+            for index in sentence:
+                group.append(index)
+                if index == sentence[-1] or not breakable(index):
+                    continue
+                so_far = len(text_of(sentence[0], index))
+                # 쉼표는 말하는 사람이 이미 쉬는 자리다. 한도에 조금 못 미쳐도
+                # 거기서 끊는 편이 "…전망일 뿐, 정해진"보다 자연스럽다.
+                at_pause = text_of(group[0], index).endswith(",") and so_far >= cut - budget * .4
+                if so_far >= cut or at_pause:
+                    groups.append(group)
+                    group, cut = [], max(cut, so_far) + budget
+            if group:
                 groups.append(group)
-                group = []
-            group.append(index)
-        groups.append(group)
         counts.append(len(groups))
         for position, group in enumerate(groups):
             lead = SCENE_LEAD if position == 0 else CAPTION_LEAD
@@ -307,6 +378,51 @@ def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path) -> None:
     path.write_text("\n".join(blocks), encoding="utf-8")
 
 
+def _countup(scene: Scene, seconds: float) -> list[tuple[str, float, Scene]]:
+    """큰 수치가 0에서 제자리까지 차오르는 정지 프레임들.
+
+    올라가는 동안에는 정수만 보여 준다 — 소수점 둘째 자리까지 흔들리면 읽히지
+    않고 어지럽기만 하다. 확정된 값은 마지막 프레임에 한 번 제대로 선다.
+    숫자가 아닌 화면 수치("조건")나 짧은 구간은 그대로 한 장이다.
+    """
+    match = _METRIC_NUMBER.fullmatch(scene.metric.strip())
+    if scene.kind != "consensus" or not match or seconds < COUNTUP_MIN_BEAT:
+        return [("metric", seconds, scene)]
+    target, unit = float(match[1]), match[2]
+    step = COUNTUP_SECONDS / COUNTUP_STEPS
+    rising = [
+        ("metric", step, replace(
+            scene, metric=f"{target * n / COUNTUP_STEPS:.0f}{unit}",
+            probability=None if scene.probability is None
+            else scene.probability * n / COUNTUP_STEPS,
+        ))
+        for n in range(COUNTUP_STEPS)
+    ]
+    return rising + [("metric", seconds - COUNTUP_SECONDS, scene)]
+
+
+def _passages(body: str) -> list[str]:
+    """한 장면의 화면 문구를 뜨는 순서대로 나눈다.
+
+    한 화면에 들어가는 여러 줄은 나누지 않고 **쌓는다** — 선택지 줄이 말의
+    순서대로 하나씩 더해져, 지금 무슨 얘기를 하는 중인지 화면이 같이 말한다.
+    한 화면에 안 들어갈 만큼 길면 예전처럼 화면을 나눠 넘긴다.
+    """
+    passages, current = [], ""
+    for paragraph in body.splitlines():
+        for part in textwrap.wrap(paragraph, width=72, break_long_words=False, break_on_hyphens=False):
+            if current and len(current) + len(part) + 1 > 72:
+                passages.append(current)
+                current = ""
+            current = f"{current}\n{part}".strip()
+    if current:
+        passages.append(current)
+    if len(passages) == 1 and "\n" in passages[0]:
+        lines = passages[0].splitlines()
+        return ["\n".join(lines[:count + 1]) for count in range(len(lines))]
+    return passages or [body]
+
+
 def render_video(
     scenario: Scenario,
     *,
@@ -330,41 +446,46 @@ def render_video(
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
-    cursor = 0.0
+    cursor, merging = 0.0, None
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
         opening = min(3.0, seconds * .35)
         # 편집자가 지정한 문장·수치 줄바꿈은 화면에서도 보존한다.
-        passages, current = [], ""
-        for paragraph in scene.body.splitlines():
-            for part in textwrap.wrap(paragraph, width=72, break_long_words=False, break_on_hyphens=False):
-                if current and len(current) + len(part) + 1 > 72:
-                    passages.append(current)
-                    current = ""
-                current = f"{current}\n{part}".strip()
-        if current:
-            passages.append(current)
-        passages = passages or [scene.body]
-        weight = sum(len(p) for p in passages)
-        beats = [("metric", opening, scene)] + [
+        passages = _passages(scene.body)
+        weight = sum(len(passage) for passage in passages)
+        beats = _countup(scene, opening) + [
             (f"detail-{part + 1}", (seconds - opening) * len(passage) / max(1, weight), replace(scene, body=passage))
             for part, passage in enumerate(passages)
         ]
         if scene.kind != "consensus":
             beats = [("metric", seconds, scene)]
-        for beat, hold, display_scene in beats:
-            frame = work_dir / f"frame-{index:02d}-{beat}.png"
+        for position, (beat, hold, display_scene) in enumerate(beats, start=1):
+            frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
                          background_path=selected[index - 1], beat=beat)
             frames.append(frame)
             holds.append(hold)
-            timeline.append({"start": round(cursor, 3), "duration": round(hold, 3),
-                             "scene": scene.title, "beat": beat})
+            # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가
+            # 머무는 구간이지 그 안의 정지 화면 여덟 장이 아니다. 앞 장면과 제목이
+            # 같을 수 있으므로(도입 제목 = 첫 이슈 제목) 장면 번호로 구분한다.
+            if merging == (index, beat):
+                timeline[-1]["duration"] = round(timeline[-1]["duration"] + hold, 3)
+            else:
+                timeline.append({"start": round(cursor, 3), "duration": round(hold, 3),
+                                 "scene": scene.title, "beat": beat})
+            merging = (index, beat)
             cursor += hold
     frame_concat = work_dir / "frames.txt"
     _concat_file(frames, holds, frame_concat)
     # Static layers are already composited by render_frame. Two sparse image streams
     # feeding fps/overlay queued gigabytes of frames on the production FFmpeg build.
-    filters = "fps=30," + _subtitle_filter(captions, font_path.stem) + ",tpad=stop_mode=clone:stop_duration=1"
+    filters = ",".join((
+        "fps=30",
+        # 프레임 전체를 아주 조금 잘라 내고 그 안에서 천천히 흘린다. 자막은 이
+        # 다음에 얹으므로 제자리에 고정된다.
+        _drift_filter(),
+        _subtitle_filter(captions, font_path.stem),
+        "tpad=stop_mode=clone:stop_duration=1",
+    ))
     command = [
         ffmpeg_bin, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(frame_concat),
         "-i", str(audio_path), "-filter_threads", "1", "-vf", filters, "-map", "0:v", "-map", "1:a",
