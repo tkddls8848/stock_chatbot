@@ -12,7 +12,7 @@ from .client import PolymarketWebClient, SourceError
 from .config import Settings
 from .highlights import select_issues, write_issues
 from .markets import shortlist, prepare_issue
-from .media import background_for
+from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
 from .review import write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
@@ -115,11 +115,11 @@ def produce_revision(
     audio, spoken = work / "narration.mp3", work / "narration.words.jsonl"
     scene_words = synthesize(
         [scene.narration for scene in scenario.scenes], audio_path=audio, words_path=spoken,
-        voice=settings.tts_voice, rate=settings.tts_rate,
+        voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
     )
-    backgrounds = tuple(
-        background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
-        for scene in scenario.scenes
+    backgrounds = (
+        backgrounds_for(scenario.scenes, target / "backgrounds", settings) if settings.visuals_enabled
+        else tuple(None for _ in scenario.scenes)
     )
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
@@ -219,9 +219,9 @@ def produce_daily(
     video_path = day_dir / f"polymarket-{day}.mp4"
     scenario_path = day_dir / "scenario.json"
     metadata = metadata_for(scenario)
-    backgrounds = tuple(
-        background_for(scene.kind, scene.visual_query) if settings.visuals_enabled else None
-        for scene in scenario.scenes
+    backgrounds = (
+        backgrounds_for(scenario.scenes, day_dir / "backgrounds", settings) if settings.visuals_enabled
+        else tuple(None for _ in scenario.scenes)
     )
 
     with tempfile.TemporaryDirectory(prefix=f".{day}-", dir=settings.output_dir) as raw_work:
@@ -234,6 +234,7 @@ def produce_daily(
             words_path=spoken,
             voice=settings.tts_voice,
             rate=settings.tts_rate,
+            ffmpeg_bin=settings.ffmpeg_bin,
         )
         measured = probe_duration(audio, ffprobe_bin=settings.ffprobe_bin)
         if measured > settings.max_duration_seconds:

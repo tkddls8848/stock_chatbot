@@ -343,6 +343,7 @@ def export_project(
         words_path=words_path,
         voice=voice or settings.tts_voice,
         rate=rate or settings.tts_rate,
+        ffmpeg_bin=settings.ffmpeg_bin,
     )
     total_duration = probe_duration(audio_path, ffprobe_bin=settings.ffprobe_bin) + 0.6
     scene_phrases = _phrases(narrations, scene_words, total_duration)

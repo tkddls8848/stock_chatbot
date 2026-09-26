@@ -154,7 +154,8 @@ def build_scenario(
             bullets=(f"24시간 참여 규모 · {volume}",
                      f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시",
                      f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 상위 {len(options)}개"),
-            visual_query=_VISUAL_QUERIES[issue["sector"]],
+            # 배경 생성이 그날 이슈를 그리도록 원제를 붙인다. 저장 배경 선택은 앞 낱말만 본다.
+            visual_query=f"{_VISUAL_QUERIES[issue['sector']]}; topic: {issue['title']}",
             # 대표 수치는 화면이 그리는 첫 선택지와 같은 값에서 나온다 — 검수
             # 기록(`review.md`)·검수 패널·내보내기가 이 셋을 읽는다.
             metric=options[0][1], metric_label=options[0][0], probability=options[0][2],

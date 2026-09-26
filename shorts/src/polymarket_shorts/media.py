@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import asdict, dataclass
 import hashlib
 import html
+import io
 import logging
 from pathlib import Path
 import re
@@ -38,6 +40,74 @@ def background_for(kind: str, visual_query: str, root: Path = ASSET_DIR) -> Path
     except (OSError, ValueError) as exc:
         logger.warning("로컬 배경을 읽을 수 없어 기본 배경 사용: %s (%s)", path, exc)
         return None
+
+
+# 저장 배경(provenance.json)과 같은 결을 유지한다: 어두운 톤, 가운데 70%는 비워
+# 글자 패널 자리를 남기고, 글자·로고·국기·인물은 넣지 않는다. 인물은 실존 인물
+# 얼굴이 그려지는 것을 막으려는 것이다 — 원제에 정치인 이름이 자주 들어간다.
+_BACKGROUND_PROMPT = (
+    "Premium cinematic editorial 3D illustration, full bleed portrait background for a "
+    "Korean economic briefing video. Symbolic scene about: {subject}. "
+    "Charcoal green, muted gold and slate blue palette, soft dusk lighting. "
+    "Large calm dark negative space across the central 70 percent, detail only at the edges "
+    "and bottom. Symbolic objects and places only. No text, letters, numbers, logos, flags, "
+    "charts, watermark, or people."
+)
+WIDTH, HEIGHT = 1080, 1920
+
+
+def _generate_background(subject: str, target: Path, settings: Any) -> Path | None:
+    """Cloudflare Workers AI로 세로 배경 한 장을 만든다. 실패하면 None(호출자가 저장 배경으로)."""
+    if not settings.editor_account_id or not settings.editor_api_token:
+        return None
+    url = (f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}"
+           f"/ai/run/{settings.image_model}")
+    try:
+        response = requests.post(
+            url, headers={"Authorization": f"Bearer {settings.editor_api_token}"},
+            json={"prompt": _BACKGROUND_PROMPT.format(subject=subject), "steps": 8},
+            timeout=(10, 90),
+        )
+        response.raise_for_status()
+        encoded = response.json()["result"]["image"]
+        with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
+            image = image.convert("RGB")
+            # flux-1-schnell은 정사각형만 준다. 가운데를 9:16으로 잘라 세로 화면에 맞춘다.
+            width, height = image.size
+            crop = min(width, round(height * WIDTH / HEIGHT))
+            left = (width - crop) // 2
+            image = image.crop((left, 0, left + crop, height)).resize((WIDTH, HEIGHT), Image.LANCZOS)
+            image.save(target, format="PNG")
+        return target
+    except (requests.RequestException, KeyError, TypeError, ValueError, OSError) as exc:
+        logger.warning("배경 생성 실패, 저장 배경을 쓴다: %s (%s)", subject[:60], exc)
+        return None
+
+
+def backgrounds_for(scenes: tuple[Scene, ...], work_dir: Path, settings: Any) -> tuple[Path | None, ...]:
+    """장면별 배경. 이슈 장면은 그날 이슈로 새로 그리고, 도입은 첫 이슈 그림을 함께 쓴다.
+
+    마무리 고지와 생성 실패는 저장 배경(`background_for`)이다 — 배경 한 장 때문에
+    그날 제작을 멈추지 않는다.
+    """
+    first = next((scene.visual_query for scene in scenes if scene.kind == "consensus"), "")
+    made: dict[str, Path | None] = {}
+    chosen: list[Path | None] = []
+    for scene in scenes:
+        query = first if scene.kind == "intro" else scene.visual_query
+        path = None
+        if settings.generated_backgrounds and scene.kind != "outro" and "topic:" in query:
+            if query not in made:
+                # 이슈별 파일 이름을 고정해 두면 검수 중 수정·재렌더가 같은 그림을 다시 쓴다.
+                target = work_dir / f"{hashlib.sha1(query.encode()).hexdigest()[:12]}.png"
+                if target.is_file():
+                    made[query] = target
+                else:
+                    work_dir.mkdir(parents=True, exist_ok=True)
+                    made[query] = _generate_background(query.split("topic:", 1)[1].strip(), target, settings)
+            path = made[query]
+        chosen.append(path or background_for(scene.kind, scene.visual_query))
+    return tuple(chosen)
 
 
 @dataclass(frozen=True)

@@ -77,76 +77,102 @@ def test_a_failed_synthesis_is_reported_as_tts_error(tmp_path, monkeypatch):
         )
 
 
-def _cbr_mp3(frames):
-    """24kHz·48kbps·모노 MP3 흉내. 프레임 하나가 144바이트·24ms다."""
-    return b"".join(b"\xff\xf3\x64\xc4" + payload for payload in frames)
+RATE = tts._SAMPLE_RATE
 
 
-def test_scene_breaks_are_widened_by_duplicating_silent_frames(tmp_path):
-    # 40프레임 말소리 → 30프레임 무음 → 130프레임 말소리
-    speech = [bytes([n % 251 or 7]) * 140 for n in range(1, 41)]
-    quiet = [b"\x00" * 140] * 30
-    tail = [bytes([(n * 7) % 251 or 9]) * 140 for n in range(1, 131)]
+def _pcm(monkeypatch, tmp_path, pattern):
+    """(초, 소리 여부) 목록으로 PCM을 만들고 디코드·인코드를 메모리로 바꿔 끼운다.
+
+    말소리는 1000, 무음은 0이다. 저장된 결과는 `store["out"]`에 남는다.
+    """
+    from array import array
+
+    samples = array("h")
+    for seconds, loud in pattern:
+        samples.extend([1000 if loud else 0] * round(seconds * RATE))
+    store = {"in": samples}
+    monkeypatch.setattr(tts, "_decode", lambda path, ffmpeg_bin: array("h", store["in"]))
+    monkeypatch.setattr(tts, "_encode", lambda out, path, ffmpeg_bin: store.update(out=out))
     audio = tmp_path / "voice.mp3"
-    audio.write_bytes(_cbr_mp3(speech + quiet + tail))
-    scenes = (
-        (Word(0.0, 1.0, "앞"),),
-        (Word(1.86, 2.5, "뒤"),),
-    )
+    audio.write_bytes(b"mp3")
+    return audio, store
+
+
+def test_long_scene_break_is_shortened_inside_the_silence(tmp_path, monkeypatch):
+    # 말 1초 → 무음 2초 → 말 1초. 장면 경계(마무리) 목표는 CLOSING_PAUSE_SECONDS다.
+    audio, store = _pcm(monkeypatch, tmp_path, [(1, True), (2, False), (1, True)])
+    scenes = ((Word(0.0, 1.0, "앞"),), (Word(3.0, 4.0, "뒤"),))
 
     paced = tts._pace_breaths(audio, scenes, ["앞", "뒤"])
 
-    # 0.86초였던 쉼을 그 자리의 목표까지 넓힌다. 프레임 하나가 24ms다.
-    added = round((tts.CLOSING_PAUSE_SECONDS - 0.86) / tts._FRAME_SECONDS)
-    assert len(audio.read_bytes()) == (200 + added) * tts._FRAME_BYTES
-    # 말소리 프레임은 그대로다 — 복제한 것은 쉼 한가운데의 무음뿐이다.
-    assert audio.read_bytes().count(b"\x00" * 140) == 30 + added
+    removed = 2.0 - tts.CLOSING_PAUSE_SECONDS
     assert paced[0] == scenes[0]
-    assert paced[1][0].start == pytest.approx(1.86 + added * tts._FRAME_SECONDS)
+    assert paced[1][0].start == pytest.approx(3.0 - removed, abs=0.001)
+    out = store["out"]
+    assert len(out) == pytest.approx(4 * RATE - removed * RATE, abs=2)
+    # 말소리는 한 샘플도 깎이지 않는다 — 잘라 낸 것은 쉼 가운데뿐이다.
+    assert sum(1 for v in out if v == 1000) == 2 * RATE
 
 
-def test_a_scene_break_without_silence_preserves_audio_and_timing(tmp_path):
+def test_short_scene_break_is_widened_with_silence(tmp_path, monkeypatch):
+    audio, store = _pcm(monkeypatch, tmp_path, [(1, True), (0.3, False), (1, True)])
+    scenes = ((Word(0.0, 1.0, "앞"),), (Word(1.3, 2.3, "뒤"),))
+
+    paced = tts._pace_breaths(audio, scenes, ["앞", "뒤"])
+
+    added = tts.CLOSING_PAUSE_SECONDS - 0.3
+    assert paced[1][0].start == pytest.approx(1.3 + added, abs=0.001)
+    assert sum(1 for v in store["out"] if v == 1000) == 2 * RATE
+
+
+def test_speech_edges_are_guarded_when_the_gap_is_tight(tmp_path, monkeypatch):
+    # 쉼이 목표보다 길지만 여유(양쪽 _GUARD_SECONDS)를 빼면 덜어 낼 것이 거의 없다.
+    gap = 2 * tts._GUARD_SECONDS + 0.01
+    audio, store = _pcm(monkeypatch, tmp_path, [(1, True), (gap, False), (1, True)])
+    words = (Word(0.0, 1.0, "짧다"), Word(1.0 + gap, 2.0 + gap, "다음"))
+    monkeypatch.setattr(tts, "SENTENCE_PAUSE_SECONDS", 0.05)
+
+    (paced,) = tts._pace_breaths(audio, (words,), ["짧다. 다음"])
+
+    assert paced[1].start == pytest.approx(words[1].start - 0.01, abs=0.001)
+    assert sum(1 for v in store["out"] if v == 1000) == 2 * RATE
+
+
+def test_every_sentence_end_inside_a_scene_is_paced(tmp_path, monkeypatch):
+    """edge-tts의 0.86초 호흡은 쇼츠에 길다. 장면 안 문장 끝도 목표로 맞춘다."""
+    audio, _ = _pcm(monkeypatch, tmp_path, [(0.6, True), (0.86, False), (0.6, True)])
+    words = (Word(0.0, 0.6, "짧다"), Word(1.46, 2.06, "다음"))
+
+    (paced,) = tts._pace_breaths(audio, (words,), ["짧다. 다음"])
+
+    assert paced[1].start == pytest.approx(1.46 - (0.86 - tts.SENTENCE_PAUSE_SECONDS), abs=0.001)
+
+
+def test_splices_are_faded_so_the_wave_does_not_jump(tmp_path, monkeypatch):
+    # 쉼 한가운데에도 옅은 소리(500)가 깔려 있으면 이음매 양쪽이 페이드로 이어진다.
+    from array import array
+
+    samples = array("h", [500] * (3 * RATE))
+    monkeypatch.setattr(tts, "_decode", lambda path, ffmpeg_bin: array("h", samples))
+    store = {}
+    monkeypatch.setattr(tts, "_encode", lambda out, path, ffmpeg_bin: store.update(out=out))
     audio = tmp_path / "voice.mp3"
-    audio.write_bytes(_cbr_mp3([bytes([n % 251 or 7]) * 140 for n in range(1, 201)]))
+    audio.write_bytes(b"mp3")
+    scenes = ((Word(0.0, 0.5, "앞"),), (Word(2.5, 3.0, "뒤"),))
 
-    original = audio.read_bytes()
-    scenes = ((Word(0.0, 1.0, "앞"),), (Word(1.86, 2.5, "뒤"),))
-    assert tts._pace_breaths(audio, scenes, ["앞", "뒤"]) == scenes
-    assert audio.read_bytes() == original
+    tts._pace_breaths(audio, scenes, ["앞", "뒤"])
 
-
-def test_a_long_pause_does_not_search_for_silence(tmp_path, monkeypatch):
-    audio = tmp_path / "voice.mp3"
-    original = _cbr_mp3([bytes([n % 251 or 7]) * 140 for n in range(1, 201)])
-    audio.write_bytes(original)
-    monkeypatch.setattr(tts, "_quiet_frame", lambda *args: pytest.fail("이미 충분히 긴 쉼입니다"))
-    scenes = ((Word(0, 1, "앞"),), (Word(3, 3.5, "뒤"),))
-    assert tts._pace_breaths(audio, scenes, ["앞", "뒤"]) == scenes
-    assert audio.read_bytes() == original
+    out = store["out"]
+    jumps = max(abs(out[i + 1] - out[i]) for i in range(len(out) - 1))
+    assert jumps < 100   # 페이드 없이 붙이면 500 → 0 → 500처럼 튄다
 
 
-def test_mixed_pauses_shift_only_by_inserted_silence(tmp_path):
-    frames = [bytes([n % 251 or 7]) * 140 for n in range(1, 301)]
-    frames[145:175] = [b"\x00" * 140] * 30
-    audio = tmp_path / "voice.mp3"
-    original = _cbr_mp3(frames)
-    audio.write_bytes(original)
-    scenes = ((Word(0, 1, "첫째"),), (Word(1.86, 3.4, "둘째"),), (Word(4.26, 5, "셋째"),))
-    paced = tts._pace_breaths(audio, scenes, ["첫째", "둘째", "셋째"])
-    added = round((tts.CLOSING_PAUSE_SECONDS - .86) / tts._FRAME_SECONDS)
-    assert paced[:2] == scenes[:2]
-    assert paced[2][0].start == pytest.approx(4.26 + added * tts._FRAME_SECONDS)
-    middle = int((3.4 + 4.26) / 2 / tts._FRAME_SECONDS) * tts._FRAME_BYTES
-    assert audio.read_bytes()[:middle] == original[:middle]
-    assert audio.read_bytes()[middle + added * tts._FRAME_BYTES:] == original[middle:]
-
-
-def test_invalid_mp3_still_fails_before_pacing(tmp_path):
+def test_decode_failure_is_a_tts_error(tmp_path):
     audio = tmp_path / "voice.mp3"
     audio.write_bytes(b"invalid mp3")
-    with pytest.raises(tts.TTSError, match="MP3"):
-        tts._pace_breaths(audio, ((Word(0, 1, "앞"),), (Word(1.86, 2.5, "뒤"),)), ["앞", "뒤"])
-    assert audio.read_bytes() == b"invalid mp3"
+    with pytest.raises(tts.TTSError):
+        tts._pace_breaths(audio, ((Word(0, 1, "앞"),), (Word(1.86, 2.5, "뒤"),)), ["앞", "뒤"],
+                          ffmpeg_bin="definitely-not-ffmpeg")
 
 
 def test_words_are_matched_to_the_script_in_order():
@@ -166,34 +192,3 @@ def test_scene_pauses_differ_by_where_the_break_falls():
     # 도입에서 첫 이슈로는 가장 짧게, 마무리 고지문 앞에서 가장 길게 쉰다.
     assert gaps[0] < gaps[1] < gaps[-1]
     assert tts.scene_pauses(1) == ()
-
-
-def test_a_long_sentence_inside_a_scene_gets_an_extra_breath(tmp_path):
-    """장면 경계만 넓히면 긴 문장이 끝나도 곧바로 다음 문장이 밀고 들어온다."""
-    narration = "9월 WTI 90달러 이하 쪽은 사실상 굳어진 분위기입니다. 원유 가격은 에너지 비용과 연결됩니다."
-    words = (Word(0.0, 0.5, "9월"), Word(0.5, 1.0, "WTI"), Word(1.0, 1.6, "90달러"),
-             Word(1.6, 2.0, "이하"), Word(2.0, 2.4, "쪽은"), Word(2.4, 2.9, "사실상"),
-             Word(2.9, 3.2, "굳어진"), Word(3.2, 3.6, "분위기입니다"),
-             Word(4.46, 5.0, "원유"), Word(5.0, 5.4, "가격은"), Word(5.4, 6.0, "에너지"),
-             Word(6.0, 6.5, "비용과"), Word(6.5, 7.2, "연결됩니다"))
-    frames = [bytes([n % 251 or 7]) * 140 for n in range(1, 401)]
-    frames[160:190] = [b"\x00" * 140] * 30
-    audio = tmp_path / "voice.mp3"
-    audio.write_bytes(_cbr_mp3(frames))
-
-    (paced,) = tts._pace_breaths(audio, (words,), [narration])
-
-    added = round((tts.SENTENCE_PAUSE_SECONDS - .86) / tts._FRAME_SECONDS)
-    assert paced[:8] == words[:8]                       # 앞 문장은 제자리다
-    assert paced[8].start == pytest.approx(4.46 + added * tts._FRAME_SECONDS)
-
-
-def test_a_short_sentence_keeps_the_voice_own_breath(tmp_path):
-    """짧은 문장 뒤의 0.86초는 그대로가 자연스럽다 — 넓히면 뚝뚝 끊긴다."""
-    audio = tmp_path / "voice.mp3"
-    original = _cbr_mp3([bytes([n % 251 or 7]) * 140 for n in range(1, 201)])
-    audio.write_bytes(original)
-    words = (Word(0.0, 0.6, "짧다"), Word(1.46, 2.0, "다음"))
-
-    assert tts._pace_breaths(audio, (words,), ["짧다. 다음"]) == (words,)
-    assert audio.read_bytes() == original

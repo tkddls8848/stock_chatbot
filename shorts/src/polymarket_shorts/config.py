@@ -70,6 +70,9 @@ class Settings:
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
     editor_model: str = "@cf/qwen/qwen3-30b-a3b-fp8"
+    # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
+    generated_backgrounds: bool = True
+    image_model: str = "@cf/black-forest-labs/flux-1-schnell"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -94,4 +97,6 @@ class Settings:
             ffmpeg_bin=_media_binary("FFMPEG_BIN", "ffmpeg"),
             ffprobe_bin=_media_binary("FFPROBE_BIN", "ffprobe"),
             visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),
+            generated_backgrounds=_bool("SHORTS_GENERATED_BACKGROUNDS", True),
+            image_model=os.getenv("SHORTS_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip(),
         )
