@@ -46,7 +46,7 @@ question은 말로 묻듯 씁니다 — "얼마에 도달할 것인가?"가 아�
 context는 이슈마다 끝맺음을 바꿔 같은 틀이 반복되지 않게 하세요("…와 연결됩니다"만 다섯 번 쓰지 않습니다).
 확률을 말로 푸는 일과 장면을 잇는 말은 프로그램이 합니다. 그 문장을 대신 쓰지 마세요.
 image_scene은 배경 그림 묘사입니다. 영어 8~30단어로, 이 이슈를 상징하는 구체적인 사물이나 풍경 한 장면을 쓰세요
-(예: "oil tankers crossing a narrow sea strait at dusk, rocky coastline"). 건물 정면·간판·문서·화면·국기·사람·글자는 넣지 마세요.
+(예: "oil tankers crossing a narrow sea strait at dusk, rocky coastline"). 건물 정면·간판·문서·화면·차트·그래프·국기·사람·글자는 넣지 마세요.
 JSON만 반환하세요: {"scripts":[{"id":"이벤트 ID", "headline":"...", "question":"...",
 "market_labels":[{"id":"개별 시장 ID", "label":"..."}], "context":"...", "watch_point":"...",
 "image_scene":"...", "news_ids":["news:1"]}]}. 모든 입력 이슈에 하나씩 쓰세요. 뉴스가 없거나 무관하면 news_ids는 빈 배열입니다."""
@@ -256,8 +256,11 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         # 분야별 기본 묘사로 그린다 — 이것 때문에 원고를 다시 묻지 않는다.
         scene_text = row.get("image_scene")
         words = scene_text.split() if isinstance(scene_text, str) else []
+        # 차트·간판·문서처럼 글자가 따라 그려지는 대상을 고르면 버린다(실측: 축 눈금 숫자).
+        risky = re.search(r"\b(chart|graph|sign|text|document|screen|flag|person|people|man|woman)s?\b",
+                          scene_text, re.IGNORECASE) if isinstance(scene_text, str) else None
         clean["image_scene"] = (
-            scene_text.strip() if 5 <= len(words) <= 40 and scene_text.isascii() else None
+            scene_text.strip() if 5 <= len(words) <= 40 and scene_text.isascii() and not risky else None
         )
         result.append(clean)
     if errors:

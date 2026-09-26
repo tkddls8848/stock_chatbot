@@ -107,3 +107,13 @@ def test_image_scene_is_kept_when_well_formed_and_dropped_otherwise(issue_source
     for bad in ("해협", "ships", 42):
         (clean,) = validate_scripts({"scripts": [{**script, "image_scene": bad}]}, [issue])
         assert clean["image_scene"] is None
+
+
+def test_image_scene_that_invites_drawn_text_is_dropped(issue_source):
+    issue, script = issue_source[3:]
+    risky = "financial charts with rising interest rate indicators over a city"
+    (clean,) = validate_scripts({"scripts": [{**script, "image_scene": risky}]}, [issue])
+    assert clean["image_scene"] is None
+    safe = "a harbor with many container ships at dusk and cranes"   # many·harbor는 걸리지 않는다
+    (clean,) = validate_scripts({"scripts": [{**script, "image_scene": safe}]}, [issue])
+    assert clean["image_scene"] == safe
