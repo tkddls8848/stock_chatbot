@@ -73,5 +73,22 @@ def test_all_content_errors_are_reported_together():
         highlights.validate_scripts({"scripts": [row]}, [issue])
     message = str(caught.value)
     # 두 라벨의 서로 다른 오류가 한 번에 나와야 교정 한 번으로 둘 다 고친다.
-    assert "m1" in message and "빠졌습니다(10, 25)" in message
+    # 10월은 질문에서 채우고, 남은 25bp만 교정 대상으로 알린다.
+    assert "m1" in message and "빠졌습니다(25)" in message
     assert "m2" in message and "원문에 없는 숫자가 있습니다(60)" in message
+
+
+def test_a_label_missing_only_the_deadline_gets_it_from_the_question():
+    issue = {"id": "1", "title": "Strait of Hormuz traffic returns to normal by December 31?", "description": "",
+             "markets": [{"id": "m1", "question": "Strait of Hormuz traffic returns to normal by December 31?"}],
+             "news": []}
+    row = {"id": "1", "headline": "호르무즈 해협 교통", "question": "호르무즈 해협 교통이 12월 31일까지 정상화될까요?",
+           "context": "해협 교통량은 국제 통상에 영향을 줍니다.", "watch_point": "해운 당국 발표를 확인하세요.",
+           "market_labels": [{"id": "m1", "label": "해협 교통 정상화"}], "news_ids": []}
+    (clean,) = highlights.validate_scripts({"scripts": [row]}, [issue])
+    assert clean["market_labels"][0]["label"] == "12월 31일까지 해협 교통 정상화"
+
+
+def test_other_label_errors_are_not_papered_over():
+    assert highlights._with_question_date("금리 인상", "Will the Fed hike by 25 bps?") is None
+    assert highlights._with_question_date("10월 금리 인상", "Fed decision in October?") is None

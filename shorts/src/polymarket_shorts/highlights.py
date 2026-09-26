@@ -136,6 +136,30 @@ def _numbers(source: str) -> set[str]:
     return set(re.findall(r"\d+(?:\.\d+)?", source.replace(",", "")))
 
 
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July",
+           "August", "September", "October", "November", "December")
+
+
+def _with_question_date(label: str, question: str) -> str | None:
+    """질문의 기한("by December 31", "in October")을 한국어로 라벨 앞에 붙인다.
+
+    날짜가 이미 라벨에 있거나 질문에 기한이 없으면 None — 다른 오류는 그대로 둔다.
+    """
+    names = "|".join(_MONTHS)
+    match = re.search(rf"\bby ({names}) (\d{{1,2}})\b", question, re.IGNORECASE)
+    if match:
+        month = _MONTHS.index(match.group(1).capitalize()) + 1
+        prefix = f"{month}월 {int(match.group(2))}일까지"
+    else:
+        match = re.search(rf"\b(?:in|on|after the) ({names})\b", question, re.IGNORECASE)
+        if not match:
+            return None
+        prefix = f"{_MONTHS.index(match.group(1).capitalize()) + 1}월"
+    if prefix.split()[0] in label:
+        return None
+    return f"{prefix} {label}"
+
+
 def _translation(text: str, source: str, field: str) -> None:
     # Translation cannot introduce betting percentages; those are supplied by code.
     if "확률" in text:
@@ -203,7 +227,16 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         for market, label in zip(issue["markets"], labels):
             try:
                 text = _text(label.get("label"), "label", 2, 55)
-                _translation(text, market["question"], "label")
+                try:
+                    _translation(text, market["question"], "label")
+                except HighlightError:
+                    # 날짜만 빠졌다면 질문의 날짜를 앞에 붙여 다시 검사한다. 모델이 교정
+                    # 요청에 빠진 숫자를 적어 줘도 날짜를 계속 빠뜨렸다(실측 2026-09-26).
+                    dated = _with_question_date(text, market["question"])
+                    if dated is None:
+                        raise
+                    _translation(dated, market["question"], "label")
+                    text = dated
             except HighlightError as error:
                 # 라벨은 해당 질문 하나만 옮긴다. 어느 질문인지 붙여야 교정이 조건을 되찾는다.
                 errors.append(f"이슈 {issue['id']} 개별 질문 {market['id']}({market['question']}) {error}")
