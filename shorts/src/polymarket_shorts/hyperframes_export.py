@@ -105,7 +105,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
           <div class="intro-lockup">
             <p class="eyebrow reveal">{kicker}</p>
             <h1 class="hero-title reveal">{title}</h1>
-            <div class="hero-stat reveal"><strong>{html.escape(str(scene.get('metric') or 'CHECK'))}</strong><span>{html.escape(str(scene.get('metric_label') or 'MARKET NOTES'))}</span></div>
+            <div class="hero-stat reveal"><strong>{html.escape(str(scene.get('metric') or 'CHECK'))}</strong><span>{html.escape(str(scene.get('metric_label') or 'CONSENSUS NOTES'))}</span></div>
             <div class="chip-row">{body}</div>
           </div>"""
     elif kind == "outro":
@@ -147,7 +147,7 @@ def _scene_html(scene: dict[str, Any], timed: TimedScene, index: int, total: int
             </div>
             <div class="decision reveal">
               <span>판단</span>
-              <p>{html.escape(str(scene.get('body') or bullets.get('판단', '시장 기대를 점검하십시오')))}</p>
+              <p>{html.escape(str(scene.get('body') or bullets.get('판단', '컨센서스를 점검하십시오')))}</p>
             </div>
             <div class="metric-grid">
               <div class="metric reveal"><span>분석 표본</span><strong>{events_text}</strong><em>EVENT</em></div>

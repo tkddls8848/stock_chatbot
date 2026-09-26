@@ -184,7 +184,7 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
     return {
         "title": f"{headline} | {stamp} #Shorts",
         "description": (
-            "참여가 활발하고 시장 관련성이 높은 개별 집단 예측 이슈를 골랐습니다.\n\n"
+            "참여가 활발하고 금융시장과 관련이 깊은 집단 예측 컨센서스 이슈를 골랐습니다.\n\n"
             f"오늘 다룬 이슈: {', '.join(labels)}\n"
             f"원자료 기준 시각: {scenario.source_written_at}\n"
             "확률은 해외 집단 예측 참여자들의 전망을 모은 값이며, 사실 확정이나 "

@@ -222,7 +222,7 @@ def render_frame(
     _scrim(draw)
     draw.rounded_rectangle((SAFE_LEFT, SAFE_TOP, SAFE_LEFT + 123, SAFE_TOP + 36), radius=7, fill=accent)
     draw.text((SAFE_LEFT + 15, SAFE_TOP + 3), "NUNCHI", font=_font(font_path, 22), fill="#101B20")
-    draw.text((216, SAFE_TOP + 3), "MARKET NOTES", font=_font(font_path, 23), fill=_COLORS["ink"])
+    draw.text((216, SAFE_TOP + 3), "CONSENSUS NOTES", font=_font(font_path, 23), fill=_COLORS["ink"])
     draw.text((SAFE_LEFT, 258), scene.kicker, font=_font(font_path, 26), fill=accent)
     _text_block(draw, scene.title, font_path, (SAFE_LEFT, TITLE_TOP, SAFE_RIGHT, TITLE_BOTTOM),
                 size=86, center=True)
