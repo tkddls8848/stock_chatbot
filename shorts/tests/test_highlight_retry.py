@@ -59,3 +59,19 @@ def test_watch_point_may_cite_a_number_from_the_description():
     assert highlights.validate_scripts({"scripts": [row]}, [issue])[0]["watch_point"].startswith("포트워치")
     with pytest.raises(HighlightError):
         highlights.validate_scripts({"scripts": [{**row, "watch_point": "포트워치의 30일 평균을 확인하세요."}]}, [issue])
+
+
+def test_all_content_errors_are_reported_together():
+    issue = {"id": "1", "title": "Fed Decision in October?", "description": "",
+             "markets": [{"id": "m1", "question": "Will the Fed cut by 25 bps in October?"},
+                         {"id": "m2", "question": "No change in October?"}], "news": []}
+    row = {"id": "1", "headline": "연준 10월 결정", "question": "연준은 10월에 어떻게 할까요?",
+           "context": "금리 결정은 자금조달 비용과 연결됩니다.", "watch_point": "연준의 결정문을 확인하세요.",
+           "market_labels": [{"id": "m1", "label": "금리 인하"}, {"id": "m2", "label": "10월 60 동결"}],
+           "news_ids": []}
+    with pytest.raises(HighlightError) as caught:
+        highlights.validate_scripts({"scripts": [row]}, [issue])
+    message = str(caught.value)
+    # 두 라벨의 서로 다른 오류가 한 번에 나와야 교정 한 번으로 둘 다 고친다.
+    assert "m1" in message and "빠졌습니다(10, 25)" in message
+    assert "m2" in message and "원문에 없는 숫자가 있습니다(60)" in message

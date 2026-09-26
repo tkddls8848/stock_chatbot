@@ -149,7 +149,8 @@ def _translation(text: str, source: str, field: str) -> None:
         # Repeated calendar year can be omitted when a month/threshold still identifies the choice.
         required = {n for n in known if not re.fullmatch(r"20\d{2}", n)} if len(known) > 1 else known
         if not required <= written:
-            raise HighlightError("개별 베팅의 날짜·수치 조건이 번역에서 빠졌습니다")
+            missing = ", ".join(sorted(required - written))
+            raise HighlightError(f"개별 베팅의 날짜·수치 조건이 번역에서 빠졌습니다({missing}): {text}")
         for direction, pattern in (("(HIGH)", r"이상|상회|상단|돌파|오르|올라|올릴"),
                                    ("(LOW)", r"이하|하회|하단|내리|내릴|하락")):
             if direction in source and not re.search(pattern, text):
@@ -160,21 +161,28 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
     rows = payload.get("scripts")
     if not isinstance(rows, list) or len(rows) != len(issues):
         raise HighlightError("선정 이슈마다 원고 하나가 필요합니다")
-    result = []
+    # 내용 오류는 모두 모아 한 번에 알린다. 첫 오류에서 멈추면 한 번뿐인 교정이 그
+    # 하나만 고치고 다른 필드를 새로 틀린다(실측 2026-09-26: 라벨 날짜 누락 → 교정 뒤
+    # 다른 라벨에 원문에 없는 60). 구조 오류(개수·ID·순서)는 즉시 멈춘다.
+    result, errors = [], []
     for issue, row in zip(issues, rows):
         if not isinstance(row, dict) or row.get("id") != issue["id"]:
             raise HighlightError("원고의 이벤트 ID 또는 순서가 잘못됐습니다")
         clean = {"id": issue["id"]}
         for field, low, high in (("headline", 4, 28), ("question", 5, 85),
                                  ("context", 10, 70), ("watch_point", 8, 50)):
-            text = _text(row.get(field), field, low, high)
             source = " ".join([issue["title"], *(m["question"] for m in issue["markets"])])
             # 해설·확인점은 판정 기준을 가리킬 수 있어 description의 숫자까지 근거로 본다
             # (실측 2026-09-25: "IMF 포트워치의 7일 이동 평균" — 7은 description의
             # "7-day moving average"). 입력에 없는 숫자는 여전히 막는다.
             if field in {"context", "watch_point"}:
                 source = f"{source} {issue.get('description') or ''}"
-            _translation(text, source, field)
+            try:
+                text = _text(row.get(field), field, low, high)
+                _translation(text, source, field)
+            except HighlightError as error:
+                errors.append(f"이슈 {issue['id']} {error}")
+                continue
             clean[field] = text
         labels = row.get("market_labels")
         if not isinstance(labels, list) or len(labels) != len(issue["markets"]):
@@ -183,16 +191,23 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         for market, label in zip(issue["markets"], labels):
             if not isinstance(label, dict) or label.get("id") != market["id"]:
                 raise HighlightError("베팅 질문과 확률의 ID가 일치하지 않습니다")
-            text = _text(label.get("label"), "label", 2, 55)
-            _translation(text, market["question"], "label")
+            try:
+                text = _text(label.get("label"), "label", 2, 55)
+                _translation(text, market["question"], "label")
+            except HighlightError as error:
+                # 라벨은 해당 질문 하나만 옮긴다. 어느 질문인지 붙여야 교정이 조건을 되찾는다.
+                errors.append(f"이슈 {issue['id']} 개별 질문 {market['id']}({market['question']}) {error}")
+                continue
             clean["market_labels"].append({"id": market["id"], "label": text})
         news_ids = row.get("news_ids")
         available = {news["id"] for news in issue["news"]}
         if (not isinstance(news_ids, list) or any(not isinstance(i, str) or i not in available for i in news_ids)
                 or len(set(news_ids)) != len(news_ids)):
-            raise HighlightError("원문에 없는 뉴스 참조입니다")
+            errors.append(f"이슈 {issue['id']} 원문에 없는 뉴스 참조입니다")
         clean["news_ids"] = news_ids
         result.append(clean)
+    if errors:
+        raise HighlightError("; ".join(errors))
     return result
 
 
