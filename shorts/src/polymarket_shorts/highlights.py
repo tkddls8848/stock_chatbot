@@ -185,12 +185,15 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                 continue
             clean[field] = text
         labels = row.get("market_labels")
-        if not isinstance(labels, list) or len(labels) != len(issue["markets"]):
-            raise HighlightError("개별 베팅 질문 번역이 빠졌습니다")
+        expected = [market["id"] for market in issue["markets"]]
+        got = [label.get("id") for label in labels if isinstance(label, dict)] if isinstance(labels, list) else []
+        if not isinstance(labels, list) or got != expected:
+            # 어느 ID가 어떤 순서로 필요한지 적는다. 사유 없이 "빠졌다"만 주면 교정이
+            # 같은 모양을 다시 낸다(실측 2026-09-26: 두 번 연속 같은 오류).
+            errors.append(f"이슈 {issue['id']} market_labels는 id {expected}를 이 순서로 하나씩 담아야 합니다(받은 id {got})")
+            continue
         clean["market_labels"] = []
         for market, label in zip(issue["markets"], labels):
-            if not isinstance(label, dict) or label.get("id") != market["id"]:
-                raise HighlightError("베팅 질문과 확률의 ID가 일치하지 않습니다")
             try:
                 text = _text(label.get("label"), "label", 2, 55)
                 _translation(text, market["question"], "label")
