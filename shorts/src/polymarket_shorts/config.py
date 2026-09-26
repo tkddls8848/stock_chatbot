@@ -73,6 +73,14 @@ class Settings:
     # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
     generated_backgrounds: bool = True
     image_model: str = "@cf/black-forest-labs/flux-1-schnell"
+    generated_clips: bool = False
+    video_model: str = "bytedance/seedance-2.0/fast/image-to-video"
+    video_api_key: str = field(default="", repr=False)
+    clip_seconds: int = 8
+
+    def __post_init__(self) -> None:
+        if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
+            raise ValueError("SHORTS_CLIP_SECONDS must be an integer from 4 to 15")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -99,4 +107,8 @@ class Settings:
             visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),
             generated_backgrounds=_bool("SHORTS_GENERATED_BACKGROUNDS", True),
             image_model=os.getenv("SHORTS_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip(),
+            generated_clips=_bool("SHORTS_GENERATED_CLIPS", False),
+            video_model=os.getenv("SHORTS_VIDEO_MODEL", "bytedance/seedance-2.0/fast/image-to-video").strip(),
+            video_api_key=os.getenv("SHORTS_VIDEO_API_KEY", "").strip(),
+            clip_seconds=int(os.getenv("SHORTS_CLIP_SECONDS", "8")),
         )
