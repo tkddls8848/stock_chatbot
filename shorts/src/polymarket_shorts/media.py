@@ -45,13 +45,14 @@ def background_for(kind: str, visual_query: str, root: Path = ASSET_DIR) -> Path
 # 저장 배경(provenance.json)과 같은 결을 유지한다: 어두운 톤, 가운데 70%는 비워
 # 글자 패널 자리를 남기고, 글자·로고·국기·인물은 넣지 않는다. 인물은 실존 인물
 # 얼굴이 그려지는 것을 막으려는 것이다 — 원제에 정치인 이름이 자주 들어간다.
+# 실측(2026-09-26)으로 고친 문구다. "가운데 70%를 비워라"는 주제가 사라진 빈 청록
+# 화면을 냈고(가독성은 render의 스크림이 맡는다), "Korean … video"나 이슈 원제를
+# 그대로 넣으면 제목·한글을 그림 속 글자로 그렸다. 주제는 원고가 쓴 사물·풍경 묘사다.
 _BACKGROUND_PROMPT = (
-    "Premium cinematic editorial 3D illustration, full bleed portrait background for a "
-    "Korean economic briefing video. Symbolic scene about: {subject}. "
-    "Charcoal green, muted gold and slate blue palette, soft dusk lighting. "
-    "Large calm dark negative space across the central 70 percent, detail only at the edges "
-    "and bottom. Symbolic objects and places only. No text, letters, numbers, logos, flags, "
-    "charts, watermark, or people."
+    "A wordless cinematic 3D illustration of {subject}. Main subject large and clearly "
+    "visible, centered in the lower half, rich detail and depth, open evening sky above. "
+    "Dramatic dusk lighting, deep teal, warm gold and slate blue palette. Purely visual image "
+    "with no writing anywhere: no text, letters, signage, banners, flags, logos, numbers or people."
 )
 WIDTH, HEIGHT = 1080, 1920
 

@@ -35,7 +35,8 @@ def test_duplicate_sector_and_cross_sector_topic_are_rejected(issue_source):
 
 def test_script_translation_accepts_calendar_month_and_exact_market_numbers(issue_source):
     issue, script = issue_source[3:]
-    assert validate_scripts({"scripts": [script]}, [issue]) == [script]
+    # 배경 묘사가 없으면 None으로 남고 분야 기본 장면으로 그린다.
+    assert validate_scripts({"scripts": [script]}, [issue]) == [{**script, "image_scene": None}]
 
 
 @pytest.mark.parametrize("change", [
@@ -96,3 +97,13 @@ def test_a_duplicated_label_id_is_collapsed(issue_source):
     labels = script["market_labels"]
     (clean,) = validate_scripts({"scripts": [{**script, "market_labels": [labels[0], *labels]}]}, [issue])
     assert [label["id"] for label in clean["market_labels"]] == [m["id"] for m in issue["markets"]]
+
+
+def test_image_scene_is_kept_when_well_formed_and_dropped_otherwise(issue_source):
+    issue, script = issue_source[3:]
+    good = "oil tankers crossing a narrow sea strait at dusk"
+    (clean,) = validate_scripts({"scripts": [{**script, "image_scene": good}]}, [issue])
+    assert clean["image_scene"] == good
+    for bad in ("해협", "ships", 42):
+        (clean,) = validate_scripts({"scripts": [{**script, "image_scene": bad}]}, [issue])
+        assert clean["image_scene"] is None

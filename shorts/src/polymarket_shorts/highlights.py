@@ -45,9 +45,11 @@ watch_point(8~50자)는 확인할 다음 발표·조건을 제시하는 완전�
 question은 말로 묻듯 씁니다 — "얼마에 도달할 것인가?"가 아니라 "얼마까지 갈까요?"입니다.
 context는 이슈마다 끝맺음을 바꿔 같은 틀이 반복되지 않게 하세요("…와 연결됩니다"만 다섯 번 쓰지 않습니다).
 확률을 말로 푸는 일과 장면을 잇는 말은 프로그램이 합니다. 그 문장을 대신 쓰지 마세요.
+image_scene은 배경 그림 묘사입니다. 영어 8~30단어로, 이 이슈를 상징하는 구체적인 사물이나 풍경 한 장면을 쓰세요
+(예: "oil tankers crossing a narrow sea strait at dusk, rocky coastline"). 건물 정면·간판·문서·화면·국기·사람·글자는 넣지 마세요.
 JSON만 반환하세요: {"scripts":[{"id":"이벤트 ID", "headline":"...", "question":"...",
 "market_labels":[{"id":"개별 시장 ID", "label":"..."}], "context":"...", "watch_point":"...",
-"news_ids":["news:1"]}]}. 모든 입력 이슈에 하나씩 쓰세요. 뉴스가 없거나 무관하면 news_ids는 빈 배열입니다."""
+"image_scene":"...", "news_ids":["news:1"]}]}. 모든 입력 이슈에 하나씩 쓰세요. 뉴스가 없거나 무관하면 news_ids는 빈 배열입니다."""
 
 
 def _text(value: Any, field: str, low: int, high: int) -> str:
@@ -217,6 +219,13 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             news_ids = []
         news_ids = list(dict.fromkeys(i for i in news_ids if isinstance(i, str) and i in available))
         clean["news_ids"] = news_ids
+        # 배경 묘사는 화면·음성에 나가지 않는 보조 값이다. 형식이 어긋나면 버리고
+        # 분야별 기본 묘사로 그린다 — 이것 때문에 원고를 다시 묻지 않는다.
+        scene_text = row.get("image_scene")
+        words = scene_text.split() if isinstance(scene_text, str) else []
+        clean["image_scene"] = (
+            scene_text.strip() if 5 <= len(words) <= 40 and scene_text.isascii() else None
+        )
         result.append(clean)
     if errors:
         raise HighlightError("; ".join(errors))

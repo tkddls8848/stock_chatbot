@@ -92,6 +92,15 @@ _VISUAL_QUERIES = {
     "geopolitics": "United Nations Security Council meeting",
     "general": "business financial district skyline",
 }
+# 원고가 배경 묘사(image_scene)를 주지 못했을 때 그릴 장면. 건물 정면(현판에 가짜
+# 글자가 그려진다)과 사람(실존 인물 얼굴)을 피한 사물·풍경이다(실측 2026-09-26).
+_SCENE_DEFAULTS = {
+    "composite": "container ships and port cranes along a harbor at dusk",
+    "macro": "a brass balance scale beside stacked gold coins on dark marble, soft window light",
+    "equities": "abstract glowing light trails over a night city seen from high above",
+    "geopolitics": "a vintage globe on a dark desk beside a ship compass and nautical map shapes",
+    "general": "a quiet financial district skyline at dusk seen from across a river",
+}
 
 
 def build_scenario(
@@ -155,7 +164,8 @@ def build_scenario(
                      f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시",
                      f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 상위 {len(options)}개"),
             # 배경 생성이 그날 이슈를 그리도록 원제를 붙인다. 저장 배경 선택은 앞 낱말만 본다.
-            visual_query=f"{_VISUAL_QUERIES[issue['sector']]}; topic: {issue['title']}",
+            visual_query=(f"{_VISUAL_QUERIES[issue['sector']]}; topic: "
+                          f"{script.get('image_scene') or _SCENE_DEFAULTS[issue['sector']]}"),
             # 대표 수치는 화면이 그리는 첫 선택지와 같은 값에서 나온다 — 검수
             # 기록(`review.md`)·검수 패널·내보내기가 이 셋을 읽는다.
             metric=options[0][1], metric_label=options[0][0], probability=options[0][2],
