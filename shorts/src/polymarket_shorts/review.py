@@ -91,6 +91,7 @@ def _script(
     metadata: dict[str, Any],
     video: Path,
     duration: float,
+    clip_issues: int = 0,
 ) -> str:
     lines = [
         f"# 검수 원고 · {scenario.date}",
@@ -113,6 +114,9 @@ def _script(
         "",
         f"**태그** {', '.join(metadata['tags'])}",
     ]
+    if clip_issues:
+        lines[5:5] = [f"- 배경: Seedance 이미지→영상 합성(이슈 {clip_issues}개)",
+                      "- 게시 시 YouTube '변경·합성 콘텐츠' 표시"]
     for index, scene in enumerate(scenario.scenes, start=1):
         title = " / ".join(scene.title.splitlines())
         lines += [
@@ -149,10 +153,11 @@ def write_review(
     video: Path,
     duration: float,
     timezone: ZoneInfo,
+    clip_issues: int = 0,
 ) -> Path:
     """제작 직후 검수 대기 상태를 남긴다. 새 수정본은 다시 검수한다."""
     script = target / SCRIPT_FILE
-    script.write_text(_script(scenario, metadata, video, duration), encoding="utf-8")
+    script.write_text(_script(scenario, metadata, video, duration, clip_issues), encoding="utf-8")
     write_json(target / REVIEW_FILE, {
         "status": "pending",
         "date": scenario.date,

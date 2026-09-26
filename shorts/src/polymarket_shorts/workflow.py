@@ -29,7 +29,9 @@ summary에 한계를 설명한다. 가능한 텍스트 수정은 JSON 객체만 
 changes는 예를 들어 [{"scene":1,"narration":"바꾼 멘트"}] 형식이다.
 changes의 scene은 현재 장면의 1부터 시작하는 번호다. 수정하는 필드만 넣는다.
 허용 필드: title, kicker, body, narration, takeaway, bullets(문자열 배열),
-accent(gold/blue/red), visual_query(shipping 또는 business strategy meeting).
+accent(gold/blue/red), visual_query(shipping 또는 business strategy meeting), background(still).
+"n번 장면 배경을 정지로" 요청은 해당 장면에 background: "still"만 넣는다.
+기존 이미지와 이슈 묘사는 유지하며 해당 장면에서만 영상 배경을 끈다.
 visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지=금융 도시다.
 장면 배경의 크롭·방향·색조는 장면 번호와 accent가 정하므로 따로 지정하지 않는다.
 이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
@@ -110,7 +112,7 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
         )
     if not isinstance(rate, str) or not re.fullmatch(r"[+-]\d{1,2}%", rate) or not -30 <= int(rate[:-1]) <= 50:
         raise ReviewError("음성 속도는 -30%부터 +50%까지입니다")
-    allowed = {"title", "kicker", "body", "narration", "takeaway", "bullets", "accent", "visual_query"}
+    allowed = {"title", "kicker", "body", "narration", "takeaway", "bullets", "accent", "visual_query", "background"}
     seen = set()
     for row in changes:
         if not isinstance(row, dict) or "scene" not in row or set(row) - allowed - {"scene"}:
@@ -129,6 +131,8 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
                 raise ReviewError("장면 문구 형식이 잘못됐습니다")
         if values.get("accent", "gold") not in {"gold", "blue", "red"}:
             raise ReviewError("지원하지 않는 색상입니다")
+        if "background" in values and values["background"] != "still":
+            raise ReviewError("지원하지 않는 배경 방식입니다")
         if "visual_query" in values and values["visual_query"] not in {"shipping", "business strategy meeting"}:
             raise ReviewError("지원하지 않는 배경입니다")
         scenes[number - 1] = replace(scenes[number - 1], **values)

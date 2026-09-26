@@ -562,6 +562,14 @@ def render_video(
     background_paths: tuple[Path | None, ...] | None = None,
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
+    if background_paths and any(path and path.suffix == ".mp4" for path in background_paths):
+        from .clip_render import render_video as render_clips
+
+        return render_clips(
+            scenario, audio_path=audio_path, scene_words=scene_words, output_path=output_path,
+            work_dir=work_dir, font_path=font_path, ffmpeg_bin=ffmpeg_bin, ffprobe_bin=ffprobe_bin,
+            max_duration=max_duration, background_paths=background_paths,
+        )
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
     scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
     scene_durations = _scene_durations(scene_phrases, duration)

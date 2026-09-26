@@ -37,6 +37,7 @@ class Scene:
     source_url: str = ""
     event_id: str = ""
     market_ids: tuple[str, ...] = ()
+    background: str = ""
 
     def __post_init__(self) -> None:
         # 제작 원고(`scenario.json`)에서 되읽으면 리스트로 온다. 렌더가 카운트업
@@ -64,7 +65,8 @@ class Scenario:
             "date": self.date,
             "generation_id": self.generation_id,
             "source_written_at": self.source_written_at,
-            "scenes": [asdict(scene) for scene in self.scenes],
+            "scenes": [{key: value for key, value in asdict(scene).items()
+                        if key != "background" or value} for scene in self.scenes],
             "narration": self.narration,
             "lead_label": self.lead_label,
             "lead_volume": self.lead_volume,

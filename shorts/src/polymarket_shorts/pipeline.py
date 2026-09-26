@@ -9,6 +9,7 @@ import tempfile
 from typing import Any
 
 from .client import PolymarketWebClient, SourceError
+from .clips import clips_for, review_details, visual_payload
 from .config import Settings
 from .highlights import select_issues, write_issues
 from .markets import shortlist, prepare_issue
@@ -118,9 +119,13 @@ def produce_revision(
         voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
     )
     backgrounds = (
-        backgrounds_for(scenario.scenes, target / "backgrounds", settings) if settings.visuals_enabled
+        backgrounds_for(scenario.scenes, (
+            target.parent.parent if settings.generated_clips and settings.video_api_key
+            and target.parent.name == "revisions" else target
+        ) / "backgrounds", settings) if settings.visuals_enabled
         else tuple(None for _ in scenario.scenes)
     )
+    backgrounds = clips_for(scenario.scenes, backgrounds, settings)
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
         scenario, audio_path=audio, scene_words=scene_words, output_path=video,
@@ -131,8 +136,12 @@ def produce_revision(
     script = write_review(
         target, scenario=scenario, metadata=metadata, video=video,
         duration=duration, timezone=settings.timezone,
+        **review_details(backgrounds),
     )
-    write_json(target / "scenario.json", scenario.to_dict())
+    payload = scenario.to_dict()
+    if any(path and path.suffix == ".mp4" for path in backgrounds):
+        payload["visuals"] = visual_payload(backgrounds)
+    write_json(target / "scenario.json", payload)
     write_json(target / "production.json", {
         "title": metadata["title"], "generation_id": scenario.generation_id,
         "duration_seconds": duration, "voice": settings.tts_voice, "rate": settings.tts_rate,
@@ -223,6 +232,7 @@ def produce_daily(
         backgrounds_for(scenario.scenes, day_dir / "backgrounds", settings) if settings.visuals_enabled
         else tuple(None for _ in scenario.scenes)
     )
+    backgrounds = clips_for(scenario.scenes, backgrounds, settings)
 
     with tempfile.TemporaryDirectory(prefix=f".{day}-", dir=settings.output_dir) as raw_work:
         work = Path(raw_work)
@@ -256,15 +266,13 @@ def produce_daily(
         )
 
     scenario_payload = {**scenario.to_dict(), "duration_seconds": round(duration, 3)}
-    scenario_payload["visuals"] = [
-        {"asset": path.name, "source": "GPT Image / built-in", "generated": True}
-        if path else None for path in backgrounds
-    ]
+    scenario_payload["visuals"] = visual_payload(backgrounds)
     write_json(scenario_path, scenario_payload)
     # 게시 문구와 멘트는 review.md 한 장에서 검수한다.
     script = write_review(
         day_dir, scenario=scenario, metadata=metadata, video=video_path,
         duration=duration, timezone=settings.timezone,
+        **review_details(backgrounds),
     )
 
     days = state.setdefault("days", {})
