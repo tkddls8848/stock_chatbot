@@ -185,6 +185,11 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                 continue
             clean[field] = text
         labels = row.get("market_labels")
+        if isinstance(labels, list):
+            # 같은 id를 두 번 적은 것은 내용이 아니라 형식 실수다(실측 2026-09-26). 첫 것만 쓴다.
+            seen: set = set()
+            labels = [label for label in labels if not isinstance(label, dict)
+                      or not (label.get("id") in seen or seen.add(label.get("id")))]
         expected = [market["id"] for market in issue["markets"]]
         got = [label.get("id") for label in labels if isinstance(label, dict)] if isinstance(labels, list) else []
         if not isinstance(labels, list) or got != expected:
@@ -204,9 +209,13 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             clean["market_labels"].append({"id": market["id"], "label": text})
         news_ids = row.get("news_ids")
         available = {news["id"] for news in issue["news"]}
-        if (not isinstance(news_ids, list) or any(not isinstance(i, str) or i not in available for i in news_ids)
-                or len(set(news_ids)) != len(news_ids)):
-            errors.append(f"이슈 {issue['id']} 원문에 없는 뉴스 참조입니다")
+        # 뉴스는 검수 기록의 보조 근거다. 없는 번호·중복은 버리고 원고는 살린다 — 모델이
+        # 번호를 지어내도 화면·음성에는 아무것도 들어가지 않는다(실측 2026-09-26: 세 이슈
+        # 모두 지어낸 번호로 그날 원고 전체가 버려졌다). 목록이 아닌 응답만 형식 오류다.
+        if not isinstance(news_ids, list):
+            errors.append(f"이슈 {issue['id']} news_ids는 목록이어야 합니다")
+            news_ids = []
+        news_ids = list(dict.fromkeys(i for i in news_ids if isinstance(i, str) and i in available))
         clean["news_ids"] = news_ids
         result.append(clean)
     if errors:

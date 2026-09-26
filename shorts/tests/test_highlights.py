@@ -41,7 +41,6 @@ def test_script_translation_accepts_calendar_month_and_exact_market_numbers(issu
 @pytest.mark.parametrize("change", [
     {"context": "금리 인상 확률은 80%입니다."},
     {"watch_point": "9월의 공식 결정을 확인하세요."},
-    {"news_ids": ["news:invented"]},
     {"market_labels": [{"id": "m2", "label": "금리 동결"}, {"id": "m1", "label": "금리 인상"}]},
     {"market_labels": [{"id": "m1", "label": "25bp 금리 동결"}, {"id": "m2", "label": "금리 인상"}]},
 ])
@@ -81,3 +80,19 @@ def test_wrong_subject_attached_to_valid_event_id_is_rejected(issue_source):
 def test_market_label_cannot_omit_threshold_or_reverse_direction(text):
     with pytest.raises(HighlightError):
         highlights._translation(text, "Will WTI hit (LOW) $90 in September?", "label")
+
+
+def test_invented_news_references_are_dropped_not_fatal(issue_source):
+    """뉴스 번호는 검수 기록의 보조 근거라 지어낸 번호만 버리고 원고는 살린다."""
+    issue, script = issue_source[3:]
+    real = issue["news"][0]["id"] if issue["news"] else None
+    ids = ["news:invented"] + ([real, real] if real else [])
+    (clean,) = validate_scripts({"scripts": [{**script, "news_ids": ids}]}, [issue])
+    assert clean["news_ids"] == ([real] if real else [])
+
+
+def test_a_duplicated_label_id_is_collapsed(issue_source):
+    issue, script = issue_source[3:]
+    labels = script["market_labels"]
+    (clean,) = validate_scripts({"scripts": [{**script, "market_labels": [labels[0], *labels]}]}, [issue])
+    assert [label["id"] for label in clean["market_labels"]] == [m["id"] for m in issue["markets"]]
