@@ -8,11 +8,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import tempfile
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from .scenario import Scenario
+from .core.storage import write_json
 
 
 REVIEW_FILE = "review.json"
@@ -21,21 +21,6 @@ SCRIPT_FILE = "review.md"
 
 class ReviewError(RuntimeError):
     pass
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    """임시 파일에 쓰고 바꿔 끼운다. 쓰다 죽어도 잘린 JSON이 남지 않는다."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    temporary = Path(name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -167,7 +152,7 @@ def write_review(
         "duration_seconds": round(duration, 3),
         "produced_at": _clock(timezone),
         "script": script.name,
-        # 기존 산출물의 제목·설명·태그 저장 키를 유지한다. 외부 연결은 없다.
+        # 검수·업로드가 함께 읽는 게시 제목·설명·태그 원본.
         "youtube": metadata,
     })
     return script

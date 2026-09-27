@@ -1,0 +1,224 @@
+import base64
+from dataclasses import replace
+import hashlib
+import json
+from urllib.parse import parse_qs, urlsplit
+from unittest.mock import Mock
+
+import pytest
+import requests
+
+from polymarket_shorts import youtube
+from polymarket_shorts.config import Settings
+from polymarket_shorts.review import ReviewError, complete_review, operation_lock, write_json
+from polymarket_shorts.status import current_status
+
+
+@pytest.fixture
+def prepared(tmp_path, monkeypatch):
+    settings = replace(Settings.from_env(), output_dir=tmp_path,
+                       youtube_client_id="client", youtube_client_secret="secret",
+                       youtube_refresh_token="refresh")
+    root = tmp_path / "2026-09-27"
+    root.mkdir()
+    (root / "clip.mp4").write_bytes(b"0123456789")
+    write_json(root / "review.json", {
+        "status": "reviewed", "video": "clip.mp4", "produced_at": "2026-09-27T21:00:00+09:00",
+        "video_sha256": hashlib.sha256(b"0123456789").hexdigest(),
+        "youtube": {"title": "오늘의 전망", "description": "집단 예측", "tags": ["경제"]},
+    })
+    monkeypatch.setattr(youtube.time, "sleep", lambda _: None)
+    # 모든 테스트에서 실수로 실제 API를 호출하는 것도 금지한다.
+    monkeypatch.setattr(youtube.requests, "request", Mock(side_effect=AssertionError("network forbidden")))
+    return root, settings
+
+
+def response(code=200, payload=None, **headers):
+    return Mock(status_code=code, headers=headers, json=Mock(return_value=payload or {}))
+
+
+def http(monkeypatch, *responses):
+    mock = Mock(side_effect=responses)
+    monkeypatch.setattr(youtube.requests, "request", mock)
+    return mock
+
+
+def start():
+    return response(Location="https://www.googleapis.com/upload/session")
+
+
+def test_upload_resumes_and_deduplicates(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), start(),
+                response(308, Range="bytes=0-3"), response(201, {"id": "video_1"}))
+    result = youtube.upload(root, settings)
+    assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/watch?v=video_1"}
+    assert mock.call_args_list[-1].kwargs["data"] == b"456789"
+    assert mock.call_args_list[-1].kwargs["headers"]["Content-Range"] == "bytes 4-9/10"
+    metadata = mock.call_args_list[1].kwargs["json"]
+    assert metadata["snippet"] == {"title": "오늘의 전망", "description": "집단 예측", "tags": ["경제"],
+                                    "categoryId": "25", "defaultLanguage": "ko"}
+    assert metadata["status"] == {"privacyStatus": "private", "selfDeclaredMadeForKids": False,
+                                  "containsSyntheticMedia": True}
+    assert youtube.upload(root, settings)["status"] == "already_uploaded"
+    assert mock.call_count == 4
+    status = current_status(settings)
+    assert status["uploaded"] is True and status["url"] == result["url"]
+    saved = json.loads((root / "upload.json").read_text(encoding="utf-8"))
+    entry = next(iter(saved["revisions"].values()))
+    assert entry["uploaded_at"] and entry["revision_id"]
+    assert "access" not in json.dumps(saved) and "session_url" not in entry
+
+
+@pytest.mark.parametrize("failure", [requests.ConnectionError("secret"), response(503)])
+def test_lost_completion_is_probed_without_reposting(prepared, monkeypatch, failure):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), start(),
+                failure, response(201, {"id": "finished"}))
+    assert youtube.upload(root, settings)["video_id"] == "finished"
+    assert mock.call_args_list[-1].kwargs["headers"]["Content-Range"] == "bytes */10"
+    assert mock.call_args_list[-1].kwargs["data"] == b""
+
+
+def test_retry_uses_durable_session(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), start(), *[response(503)] * 4)
+    with pytest.raises(ReviewError, match="중단"):
+        youtube.upload(root, settings)
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), response(308),
+                response(201, {"id": "retried"}))
+    assert youtube.upload(root, settings)["status"] == "uploaded"
+    assert mock.call_args_list[1].args[0] == "PUT"
+
+
+def test_not_reviewed_and_missing_credentials_do_not_call_http(prepared):
+    root, settings = prepared
+    assert youtube.upload(root, replace(settings, youtube_refresh_token=""))["status"] == "no_credentials"
+    record = json.loads((root / "review.json").read_text(encoding="utf-8"))
+    record["status"] = "pending"
+    write_json(root / "review.json", record)
+    assert youtube.upload(root, settings)["status"] == "not_reviewed"
+    complete_review(root)
+    assert youtube.upload(root, replace(settings, youtube_refresh_token=""))["status"] == "no_credentials"
+    assert json.loads((root / "review.json").read_text(encoding="utf-8"))["status"] == "reviewed"
+
+
+@pytest.mark.parametrize("word", ["Polymarket", "폴리마켓", "베팅", "배팅", "예측 시장", "거래량", "유동성"])
+@pytest.mark.parametrize("field", ["title", "description", "tags"])
+def test_forbidden_metadata_refused(prepared, word, field):
+    root, settings = prepared
+    record = json.loads((root / "review.json").read_text(encoding="utf-8"))
+    record["youtube"][field] = [word] if field == "tags" else word
+    write_json(root / "review.json", record)
+    with pytest.raises(ReviewError, match="금지"):
+        youtube.upload(root, settings)
+
+
+def test_changed_video_is_refused(prepared):
+    root, settings = prepared
+    (root / "clip.mp4").write_bytes(b"changed")
+    with pytest.raises(ReviewError, match="변경"):
+        youtube.upload(root, settings)
+
+
+def test_current_revision_must_be_reviewed_even_when_original_uploaded(prepared, monkeypatch):
+    root, settings = prepared
+    http(monkeypatch, response(payload={"access_token": "access"}), start(), response(201, {"id": "old"}))
+    youtube.upload(root, settings)
+    revision = root / "revisions" / "new"
+    revision.mkdir(parents=True)
+    write_json(revision / "review.json", {"status": "pending"})
+    write_json(root / "workflow.json", {"current": "revisions/new"})
+    assert youtube.upload(root, settings)["status"] == "not_reviewed"
+    assert current_status(settings)["uploaded"] is False
+
+
+def test_token_failures_are_sanitized_and_bounded(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, *[requests.ConnectionError("secret refresh access")] * 4)
+    with pytest.raises(ReviewError) as caught:
+        youtube.upload(root, settings)
+    assert "secret" not in str(caught.value) and caught.value.__suppress_context__
+    assert mock.call_count == 4
+
+
+def test_upload_and_production_share_the_lock(prepared):
+    from polymarket_shorts.pipeline import produce_daily
+    from datetime import date
+
+    root, settings = prepared
+    with operation_lock(root, ".workflow.lock"):
+        with pytest.raises(ReviewError, match="처리 중"):
+            youtube.upload(root, settings)
+        with pytest.raises(ReviewError, match="처리 중"):
+            produce_daily(settings, production_date=date(2026, 9, 27), force=True)
+
+
+def test_session_must_be_persisted_before_sending_video(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), start())
+    monkeypatch.setattr(youtube, "write_json", Mock(side_effect=OSError("disk full")))
+    with pytest.raises(OSError):
+        youtube.upload(root, settings)
+    assert mock.call_count == 2
+
+
+def test_untrusted_session_url_is_rejected_before_token_is_sent(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}),
+                response(Location="https://evil.example/upload"))
+    with pytest.raises(ReviewError, match="세션 주소"):
+        youtube.upload(root, settings)
+    assert mock.call_count == 2
+
+
+def test_server_error_on_session_start_retries_and_308_without_range_restarts(prepared, monkeypatch):
+    root, settings = prepared
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), response(503), start(),
+                response(308), response(201, {"id": "ok"}))
+    assert youtube.upload(root, settings)["status"] == "uploaded"
+    assert mock.call_args_list[-1].kwargs["data"] == b"0123456789"
+
+
+def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
+    _, settings = prepared
+    captured = {}
+
+    class Server:
+        server_port = 12345
+
+        def __init__(self, address, handler):
+            assert address == ("127.0.0.1", 0)
+            self.handler = handler
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def handle_request(self):
+            callback = object.__new__(self.handler)
+            callback.path = "/?state=wrong&code=bad"
+            callback.send_response = Mock()
+            callback.end_headers = Mock()
+            callback.wfile = Mock()
+            callback.do_GET()
+            callback.send_response.assert_called_with(400)
+            callback.path = "/?state=" + captured["state"][0] + "&code=code"
+            callback.do_GET()
+
+    def browser(url):
+        captured.update(parse_qs(urlsplit(url).query))
+        return True
+
+    monkeypatch.setattr(youtube, "HTTPServer", Server)
+    monkeypatch.setattr(youtube.webbrowser, "open", browser)
+    mock = http(monkeypatch, response(payload={"refresh_token": "refresh-result"}))
+    assert youtube.authorize(settings) == "refresh-result"
+    assert captured["scope"] == [youtube.SCOPE]
+    assert captured["access_type"] == ["offline"] and captured["prompt"] == ["consent"]
+    data = mock.call_args.kwargs["data"]
+    assert data["redirect_uri"] == "http://127.0.0.1:12345/" and data["code"] == "code"
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(data["code_verifier"].encode()).digest()).decode().rstrip("=")
+    assert captured["code_challenge"] == [challenge]

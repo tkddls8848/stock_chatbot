@@ -123,6 +123,31 @@ def test_cli_errors_are_reported_not_raised():
     assert message.texts == ["쇼츠: 쇼츠 venv가 없습니다: /nope"]
 
 
+def test_done_records_review_then_uploads_that_target_in_background():
+    runner = FakeRunner({"--complete": {**STATUS, "target": "/day/revisions/approved"},
+                         "--upload": {"status": "uploaded", "url": "https://www.youtube.com/watch?v=one"}})
+    message, _ = _run(["done"], runner)
+    assert runner.calls == [["--complete"], ["--upload", "/day/revisions/approved"]]
+    assert "검수 완료로 기록" in message.texts[1]
+    assert "https://www.youtube.com/watch?v=one" in message.texts[-1]
+
+
+@pytest.mark.parametrize("status, expected", [("no_credentials", "자격 증명"), ("not_reviewed", "검수 완료"),
+                                              ("already_uploaded", "https://www.youtube.com/watch?v=one")])
+def test_upload_retry_reports_outcome(status, expected):
+    runner = FakeRunner({"--upload": {"status": status, "url": "https://www.youtube.com/watch?v=one"}})
+    message, _ = _run(["upload"], runner)
+    assert runner.calls == [["--upload"]]
+    assert expected in message.texts[-1]
+
+
+def test_done_does_not_upload_after_failed_completion():
+    runner = FakeRunner(error=ShortsError("완료 기록 실패"))
+    message, _ = _run(["done"], runner)
+    assert runner.calls == [["--complete"]]
+    assert "완료 기록 실패" in message.texts[-1]
+
+
 def _fake_python(tmp_path, body):
     package = tmp_path / "polymarket_shorts"
     package.mkdir(exist_ok=True)
@@ -133,12 +158,14 @@ def _fake_python(tmp_path, body):
 
 def test_runner_passes_only_a_minimal_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "youtube-secret")
     python = _fake_python(tmp_path, 'import json, os, sys\n'
                          'print(json.dumps({"token": os.getenv("TELEGRAM_BOT_TOKEN", ""), '
+                         '"youtube": os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", ""), '
                          '"storage": os.getenv("STORAGE_DIR"), "args": sys.argv[1:]}))\n')
     runner = ShortsRunner(python=python, workdir=str(tmp_path), storage_dir="/srv/storage")
     payload = asyncio.run(runner.call(["--status"], timeout=10))
-    assert payload == {"token": "", "storage": "/srv/storage", "args": ["--status"]}
+    assert payload == {"token": "", "youtube": "", "storage": "/srv/storage", "args": ["--status"]}
 
 
 def test_runner_turns_failures_into_short_errors(tmp_path):

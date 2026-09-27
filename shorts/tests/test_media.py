@@ -29,7 +29,7 @@ def test_daily_pipeline_passes_saved_backgrounds_without_network_generation(tmp_
     )
     scenario = Scenario("2026-09-12", "g1", "2026-09-12T00:00:00+09:00", scenes)
     def prepare(settings, today, day_dir):
-        day_dir.mkdir(parents=True)
+        day_dir.mkdir(parents=True, exist_ok=True)
         return scenario
     monkeypatch.setattr(pipeline, "prepare_daily", prepare)
     monkeypatch.setattr(pipeline, "synthesize", lambda *a, **kw: None)

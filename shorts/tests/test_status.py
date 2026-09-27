@@ -86,3 +86,12 @@ def test_cli_status_and_complete_print_one_json_line(tmp_path):
 def test_cli_panel_commands_fail_cleanly_without_a_video(tmp_path):
     result = _cli(tmp_path, "--complete")
     assert result.returncode != 0 and "검수할 영상이 없습니다" in result.stderr
+
+
+def test_cli_upload_never_posts_unreviewed_video(tmp_path):
+    folder = _day(tmp_path / "shorts", "2026-09-24")
+    for args in [("--upload",), ("--upload", str(folder))]:
+        result = _cli(tmp_path, *args)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {"status": "not_reviewed", "video_id": None, "url": None}
+        assert len(result.stdout.strip().splitlines()) == 1
