@@ -153,6 +153,37 @@ def _transfer(url: str, token: str, video: Path, *, resume: bool) -> str:
     raise ReviewError("YouTube 업로드가 중단됐습니다. /shorts upload로 이어서 올리세요")
 
 
+# YouTube API에는 "쇼츠로 올리기" 옵션이 없다. 세로(또는 정사각)이고 3분 이하인 영상을
+# YouTube가 쇼츠로 분류한다. 그래서 올리기 전에 이 조건을 확인하고, 링크도 쇼츠 주소로 준다.
+SHORTS_MAX_SECONDS = 180
+
+
+def shorts_url(video_id: str) -> str:
+    return f"https://www.youtube.com/shorts/{video_id}"
+
+
+def _shorts_problem(video: Path, settings: Settings) -> str | None:
+    """쇼츠 조건(세로·180초 이하)을 어기면 그 이유."""
+    import json as _json_module
+    import subprocess
+
+    result = subprocess.run(
+        [settings.ffprobe_bin, "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=width,height:format=duration", "-of", "json", str(video)],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        return "영상 정보를 읽지 못했습니다"
+    info = _json_module.loads(result.stdout)
+    width, height = info["streams"][0]["width"], info["streams"][0]["height"]
+    duration = float(info["format"]["duration"])
+    if width > height:
+        return f"가로 영상({width}x{height})은 쇼츠로 분류되지 않습니다"
+    if duration > SHORTS_MAX_SECONDS:
+        return f"{duration:.0f}초 영상은 3분을 넘어 쇼츠로 분류되지 않습니다"
+    return None
+
+
 def upload(root: Path, settings: Settings) -> dict:
     empty = {"video_id": None, "url": None}
     with operation_lock(root, ".workflow.lock"):
@@ -172,7 +203,11 @@ def upload(root: Path, settings: Settings) -> dict:
             entries = history.setdefault("revisions", {})
             entry = entries.get(identifier, {})
             if entry.get("video_id"):
-                return {"status": "already_uploaded", "video_id": entry["video_id"], "url": entry["url"]}
+                return {"status": "already_uploaded", "video_id": entry["video_id"],
+                        "url": shorts_url(entry["video_id"])}
+            problem = _shorts_problem(video, settings)
+            if problem:
+                return {**empty, "status": "not_shorts", "reason": problem}
             if not all((settings.youtube_client_id, settings.youtube_client_secret, settings.youtube_refresh_token)):
                 return {**empty, "status": "no_credentials"}
             token = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token).get("access_token")
@@ -190,7 +225,7 @@ def upload(root: Path, settings: Settings) -> dict:
                 entries[identifier] = entry
                 write_json(target / "upload.json", history)
             video_id = _transfer(_session_url(entry["session_url"]), token, video, resume=resume)
-            entry.update(video_id=video_id, url=f"https://www.youtube.com/watch?v={video_id}",
+            entry.update(video_id=video_id, url=shorts_url(video_id),
                          uploaded_at=now().isoformat())
             entry.pop("session_url", None)
             write_json(target / "upload.json", history)

@@ -143,7 +143,9 @@ async def _background(message, context, label: str, args: list[str], timeout: fl
                     else:
                         reason = {"not_reviewed": "현재 수정본을 먼저 검수 완료하세요.",
                                   "no_credentials": "shorts/.env에 YouTube 자격 증명을 설정한 뒤 /shorts upload로 재시도하세요."}
-                        await message.reply_text("YouTube 업로드: " + reason.get(outcome, "응답을 확인하세요."))
+                        # 쇼츠 조건(세로·3분 이하)을 어기면 쇼츠 CLI가 이유를 함께 준다.
+                        detail = reason.get(outcome) or result.get("reason") or "응답을 확인하세요."
+                        await message.reply_text("YouTube 업로드: " + str(detail))
                     return
                 status = await _runner(context).call(["--status"], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
             except ShortsError as error:

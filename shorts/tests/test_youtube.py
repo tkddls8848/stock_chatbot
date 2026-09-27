@@ -13,6 +13,14 @@ from polymarket_shorts.config import Settings
 from polymarket_shorts.review import ReviewError, complete_review, operation_lock, write_json
 from polymarket_shorts.status import current_status
 
+_real_shorts_problem = youtube._shorts_problem
+
+
+@pytest.fixture(autouse=True)
+def _shorts_ok(monkeypatch):
+    """가짜 영상 파일은 ffprobe로 읽을 수 없다. 쇼츠 조건 검사는 따로 시험한다."""
+    monkeypatch.setattr(youtube, "_shorts_problem", lambda video, settings: None)
+
 
 @pytest.fixture
 def prepared(tmp_path, monkeypatch):
@@ -52,7 +60,7 @@ def test_upload_resumes_and_deduplicates(prepared, monkeypatch):
     mock = http(monkeypatch, response(payload={"access_token": "access"}), start(),
                 response(308, Range="bytes=0-3"), response(201, {"id": "video_1"}))
     result = youtube.upload(root, settings)
-    assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/watch?v=video_1"}
+    assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/shorts/video_1"}
     assert mock.call_args_list[-1].kwargs["data"] == b"456789"
     assert mock.call_args_list[-1].kwargs["headers"]["Content-Range"] == "bytes 4-9/10"
     metadata = mock.call_args_list[1].kwargs["json"]
@@ -222,3 +230,24 @@ def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
     assert data["redirect_uri"] == "http://127.0.0.1:12345/" and data["code"] == "code"
     challenge = base64.urlsafe_b64encode(hashlib.sha256(data["code_verifier"].encode()).digest()).decode().rstrip("=")
     assert captured["code_challenge"] == [challenge]
+
+
+def test_video_that_is_not_a_short_is_not_uploaded(monkeypatch, tmp_path):
+    """3분을 넘거나 가로 영상이면 쇼츠로 분류되지 않으므로 올리지 않고 이유를 알린다."""
+    import subprocess
+
+    def probe(width, height, duration):
+        out = json.dumps({"streams": [{"width": width, "height": height}], "format": {"duration": str(duration)}})
+        return Mock(returncode=0, stdout=out)
+
+    settings = Settings.from_env()
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: probe(1080, 1920, 190))
+    assert "3분" in _real_shorts_problem(tmp_path / "v.mp4", settings)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: probe(1920, 1080, 60))
+    assert "가로" in _real_shorts_problem(tmp_path / "v.mp4", settings)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: probe(1080, 1920, 117))
+    assert _real_shorts_problem(tmp_path / "v.mp4", settings) is None
+
+
+def test_links_point_to_the_shorts_address():
+    assert youtube.shorts_url("abc") == "https://www.youtube.com/shorts/abc"
