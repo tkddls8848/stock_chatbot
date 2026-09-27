@@ -6,7 +6,7 @@ from typing import Any
 
 from .client import Snapshot
 from .speech import (
-    CLOSING_LINE, end_sentence, opening_line, speak_markets, to_polite_text,
+    CLOSING_LINE, CLOSING_SCREEN, end_sentence, opening_line, speak_markets, to_polite_text,
     to_spoken_question, transition,
 )
 
@@ -138,7 +138,7 @@ def build_scenario(
             if market["id"] != label["id"]:
                 raise ValueError("개별 질문과 확률이 일치하지 않습니다")
             options.append((label["label"], market["yes"], market["yes_probability"]))
-            spoken.append((label["label"], market["yes"]))
+            spoken.append((label["label"], market["yes"], market["no"]))
             evidence.append(f"시장 {market['id']}: {market['question']} / 예 {market['yes']} / 아니오 {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         end_text = deadline.strftime("%Y-%m-%d %H:%M %z")
@@ -157,7 +157,7 @@ def build_scenario(
             end_sentence(to_polite_text(script["context"])),
             to_spoken_question(script["question"]),
         ) if part)
-        markets_line = speak_markets(spoken)
+        markets_line = speak_markets(issue.get("event_type", ""), script["headline"], spoken)
         narration = f"{lead} {markets_line}".strip()
         # 선택지가 화면에 뜨는 때를 확률을 말하기 시작하는 자리에 맞춘다(글자 비율).
         options_at = len(lead) / len(narration) if markets_line else 0.0
@@ -189,7 +189,7 @@ def build_scenario(
     # 아무것도 알려 주지 않았다. 화면 문구는 마무리 멘트와 같은 말을 한다.
     scenes.append(Scene(
         kind="outro", title="확률은 예측입니다", kicker="마무리",
-        body="질문마다 조건이 다릅니다.\n판정 규칙은 직접 확인하세요.",
+        body=CLOSING_SCREEN,
         narration=CLOSING_LINE,
         source_note=f"자료 기준 {shown_stamp}",
     ))

@@ -34,10 +34,13 @@ _TRANSITIONS: tuple[str, ...] = (
 
 # 고지문은 마무리에서 한 번만 말한다. 장면마다 "…확인하세요"를 붙이면 같은
 # 당부가 네댓 번 반복돼 아무도 듣지 않는다 — 장면별 확인점은 화면에 남긴다.
+# 마무리는 고정 멘트다(운영자 결정 2026-09-27). 주소는 소리로 "눈치 닷 라이브"라고
+# 말한다 — "nunchi.live"를 그대로 두면 TTS가 영문 철자로 읽는다. 화면에는 주소를 적는다.
 CLOSING_LINE = (
     "여기 숫자는 사람들의 전망일 뿐, 정해진 결과도 투자 조언도 아닙니다. "
-    "질문마다 조건이 다르니 판정 규칙은 직접 확인하세요."
+    "질문마다 조건이 다르니, 자세한 내용은 눈치 닷 라이브에 방문하여 확인해 보세요."
 )
+CLOSING_SCREEN = "질문마다 조건이 다릅니다.\n자세한 내용은 nunchi.live에서 확인해 보세요."
 
 # "얼마에 도달할 것인가?"는 글로 읽는 문장이다. 말로는 "…도달할까요?"로 묻는다.
 _STIFF_QUESTIONS = (("것인가", "까요"), ("인가", "일까요"))
@@ -100,16 +103,35 @@ def end_sentence(text: str) -> str:
     return body if body.endswith((".", "!", "?", "…")) else f"{body}."
 
 
-def speak_markets(rows: Sequence[tuple[str, str]]) -> str:
-    """개별 선택지의 '예' 확률을 화면과 같은 퍼센트로 말한다.
+def _object(word: str) -> str:
+    """목적격 조사. 받침이 있으면 '을', 없으면 '를'. 한글이 아니면 '을'로 본다."""
+    last = word.strip()[-1:]
+    if not last or not _is_hangul(last):
+        return "을"
+    return "을" if (ord(last) - _HANGUL_BASE) % _JONGSEONG else "를"
 
-    `rows`는 (선택지 이름, 화면에 뜨는 퍼센트 문자열)이다. 화면과 음성이 같은 숫자를
-    말해야 듣는 사람이 화면에서 바로 찾는다.
+
+def speak_markets(event_type: str, topic: str, rows: Sequence[tuple[str, str, str]]) -> str:
+    """선택지 확률을 질문 유형에 맞는 문장으로 말한다(운영자 결정 2026-09-27).
+
+    `rows`는 (선택지 이름, 화면의 '예' 퍼센트, '아니오' 퍼센트)다. 숫자는 화면과 같다.
+    - 양자택일(선택지 하나): "…에 대해 그렇다고 보는 사람은 전체의 X%, 그렇지 않다고
+      보는 사람은 전체의 Y%입니다."
+    - 여러 선택지 중 하나(exclusive): "주제에 대해 A를 선택한 사람은 전체의 X%, B를
+      선택한 사람은 전체의 Y%입니다."
+    - 여러 개가 함께 참일 수 있는 다중선택(independent): 주제 없이 "A를 선택한 사람은
+      전체의 X%, B를 …"
     """
     if not rows:
         return ""
-    parts = [f"{label} 쪽은 {percent}" for label, percent in rows]
-    return ", ".join(parts) + "입니다."
+    if event_type == "binary" or len(rows) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
+        label, yes, no = rows[0]
+        return (f"{label}에 대해 그렇다고 보는 사람은 전체의 {yes}, "
+                f"그렇지 않다고 보는 사람은 전체의 {no}입니다.")
+    parts = ", ".join(f"{label}{_object(label)} 선택한 사람은 전체의 {yes}" for label, yes, _ in rows)
+    if event_type == "exclusive_multi" and topic:
+        return f"{topic}에 대해 {parts}입니다."
+    return f"{parts}입니다."
 
 
 def transition(index: int) -> str:

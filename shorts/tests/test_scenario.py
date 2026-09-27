@@ -61,7 +61,7 @@ def test_issue_narration_gives_the_reason_first_then_the_percent(issue_source):
     assert not re.search(r"예 .*아니오", scene.narration)
     # 선택지는 확률을 말하기 시작할 때 뜬다.
     assert 0 < scene.options_at < 1
-    assert scene.narration[round(scene.options_at * len(scene.narration)):].lstrip().startswith("10월")
+    assert "전체의 55%" in scene.narration[round(scene.options_at * len(scene.narration)):]
     assert scenario.scenes[1].options[0] == ("10월 금리 동결", "55%", .55)
 
 
@@ -69,8 +69,8 @@ def test_the_same_closing_line_is_not_repeated_every_scene(issue_source):
     """장면마다 "…확인하세요"를 붙이면 같은 당부를 다섯 번 듣는다."""
     scenario = _five_issues(issue_source)
 
-    assert scenario.narration.count("확인하세요") == 1
-    assert scenario.scenes[-1].narration.endswith("직접 확인하세요.")
+    assert scenario.narration.count("확인해 보세요") == 1
+    assert scenario.scenes[-1].narration.endswith("눈치 닷 라이브에 방문하여 확인해 보세요.")
     # 장면별 확인점은 검수 기록(review.md)에만 남는다 — 말하지 않는 당부를
     # 화면에만 띄우면 보는 것과 듣는 것이 어긋난다.
     assert scenario.scenes[1].takeaway == "연준의 공식 결정문을 확인하세요."
@@ -110,10 +110,10 @@ def test_the_closing_scene_is_a_short_notice_that_matches_what_is_spoken(issue_s
 
     outro = scenario.scenes[-1]
     assert outro.metric == "" and outro.options == () and outro.takeaway == ""
-    assert outro.body == "질문마다 조건이 다릅니다.\n판정 규칙은 직접 확인하세요."
-    # 짧은 고지 두 줄이고, 마무리 멘트가 같은 말을 한다.
-    assert len(outro.body) < 40
-    assert "판정 규칙은 직접 확인하세요." in outro.narration and "질문마다 조건이" in outro.narration
+    assert outro.body == "질문마다 조건이 다릅니다.\n자세한 내용은 nunchi.live에서 확인해 보세요."
+    # 짧은 고지 두 줄이고, 마무리 멘트가 같은 말을 한다(주소는 소리로 "눈치 닷 라이브").
+    assert len(outro.body) < 50
+    assert "눈치 닷 라이브" in outro.narration and "질문마다 조건이" in outro.narration
 
 
 def test_the_screen_never_shows_a_line_the_voice_does_not_say(issue_source):
@@ -125,4 +125,4 @@ def test_the_screen_never_shows_a_line_the_voice_does_not_say(issue_source):
         assert "확인하세요" not in shown, shown
     # 마무리 한 번만 남고, 그 문장은 멘트에도 그대로 있다.
     closing = scenario.scenes[-1]
-    assert "직접 확인하세요" in closing.body and "직접 확인하세요" in closing.narration
+    assert "nunchi.live" in closing.body and "눈치 닷 라이브" in closing.narration

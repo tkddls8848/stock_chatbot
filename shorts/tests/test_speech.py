@@ -46,22 +46,31 @@ def test_the_opening_names_the_issue_and_the_size_of_the_day():
         assert not re.search(r"(?:^|\s)[이그저]\s", line), line
 
 
-def test_the_closing_says_the_disclaimer_once_and_briefly():
-    assert speech.CLOSING_LINE.count("확인하세요") == 1
-    assert "투자 조언" in speech.CLOSING_LINE
-    assert len(speech.CLOSING_LINE) < 90
+def test_the_closing_is_the_fixed_line_with_the_site():
+    assert speech.CLOSING_LINE.count("확인해 보세요") == 1
+    assert "투자 조언" in speech.CLOSING_LINE and "눈치 닷 라이브" in speech.CLOSING_LINE
+    assert "nunchi.live" in speech.CLOSING_SCREEN
 
 
-def test_probabilities_are_said_as_the_same_percent_as_the_screen():
-    spoken = speech.speak_markets([("10월 금리 25bp 인상", "64.5%"), ("10월 금리 변동 없음", "33.5%")])
-    assert spoken == "10월 금리 25bp 인상 쪽은 64.5%, 10월 금리 변동 없음 쪽은 33.5%입니다."
+def test_a_yes_no_question_says_both_sides_as_shares_of_everyone():
+    spoken = speech.speak_markets("binary", "호르무즈 해협 교통",
+                                  [("9월 30일까지 호르무즈 해협 교통 정상화", "0.4%", "99.6%")])
+    assert spoken == ("9월 30일까지 호르무즈 해협 교통 정상화에 대해 그렇다고 보는 사람은 전체의 0.4%, "
+                      "그렇지 않다고 보는 사람은 전체의 99.6%입니다.")
 
 
-def test_a_single_choice_is_one_short_sentence_without_yes_no_pairs():
-    spoken = speech.speak_markets([("9월 30일까지 해협 교통 정상화", "0.4%")])
-    assert spoken == "9월 30일까지 해협 교통 정상화 쪽은 0.4%입니다."
-    assert "아니오" not in spoken and "꼴" not in spoken
+def test_one_of_several_names_the_topic_then_each_choice():
+    spoken = speech.speak_markets("exclusive_multi", "연준 금리 결정",
+                                  [("10월 금리 25bp 인상", "64.5%", "35.5%"), ("10월 금리 동결", "33.5%", "66.5%")])
+    assert spoken == ("연준 금리 결정에 대해 10월 금리 25bp 인상을 선택한 사람은 전체의 64.5%, "
+                      "10월 금리 동결을 선택한 사람은 전체의 33.5%입니다.")
+
+
+def test_several_can_be_true_lists_each_choice_without_a_topic():
+    spoken = speech.speak_markets("independent_multi", "경기 지표",
+                                  [("미국 경기 침체", "9.5%", "90.5%"), ("유로존 금리 인하", "40%", "60%")])
+    assert spoken == "미국 경기 침체를 선택한 사람은 전체의 9.5%, 유로존 금리 인하를 선택한 사람은 전체의 40%입니다."
 
 
 def test_no_choices_say_nothing():
-    assert speech.speak_markets([]) == ""
+    assert speech.speak_markets("binary", "", []) == ""
