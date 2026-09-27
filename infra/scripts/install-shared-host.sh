@@ -107,13 +107,13 @@ if [ "$FIRST_INSTALL" = 1 ]; then
 fi
 
 # 쇼츠는 하루 한 편이다(timer 21:00 한국 시간, 같은 날 두 번째 실행은 already_produced로
-# 끝난다). 쇼츠 자기 venv와 .env가 갖춰졌을 때만 켠다 — 없으면 매일 실패만 쌓인다.
-if [ -x "$APP_DIR/shorts/.venv/bin/python" ] && [ -f "$APP_DIR/shorts/.env" ]; then
+# 끝난다). 쇼츠 자기 venv와 루트 .env가 갖춰졌을 때만 켠다 — 없으면 매일 실패만 쌓인다.
+if [ -x "$APP_DIR/shorts/.venv/bin/python" ] && [ -f "$APP_DIR/.env" ]; then
   sudo -u "$APP_USER" "$APP_DIR/shorts/.venv/bin/pip" install -q -e "$APP_DIR/shorts"
   systemctl enable --now polymarket-shorts.timer >/dev/null
   ok "쇼츠 timer 켜짐(하루 한 편)"
 else
-  warn "쇼츠 venv(shorts/.venv) 또는 shorts/.env 가 없어 쇼츠 timer 를 켜지 않았다."
+  warn "쇼츠 venv(shorts/.venv) 또는 .env 가 없어 쇼츠 timer 를 켜지 않았다."
 fi
 
 # 프로세스마다 자기 설정을 따로 읽는다. 한쪽이 깨져도 다른 쪽은 뜨지만,

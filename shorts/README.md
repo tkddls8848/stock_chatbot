@@ -39,7 +39,7 @@ sudo apt-get update
 sudo apt-get install -y ffmpeg fonts-noto-cjk python3-venv
 python3 -m venv .venv
 .venv/bin/pip install -e .
-cp .env.example .env
+# 저장소 루트의 .env.example을 참고해 기존 ../.env에 키를 추가합니다.
 ```
 
 Windows PowerShell에서는 다음처럼 준비합니다.
@@ -50,7 +50,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 winget install --id Gyan.FFmpeg -e
 winget install --id BlenderFoundation.Blender -e
-Copy-Item .env.example .env
+# 저장소 루트의 .env.example을 참고해 기존 ../.env에 키를 추가합니다.
 ```
 
 Blender는 PATH 또는 `C:\Program Files\Blender Foundation\Blender *\blender.exe`에서 찾습니다.
@@ -73,7 +73,7 @@ FFmpeg는 WinGet 설치 경로도 자동 탐색합니다.
 
 로컬 PowerShell에서 영상 생성 → 원고·영상 확인 → 자연어 수정 → 재렌더 → 검수 완료로 진행합니다.
 수정본과 검수 기록은 로컬에 저장합니다. 필요한 외부 설정은 이슈 선별·원고 작성·자연어 편집용 Cloudflare 계정 ID와
-Workers AI API 토큰입니다. `shorts/.env.example`을 참고해 `shorts/.env`에 채웁니다.
+Workers AI API 토큰입니다. 저장소 루트 `.env.example`을 참고해 루트 `.env`에 채웁니다.
 기존 `.env`는 덮어쓰지 말고 필요한 키만 추가하세요.
 
 ```dotenv
@@ -200,7 +200,7 @@ $env:PYTHONPATH='shorts/src'
 2. Google Auth Platform의 브랜딩·대상(또는 OAuth 동의 화면)을 설정합니다.
    외부 앱을 테스트 상태로 만들고 테스트 사용자에 업로드할 채널 소유자의 Google 계정을 추가합니다.
 3. 클라이언트(또는 사용자 인증 정보 → OAuth 클라이언트 ID 만들기)에서
-   **데스크톱 앱**을 선택합니다. 발급된 ID와 secret을 운영자 PC의 `shorts/.env`에
+   **데스크톱 앱**을 선택합니다. 발급된 ID와 secret을 운영자 PC의 저장소 루트 `.env`에
    `SHORTS_YOUTUBE_CLIENT_ID`, `SHORTS_YOUTUBE_CLIENT_SECRET`으로 넣습니다.
 4. 저장소 루트에서 쇼츠 패키지가 설치된 Python으로 아래 명령을 실행하고 브라우저에서
    해당 YouTube 채널 계정으로 승인합니다. 서버에서 실행하지 않습니다.
@@ -213,7 +213,7 @@ $env:PYTHONPATH='shorts/src'
    127.0.0.1 임의 포트로 승인 결과를 받으며 PKCE와 state를 검사합니다.
    화면에 출력된 `SHORTS_YOUTUBE_REFRESH_TOKEN=...`을 복사합니다. 도구는 토큰을
    파일로 저장하지 않습니다. 터미널 출력도 외부에 공유하지 마세요.
-5. 서버의 `shorts/.env`에 같은 ID·secret과 refresh token을 넣습니다.
+5. 서버의 `/srv/stock-chatbot/.env`에 같은 ID·secret과 refresh token을 넣습니다.
    `SHORTS_YOUTUBE_PRIVACY=private`, `SHORTS_YOUTUBE_CATEGORY_ID=25`가 기본값입니다.
    테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
    검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.

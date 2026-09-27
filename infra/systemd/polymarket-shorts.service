@@ -11,7 +11,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/srv/stock-chatbot/shorts/.env
+EnvironmentFile=/srv/stock-chatbot/.env
 ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
 Nice=10
 CPUWeight=20

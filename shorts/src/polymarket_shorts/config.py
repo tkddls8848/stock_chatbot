@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_DIR / ".env")
+load_dotenv(PROJECT_DIR.parent / ".env")
 
 
 def _bool(name: str, default: bool = False) -> bool:

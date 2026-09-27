@@ -235,7 +235,7 @@ def upload(root: Path, settings: Settings) -> dict:
 def authorize(settings: Settings) -> str:
     """데스크톱 루프백 + state + PKCE. 토큰은 호출자가 화면에만 출력한다."""
     if not settings.youtube_client_id or not settings.youtube_client_secret:
-        raise ReviewError("shorts/.env에 SHORTS_YOUTUBE_CLIENT_ID와 SHORTS_YOUTUBE_CLIENT_SECRET을 설정하세요")
+        raise ReviewError(".env에 SHORTS_YOUTUBE_CLIENT_ID와 SHORTS_YOUTUBE_CLIENT_SECRET을 설정하세요")
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     result = {}

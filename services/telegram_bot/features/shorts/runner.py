@@ -2,8 +2,7 @@
 
 계약은 `python -m polymarket_shorts.cli`의 명령과 stdout JSON 한 줄이다
 (`--status`·`--edit TEXT`·`--complete`, 제작은 인자 없이 또는 `--force`).
-환경은 **최소한만** 넘긴다 — 봇의 텔레그램 토큰·자격증명을 쇼츠에 흘리지 않고,
-쇼츠는 자기 `shorts/.env`를 스스로 읽는다. `STORAGE_DIR`만은 봇과 같은 값을 넘겨
+환경은 **최소한만** 넘기고, 쇼츠도 저장소 루트 `.env`를 스스로 읽는다. `STORAGE_DIR`만은 봇과 같은 값을 넘겨
 두 프로세스가 같은 공유 저장소를 보게 한다.
 """
 

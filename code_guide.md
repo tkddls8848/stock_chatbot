@@ -350,7 +350,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   패키지이고 반대 방향도 같다. 봇은 쇼츠 CLI를 **쇼츠 자기 venv의 하위 프로세스로**
   부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태도 CLI(`--status`)가 `storage/shorts/`를 읽어
   stdout JSON 한 줄로 돌려준다 — 폴더 구조를 아는 것은 쇼츠뿐이다. 하위 프로세스에는
-  `STORAGE_DIR`과 PATH 같은 최소 환경만 넘긴다(봇의 토큰을 흘리지 않는다). 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
+  `STORAGE_DIR`과 PATH 같은 최소 환경만 넘기고, 각 프로세스가 루트 `.env`를 읽는다. 경계는 프로세스와 파일이고, 파이썬 import는 여전히 0이다. 실행은 잠금 하나로
   줄을 세운다 — 예약 제작과 패널 실행·편집이 겹치면 같은 산출물 폴더를 서로 덮는다.
   제작·재렌더는 수 분이 걸리므로 접수 안내 뒤 백그라운드로 돌고 끝나면 채팅으로
   알린다(수동 브리핑과 같은 방식). 로컬 브라우저 검수 패널(`--browser`)과 대화형
@@ -358,7 +358,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   검수하지 않은 영상은 업로드하지 않는다. `/shorts done` 뒤에 검수 완료본을 업로드하며
   기본 공개 범위는 비공개(`SHORTS_YOUTUBE_PRIVACY=private`)다. 같은 날짜·수정본의
   업로드 이력을 원자적으로 보존해 중복을 막고, 실패하면 `/shorts upload`로 재시도한다.
-  YouTube 자격 증명은 쇼츠가 `shorts/.env`에서 읽으며 봇 환경으로 넘기지 않는다.
+  모든 모듈의 설정은 저장소 루트 `.env` 하나에서 관리한다. 하위 폴더에 `.env`를 두지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
 - **운영자 봇의 관심종목은 `storage/portfolio/watchlist.json`이다.** 웹 사용자의 목록은
