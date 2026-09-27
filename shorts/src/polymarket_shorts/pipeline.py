@@ -130,7 +130,7 @@ def produce_revision(
     duration = render_video(
         scenario, audio_path=audio, scene_words=scene_words, output_path=video,
         work_dir=work, font_path=find_font(settings.font_file),
-        ffmpeg_bin=settings.ffmpeg_bin, ffprobe_bin=settings.ffprobe_bin,
+        blender_bin=settings.blender_bin, ffprobe_bin=settings.ffprobe_bin,
         max_duration=settings.max_duration_seconds, background_paths=backgrounds,
     )
     script = write_review(
@@ -259,7 +259,7 @@ def produce_daily(
             output_path=video_path,
             work_dir=work,
             font_path=find_font(settings.font_file),
-            ffmpeg_bin=settings.ffmpeg_bin,
+            blender_bin=settings.blender_bin,
             ffprobe_bin=settings.ffprobe_bin,
             max_duration=settings.max_duration_seconds,
             background_paths=backgrounds,

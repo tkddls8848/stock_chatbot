@@ -22,13 +22,20 @@ def _bool(name: str, default: bool = False) -> bool:
 
 
 def _media_binary(env_name: str, executable: str) -> str:
-    configured = os.getenv(env_name, executable).strip()
+    configured = os.getenv(env_name, "").strip() or executable
     located = shutil.which(configured)
     if located:
         return located
     configured_path = Path(configured)
     if configured_path.is_file():
         return str(configured_path)
+    if executable == "blender":
+        if os.name == "nt" and not os.getenv(env_name, "").strip():
+            root = Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Blender Foundation"
+            matches = sorted(root.glob("Blender */blender.exe"), reverse=True)
+            if matches:
+                return str(matches[0])
+        return configured
     # WinGet 설치 직후에는 현재 프로세스의 PATH가 갱신되지 않는다. Gyan 패키지의
     # 실제 bin 경로를 찾아 새 터미널이나 앱 재시작 없이도 첫 렌더를 진행한다.
     local_app_data = os.getenv("LOCALAPPDATA", "").strip()
@@ -67,6 +74,7 @@ class Settings:
     ffmpeg_bin: str
     ffprobe_bin: str
     visuals_enabled: bool
+    blender_bin: str = "blender"
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
     editor_model: str = "@cf/qwen/qwen3-30b-a3b-fp8"
@@ -102,6 +110,7 @@ class Settings:
             tts_voice=os.getenv("SHORTS_TTS_VOICE", "ko-KR-SunHiNeural"),
             tts_rate=os.getenv("SHORTS_TTS_RATE", "+0%"),
             font_file=Path(font) if font else None,
+            blender_bin=_media_binary("BLENDER_BIN", "blender"),
             ffmpeg_bin=_media_binary("FFMPEG_BIN", "ffmpeg"),
             ffprobe_bin=_media_binary("FFPROBE_BIN", "ffprobe"),
             visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),

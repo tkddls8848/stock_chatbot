@@ -28,6 +28,31 @@ chmod 0600 "$APP_DIR/.env"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv python3-pip
 
+# 공식 x64 배포본과 같은 릴리스의 체크섬을 함께 검증한다.
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl xz-utils \
+  libxi6 libxkbcommon0 libxrender1 libgl1 libsm6 libxxf86vm1 libxfixes3 libegl1
+if [ -x /opt/blender-5.2.1/blender ] && \
+   /opt/blender-5.2.1/blender --version | head -n 1 | grep -qx 'Blender 5.2.1 LTS'; then
+  ok "Blender 5.2.1 LTS 이미 설치됨"
+else
+  [ "$(uname -m)" = x86_64 ] || die "Blender 배포본은 x86_64 호스트용이다."
+  (
+    blender_download="$(mktemp -d)"
+    trap 'rm -rf "$blender_download"' EXIT
+    cd "$blender_download"
+    blender_release=https://download.blender.org/release/Blender5.2
+    curl --fail --location --retry 3 -O "$blender_release/blender-5.2.1-linux-x64.tar.xz"
+    curl --fail --location --retry 3 -O "$blender_release/blender-5.2.1.sha256"
+    awk '$2 == "blender-5.2.1-linux-x64.tar.xz" {print}' blender-5.2.1.sha256 > linux.sha256
+    test "$(wc -l < linux.sha256)" -eq 1
+    sha256sum --check --strict linux.sha256
+    tar -xJf blender-5.2.1-linux-x64.tar.xz
+    install -d /opt/blender-5.2.1
+    cp -a blender-5.2.1-linux-x64/. /opt/blender-5.2.1/
+  )
+fi
+ln -sfn /opt/blender-5.2.1/blender /usr/local/bin/blender
+
 if [ ! -x "$APP_DIR/venv/bin/python" ]; then
   sudo -u "$APP_USER" python3 -m venv "$APP_DIR/venv"
 fi

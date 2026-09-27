@@ -1,3 +1,4 @@
+import json
 import re
 from dataclasses import replace
 
@@ -97,16 +98,16 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
         output_path=output,
         work_dir=tmp_path,
         font_path=cjk_font,
-        ffmpeg_bin="ffmpeg",
+        blender_bin="blender",
         ffprobe_bin="ffprobe",
         max_duration=30,
     )
 
-    position = captured["command"].index("-t")
-    assert captured["command"][position + 1] == "100.600"
-    assert duration == 100.6
-    assert "-shortest" not in captured["command"]
-    assert "apad=pad_dur=0.6" in captured["command"]
+    manifest = json.loads((tmp_path / "blender-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["duration"] == duration == 100.6
+    assert manifest["tail_seconds"] == .6
+    assert manifest["clone_padding_seconds"] == 1
+    assert captured["command"][0] == "blender"
     # 선택지는 한 줄씩 쌓여 뜬다: 질문만 선 화면 → 첫 줄(차오름) → 두 줄(차오름).
     assert [shown for shown, _ in revealed] == (
         [0] + [1] * (render.COUNTUP_STEPS + 1) + [2] * (render.COUNTUP_STEPS + 1)
@@ -114,15 +115,8 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     # 새로 뜬 줄의 숫자만 차오르고, 이미 선 줄의 값은 흔들리지 않는다.
     assert revealed[1][1][0] == "0%" and revealed[render.COUNTUP_STEPS + 1][1] == ("40%", "60%")
     assert all(row[1][0] == "40%" for row in revealed[render.COUNTUP_STEPS + 1:])
-    video_filter = captured["command"][captured["command"].index("-vf") + 1]
-    # Expand still frames, drift the whole card, then draw subtitles on top — the
-    # cues stay put while the card floats.
-    assert video_filter.startswith("fps=30,crop=")
-    assert video_filter.index("crop=") < video_filter.index("subtitles=")
-    assert "overlay" not in video_filter
-    assert captured["command"].count("-i") == 2  # Composited frames and audio only.
-    assert captured["command"][captured["command"].index("-filter_threads") + 1] == "1"
-    assert "PlayResX=1080,PlayResY=1920" in video_filter
+    assert all(row["drift"] for row in manifest["images"])
+    assert manifest["caption"]["size"] == render.CAPTION_FONT_SIZE
 
 
 def test_scene_cuts_land_on_the_next_scene_first_spoken_word():
@@ -188,7 +182,6 @@ def test_written_captions_break_korean_lines_between_words(tmp_path, cjk_font):
 
     lines = target.read_text(encoding="utf-8").splitlines()[2:]
     assert len(lines) == 2 and " ".join(lines) == text
-    assert render._subtitle_filter(target).count("WrapStyle=2") == 1
 
 
 @requires_cjk_font
@@ -202,8 +195,6 @@ def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path,
     # 자막 아래 끝이 안전 영역 바닥이다. 고지문은 그 위, 진행바는 헤더 옆으로 올라갔다.
     assert HEIGHT - CAPTION_MARGIN_V == SAFE_BOTTOM
     assert FOOTER_Y < SAFE_BOTTOM - 100 and PROGRESS_Y < FOOTER_Y
-    style = render._subtitle_filter(tmp_path / "phrases.srt")
-    assert f"MarginV={CAPTION_MARGIN_V}" in style
 
     with Image.open(target) as image:
         pixels = image.convert("RGBA").load()
@@ -390,11 +381,9 @@ def test_each_scene_sees_the_same_asset_differently(tmp_path, cjk_font):
 
 
 def test_captions_are_large_bold_and_sit_in_the_lower_third(tmp_path):
-    style = render._subtitle_filter(tmp_path / "phrases.srt")
-
-    assert f"FontSize={render.CAPTION_FONT_SIZE}" in style and "Bold=1" in style
-    assert render.CAPTION_FONT_SIZE >= 54          # 예전 38은 화면 중간의 주석처럼 보였다
-    assert f"MarginV={CAPTION_MARGIN_V}" in style  # 아래 끝이 안전 영역 바닥이다
+    assert render.CAPTION_FONT_SIZE == 56
+    assert CAPTION_MARGIN_V == 380
+    # 예전 38은 화면 중간의 주석처럼 보였다
     # 두 줄이면 자막 띠는 하단 1/3(1280 아래) 안에 들어온다.
     assert HEIGHT - CAPTION_MARGIN_V - 2 * round(render.CAPTION_FONT_SIZE * 1.25) > HEIGHT * 2 / 3
 

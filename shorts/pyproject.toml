@@ -25,6 +25,9 @@ polymarket-shorts-hyperframes = "polymarket_shorts.hyperframes_export:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+polymarket_shorts = ["blender/*.py"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
