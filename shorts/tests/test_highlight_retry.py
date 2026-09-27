@@ -101,3 +101,11 @@ def test_number_words_and_amount_units_count_as_grounded():
     highlights._translation("변이형 토큰의 FDV가 출시 1일 후에 1억 달러를 넘을까요?", source, "question")
     assert "25" in highlights._numbers("above $2.5B?")   # 25억
     assert "5000" in highlights._numbers("$50M")         # 5000만
+
+
+def test_a_label_may_use_either_form_of_an_amount():
+    question = "Variational FDV above $100M one day after launch?"
+    highlights._translation("출시 1일 후 FDV 1억 달러 초과", question, "label")
+    highlights._translation("출시 1일 후 FDV 100M 달러 초과", question, "label")
+    with pytest.raises(HighlightError):
+        highlights._translation("출시 직후 FDV 초과", question, "label")      # 수치 조건이 모두 빠졌다

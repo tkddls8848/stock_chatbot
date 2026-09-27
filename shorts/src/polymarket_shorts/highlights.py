@@ -144,23 +144,34 @@ def _plain(value: float) -> str:
     return format(value, "f").rstrip("0").rstrip(".") if value % 1 else str(int(value))
 
 
-def _numbers(source: str) -> set[str]:
+def _number_groups(source: str) -> list[set[str]]:
+    """원문의 수치마다 번역에서 허용하는 표기 묶음.
+
+    묶음 하나가 원문 수치 하나다. 영어 수 낱말("one day after launch")은 숫자로
+    ("1일 후"), 금액 단위는 한국어 단위로 바뀐다($100M → 1억, $2.5B → 25억,
+    $50M → 5000만). 번역은 묶음 안의 어느 표기든 쓰면 된다(실측 2026-09-27).
+    """
     for month, name in enumerate(("January", "February", "March", "April", "May", "June", "July",
                                   "August", "September", "October", "November", "December"), 1):
         source = re.sub(rf"\b{name}\b", str(month), source, flags=re.IGNORECASE)
-    # 영어 수 낱말("one day after launch")은 번역에서 숫자("1일 후")가 된다(실측 2026-09-27).
     for value, word in enumerate(_NUMBER_WORDS):
         source = re.sub(rf"\b{word}\b", str(value), source, flags=re.IGNORECASE)
     text = source.replace(",", "")
-    found = set(re.findall(r"\d+(?:\.\d+)?", text))
-    # 금액 단위는 한국어로 바뀐다: $100M → 1억, $2.5B → 25억, $50M → 5000만.
-    for amount, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mn|[kmbt])\b",
-                                   text, re.IGNORECASE):
-        total = float(amount) * _SCALES[unit.lower()]
-        for korean_unit in (1e12, 1e8, 1e4):          # 조·억·만
-            if total >= korean_unit:
-                found.add(_plain(round(total / korean_unit, 4)))
-    return found
+    groups: list[set[str]] = []
+    pattern = r"(\d+(?:\.\d+)?)(?:\s*(trillion|billion|million|thousand|bn|mn|[kmbt])\b)?"
+    for amount, unit in re.findall(pattern, text, re.IGNORECASE):
+        group = {amount}
+        if unit:
+            total = float(amount) * _SCALES[unit.lower()]
+            for korean_unit in (1e12, 1e8, 1e4):          # 조·억·만
+                if total >= korean_unit:
+                    group.add(_plain(round(total / korean_unit, 4)))
+        groups.append(group)
+    return groups
+
+
+def _numbers(source: str) -> set[str]:
+    return set().union(*_number_groups(source)) if source else set()
 
 
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July",
@@ -200,9 +211,12 @@ def _translation(text: str, source: str, field: str) -> None:
         raise HighlightError(f"{field}에 원문에 없는 숫자가 있습니다({extra}): {text}")
     if field == "label":
         # Repeated calendar year can be omitted when a month/threshold still identifies the choice.
-        required = {n for n in known if not re.fullmatch(r"20\d{2}", n)} if len(known) > 1 else known
-        if not required <= written:
-            missing = ", ".join(sorted(required - written))
+        groups = _number_groups(source)
+        # 연도 하나는 달·수치가 선택지를 가르면 생략할 수 있다.
+        required = [g for g in groups if not any(re.fullmatch(r"20\d{2}", n) for n in g)] if len(groups) > 1 else groups
+        absent = [g for g in required if not g & written]
+        if absent:
+            missing = ", ".join(sorted(min(g, key=len) for g in absent))
             raise HighlightError(f"개별 베팅의 날짜·수치 조건이 번역에서 빠졌습니다({missing}): {text}")
         for direction, pattern in (("(HIGH)", r"이상|상회|상단|돌파|오르|올라|올릴"),
                                    ("(LOW)", r"이하|하회|하단|내리|내릴|하락")):
