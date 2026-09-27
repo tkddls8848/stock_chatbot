@@ -115,7 +115,8 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     # 새로 뜬 줄의 숫자만 차오르고, 이미 선 줄의 값은 흔들리지 않는다.
     assert revealed[1][1][0] == "0%" and revealed[render.COUNTUP_STEPS + 1][1] == ("40%", "60%")
     assert all(row[1][0] == "40%" for row in revealed[render.COUNTUP_STEPS + 1:])
-    assert all(row["drift"] for row in manifest["images"])
+    assert all("drift" not in row for row in manifest["images"])  # 이미지 위치는 고정
+    assert "drift" not in manifest
     assert manifest["caption"]["size"] == render.CAPTION_FONT_SIZE
 
 

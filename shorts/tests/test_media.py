@@ -42,7 +42,8 @@ def test_daily_pipeline_passes_saved_backgrounds_without_network_generation(tmp_
         return 10.0
 
     monkeypatch.setattr(pipeline, "render_video", render)
-    settings = replace(Settings.from_env(), output_dir=tmp_path / "output", state_file=tmp_path / "state.json", visuals_enabled=enabled)
+    settings = replace(Settings.from_env(), output_dir=tmp_path / "output", state_file=tmp_path / "state.json",
+                       visuals_enabled=enabled, generated_backgrounds=False)
     pipeline.produce_daily(settings, production_date=date(2026, 9, 12))
     expected = (ASSET_DIR / "financial-city.png", ASSET_DIR / "global-trade.png") if enabled else (None, None)
     assert captured["background_paths"] == expected

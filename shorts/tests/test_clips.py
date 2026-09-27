@@ -151,7 +151,7 @@ def test_expired_worker_never_downloads_or_commits(source, settings, api):
     assert not png.with_suffix(".mp4").exists()
 
 
-def test_issue_submissions_run_concurrently_and_share_intro(source, settings, monkeypatch):
+def test_issue_submissions_run_concurrently_and_intro_stays_still(source, settings, monkeypatch):
     scene, png = source
     other = replace(scene, visual_query="topic: mountains")
     other_png = png.with_name(hashlib.sha1(other.visual_query.encode()).hexdigest()[:12] + ".png")
@@ -166,10 +166,10 @@ def test_issue_submissions_run_concurrently_and_share_intro(source, settings, mo
     intro, outro = replace(scene, kind="intro"), replace(scene, kind="outro")
     chosen = clips.clips_for((intro, scene, other, outro), (png, png, other_png, png), settings)
     assert set(calls) == {png, other_png}
-    assert chosen == (png.with_suffix(".mp4"), png.with_suffix(".mp4"), other_png.with_suffix(".mp4"), png)
+    assert chosen == (png, png.with_suffix(".mp4"), other_png.with_suffix(".mp4"), png)  # 도입은 정지 그림
     still = replace(scene, background="still")
     monkeypatch.setattr(clips, "_generate_clip", lambda path, *args: path.with_suffix(".mp4"))
-    assert clips.clips_for((intro, still), (png, png), settings) == (png.with_suffix(".mp4"), png)
+    assert clips.clips_for((intro, still), (png, png), settings) == (png, png)
 
 
 def test_builtin_background_is_never_submitted(source, settings, monkeypatch):
@@ -243,7 +243,7 @@ def test_visuals_review_and_revision_reuse_original_cache(source, settings, monk
     monkeypatch.setattr(pipeline, "find_font", lambda *a: Path("font"))
     monkeypatch.setattr(clips, "_generate_clip", lambda path, *a: path.with_suffix(".mp4"))
     def render(*a, **kwargs):
-        assert kwargs["background_paths"] == (png.with_suffix(".mp4"),) * 2
+        assert kwargs["background_paths"] == (png, png.with_suffix(".mp4"))  # 도입은 정지 그림
         kwargs["output_path"].write_bytes(b"video")
         return 5
     monkeypatch.setattr(pipeline, "render_video", render)
@@ -253,5 +253,6 @@ def test_visuals_review_and_revision_reuse_original_cache(source, settings, monk
     assert "Seedance 이미지→영상 합성(이슈 1개)" in text
     assert "게시 시 YouTube '변경·합성 콘텐츠' 표시" in text
     payload = workflow._read(target / "scenario.json")
-    assert all(row["kind"] == "clip" and row["source"] == "Seedance image-to-video" for row in payload["visuals"])
+    assert payload["visuals"][0].get("kind") != "clip"
+    assert payload["visuals"][1]["kind"] == "clip" and payload["visuals"][1]["source"] == "Seedance image-to-video"
     assert "Seedance" not in review._script(scenario, metadata, png, 5)

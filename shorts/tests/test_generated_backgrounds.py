@@ -15,7 +15,7 @@ def _settings():
     return replace(Settings.from_env(), editor_account_id="a", editor_api_token="t", generated_backgrounds=True)
 
 
-def test_issue_scenes_get_generated_art_and_intro_reuses_the_first(tmp_path, monkeypatch):
+def test_issue_scenes_and_the_intro_each_get_their_own_art(tmp_path, monkeypatch):
     calls = []
 
     def fake(subject, target, settings):
@@ -29,8 +29,10 @@ def test_issue_scenes_get_generated_art_and_intro_reuses_the_first(tmp_path, mon
 
     chosen = media.backgrounds_for(scenes, tmp_path, _settings())
 
-    assert calls == ["Fed Decision in October?", "Strait of Hormuz traffic"]   # 도입은 새로 그리지 않는다
-    assert chosen[0] == chosen[1] and chosen[1] != chosen[2]
+    # 도입은 첫 이슈 그림을 다시 쓰지 않고 도입용 풍경을 따로 그린다
+    assert calls[0] == media.INTRO_QUERY.split("topic:", 1)[1].strip()
+    assert calls[1:] == ["Fed Decision in October?", "Strait of Hormuz traffic"]
+    assert len({chosen[0], chosen[1], chosen[2]}) == 3
     assert chosen[3] == media.background_for("outro", "")                      # 마무리는 저장 배경
 
 

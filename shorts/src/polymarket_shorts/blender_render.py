@@ -9,7 +9,7 @@ from PIL import ImageFont
 
 from .render import (
     CAPTION_FONT_SIZE, CAPTION_MARGIN_L, CAPTION_MARGIN_R, CAPTION_MARGIN_V,
-    DRIFT_AMPLITUDE, DRIFT_MARGIN, DRIFT_PERIODS, HEIGHT, WIDTH, RenderError,
+    HEIGHT, WIDTH, RenderError,
 )
 
 
@@ -27,7 +27,6 @@ def compose(*, images: list[dict], movies: list[dict], subtitles: list[dict],
         "audio": str(audio_path.resolve()), "output": str(output_path.resolve()),
         "tail_seconds": .6, "clone_padding_seconds": 1,
         "images": images, "movies": movies, "subtitles": subtitles,
-        "drift": {"margin": DRIFT_MARGIN, "amplitude": DRIFT_AMPLITUDE, "periods": DRIFT_PERIODS},
         "caption": {"font": str(caption_font.resolve()), "size": CAPTION_FONT_SIZE,
                     "synthetic_bold": "bold" not in font.getname()[1].lower(),
                     # libass는 ascender+descender를 FontSize에 맞춘다. BLF는 em 크기다.

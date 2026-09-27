@@ -85,17 +85,23 @@ def _generate_background(subject: str, target: Path, settings: Any) -> Path | No
         return None
 
 
+# 도입 배경은 첫 이슈 그림을 다시 쓰지 않는다 — 도입과 첫 장면이 같은 그림으로 이어져
+# 반복처럼 보였다(2026-09-27). 그날의 전망을 여는 풍경을 따로 그리고, 날짜 폴더마다
+# 새로 그리므로 매일 다르다.
+INTRO_QUERY = ("intro; topic: a calm panoramic view of a global financial city at dawn, "
+               "soft light over a wide river and bridges, quiet harbor in the distance")
+
+
 def backgrounds_for(scenes: tuple[Scene, ...], work_dir: Path, settings: Any) -> tuple[Path | None, ...]:
-    """장면별 배경. 이슈 장면은 그날 이슈로 새로 그리고, 도입은 첫 이슈 그림을 함께 쓴다.
+    """장면별 배경. 이슈 장면은 그날 이슈로, 도입은 도입용 풍경을 새로 그린다.
 
     마무리 고지와 생성 실패는 저장 배경(`background_for`)이다 — 배경 한 장 때문에
     그날 제작을 멈추지 않는다.
     """
-    first = next((scene.visual_query for scene in scenes if scene.kind == "consensus"), "")
     made: dict[str, Path | None] = {}
     chosen: list[Path | None] = []
     for scene in scenes:
-        query = first if scene.kind == "intro" else scene.visual_query
+        query = INTRO_QUERY if scene.kind == "intro" else scene.visual_query
         path = None
         if settings.generated_backgrounds and scene.kind != "outro" and "topic:" in query:
             if query not in made:

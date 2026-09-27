@@ -306,12 +306,8 @@ COUNTUP_SECONDS = .72
 COUNTUP_STEPS = 8
 # 카운트업이 끝난 뒤에도 제자리 숫자가 머물 시간이 남아야 한다.
 COUNTUP_MIN_BEAT = 1.4
-# 잘라 내는 가장자리(px)와 그 안에서 움직이는 폭. 되돌려 키우는 비율이 1.5%라
-# 글자가 무뎌지지 않고, 자막은 이 뒤에 얹으므로 흔들리지 않는다.
-DRIFT_MARGIN = 8
-DRIFT_AMPLITUDE = 7
-# 가로·세로 주기(초). 서로 나누어떨어지지 않아 같은 자리로 돌아오지 않는다.
-DRIFT_PERIODS = (23, 31)
+# 화면 이미지의 크기와 위치는 고정한다(운영자 결정 2026-09-27). 예전에는 정지 장면을
+# 가장자리 8px 안에서 ±7px 흘렸는데, 화면 틀이 움직이는 것처럼 보였다.
 _METRIC_NUMBER = re.compile(r"(\d+(?:\.\d+)?)(%?)$")
 
 
@@ -546,8 +542,7 @@ def render_video(
             frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
                          background_path=background, shown=shown, transparent=is_clip)
-            images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold,
-                           "drift": not is_clip})
+            images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가
             # 머무는 구간이지 그 안의 정지 화면 여덟 장이 아니다. 앞 장면과 제목이
             # 같을 수 있으므로(도입 제목 = 첫 이슈 제목) 장면 번호로 구분한다.

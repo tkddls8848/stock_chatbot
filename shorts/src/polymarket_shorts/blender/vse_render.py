@@ -64,7 +64,6 @@ def render(manifest):
             mapping.update()
             cursor += length
 
-    drift = manifest["drift"]
     for index, row in enumerate(manifest["images"]):
         start, end = frame(row["start"]), frame(row["start"] + row["duration"])
         if end <= start:
@@ -74,16 +73,6 @@ def render(manifest):
         strip.blend_type = "ALPHA_OVER"
         if index == len(manifest["images"]) - 1:
             strip.frame_final_end += round(manifest["clone_padding_seconds"] * fps)
-        if row["drift"]:
-            sx, sy = width / (width - 2 * drift["margin"]), height / (height - 2 * drift["margin"])
-            strip.transform.scale_x, strip.transform.scale_y = sx, sy
-            # 전체 시각으로 평가해 비트 경계에서도 같은 위치에서 이어 간다.
-            for at in range(start, min(strip.frame_final_end, scene.frame_end + 1)):
-                seconds = (at - 1) / fps
-                strip.transform.offset_x = -round(drift["amplitude"] * math.sin(2 * math.pi * seconds / drift["periods"][0])) * sx
-                strip.transform.offset_y = round(drift["amplitude"] * math.sin(2 * math.pi * seconds / drift["periods"][1])) * sy
-                strip.transform.keyframe_insert("offset_x", frame=at)
-                strip.transform.keyframe_insert("offset_y", frame=at)
 
     caption = manifest["caption"]
     font = bpy.data.fonts.load(caption["font"])

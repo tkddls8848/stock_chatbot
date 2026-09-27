@@ -152,7 +152,7 @@ def clips_for(scenes: tuple[Scene, ...], backgrounds: tuple[Path | None, ...],
     jobs = {}
     for scene, path in zip(scenes, backgrounds, strict=True):
         query = first if scene.kind == "intro" else scene.visual_query
-        if (path is None or scene.kind == "outro" or scene.background == "still"
+        if (path is None or scene.kind in {"intro", "outro"} or scene.background == "still"
                 or "topic:" not in query):
             continue
         # 저장 기본 그림은 영상 API에 보내지 않는다. 이미 만든 이슈 해시 PNG만 대상이다.
@@ -174,7 +174,7 @@ def clips_for(scenes: tuple[Scene, ...], backgrounds: tuple[Path | None, ...],
         # context manager의 shutdown(wait=True)는 10분 상한을 무력화한다.
         # 실행 중 요청도 같은 deadline을 확인해 캐시를 뒤늦게 교체하지 않는다.
         pool.shutdown(wait=False, cancel_futures=True)
-    return tuple((made.get(path) or path) if scene.background != "still" and scene.kind != "outro" else path
+    return tuple((made.get(path) or path) if scene.background != "still" and scene.kind not in {"intro", "outro"} else path
                  for scene, path in zip(scenes, backgrounds, strict=True))
 
 

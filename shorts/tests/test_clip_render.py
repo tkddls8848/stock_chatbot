@@ -59,7 +59,7 @@ def test_still_fallback_uses_blender(tmp_path, monkeypatch, cjk_font, mode):
     assert len(commands) == 1 and commands[0][0] == "blender"
     manifest = json.loads((tmp_path / "blender-manifest.json").read_text(encoding="utf-8"))
     assert manifest["movies"] == []
-    assert all(row["drift"] for row in manifest["images"])
+    assert all("drift" not in row for row in manifest["images"])  # 이미지 위치는 고정
 
 
 @requires_cjk_font
@@ -84,8 +84,7 @@ def test_movie_scene_and_timeline_match_still(tmp_path, monkeypatch, cjk_font):
     assert len(manifest["movies"]) == 1
     assert manifest["movies"][0]["start"] == 0
     assert manifest["movies"][0]["duration"] == 5.95
-    assert any(row["drift"] for row in manifest["images"])
-    assert any(not row["drift"] for row in manifest["images"])
+    assert all("drift" not in row for row in manifest["images"])  # 이미지 위치는 고정
     render.render_video(scenario, **kwargs, output_path=tmp_path / "still.mp4")
     assert json.loads(output.with_suffix(".timeline.json").read_text(encoding="utf-8")) == json.loads(
         (tmp_path / "still.timeline.json").read_text(encoding="utf-8"))
