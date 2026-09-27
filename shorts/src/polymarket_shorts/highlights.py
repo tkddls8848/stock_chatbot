@@ -228,7 +228,9 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             # 해설·확인점은 판정 기준을 가리킬 수 있어 description의 숫자까지 근거로 본다
             # (실측 2026-09-25: "IMF 포트워치의 7일 이동 평균" — 7은 description의
             # "7-day moving average"). 입력에 없는 숫자는 여전히 막는다.
-            if field in {"context", "watch_point"}:
+            # 질문도 판정 기준(설명)의 수치를 옮길 수 있다(실측 2026-09-27: 설명의 사상 최고가
+            # $147.27을 질문에 적었다). 입력 어디에도 없는 숫자는 여전히 막는다.
+            if field in {"question", "context", "watch_point"}:
                 source = f"{source} {issue.get('description') or ''}"
             try:
                 text = _text(row.get(field), field, low, high)
@@ -275,7 +277,7 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         # 번호를 지어내도 화면·음성에는 아무것도 들어가지 않는다(실측 2026-09-26: 세 이슈
         # 모두 지어낸 번호로 그날 원고 전체가 버려졌다). 목록이 아닌 응답만 형식 오류다.
         if not isinstance(news_ids, list):
-            errors.append(f"이슈 {issue['id']} news_ids는 목록이어야 합니다")
+            # 보조 근거라 목록이 아니면 비운다. 이것 때문에 원고를 다시 묻지 않는다.
             news_ids = []
         news_ids = list(dict.fromkeys(i for i in news_ids if isinstance(i, str) and i in available))
         clean["news_ids"] = news_ids
