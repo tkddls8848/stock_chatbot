@@ -148,8 +148,12 @@ def to_spoken_question(question: str) -> str:
     return end_sentence(question)
 
 
-def opening_line(headline: str, count: int) -> str:
-    """도입. 제목을 한 번 부르고 오늘 볼 분량을 말로 알린다."""
+def opening_line(headline: str, count: int, as_of=None) -> str:
+    """도입. 자료 기준 날짜를 먼저 말하고, 제목을 한 번 부르고, 오늘 볼 분량을 알린다.
+
+    날짜를 말해야 며칠 뒤 본 사람도 숫자가 언제 것인지 안다(운영자 결정 2026-09-27).
+    """
     subject = "질문 하나를" if count == 1 else f"이런 질문 {count}개를"
-    return (f"{' '.join(headline.split())}. 참여가 몰린 질문 가운데 하나입니다. "
+    stamp = f"{as_of.year}년 {as_of.month}월 {as_of.day}일 기준입니다. " if as_of else ""
+    return (f"{stamp}{' '.join(headline.split())}. 참여가 몰린 질문 가운데 하나입니다. "
             f"오늘은 {subject} 숫자와 함께 짚어 보겠습니다.")

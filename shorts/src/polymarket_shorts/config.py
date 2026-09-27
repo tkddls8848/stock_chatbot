@@ -81,6 +81,8 @@ class Settings:
     # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
     generated_backgrounds: bool = True
     image_model: str = "@cf/black-forest-labs/flux-1-schnell"
+    # 최근 며칠 안에 다룬 이벤트·주제는 후보에서 뺀다(매일 같은 이슈 반복 방지).
+    repeat_days: int = 7
     generated_clips: bool = False
     video_model: str = "bytedance/seedance-2.0/fast/image-to-video"
     video_api_key: str = field(default="", repr=False)
@@ -115,6 +117,7 @@ class Settings:
             ffprobe_bin=_media_binary("FFPROBE_BIN", "ffprobe"),
             visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),
             generated_backgrounds=_bool("SHORTS_GENERATED_BACKGROUNDS", True),
+            repeat_days=max(0, int(os.getenv("SHORTS_REPEAT_DAYS", "7"))),
             image_model=os.getenv("SHORTS_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip(),
             generated_clips=_bool("SHORTS_GENERATED_CLIPS", False),
             video_model=os.getenv("SHORTS_VIDEO_MODEL", "bytedance/seedance-2.0/fast/image-to-video").strip(),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -12,7 +12,7 @@ from .client import PolymarketWebClient, SourceError
 from .clips import clips_for, review_details, visual_payload
 from .config import Settings
 from .highlights import select_issues, write_issues
-from .markets import shortlist, prepare_issue
+from .markets import _topic, shortlist, prepare_issue
 from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
 from .review import write_json, write_review
@@ -51,11 +51,43 @@ def produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
     return result
 
 
+def recently_featured(settings: Settings, today: date) -> tuple[set[str], set[str]]:
+    """최근 `repeat_days`일(오늘 제외)에 영상으로 다룬 이벤트 ID와 주제.
+
+    2026-09-23~27 영상 네 편이 모두 같은 연준·호르무즈 질문이었다 — 참여가 가장 몰린
+    이슈를 매일 다시 골랐기 때문이다. 날짜별 폴더의 원자료(`source.json`, 없으면
+    `scenario.json`)를 읽으므로 이 규칙 이전에 만든 영상도 센다. 주제는 날짜·숫자를
+    뺀 제목 낱말(`_topic`)이라 "9월 30일까지"와 "12월 31일까지" 변형도 같은 주제다.
+    """
+    ids: set[str] = set()
+    topics: set[str] = set()
+    for back in range(1, settings.repeat_days + 1):
+        day_dir = settings.output_dir / (today - timedelta(days=back)).isoformat()
+        source = _read_json(day_dir / "source.json")
+        for issue in source.get("issues") or []:
+            if isinstance(issue, dict) and issue.get("id"):
+                ids.add(str(issue["id"]))
+                topics.add(_topic(str(issue.get("title") or "")))
+        for scene in _read_json(day_dir / "scenario.json").get("scenes") or []:
+            if isinstance(scene, dict) and scene.get("event_id"):
+                ids.add(str(scene["event_id"]))
+    topics.discard("")
+    return ids, topics
+
+
 def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:
     """최대 두 번의 모델 호출만 쓰고, 제작 판단의 원자료를 렌더 전에 보존한다."""
     client = PolymarketWebClient(settings.web_url)
     snapshot = client.snapshot()
     candidates, audit = shortlist(snapshot)
+    used_ids, used_topics = recently_featured(settings, today)
+    fresh = [row for row in candidates
+             if str(row["id"]) not in used_ids and row.get("topic_key") not in used_topics]
+    audit["recently_featured"] = [
+        {"id": row["id"], "title": row.get("title"), "reason": "최근 영상에서 다룬 이슈"}
+        for row in candidates if row not in fresh
+    ]
+    candidates = fresh
     audit.update({"generation_id": snapshot.generation_id, "generated_at": snapshot.summary["generated_at"],
                   "candidates": candidates, "selected": [], "rejected": [], "llm_calls": 0})
     day_dir.mkdir(parents=True, exist_ok=True)
