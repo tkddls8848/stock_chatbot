@@ -37,7 +37,7 @@ visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지
 이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
 화면을 검수용으로 옮겨 적은 글이고, takeaway는 화면에 넣지 않는 확인점이다.
 options, metric, metric_label 등 수치는 유지한다.
-metadata는 수정할 title/description/tags만 넣는다. title은 날짜·#Shorts 포함 최종 게시 제목이다.
+metadata는 수정할 description/tags만 넣는다. 게시 제목은 "yyyy-mm-dd 시장 컨센서스" 고정이라 바꾸지 않는다.
 scene_order는 최종 순서의 기존 장면 번호 배열이다. 중간 장면 삭제·순서 변경 가능하나
 첫 intro와 마지막 outro는 유지한다. 순서 변경이 없으면 현재 순서 전체를 넣는다.
 tts_rate는 -30%부터 +50%까지 정수 백분율이다. 요청하지 않았다면 현재 값을 유지한다.
@@ -100,7 +100,7 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
         raise ReviewError("수정 설명이 없습니다")
     changes, meta, order, rate = (patch[key] for key in ("changes", "metadata", "scene_order", "tts_rate"))
     if (not isinstance(changes, list) or not isinstance(meta, dict)
-            or set(meta) - {"title", "description", "tags"}):
+            or set(meta) - {"description", "tags"}):
         raise ReviewError("허용되지 않은 편집입니다")
     scenes = list(scenario.scenes)
     if (not isinstance(order, list) or len(order) < 2

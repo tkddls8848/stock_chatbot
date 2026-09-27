@@ -215,25 +215,24 @@ def _read_json(path: Path) -> dict[str, Any]:
 def editorial_metadata(plan: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
     """게시 문구의 원본은 제작 원고다. 검수 피드백은 원고를 고쳐 반영한다."""
     return {
-        "title": f"{plan['title']} | {scenario.date.replace('-', '.')} #Shorts",
+        "title": video_title(scenario.date),
         "description": plan["description"],
         "tags": list(plan["tags"]),
     }
 
 
+def video_title(date_text: str) -> str:
+    """게시 제목은 "yyyy-mm-dd 시장 컨센서스"로 통일한다(운영자 결정 2026-09-27).
+
+    그날 다룬 이슈는 설명에 적는다. 자연어 편집으로도 바꾸지 않는다.
+    """
+    return f"{date_text} 시장 컨센서스"
+
+
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
-    stamp = scenario.date.replace("-", ".")
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
-    # A concrete question promises an explanation without mistaking turnover for inflows.
-    headline = (
-        " ".join(scenario.scenes[0].title.split())
-        if scenario.scenes and scenario.scenes[0].evidence
-        else f"{scenario.lead_label} {scenario.lead_volume} 참여, 전망도 확실할까?"
-        if scenario.lead_label and scenario.lead_volume
-        else "지난 24시간 집단 예측이 몰린 곳"
-    )
     return {
-        "title": f"{headline} | {stamp} #Shorts",
+        "title": video_title(scenario.date),
         "description": (
             "참여가 활발하고 금융시장과 관련이 깊은 집단 예측 컨센서스 이슈를 골랐습니다.\n\n"
             f"오늘 다룬 이슈: {', '.join(labels)}\n"

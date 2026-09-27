@@ -87,9 +87,9 @@ def test_model_cannot_change_source_or_unknown_fields(draft, change):
 def test_metadata_and_scene_removal(draft):
     _, scenario, metadata, settings = draft
     edited, meta, config = workflow.apply_edit(scenario, metadata,
-        patch(changes=[], scene_order=[1, 3], metadata={"title": "새 제목"}, tts_rate="-10%"), settings)
+        patch(changes=[], scene_order=[1, 3], metadata={"description": "새 설명"}, tts_rate="-10%"), settings)
     assert [scene.kind for scene in edited.scenes] == ["intro", "outro"]
-    assert meta["title"] == "새 제목"
+    assert meta["description"] == "새 설명" and meta["title"] == metadata["title"]
     assert config.tts_rate == "-10%"
 
 
@@ -217,3 +217,12 @@ def test_cli_rejects_removed_publishing_commands(flag, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 2
+
+
+def test_natural_language_edits_cannot_change_the_fixed_title(draft):
+    """게시 제목은 "yyyy-mm-dd 시장 컨센서스" 고정이다(2026-09-27)."""
+    _, scenario, metadata, settings = draft
+    with pytest.raises(workflow.ReviewError):
+        workflow.apply_edit(scenario, metadata,
+                            patch(changes=[], scene_order=[1, 2, 3], metadata={"title": "새 제목"}, tts_rate="+0%"),
+                            settings)

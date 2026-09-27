@@ -23,7 +23,8 @@ def test_video_uses_individual_questions_and_preserves_probabilities(issue_sourc
     assert "개별 판정 시각과 다를 수 있음" in " ".join(scene.evidence)
     assert scenario.source_written_at == snapshot.summary["generated_at"]
     meta = metadata_for(scenario)
-    assert script["headline"] in meta["title"]
+    assert meta["title"] == "2026-09-23 시장 컨센서스"   # 제목은 날짜 + 시장 컨센서스로 통일
+    assert script["headline"] in meta["description"]
     # 한국에서 공식적으로 접근이 막힌 서비스라 공개 설명·태그에 이름과 원문 링크를 싣지 않는다.
     public = meta["title"] + meta["description"] + " ".join(meta["tags"])
     assert "polymarket" not in public.lower() and "폴리마켓" not in public
