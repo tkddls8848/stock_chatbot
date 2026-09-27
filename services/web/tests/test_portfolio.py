@@ -14,10 +14,11 @@ from services.web.core.clock import JST
 from services.web.portfolio import advisor as advisor_module
 from services.web.portfolio import market_data, service as service_module, store as store_module
 from services.web.portfolio.advisor import AdviceError, PortfolioAdvisor, validate
-from services.web.portfolio.auth import LoginThrottle
+from services.web.accounts import Accounts, COOKIE
+from services.web.portfolio.routes import build_router
 from services.web.portfolio.diagnosis import diagnose
 from services.web.portfolio.service import AdviceService
-from services.web.portfolio.store import AdviceStore, AssetStore, WatchlistStore, canonical_code
+from services.web.portfolio.store import AdviceStore, AssetStore, canonical_code
 
 PASSWORD = "correct horse"
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=JST)
@@ -71,72 +72,52 @@ def env(tmp_path, monkeypatch):
         estimate_property=lambda *a, **k: estimates.append((a, k)) or {
             "status": "ok", "estimate_krw": 230_000_000, "basis": "region", "trade_count": 12},
     )
-    router = server.build_portfolio_router(
-        password=PASSWORD, assets=assets, advice_store=advice_store, advice=advice,
-        watchlist=WatchlistStore(tmp_path / "portfolio" / "watchlist.json"),
-        throttle=LoginThrottle(3, 600),
-    )
-    client = TestClient(server.build_app(portfolio_router=router))
-    return {"client": client, "root": tmp_path / "portfolio", "fake": fake, "estimates": estimates,
-            "advice": advice}
+    accounts = Accounts(tmp_path / "users", client_id="client", client_secret="secret",
+                        identity_key="k" * 32, origin="https://testserver")
+    token = accounts.issue("google-test-user")
+    import hashlib
+    key = accounts._sessions[hashlib.sha256(token.encode()).hexdigest()][0]
+    root = accounts.root / key
+    def factory(tenant_assets, tenant_advice):
+        advice._assets = tenant_assets
+        advice._advice = tenant_advice
+        return advice
+    router = build_router(accounts=accounts, advice_factory=factory)
+    client = TestClient(server.build_app(portfolio_router=router, accounts=accounts),
+                        base_url="https://testserver", headers={"origin": "https://testserver"})
+    client.test_session_token = token
+    return {"client": client, "root": root, "fake": fake, "estimates": estimates,
+            "advice": advice, "accounts": accounts}
 
 
 def _unlock(client):
-    assert client.post("/api/portfolio/session", json={"password": PASSWORD}).status_code == 204
+    client.cookies.set(COOKIE, client.test_session_token)
 
 
-# ── 잠금 ────────────────────────────────────────────────────────────────────
-
-def test_everything_is_closed_without_a_configured_password(tmp_path):
-    router = server.build_portfolio_router(password="", assets=AssetStore(tmp_path / "a.json"),
-                                           advice_store=AdviceStore(tmp_path / "adv"))
-    client = TestClient(server.build_app(portfolio_router=router))
-    assert client.get("/api/portfolio/session").json() == {"configured": False, "unlocked": False}
-    assert client.post("/api/portfolio/session", json={"password": "x"}).status_code == 503
-    assert client.get("/api/portfolio/assets").status_code == 503
-
-
-def test_every_resource_is_locked_until_the_password_opens_it(env):
+def test_every_resource_is_locked_until_google_login(env):
     client = env["client"]
     for method, path in (("get", "assets"), ("post", "assets"), ("get", "watchlist"), ("put", "watchlist"),
                          ("get", "advice"), ("post", "advice"), ("get", "advice/latest")):
-        assert getattr(client, method)("/api/portfolio/" + path).status_code in (401, 422), path
-        assert client.request(method.upper(), "/api/portfolio/" + path, json={}).status_code == 401, path
-    assert client.post("/api/portfolio/session", json={"password": "wrong"}).status_code == 401
+        assert client.request(method.upper(), "/api/portfolio/" + path, json={}).status_code == 401
+    assert client.post("/api/portfolio/session", json={"password": PASSWORD}).status_code == 405
     _unlock(client)
     assert client.get("/api/portfolio/session").json()["unlocked"] is True
     assert client.get("/api/portfolio/assets").status_code == 200
     assert client.delete("/api/portfolio/session").status_code == 204
-    client.cookies.clear()
     assert client.get("/api/portfolio/assets").status_code == 401
-
-
-def test_repeated_wrong_passwords_are_throttled(env):
-    client = env["client"]
-    for _ in range(3):
-        assert client.post("/api/portfolio/session", json={"password": "nope"}).status_code == 401
-    assert client.post("/api/portfolio/session", json={"password": PASSWORD}).status_code == 429
-
-
-def test_cookie_is_httponly_strict_and_secure_behind_https(env):
-    client = env["client"]
-    response = client.post("/api/portfolio/session", json={"password": PASSWORD},
-                           headers={"x-forwarded-proto": "https"})
-    cookie = response.headers["set-cookie"].lower()
-    assert "httponly" in cookie and "samesite=strict" in cookie and "secure" in cookie
-    assert PASSWORD not in response.headers["set-cookie"]
 
 
 def test_private_pages_are_not_cached_or_indexed(env):
     client = env["client"]
-    page = client.get("/portfolio")
-    assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
-    assert "noindex" in page.headers["x-robots-tag"]
+    for path in ("/portfolio", "/research", "/api/research", "/api/portfolio/assets", "/api/account/export"):
+        response = client.get(path)
+        assert response.headers["cache-control"] == "no-store"
+        assert "noindex" in response.headers["x-robots-tag"]
     assert "Disallow: /portfolio" in client.get("/robots.txt").text
 
 
-def test_routes_are_nouns_not_verbs():
-    paths = {route.path for route in server.build_portfolio_router(password="x").routes}
+def test_routes_are_nouns_not_verbs(env):
+    paths = {route.path for route in build_router(accounts=env["accounts"]).routes}
     assert not any(verb in path for path in paths for verb in ("login", "logout", "advise", "run"))
 
 
@@ -266,7 +247,8 @@ def test_advice_is_created_saved_and_listed(env):
     response = client.post("/api/portfolio/advice")
     assert response.status_code == 201
     advice = response.json()
-    assert advice["text"] == GOOD_ADVICE and advice["llm_status"] == "ok"
+    assert advice["text"] is None and advice["llm_status"] == "local_only"
+    assert env["fake"].calls == []
     assert advice["sources"] == {"deposit_rates": "ok", "market_rates": "ok", "real_estate": "ok"}
     assert advice["market_context"]["news_sentiment"] == {"KR": 0.12}
     assert env["estimates"][0][0] == ("11680", 84.9)
@@ -300,13 +282,14 @@ def test_concurrent_request_returns_409(env):
         env["advice"]._running.release()
 
 
-def test_llm_failure_still_saves_the_diagnosis(env):
+def test_personal_advice_never_calls_external_ai(env):
     client = env["client"]
     _unlock(client)
     env["fake"].error = AdviceError("boom")
     client.post("/api/portfolio/assets", json={"kind": "stock", "name": "a", "value_krw": 1})
     advice = client.post("/api/portfolio/advice").json()
-    assert advice["text"] is None and advice["llm_status"].startswith("failed")
+    assert advice["text"] is None and advice["llm_status"] == "local_only"
+    assert env["fake"].calls == []
     assert advice["diagnosis"]["total_krw"] == 1
 
 

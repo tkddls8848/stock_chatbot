@@ -1,6 +1,6 @@
 """개인 화면(`/portfolio`): 전체 자산 어드바이저.
 
-화면은 정적 껍데기다. 비밀번호로 잠금을 연 뒤 브라우저가 `/api/portfolio/*`에서
+화면은 정적 껍데기다. Google 로그인 뒤 브라우저가 `/api/portfolio/*`에서
 자산·관심종목·조언을 채운다. 값은 전부 `esc()`를 거쳐 넣는다 — 조언 본문은 모델이
 쓴 문자열이다. 금액 입력은 만원 단위로 받아 원으로 바꿔 보낸다.
 """
@@ -40,18 +40,16 @@ _MAIN = (
 </style>"""
     + h1(I_SHIELD, "내 자산")
     + "<div class='disc'>주식·채권·예적금·부동산을 한곳에서 보고, 요청할 때 조언을 받습니다. "
-    "이 화면은 비밀번호로 잠겨 있고 입력한 자산은 공개 화면에 나오지 않습니다. "
+    "Google 계정별로 저장되며 입력한 자산은 본인에게만 보입니다. 계좌번호·실명·상세 주소는 입력하지 마세요. "
     "조언은 <b>참고 정보이며 투자 권유가 아닙니다.</b></div>"
     + """
-<div id='pf-lock' class='pf-card'>
- <form id='pf-login' class='pf-row' autocomplete='off'>
-  <input id='pf-password' type='password' placeholder='비밀번호' aria-label='비밀번호' required>
-  <button class='pf-btn pri' type='submit'>열기</button>
- </form>
+<div id='pf-lock' class='login-panel'><div class='eyebrow'>PERSONAL PORTFOLIO</div><h2>내 자산을 한눈에</h2><p>자산 구성부터 만기와 편중까지, 나만의 포트폴리오를 관리하세요.</p>
+ <a id='pf-login' class='pf-btn pri' href='/auth/google?next=/portfolio'>Google 계정으로 로그인</a>
+ <p class='pf-msg'>이름·이메일·프로필 사진을 요청하지 않습니다. <a href='/privacy'>개인정보 처리방침</a></p>
  <p id='pf-lock-msg' class='pf-msg'></p>
 </div>
 <div id='pf-app' class='pf-hide'>
- <div class='pf-row pf-row-end'><button id='pf-logout' class='pf-btn' type='button'>잠그기</button></div>
+ <div class='pf-row pf-row-end'><button id='pf-logout' class='pf-btn' type='button'>로그아웃</button> <a class='pf-btn' href='/api/account/export'>내 데이터 내려받기</a> <button id='pf-delete-account' class='pf-btn' type='button'>내 데이터 전체 삭제·탈퇴</button></div>
  <section class='histbox'><div class='histh'><span class='phico'>"""
     + icon(I_LAYERS)
     + """</span>자산 구성</div><div id='pf-summary' class='pf-card'>불러오는 중…</div></section>
@@ -85,7 +83,7 @@ _MAIN = (
     + icon(I_SPEC)
     + """</span>관심종목</div>
   <div class='pf-card'>
-   <p class='pf-msg'>텔레그램 봇의 뉴스 수집·리서치·브리핑이 이 목록을 읽습니다. 리서치가 자동으로 넣고 빼기도 합니다.</p>
+   <p class='pf-msg'>내 리서치가 이 목록을 참고합니다. 다른 계정이나 운영자 봇과 공유되지 않습니다.</p>
    <div class='pf-scroll' tabindex='0' role='region' aria-label='관심종목 표'><table class='pf-table' aria-label='관심종목 목록'><tbody id='pf-watch'></tbody></table></div>
    <form id='pf-watch-form' class='pf-row pf-row-spaced'>
     <select name='ex' aria-label='거래소'><option value='KR:KOSPI'>코스피</option><option value='KR:KOSDAQ'>코스닥</option><option value='US:NASDAQ'>나스닥</option><option value='US:NYSE'>뉴욕</option><option value='CN:SH'>상하이</option><option value='CN:SZ'>선전</option><option value='HK:HKEX'>홍콩</option></select>
@@ -100,8 +98,8 @@ _MAIN = (
     + icon(I_SCALE)
     + """</span>조언</div>
   <div class='pf-card'>
-   <div class='pf-row'><button id='pf-advise' class='pf-btn pri' type='button'>지금 조언 받기</button><span id='pf-usage' class='pf-msg'></span></div>
-   <p class='pf-msg'>외부 금리·실거래가 자료를 읽고 규칙으로 진단한 뒤 AI가 풀어 씁니다. 수십 초 걸립니다. 숫자는 진단이 계산한 값만 씁니다.</p>
+   <div class='pf-row'><button id='pf-advise' class='pf-btn pri' type='button'>자산 진단하기</button><span id='pf-usage' class='pf-msg'></span></div>
+   <p class='pf-msg'>공개 금리·실거래가 자료와 내 자산을 비교해 편중·만기·대출 부담을 계산합니다. 개인 자산은 외부 AI에 보내지 않습니다. 수십 초 걸릴 수 있습니다.</p>
    <div id='pf-advice' class='pf-advice'></div>
    <div id='pf-history' class='pf-hist'></div>
   </div>
@@ -118,18 +116,21 @@ const STATE={ok:'정상',missing_key:'키 없음',error:'실패'};
 const won=v=>{v=Math.round(Number(v)||0);const e=Math.floor(Math.abs(v)/1e8),m=Math.floor(Math.abs(v)%1e8/1e4),p=[];if(e)p.push(e.toLocaleString()+'억');if(m||!e)p.push(m.toLocaleString()+'만');return (v<0?'-':'')+p.join(' ')+'원'};
 const $=id=>document.getElementById(id);let assets=[],watch={},editing=null;
 async function api(path,opt={}){const r=await fetch('/api/portfolio/'+path,{credentials:'same-origin',headers:opt.body?{'Content-Type':'application/json'}:{},...opt});
- if(r.status===401){showLock('잠겨 있습니다.');throw new Error('locked')}
+ if(r.status===401){location.replace('/portfolio');throw new Error('로그인이 만료되었습니다.')}
  if(!r.ok){let d='';try{d=(await r.json()).detail}catch(e){}throw new Error(typeof d==='string'&&d?d:('요청 실패 '+r.status))}
  return r.status===204?null:r.json()}
 function showLock(msg){$('pf-lock').classList.remove('pf-hide');$('pf-app').classList.add('pf-hide');$('pf-lock-msg').textContent=msg||''}
 function showApp(){$('pf-lock').classList.add('pf-hide');$('pf-app').classList.remove('pf-hide');loadAll()}
 async function boot(){const s=await fetch('/api/portfolio/session',{credentials:'same-origin'}).then(r=>r.json());
- if(!s.configured){showLock('개인 화면이 아직 설정되지 않았습니다(서버의 PORTFOLIO_PASSWORD).');$('pf-login').classList.add('pf-hide');return}
+ if(!s.configured){showLock('Google 로그인을 준비 중입니다.');$('pf-login').classList.add('pf-hide');return}
  s.unlocked?showApp():showLock('')}
-// 잠금 해제는 api()를 거치지 않는다 — 틀린 비밀번호의 401을 '잠겨 있음'으로 바꿔 보이면 안 된다.
-$('pf-login').addEventListener('submit',async e=>{e.preventDefault();const r=await fetch('/api/portfolio/session',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('pf-password').value})});
- if(r.status===204){$('pf-password').value='';showApp();return}let d='';try{d=(await r.json()).detail}catch(x){}$('pf-lock-msg').textContent=typeof d==='string'&&d?d:'열지 못했습니다('+r.status+').'});
-$('pf-logout').addEventListener('click',async()=>{await fetch('/api/portfolio/session',{method:'DELETE',credentials:'same-origin'});showLock('잠갔습니다.')});
+$('pf-logout').addEventListener('click',async()=>{const r=await fetch('/api/account/session',{method:'DELETE',credentials:'same-origin'});if(r.ok)location.replace('/portfolio')});
+$('pf-delete-account').addEventListener('click',async()=>{
+ if(!confirm('이 계정의 자산·관심종목·조언·리서치를 모두 삭제하고 탈퇴합니다. 되돌릴 수 없습니다. 계속할까요?'))return;
+ const r=await fetch('/api/account',{method:'DELETE',credentials:'same-origin'});
+ if(r.ok)location.replace('/portfolio');else alert('삭제하지 못했습니다. 진행 중인 작업이 끝난 뒤 다시 시도하세요.');
+});
+window.addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
 function loadAll(){loadAssets();loadWatch();loadAdviceList()}
 async function loadAssets(){const d=await api('assets');assets=d.assets||[];renderAssets();renderSummary()}
 function detail(a){const p=[];if(a.market)p.push(a.market+(a.code?' '+a.code:''));if(a.rate_pct!=null)p.push(a.rate_pct+'%');if(a.maturity)p.push('만기 '+a.maturity);
@@ -168,13 +169,13 @@ async function loadAdviceList(){const d=await api('advice');$('pf-usage').textCo
  $('pf-history').querySelectorAll('[data-adv]').forEach(b=>b.addEventListener('click',async()=>renderAdvice(await api('advice/'+encodeURIComponent(b.dataset.adv)))));
  if(d.items&&d.items.length&&!$('pf-advice').innerHTML)renderAdvice(await api('advice/latest'))}
 function renderAdvice(a){const g=a.diagnosis||{},parts=[];parts.push("<p class='pf-msg'>"+esc(stamp(a.created_at))+" 기준</p>");
- if(a.text)parts.push(a.text.split('\\n\\n').map(p=>'<p>'+esc(p)+'</p>').join(''));else parts.push("<p class='pf-msg err'>조언 본문을 만들지 못해 진단만 보여 줍니다. ("+esc(a.llm_status)+")</p>");
+ if(a.text)parts.push(a.text.split('\\n\\n').map(p=>'<p>'+esc(p)+'</p>').join(''));else parts.push("<p class='pf-msg'>개인 데이터를 외부 AI에 보내지 않고 계산한 자산 진단입니다.</p>");
  if((g.findings||[]).length)parts.push('<p class="pf-msg">규칙 진단</p>'+g.findings.map(f=>"<div class='pf-find "+esc(f.level)+"'>"+esc(f.message)+"</div>").join(''));
  parts.push("<p class='pf-msg'>외부 자료: "+Object.entries(a.sources||{}).map(([k,v])=>esc(SRC[k]||k)+' '+esc(STATE[v]||v)).join(' · ')+"</p>");
  parts.push("<p class='pf-msg'>"+esc(a.disclaimer||'')+"</p>");$('pf-advice').innerHTML=parts.join('')}
-$('pf-advise').addEventListener('click',async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='조언을 만드는 중…';
+$('pf-advise').addEventListener('click',async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='진단하는 중…';
  try{renderAdvice(await api('advice',{method:'POST'}));loadAdviceList()}catch(err){if(err.message!=='locked')$('pf-advice').innerHTML="<p class='pf-msg err'>"+esc(err.message)+"</p>"}
- finally{b.disabled=false;b.textContent='지금 조언 받기'}});
+ finally{b.disabled=false;b.textContent='자산 진단하기'}});
 syncKind();boot();
 </script>"""
 )
@@ -185,5 +186,5 @@ PORTFOLIO_HTML = page(
     _MAIN,
     _SCRIPT,
     description="주식·채권·예적금·부동산을 한곳에서 보고 조언을 받는 개인 화면입니다. "
-    "비밀번호로 잠겨 있고 입력한 자산은 공개 화면에 나오지 않습니다.",
+    "Google 계정별로 저장하며 입력한 자산은 다른 이용자에게 공개되지 않습니다.",
 )

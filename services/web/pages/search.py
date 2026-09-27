@@ -8,11 +8,11 @@ _MAIN = h1(I_DOC, "뉴스·시장 검색") + """
 .ns-form{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0 12px}
 .ns-form input{flex:1 1 320px;min-width:0}
 .ns-form input,.ns-form select,.ns-form button,.ns-example,.ns-pages button{
-font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-1);color:var(--ink)}
+font:inherit;padding:12px;border:1px solid var(--line);border-radius:3px;background:var(--surface-1);color:var(--ink)}
 .ns-form button{background:var(--ink);color:var(--bg);cursor:pointer}
 .ns-examples{display:flex;flex-wrap:wrap;gap:8px}.ns-example{font-size:13px;cursor:pointer;padding:8px 10px}
-.ns-note{font-size:13px;color:var(--mut);line-height:1.8}.ns-results{display:grid;gap:12px;margin-top:20px}
-.ns-result{padding:20px;background:var(--surface-1);border:1px solid var(--line);border-radius:12px;scroll-margin-top:110px}
+.ns-note{font-size:13px;color:var(--mut);line-height:1.8}.ns-results{display:grid;gap:0;margin-top:20px}
+.ns-result{padding:20px 0;background:var(--surface-1);border:0;border-bottom:1px solid var(--line);border-radius:0;scroll-margin-top:110px}
 .ns-result h2{font-size:17px;margin:8px 0;overflow-wrap:anywhere}.ns-result p{margin:8px 0;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
 .ns-meta{font-size:12px;color:var(--mut)}.ns-result a{color:var(--ink);text-underline-offset:3px}
 .ns-pages{display:flex;justify-content:center;align-items:center;gap:14px;margin:24px 0}

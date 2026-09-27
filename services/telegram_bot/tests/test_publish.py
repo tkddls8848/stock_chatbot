@@ -12,6 +12,7 @@ import pytest
 from services.telegram_bot import publish
 from services.telegram_bot.core.clock import JST
 from services.telegram_bot.core.config import PUBLIC_DIR, STORAGE_DIR
+from services.telegram_bot.publish import RESEARCH_JSON as PRIVATE_RESEARCH_PATH
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +36,7 @@ def article(key="jp", **changes):
 
 def test_public_files_live_in_the_shared_storage():
     assert PUBLIC_DIR == STORAGE_DIR / "public"
+    assert PRIVATE_RESEARCH_PATH == STORAGE_DIR / "bot" / "research" / "snapshot.json"
 
 
 def test_market_and_research_share_one_meta_file(public):

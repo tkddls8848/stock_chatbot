@@ -32,7 +32,7 @@ _POLYMARKET_MAIN = (
 .pm-alert{border:1px solid var(--gold-a25);background:var(--surface-1);border-radius:var(--r2);padding:10px 14px;margin:14px 0;color:var(--ink-soft);font-size:var(--fs-sm)}
 .pm-alert.warn{border-color:rgba(143,69,17,.35);color:var(--warnc)}
 .pm-bars,.pm-ranks,.pm-events{display:grid;gap:10px}.pm-bar{display:grid;grid-template-columns:minmax(110px,180px) 1fr minmax(78px,auto);gap:10px;align-items:center}
-.pm-bar-track{height:10px;background:var(--fill-2);border-radius:99px;overflow:hidden}.pm-bar-fill{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#c59a3c);border-radius:99px}
+.pm-bar-track{height:10px;background:var(--fill-2);border-radius:99px;overflow:hidden}.pm-bar-fill{display:block;height:100%;background:var(--gold);border-radius:99px}
 .pm-bar-label{font-weight:700;overflow-wrap:anywhere}.pm-bar-value{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-xs);color:var(--mut)}
 .pm-catgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.pm-cat{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r2);padding:14px;text-align:left;color:var(--ink);cursor:pointer}
 .pm-cat b{display:block;overflow-wrap:anywhere}.pm-cat span{font-size:var(--fs-xs);color:var(--mut)}.pm-rankgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}

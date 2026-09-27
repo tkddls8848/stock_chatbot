@@ -13,9 +13,9 @@ from fastapi.testclient import TestClient
 
 from services.web import server
 
-SCREENS = ("/", "/forecast", "/research", "/about", "/terms", "/search", "/portfolio")
+SCREENS = ("/", "/forecast", "/research", "/about", "/terms", "/search", "/portfolio", "/privacy")
 PUBLIC_API = (
-    "/api/market", "/api/research", "/api/meta", "/api/search",
+    "/api/market", "/api/meta", "/api/search",
     "/api/forecast/summary", "/api/forecast/categories", "/api/forecast/sector-brief",
     "/api/forecast/trending", "/api/forecast/health", "/api/forecast/events",
     "/api/forecast/events/one",
@@ -40,7 +40,8 @@ def client(tmp_path, monkeypatch):
 
 def assert_security(response):
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    expected = "no-referrer" if response.request.url.path.startswith(("/portfolio", "/research", "/auth/", "/api/portfolio", "/api/research", "/api/account")) else "strict-origin-when-cross-origin"
+    assert response.headers["referrer-policy"] == expected
     permissions = response.headers["permissions-policy"]
     for feature in ("camera", "microphone", "geolocation", "payment", "usb"):
         assert feature + "=()" in permissions

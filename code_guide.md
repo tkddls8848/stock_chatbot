@@ -11,7 +11,7 @@
 > 이유다. 포인터를 고칠 일은 실행 명령이 바뀔 때뿐이다.
 
 **웹(`https://nunchi.live`)이 주력 서비스다.** 공개 화면은 중국·홍콩·미국·한국·일본
-시장 감성·리서치·뉴스 검색·폴리마켓을 보여 주고, 인증된 개인 화면(`/portfolio`)은
+시장 감성·뉴스 검색·예측 컨센서스를 보여 주고, Google 로그인 뒤 개인 화면(`/research`·`/portfolio`)은
 주식·채권·예적금·부동산을 아우르는 **개인 전체 자산 포트폴리오 어드바이저**다.
 **텔레그램 봇은 주기적 시장 뉴스 수신 창이자 시스템 관리 패널이다** — 수집·보고서·
 브리핑·리서치·시장 감성 같은 예약 작업을 돌리고 그 결과를 웹에 굽지만, 사용자가
@@ -98,7 +98,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
   web/                 주력 서비스(별도 프로세스, 8788). 공개 화면 + 인증된 개인 화면
     server.py          FastAPI 라우트. 공개는 `GET`만, 쓰기는 `/api/portfolio/*` 인증 경로만
                        — `python -m services.web.server`
-    portfolio/         개인 화면: 비밀번호 잠금, 자산·관심종목 저장, 외부 시장 데이터
+    portfolio/         개인 화면: Google 계정 인증, 자산·관심종목 저장, 외부 시장 데이터
                        (금감원·ECOS·국토부), 규칙 진단, 조언 생성
     core/              이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
     llm/               줄글 브리프용 Cloudflare 백엔드와 분석기
@@ -128,7 +128,8 @@ infra/                 인프라 코드 전부. 네 도메인이 한 인스턴�
 
 storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같이 쓰는 데이터 전부. Git 제외
   public/              공개 화면이 내보내는 산출물(옛 `data/webpub/`)
-  portfolio/           개인 자산·관심종목·조언. 공개 화면이 절대 내보내지 않는다
+  users/<계정키>/      웹 개인 자산·관심종목·리서치·진단
+  portfolio/           기존 운영자 데이터. 신규 웹 계정에 자동 배정하지 않는다
   bot/<feature>/       봇 내부 상태·캐시(옛 `data/<feature>/`)
   shorts/              쇼츠 산출물·제작 기록
 ```
@@ -140,18 +141,18 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | 위치 | 저장소 루트의 `storage/`가 기본이고, 각 모듈의 `core/config.py`가 같은 환경변수 `STORAGE_DIR`로 바꾼다(NAS 마운트 경로 등). 모듈마다 따로 읽는다 — 공용 설정 파일을 만들지 않는다 |
 | 계약 | 공유되는 것은 **파일 경로와 JSON 형식**이다. 형식을 바꾸면 쓰는 쪽·읽는 쪽 코드와 테스트를 같은 커밋에서 고친다. 현재 형식만 지원한다 |
 | 쓰는 쪽 하나 | **파일마다 쓰는 쪽(소유자)은 하나다.** 나머지는 읽기만 한다. 아래 표가 소유자다. 소유자가 아닌 모듈이 쓰고 싶으면 소유자를 옮기지 말고 그 파일을 쓰는 모듈에 맡긴다 |
-| 예외 | `portfolio/watchlist.json`만 쓰는 쪽이 둘(웹 화면 편집, 봇 리서치 자동 적용)이다. 둘 다 `portfolio/watchlist.lock`을 `O_CREAT|O_EXCL`로 잡고(60초 넘은 잠금은 죽은 것으로 보고 치운다) **다시 읽은 뒤** 고쳐 쓴다. `flock`은 NFS·SMB에서 믿을 수 없어 쓰지 않는다 |
+| 잠금 | 운영자 봇의 관심종목과 웹 개인 계정의 쓰기는 각 소유 모듈의 파일 잠금으로 직렬화한다. 웹 계정은 삭제·생성 중인 작업을 같은 계정 잠금으로 묶고 세션을 재검증한다 |
 | 원자성 | 전부 각 모듈 `core/storage.py`의 원자적 쓰기(같은 폴더 임시 파일 → `os.replace`)다. 임시 파일을 다른 파일시스템에 두면 원자성이 깨지므로 `storage/` 전체가 한 파일시스템이어야 한다 |
 | 읽는 쪽 | 파일이 없거나 형식이 틀리면 "자료 없음"으로 다루고 상태 화면에 드러낸다. 추측으로 메우지 않는다 |
-| 노출 | 공개 라우트는 `storage/public/`만 내보낸다. `portfolio/`·`bot/`·`shorts/`를 공개 라우트에 연결하지 않는다 |
+| 노출 | 공개 라우트는 `storage/public/`만 내보낸다. `users/`·`portfolio/`·`bot/`·`shorts/`를 공개 라우트에 연결하지 않는다 |
 | 백업 | 백업 cron은 `storage/` 하나를 떠 간다 |
 
 | 경로 | 쓰는 쪽 | 읽는 쪽 |
 |---|---|---|
-| `public/market.json`·`market_chart.png`·`research.json`·`news.json`·`meta.json` | 봇 | 웹 |
+| `public/market.json`·`market_chart.png`·`news.json`·`meta.json` | 봇 | 웹 |
 | `public/polymarket/` | 예측 컨센서스 one-shot(웹 도메인) | 웹, 봇 `/web` |
-| `portfolio/assets.json`·`advice/` | 웹 | 웹 |
-| `portfolio/watchlist.json` | 웹·봇(잠금) | 웹, 봇(수집·사전선별·리서치·브리핑) |
+| `users/<계정키>/assets.json`·`advice/`·`watchlist.json`·`research/` | 웹 | 해당 계정의 웹 요청만 |
+| `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
 
@@ -326,9 +327,9 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   리서치와 시장 감성은 명령으로 도는 기능이 아니라 봇 스케줄러의 예약 작업이다 — 리서치는 매일
   `RESEARCH_SCHEDULE_*`(08:20, 모닝 브리핑 전), 시장 감성은
   `MARKET_SENTIMENT_SCHEDULE_*`(07:40·13:40·19:40). 결과는 봇 상태와 웹 산출물에
-  **같은 한 벌**로 남고, 브리핑과 웹 화면이 같은 결과를 읽는다. 패널은 주제
+  운영자 전용 기록으로 남는다. 시장 집계만 공개 화면에서 같이 읽는다. 패널은 주제
   보기·바꾸기·비우기(`/research`), 지금 실행(`/research run`·`/market`), 웹 상태
-  (`/web`)만 갖는다. 결과 전체와 근거는 텔레그램에 다시 그리지 않고 웹에서 본다.
+  (`/web`)만 갖는다. 운영자 리서치를 웹 계정에 자동 공개하지 않는다.
 - **리서치의 관심종목 추가·삭제는 묻지 않고 적용한다**(`research/job.py`의
   `apply_actions`). 적용은 `storage/portfolio/watchlist.json`에 잠금을 잡고 쓴다
   (공유 저장소 표의 예외).
@@ -360,8 +361,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   YouTube 자격 증명은 쇼츠가 `shorts/.env`에서 읽으며 봇 환경으로 넘기지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
-- **관심종목은 `storage/portfolio/watchlist.json` 한 벌이다.** 사람의 추가·삭제는 웹
-  `/portfolio`에서 하고, 텔레그램의 관심종목 추가·삭제 명령·메뉴는 없앴다. 봇의
+- **운영자 봇의 관심종목은 `storage/portfolio/watchlist.json`이다.** 웹 사용자의 목록은
+  `storage/users/<계정키>/watchlist.json`으로 분리하며, 운영자 목록을 자동 배정하지 않는다. 봇의
   수집·사전선별·리서치·브리핑은 같은 파일을 직접 읽는다 — 사본·HTTP 동기화를 두지
   않는다. 파일이 없거나 깨졌으면 `/system`에 드러내고, 관심종목이 비었다고 조용히
   판정하지 않는다.
@@ -427,25 +428,20 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   승격 순간에 이미 들어와 있던 요청이 자기가 읽던 shard를 계속 seek할 수 있게
   하기 위한 것이다. 과거 조회는 만들지 않는다 — 화면은 "지금"만 본다.
 - **공개 화면은 봇과 다른 프로세스이고 `GET`만 가진다.** 쓰기·실행이 있는 곳은
-  아래 개인 화면(`/portfolio`) 하나뿐이고, 그 예외는 인증 뒤에만 열린다.
+  개인 화면(`/portfolio`·`/research`)이며 인증 뒤 계정별로 열린다.
   봇이 산출물을 갱신할 때 자기 코드로 `storage/public/`에 구워 두고(`market.json`·`market_chart.png`·
-  `research.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
+  `news.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
   렌더하지 않는다 — `render_market_chart`는 dpi 160짜리 12×7.5인치 figure라 지인
-  몇 명의 새로고침만으로 사전선별 보정이 밀린다. **실행 트리거는 웹에 열지 않는다**:
-  리서치·시장 감성의 "지금 실행"은 텔레그램 관리 패널에만 둔다. Neurons가 링크를 받은 사람
-  수만큼 나가고, 리서치 상태(`sight`·`history`)가 단일 사용자 형식이라 동시 실행이
-  서로의 맥락을 덮기 때문이다. 봇 프로세스 안의 관리 웹(8787)은 없앴다(2026-09-24) —
+  몇 명의 새로고침만으로 사전선별 보정이 밀린다. **공개 API에 실행 트리거를 열지 않는다.**
+  운영자 봇의 예약 리서치·시장 갱신과 웹 개인 리서치·진단은 별도 흐름이다.
+  개인 생성은 인증·계정 잠금·횟수 상한으로 제한한다. 봇 프로세스 안의 관리 웹(8787)은 없앴다(2026-09-24) —
   쓰기 API를 가진 면을 하나 줄인다. 8788도 방화벽에 열지 않는다 — TLS는 앞단 Caddy가 맡는다
-  (`https://nunchi.live`. 절차는 `infra/server-ops.md` 11절). **공개 화면에는 인증이 없다** — 리서치면의
-  Basic 인증도 운영자 결정으로 없앴다(2026-09-24). 종목명·`add`/`watch`·confidence가 담긴
-  리서치 결과까지 공개 화면은 모두 공개이고, noindex만 붙는다. 인증은 개인 화면에만 있다.
-  **회원가입·계정별 상태, DB, SPA 빌드 파이프라인, 실시간 갱신은 만들지 않는다** —
-  상태 파일이 단일 사용자 형식이고, 조회가 전부 "마지막 것 한 개"라 인덱스가 필요한
-  질의가 없으며, 데이터가 분 단위로 바뀌지 않아 기준 시각을 적는 것으로 충분하다.
+  (`https://nunchi.live`. 절차는 `infra/server-ops.md` 11절). **시장·뉴스·예측 컨센서스만 공개다.** 리서치와 자산 데이터는 Google 인증 뒤 계정별로 제공한다.
+  **Google 인증과 계정별 상태를 지원한다(2026-09-27 사용자 지시).** 별도 비밀번호,
+  DB, SPA 빌드 파이프라인은 두지 않는다. 개인 파일은 검증된 계정으로만 경로를 결정한다.
   **화면(`services/web/pages.py`)은 정적 문자열이고 외부 폰트·CDN·프레임워크를 부르지
   않는다.** 페이지는 기동 시 한 번 조립되고 값은 브라우저가 `/api/*`에서 채운다 —
-  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된
-  `POST /api/portfolio/advice` 하나다), 빌드
+  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된 자산 진단과 선택형 공개 근거 해설이다), 빌드
   산출물이 없어야 배포가 파일 복사로 끝나기 때문이다. 값을 넣을 때는 `esc()`를
   거친다: 산출물에는 리서치 `reason`처럼 모델이 쓴 문자열이 그대로 들어 있다.
   화면은 **라이트 전용**이고(`color-scheme:light`) 감성의 부호는 **빨강이 긍정,
@@ -457,28 +453,20 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   화면에서만 바꾼다(`services/web/pages/polymarket.py`의 `PM_TYPE`·`PM_FRESH` 등) —
   shorts가 그 값을 HTTP로 읽는다. 폴리마켓 원문 태그처럼 번역할 수 없는 자료는
   원문임을 밝힌다.
-- **개인 화면(`/portfolio`)은 한 사람의 전체 자산 어드바이저다.** 주식·채권·예적금·
-  부동산을 입력하고, 관심종목을 관리하고, 요청할 때 조언을 받는다. 공개 화면과 섞지
-  않는 규칙은 다음과 같다.
+- **리서치(`/research`)와 내 자산(`/portfolio`)은 Google 계정별 개인 서비스다.**
+  2026-09-27 사용자 요청으로 공용 비밀번호·공개 리서치·단일 사용자 웹 정책을 폐기했다.
   | 항목 | 기준 |
   |---|---|
-  | 인증 | **간단한 잠금이다.** 비밀번호 하나(`PORTFOLIO_PASSWORD`)를 잠금 화면에 넣으면 `POST /api/portfolio/session`이 `hmac.compare_digest`로 비교하고 HttpOnly·Secure·SameSite=Strict 쿠키를 준다. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다. 로그아웃은 `DELETE /api/portfolio/session`(쿠키 삭제)이다. 회원가입·계정·2단계 인증·OAuth·세션 DB는 만들지 않는다 — 한 사람이 쓰는 화면을 지나가는 사람에게서 닫는 것이 목적이다 |
-  | 범위 | 잠금은 개인 자산과 관심종목 관리 둘 다에 걸린다. 화면 `/portfolio`와 `/api/portfolio/*` 전부가 대상이고 공개 화면에는 걸지 않는다 |
-  | 경로 | 쓰기·실행은 `/api/portfolio/*`에만 둔다. 잠금을 풀지 않은 요청은 전부 401이다. 비밀번호가 설정되지 않았으면 개인 화면 전체가 503으로 닫힌다 — 빈 비밀번호로 열리지 않는다 |
-  | 저장 | `storage/portfolio/`에 `core/storage.py`의 원자적 쓰기로만 둔다. 공개 산출물(`storage/public/`)·뉴스 검색·쇼츠 API에 개인 자산을 절대 섞지 않는다 |
-  | 노출 | `/portfolio`는 noindex, `robots.txt`에서 막고, 응답에 `Cache-Control: no-store`를 붙인다 |
-  | API 모양 | **주소는 명사(자원)이고 동작은 HTTP 메서드가 정한다.** 동사 주소(`/login`·`/advise`·`/run`)를 만들지 않는다. `session`(`POST` 잠금 해제·`DELETE` 잠금), `assets`(`GET` 목록·`POST` 추가, `/assets/{id}`에 `PUT`·`DELETE`), `watchlist`(`GET`·`PUT` 전체 교체), `advice`(`POST` 새 조언 생성·`GET` 최근 목록, `/advice/latest`·`/advice/{id}`에 `GET`)다. 생성이 수십 초 걸려도 `POST /advice`는 완성된 조언을 `201`로 돌려준다 — 한 사람이 쓰는 화면이라 작업 큐를 두지 않는다. 하루 상한에 닿으면 `429`, 이미 생성 중이면 `409`다 |
-  | 봇 접근 | 봇은 HTTP나 비밀번호 없이 `storage/portfolio/`를 파일로 읽는다(관심종목, `/web`의 마지막 조언 시각·외부 자료 상태). 쓰는 것은 `watchlist.json` 하나(잠금)이고 자산·조언은 읽기만 한다. 웹 코드를 import하지 않는다. 잠금은 브라우저 앞의 문이지 같은 서버 프로세스 사이의 경계가 아니다 |
-  **조언은 요청할 때만 만든다.** 예약 조언은 없다. `POST /api/portfolio/advice`가
-  금감원 예적금 금리(`FSS_API_KEY`), 한국은행 ECOS 금리(`ECOS_API_KEY`), 국토부
-  실거래가(`MOLIT_API_KEY`)를 읽고, 규칙 진단(자산군 비중·편중, 만기 도래, 보유 금리와
-  시중 최고 금리 차이, 부동산 레버리지)을 먼저 계산한 뒤, 그 결과와 공개 산출물의
-  시장 요약을 LLM에 넣어 한 편의 조언을 쓴다. **숫자는 규칙 진단이 만들고 LLM은
-  해석만 한다** — 모델이 쓴 금액·비율을 그대로 믿으면 검산할 수 없다. 외부 API 하나가
-  실패하면 그 항목을 "자료 없음"으로 표시하고 나머지로 진행한다. 비용은 동시 실행
-  잠금 하나와 하루 상한 `PORTFOLIO_ADVICE_MAX_DAILY`로 막는다 — 공개 화면에 실행
-  트리거를 두지 않는 이유(링크를 받은 사람 수만큼 비용)가 인증으로 사라졌을 뿐,
-  반복 클릭 비용은 남는다. 조언은 투자 권유가 아닌 참고 정보임을 화면에 밝힌다.
+  | 인증 | `accounts.py`의 Google OIDC authorization-code 흐름. `openid`만 요청한다. state·브라우저 쿠키·nonce·PKCE와 Google 서명·audience·issuer·만료를 검증한다. 이름·이메일·사진을 요청하거나 Google 토큰을 디스크에 보관하지 않는다 |
+  | 세션 | 256비트 난수 HttpOnly·Secure·SameSite=Lax 쿠키. 서버에는 해시와 계정 키·만료만 메모리로 보관한다. 12시간 만료, 로그아웃 즉시 폐기, 탈퇴 시 해당 계정 전부 폐기, 웹 재시작 시 전부 만료. 웹은 단일 worker로 운영한다 |
+  | 경로 | `storage/users/<HMAC-SHA256(sub)>/`. 계정 식별 비밀키는 최소 32자, 임의 교체하지 않는다. 요청 본문·쿼리·URL에서 사용자 경로를 받지 않는다. 기존 `storage/portfolio`와 운영자 리서치는 신규 계정에 자동 배정하지 않는다 |
+  | 접근 제어 | `/api/portfolio/*`, `/api/research*`, `/api/account*`는 검증된 세션을 사용한다(세션 상태 확인만 공개). Google 설정이 없으면 503, 미로그인은 401. 변형 요청은 정확한 Origin을 요구한다. 파일 읽기·쓰기·생성·탈퇴는 같은 계정 잠금을 사용하고 잠금 안에서 세션을 다시 확인한다 |
+  | 개인 리서치 | 개인 주제·시장·기간·관심종목으로 이미 수집된 공개 뉴스·시장 요약을 검색하고 근거 자료를 모은다. 하루 10회, 앞 20종목·검색별 5건, 최신 결과 한 건. 외부 AI로 개인 주제·관심종목을 보내지 않는다. 사용자가 선택한 경우 공개 근거 최대 15건만 Cloudflare로 보내 해설을 추가한다(서버 전체 하루 20회 예약, 실패도 집계). 종목의 추가·제외 판단을 만들어낸다고 표현하지 않는다 |
+  | 개인 자산 | 기존 자산 CRUD·관심종목·진단을 계정 저장소에서 수행한다. 외부 AI로 자산·메모를 전송하지 않는다. 공개 금리와 실거래가를 비교하는 규칙 진단을 하루 10회, 최근 30건 보관한다. 공공데이터 실거래가 API에는 시군구·월만 보내고 단지·면적 매칭은 로컬에서 한다 |
+  | 삭제·내보내기 | `/api/account/export`로 JSON 내려받기, `DELETE /api/account`로 활성 계정 데이터 전체 삭제와 세션 철회. 진행 중 작업과 삭제는 잠금으로 직렬화한다. 백업·스냅샷의 잔존은 방침과 복원 절차에서 별도로 다룬다. 즉시 전체 복사본 삭제를 약속하지 않는다 |
+  | 노출 | 개인 화면·API·인증 응답은 `no-store`, `no-referrer`, `Vary: Cookie`, noindex. 운영자 봇 리서치는 `storage/bot/research/snapshot.json`에 저장하고 `/api/research`는 공개 파일을 절대 읽지 않는다. 로그에 토큰·입력·쿼리를 적지 않는다 |
+  | 운영자 봇 | 기존 `storage/portfolio/watchlist.json`은 운영자 봇의 목록이다. 웹 계정별 목록과 공유하지 않는다. 봇은 `storage/users`를 읽거나 쓰지 않으며 두 모듈 사이 공용 코드도 만들지 않는다 |
+  | 개인정보 | 운영자 `tkddls8848`, 문의 `tkddls8848@gmail.com`. `/privacy`에 실제 항목·목적·일본 도쿄 저장·외부 처리·보관·삭제를 알린다. Google 인증이 서비스 데이터의 개인정보 처리 책임을 없애 준다고 표현하지 않는다 |
 - 종목 canonical code는 시장마다 형식이 다르다. CN·HK는 **접두사 없는 숫자 코드**
   (`600519`, `00700`)이고, US·KR만 `US:NASDAQ:AAPL`·`KR:KOSPI:005930` 형식이다
   (`services/telegram_bot/stocks/universe.py`의 `stock_key`). KR 6자리는 A주 코드와 겹치므로 US·KR에만

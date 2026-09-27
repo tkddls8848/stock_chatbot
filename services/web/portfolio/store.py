@@ -1,11 +1,4 @@
-"""`storage/portfolio/`의 파일들. 공개 라우트는 이 폴더를 절대 내보내지 않는다.
-
-| 파일 | 쓰는 쪽 | 형식 |
-|---|---|---|
-| `assets.json` | 웹 | `{"updated_at", "assets": [자산]}` |
-| `watchlist.json` | 웹·봇(잠금) | `{정규코드: 이름}` — 봇 `watchlist/manager.py`와 같은 형식 |
-| `advice/<id>.json`·`advice/latest.json` | 웹 | 조언 한 건. 봇 `/web`은 `latest.json`만 읽는다 |
-"""
+"""계정 디렉터리의 자산·관심종목·진단 저장소. 공개 라우트와 봇은 읽지 않는다."""
 
 from __future__ import annotations
 
@@ -84,7 +77,7 @@ class AssetStore:
         return True
 
 
-# ── 관심종목(봇과 공유) ────────────────────────────────────────────────────
+# ── 계정별 관심종목 ────────────────────────────────────────────────────
 
 _US_TICKER = re.compile(r"[A-Z][A-Z0-9.-]{0,14}")
 # 거래소 선택지. 봇의 종목 DB(`stocks/universe.py`의 `stock_key`)와 같은 정규 코드를 만든다.
@@ -120,7 +113,7 @@ def canonical_code(market: str, exchange: str, raw: str) -> str | None:
 class WatchlistStore:
     def __init__(self, path: Path):
         self._path = path
-        # 봇과 같은 잠금 파일 이름이어야 서로를 기다린다(`<파일>.lock`).
+        # 개별 파일 쓰기에도 잠금을 사용한다.
         self._lock_path = path.with_name(path.name + ".lock")
 
     def get(self) -> dict[str, str]:
@@ -132,7 +125,7 @@ class WatchlistStore:
         return payload
 
     def replace(self, items: dict[str, str]) -> dict[str, str]:
-        """전체 교체(`PUT`). 잠금 안에서 쓰므로 봇의 리서치 적용과 섞이지 않는다."""
+        """전체 교체(`PUT`). 계정 안에서 파일 쓰기가 서로 섞이지 않는다."""
         with file_lock(self._lock_path):
             write_json_atomic(self._path, items, indent=2)
         return items
@@ -152,7 +145,7 @@ class AdviceStore:
 
     def save(self, advice: dict[str, Any]) -> None:
         write_json_atomic(self._folder / f"{advice['id']}.json", advice, indent=2)
-        # 봇 `/web`이 마지막 조언 시각·자료 상태만 읽는 자리. 본문도 함께 두지만 봇은 쓰지 않는다.
+        # 해당 계정의 마지막 진단 스냅샷.
         write_json_atomic(self._folder / "latest.json", advice, indent=2)
 
     def ids(self) -> list[str]:

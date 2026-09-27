@@ -27,8 +27,6 @@ load_dotenv(BASE_DIR / ".env")
 STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", "").strip() or BASE_DIR / "storage")
 # 공개 라우트가 내보내는 유일한 폴더.
 PUBLIC_DIR = STORAGE_DIR / "public"
-# 개인 화면(/portfolio)의 자산·관심종목·조언. 공개 라우트에 연결하지 않는다.
-PORTFOLIO_DIR = STORAGE_DIR / "portfolio"
 
 
 class ConfigurationError(RuntimeError):
@@ -201,20 +199,14 @@ POLYMARKET_ANNOTATE_DESCRIPTION_CHARS = 300
 
 # ── 개인 화면: 전체 자산 포트폴리오 어드바이저(/portfolio) ────────────────────
 # 규칙은 code_guide.md의 「개인 화면」. 공개 화면과 섞지 않는다.
-# 비밀번호 하나로 여는 간단한 잠금이다. 비어 있으면 개인 화면 전체가 503으로
-# 닫힌다 — 빈 비밀번호로 열리지 않는다.
-PORTFOLIO_PASSWORD = os.environ.get("PORTFOLIO_PASSWORD", "").strip()
-PORTFOLIO_SESSION_COOKIE = "nunchi_portfolio"
-# 잠금 해제 쿠키의 수명. 쿠키 값은 비밀번호에서 만든 HMAC이라 서버에 세션 저장소가
-# 없고, 비밀번호를 바꾸면 기존 쿠키가 모두 풀린다.
-PORTFOLIO_SESSION_MAX_AGE_SECONDS = 14 * 24 * 3600
-# 비밀번호 추측을 늦춘다. 이 창 안에서 이만큼 틀리면 잠시 429로 막는다.
-PORTFOLIO_LOGIN_MAX_FAILURES = 5
-PORTFOLIO_LOGIN_WINDOW_SECONDS = 600
-PORTFOLIO_ASSETS_FILE = PORTFOLIO_DIR / "assets.json"
-# 봇과 같이 쓰는 파일(봇은 리서치 자동 적용만 쓴다). 잠금 파일 이름은 봇과 같아야 한다.
-PORTFOLIO_WATCHLIST_FILE = PORTFOLIO_DIR / "watchlist.json"
-PORTFOLIO_ADVICE_DIR = PORTFOLIO_DIR / "advice"
+# Google 로그인 전용. 식별 HMAC 키는 계정 경로를 결정하므로 안전하게 보관한다.
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+ACCOUNT_IDENTITY_KEY = os.environ.get("ACCOUNT_IDENTITY_KEY", "").strip()
+AUTH_ORIGIN = "https://nunchi.live"
+PRIVACY_OPERATOR = "tkddls8848"
+PRIVACY_CONTACT = "tkddls8848@gmail.com"
+USERS_DIR = STORAGE_DIR / "users"
 PORTFOLIO_MAX_ASSETS = 200
 PORTFOLIO_MAX_WATCHLIST = 200
 

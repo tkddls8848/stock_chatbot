@@ -13,3 +13,5 @@ finance-datareader
 matplotlib
 fastapi
 uvicorn
+
+google-auth>=2.40,<3

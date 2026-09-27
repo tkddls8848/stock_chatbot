@@ -517,18 +517,12 @@ load average가 상시 1.5 이상이면 사전선별은 학습을 양보한다.
 `버스트 우선 작업 진행 중 · 보정 양보`가 찍힌다. 같은 자료의 32 trial이
 완료되면 새 라벨까지 쉬므로 CPU가 낮다는 사실만으로 장애로 판단하지 않는다.
 
-## 11. 공개 웹 (읽기 전용)
+## 11. 웹 서비스
 
-봇이 구워 둔 산출물만 보여 주는 **별도 프로세스**다. 웹에는 실행 트리거가 없다 —
-`/research run`과 `/market` 재계산은 텔레그램에만 둔다. 누구나 누를 수 있으면
-Neurons가 링크를 받은 사람 수만큼 나가고, 리서치 상태는 단일 사용자 형식이라
-동시 실행이 서로를 덮는다.
-
-공개 주소는 **`https://nunchi.live`**(Route 53 등록, A 레코드가 고정 IP를 가리킨다).
-
-**인증은 없다.** 모든 면(시장·뉴스 검색·폴리마켓·리서치·정보)이 공개다. 리서치면의
-Basic 인증도 2026-09-24에 없앴다(11-3). 웹은 미리 구운 파일만 내보내므로 공개돼도
-Neurons가 나가지 않고, 쓰기 라우트가 없어 잃는 것은 열람뿐이다.
+별도 프로세스가 공개 시장·뉴스·예측 컨센서스와 Google 계정별 리서치·자산 서비스를 제공한다.
+공개 주소는 **`https://nunchi.live`**이며 TLS는 Caddy가 처리한다.
+공개 API는 미리 구운 파일을 읽고, 개인 API는 인증·계정 잠금·생성 횟수 제한을 적용한다.
+Google 설정은 11-3절을 따른다. 리서치는 더 이상 공개 API가 아니다.
 
 모든 면이 `X-Robots-Tag: noindex, nofollow`를 받는다. **검색 크롤러 자체는 막지
 않는다** — 막으면 크롤러가 noindex를 읽지 못해 URL만 색인에 남을 수 있다.
@@ -543,11 +537,11 @@ Neurons가 나가지 않고, 쓰기 라우트가 없어 잃는 것은 열람뿐�
 
 | 자리 | 파일 |
 |---|---|
-| 굽기(봇 안에서만 호출) | `services/web/export.py` |
-| 읽기 전용 웹(`GET`만) | `services/web/server.py` |
+| 공개 자료 생성(봇) | `services/telegram_bot/publish.py` |
+| 웹 라우트 | `services/web/server.py` |
 | systemd 유닛 | `infra/systemd/stock-chatbot-web.service` |
 | 프록시 설정 견본 | `infra/Caddyfile.example` |
-| 산출물 | `storage/public/`의 `market.json`·`market_chart.png`·`research.json`·`meta.json` |
+| 산출물 | `storage/public/`의 `market.json`·`market_chart.png`·`news.json`·`meta.json` |
 
 ### 11-1. 웹 프로세스
 
@@ -612,33 +606,53 @@ sudo ls -l /var/lib/caddy/.local/share/caddy/certificates/*/*/          # 발급
 echo | openssl s_client -connect nunchi.live:443 -servername nunchi.live 2>/dev/null | openssl x509 -noout -dates
 ```
 
-### 11-3. 인증 (공개 화면은 없음, 개인 화면은 비밀번호)
+### 11-3. Google 로그인과 개인 서비스
 
-리서치면(`/research`, `/api/research`)은 2026-09-24까지 Caddy `basicauth`로 `friend` 계정만
-열었다. 운영자 결정으로 없앴다 — 이제 누구나 종목명·`add`/`watch`·confidence가 담긴
-리서치 결과를 본다. noindex는 그대로라 검색 결과에는 쌓이지 않는다. 비밀번호 교체
-스크립트(`set-caddy-password.sh`)도 함께 지웠다.
+시장·뉴스·예측 컨센서스는 공개하고, 리서치·자산 API는 Google 계정별로 분리한다.
+예전 `PORTFOLIO_PASSWORD`는 사용하지 않는다. 기존 `storage/portfolio/`와 운영자
+리서치를 처음 로그인한 계정에 자동 배정하지 않는다.
 
-다시 잠가야 하면 git 이력에서 `infra/Caddyfile.example`의 `@research` 블록과
-`set-caddy-password.sh`를 꺼내 되살리고 11-2대로 다시 렌더링한다.
+최초 설정은 운영자 Google 계정에서 한다([Google 공식 절차](https://developers.google.com/identity/openid-connect/openid-connect)).
 
-**개인 화면(`/portfolio`, `/api/portfolio/*`)만 잠긴다.** Caddy가 아니라 웹 앱이 연다 —
-루트 `.env`의 `PORTFOLIO_PASSWORD` 하나다. 비어 있으면 개인 화면 전체가 503이다.
-비밀번호를 바꾸고 웹을 재기동하면 이미 열린 브라우저도 모두 잠긴다(쿠키가 비밀번호의
-HMAC이다). 틀린 비밀번호는 IP당 10분에 5번까지이고 넘으면 429다.
+1. Google Cloud 프로젝트를 생성하고 Google Auth Platform의 Branding을 설정한다.
+   앱 이름은 `눈치`, 지원·개발자 연락처는 `tkddls8848@gmail.com`이다.
+   홈페이지 `https://nunchi.live`, 처리방침 `https://nunchi.live/privacy`,
+   이용 조건 `https://nunchi.live/terms`, 승인 도메인 `nunchi.live`를 등록한다.
+2. Audience는 External로 두고 시험 중에는 운영자만 테스트 사용자로 추가한다.
+   공개 전에 Google 콘솔의 게시·도메인 확인 요구사항을 완료한다.
+3. Clients에서 Web application 클라이언트를 만들고 승인된 리디렉션 URI를
+   **`https://nunchi.live/auth/google/callback`**으로 정확하게 등록한다.
+   이 구현은 서버 리디렉션 방식이며 Google JavaScript SDK를 쓰지 않는다.
+   요청 scope는 `openid` 하나다. Gmail·Drive·email·profile 권한을 추가하지 않는다.
+4. 서버 루트 `.env`(0600)에 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`을 넣고
+   `venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(48))'`로 생성한 난수를
+   `ACCOUNT_IDENTITY_KEY`에 보관한다. 비밀값을 git·채팅·로그에 남기지 않는다.
+   식별키를 바꾸면 계정 경로가 달라지므로 별도 비밀 백업으로 보존한다.
+5. `requirements.lock.txt`를 사용하는 서버에는 `google-auth>=2.40,<3`도 설치 목록에
+   포함하고 의존성을 설치한다. `sudo systemctl restart stock-chatbot-web` 후 확인한다.
 
-조언의 외부 자료 키도 루트 `.env`에 둔다. 비어 있으면 그 항목만 "키 없음"으로 돈다.
+설정 전에는 개인 API가 503으로 닫힌다. 웹은 **단일 worker**로 운영한다. 인증 진행 상태와
+세션은 메모리에 있어 재시작 시 모두 로그아웃되며, 파일의 개인 데이터는 보존된다.
 
-| 키 | 발급처 | 주의 |
-|---|---|---|
-| `FSS_API_KEY` | 금융감독원 금융상품통합비교공시 오픈API | 예적금 금리 |
-| `ECOS_API_KEY` | 한국은행 ECOS 오픈API | 기준금리·국고채·회사채 |
-| `MOLIT_API_KEY` | 공공데이터포털 "국토교통부 아파트 매매 실거래가 자료" | **디코딩(Decoding) 키**를 넣는다. 인코딩 키는 한 번 더 인코딩돼 인증에 실패한다 |
+검증: 두 Google 계정으로 각각 로그인 → 다른 자산·관심종목·주제 저장 → 서로 결과가
+보이지 않는지 확인 → 내보내기 → 한 계정 삭제 → 그 계정의 모든 세션이 401인지 확인.
+로그인 반환 주소의 code·state 또는 쿠키가 접근 로그에 남지 않아야 한다(uvicorn access log는 꺼져 있다).
+Caddy에 별도 access log를 추가할 때도 인증 경로·쿼리·쿠키는 수집하지 않는다.
 
-```bash
-curl -s localhost:8788/api/portfolio/session           # {"configured": true, "unlocked": false}
-cat /srv/stock-chatbot/storage/portfolio/advice/latest.json | head -20   # 마지막 조언의 sources·llm_status
-```
+개인 자산은 외부 AI에 보내지 않고 서버에서 규칙 진단한다. 리서치는 개인 조건으로
+공개 자료를 모으는 기능이며 운영자 봇의 종목 판단을 그대로 공유하지 않는다. 선택형 AI 해설은
+공개 근거 자료만 Cloudflare로 보내며 계정·자산·주제·관심종목 목록을 넣지 않는다.
+금감원·한국은행·국토부 키(`FSS_API_KEY`, `ECOS_API_KEY`, `MOLIT_API_KEY`)는 루트 `.env`에
+두며 없으면 해당 자료만 없는 상태로 진단한다. 국토부에는 디코딩 키를 넣는다.
+
+`DELETE /api/account`는 활성 계정 폴더와 세션을 지운다. tar 백업은 14일 보관하며
+AWS 스냅샷은 호스트 저장소 소유다. 탈퇴 요청을 처리할 때 복사본의 잔존·만료를 확인하고,
+백업을 복원할 때는 탈퇴·삭제 요청을 다시 적용한 뒤 서비스를 연다. 이 절차와 일본 저장,
+처리 위탁·국외 이전에 관한 실제 운영 고지는 공개 전 운영자가 확인해야 한다.
+
+구버전 `storage/public/research.json`은 더 이상 읽거나 새로 쓰지 않는다. 배포 후 운영자
+기록으로 보관하려면 `storage/bot/research/`로 옮긴다. 개인 폴더에 정적 파일 라우트를
+붙이지 않는다. 기존 비밀번호와 Google 클라이언트 비밀값은 서로 대체하지 않는다.
 
 ### 11-4. 장애
 

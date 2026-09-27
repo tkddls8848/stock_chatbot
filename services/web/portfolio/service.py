@@ -1,8 +1,7 @@
 """조언 한 건을 만든다: 외부 자료 → 규칙 진단 → LLM 해석 → 저장.
 
-한 사람이 쓰는 화면이라 작업 큐가 없다. `POST /api/portfolio/advice`가 끝까지
-기다려 완성된 조언을 돌려준다(수십 초). 비용은 둘로 막는다 — 동시 실행 잠금
-하나(겹치면 409)와 한국 시간 하루 상한(`PORTFOLIO_ADVICE_MAX_DAILY`, 넘으면 429).
+계정별 요청은 API의 계정 잠금으로 직렬화한다. `POST /api/portfolio/advice`가 끝까지
+기다려 완성된 조언을 돌려준다(수십 초). 비용은 둘로 막는다 — 계정별 동시 실행 잠금(겹치면 409)와 한국 시간 하루 상한(`PORTFOLIO_ADVICE_MAX_DAILY`, 넘으면 429).
 """
 
 from __future__ import annotations
@@ -76,17 +75,17 @@ class AdviceService:
     def usage(self) -> dict[str, int]:
         return {"today": self._advice.count_on(now().strftime("%Y%m%d")), "max_daily": self._max_daily}
 
-    def create(self) -> dict[str, Any]:
+    def create(self, *, use_ai: bool = True) -> dict[str, Any]:
         if not self._running.acquire(blocking=False):
             raise AdviceBusy("이미 조언을 만드는 중입니다.")
         try:
             if self.usage()["today"] >= self._max_daily:
                 raise AdviceLimit(f"오늘은 {self._max_daily}회까지 만들 수 있습니다.")
-            return self._create()
+            return self._create(use_ai=use_ai)
         finally:
             self._running.release()
 
-    def _create(self) -> dict[str, Any]:
+    def _create(self, *, use_ai: bool) -> dict[str, Any]:
         moment = now()
         assets = self._assets.list()
         deposit_rates = self._fetch_deposit_rates()
@@ -108,14 +107,16 @@ class AdviceService:
         context["missing"] = sorted(name for name, state in sources.items() if state != "ok")
 
         text, llm_status = None, "skipped_empty"
-        if assets:
+        if assets and use_ai:
             try:
                 text = self._advisor_factory().advise(report, context)
                 llm_status = "ok"
             except (AdviceError, RuntimeError) as error:
                 # 자격증명 없음(ConfigurationError)도 여기로 온다. 진단은 그대로 쓸모가 있다.
-                logger.warning("[PORTFOLIO] 조언 본문 실패, 진단만 저장: %s", error)
-                llm_status = f"failed: {str(error)[:120]}"
+                logger.warning("[PORTFOLIO] 조언 본문 실패: %s", type(error).__name__)
+                llm_status = "failed"
+        elif assets:
+            llm_status = "local_only"
 
         advice = {
             "id": self._advice.new_id(),

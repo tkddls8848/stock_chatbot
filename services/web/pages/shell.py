@@ -5,9 +5,8 @@
 쓰지 않는 것도 같은 이유다 - 공개 웹은 자기 프로세스 밖에서 아무것도 부르지
 않는다. 로고와 아이콘은 파일이 아니라 인라인 SVG다.
 
-색은 종이 바탕에 금색 강조를 얹고 **라이트 전용**으로 고정한다(`color-scheme:light`).
-따뜻한 바탕색은 다크로 뒤집으면 같은 인상을 주지 못해, 두 벌을 만드는 대신 한 벌을
-끝까지 맞춘다. 감성의 부호는 **빨강이 긍정, 파랑이 부정**이다 - 한국 시장 화면의
+색은 흰 바탕에 남색 강조를 얹고 **라이트 전용**으로 고정한다(`color-scheme:light`).
+금융정보를 표와 구분선으로 정리하고 장식용 그라데이션·입자·떠 있는 카드는 쓰지 않는다. 감성의 부호는 **빨강이 긍정, 파랑이 부정**이다 - 한국 시장 화면의
 관례이고, 이 사이트를 읽는 사람이 다른 화면에서 종일 보는 방향이다.
 """
 
@@ -15,7 +14,7 @@ from __future__ import annotations
 
 SITE_NAME = "nunchi"
 SITE_BRAND_KO = "눈치"
-SITE_TAGLINE = "뉴스에서 읽는 시장 감성"
+SITE_TAGLINE = "시장정보 · 리서치 · 자산관리"
 SITE_HOST = "nunchi.live"
 
 # ── 아이콘 ──────────────────────────────────────────────────────────────────
@@ -50,14 +49,14 @@ color-scheme:light;
 --w-wide:1200px;--w-text:860px;
 --fw-1:400;--fw-2:600;--fw-3:700;--fw-4:800;
 
---bg:#f1eee6;--ink:#2a2a24;--ink-soft:#45443c;--mut:#57554c;--faint:#656358;
---line:rgba(80,74,56,.15);--line2:rgba(80,74,56,.08);
---fill-1:rgba(150,124,70,.06);--fill-2:rgba(150,124,70,.10);
---surface-1:rgba(251,249,244,.94);--surface-2:rgba(248,245,238,.90);--surface-3:#faf7f0;
+--bg:#ffffff;--ink:#182333;--ink-soft:#334155;--mut:#526174;--faint:#5c6878;
+--line:#d9dfe6;--line2:#e9edf2;
+--fill-1:#f4f6f8;--fill-2:#e9edf2;
+--surface-1:#ffffff;--surface-2:#ffffff;--surface-3:#f4f6f8;
 
---gold:#7f5f20;--gold-deep:#655017;--gold-ink:#fdfaf3;--gold-tint:#7c5d1e;
---gold-a05:rgba(127,95,32,.05);--gold-a10:rgba(127,95,32,.10);
---gold-a25:rgba(127,95,32,.25);--gold-a40:rgba(127,95,32,.40);
+--gold:#183955;--gold-deep:#102b42;--gold-ink:#ffffff;--gold-tint:#334d65;
+--gold-a05:#f5f7fa;--gold-a10:#eaf0f5;
+--gold-a25:#c6d2df;--gold-a40:#96aabd;
 
 --acc:#2b64b8;--acc-tint:#27568f;--acc-a10:rgba(43,100,184,.10);--acc-a40:rgba(43,100,184,.40);
 
@@ -68,9 +67,8 @@ color-scheme:light;
 --pos:#b8323a;--neg:#2d62b8;--ok:#146b48;--warnc:#8f4511;
 
 --ease:cubic-bezier(.2,0,0,1);--dur-1:100ms;--dur-3:250ms;--dur-4:400ms;
---elev-2:0 4px 12px -4px rgba(90,70,30,.10),0 12px 32px -16px rgba(60,55,40,.14);
---elev-3:0 8px 24px -8px rgba(90,70,30,.13),0 24px 56px -24px rgba(60,55,40,.18);
---r1:8px;--r2:12px;--r3:16px;--r-pill:999px;--ctl:40px;--chip-h:24px;--nav-h:64px;
+--elev-2:none;--elev-3:none;
+--r1:3px;--r2:4px;--r3:4px;--r-pill:4px;--ctl:40px;--chip-h:24px;--nav-h:64px;
 
 --font-sans:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',
   system-ui,-apple-system,sans-serif;
@@ -78,8 +76,6 @@ color-scheme:light;
 @media(any-pointer:coarse){:root{--ctl:44px}}
 *{box-sizing:border-box}
 
-body::before{content:"";position:fixed;top:0;left:0;right:0;height:2px;z-index:60;pointer-events:none;
-background:linear-gradient(90deg,transparent,var(--gold) 22%,#c9a24b 50%,var(--gold) 78%,transparent)}
 body{margin:0;background:var(--bg);color:var(--ink);font-size:var(--fs-md);line-height:1.7;
 font-family:var(--font-sans);text-rendering:optimizeLegibility;letter-spacing:-.01em}
 .ico{display:inline-block;vertical-align:-.18em;flex:none}
@@ -91,27 +87,6 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,
 textarea:focus-visible,summary:focus-visible,dialog:focus-visible,[tabindex]:focus-visible{
 outline:2px solid var(--acc);outline-offset:2px}
 
-/* 배경 - 종이 위에 옅은 색 번짐, 격자, 입자를 겹친다. 단색 배경이면 카드와
-   본문이 같은 평면에 붙어 보인다. */
-.bg{position:fixed;inset:0;z-index:-3;pointer-events:none;background:
-radial-gradient(1100px 720px at 12% -8%,rgba(210,190,140,.22),transparent 58%),
-radial-gradient(1000px 680px at 92% -4%,rgba(190,205,235,.20),transparent 55%),
-radial-gradient(1200px 900px at 50% 118%,rgba(230,215,180,.20),transparent 60%),
-linear-gradient(180deg,#f5f2ea,#f1eee6 40%,#ebe7dc)}
-.bg-aurora{position:fixed;inset:0;z-index:-2;opacity:.5;pointer-events:none;background:
-radial-gradient(60% 45% at 16% 18%,rgba(240,222,180,.30),transparent 70%),
-radial-gradient(50% 40% at 84% 10%,rgba(205,220,245,.22),transparent 70%),
-radial-gradient(62% 50% at 68% 84%,rgba(238,226,196,.24),transparent 70%)}
-.bg-grid{position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:.16;
-background-image:linear-gradient(rgba(150,130,90,.06) 1px,transparent 1px),
-linear-gradient(90deg,rgba(150,130,90,.06) 1px,transparent 1px);
-background-size:52px 52px;
--webkit-mask:radial-gradient(1200px 700px at 50% 0%,#000,transparent 75%);
-mask:radial-gradient(1200px 700px at 50% 0%,#000,transparent 75%)}
-.bg-grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.04;
-background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-background-size:200px}
-
 .wrap{max-width:var(--w-wide);margin:0 auto;padding:0 var(--sp-5)}
 .skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--gold);color:var(--gold-ink);
 padding:10px var(--sp-4);border-radius:0 0 8px 0;font-weight:var(--fw-3);text-decoration:none}
@@ -122,32 +97,23 @@ padding:10px var(--sp-4);border-radius:0 0 8px 0;font-weight:var(--fw-3);text-de
 white-space:nowrap}
 main#main:focus{outline:none}
 
-/* 내비 - 종이 위에 떠 있는 알약 */
-.topnav{position:sticky;top:10px;z-index:30;background:transparent;margin-top:10px}
-.navin{display:flex;align-items:center;gap:20px;height:var(--nav-h);
-background:rgba(252,250,244,.82);-webkit-backdrop-filter:blur(14px) saturate(150%);
-backdrop-filter:blur(14px) saturate(150%);border:1px solid var(--gold-a25);
-border-radius:var(--r-pill);padding-left:22px;padding-right:var(--sp-3);
-box-shadow:0 10px 30px -16px rgba(90,70,30,.28),0 2px 8px -4px rgba(90,70,30,.12)}
-.brand{display:flex;align-items:center;gap:var(--sp-3);color:var(--ink);text-decoration:none;
-font-weight:800;font-size:var(--fs-md);letter-spacing:-.02em}
-.brand-t{display:flex;flex-direction:column;line-height:1.12}
-.brand-t small{font-size:var(--fs-xs);font-weight:600;color:var(--mut);letter-spacing:.04em;margin-top:1px}
-.brand b{background:linear-gradient(100deg,var(--gold-deep),var(--gold) 55%,#a57d2b);
--webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
-@supports not ((-webkit-background-clip:text) or (background-clip:text)){
-.brand b{color:var(--gold)!important;-webkit-text-fill-color:currentColor}}
-.navmark{flex:none;color:var(--gold);filter:drop-shadow(0 2px 8px rgba(232,192,122,.35))}
-.links{display:flex;gap:var(--sp-1);margin-left:auto}
-.links a{color:var(--mut);text-decoration:none;padding:var(--sp-2) 14px;border-radius:var(--r-pill);
-font-size:var(--fs-sm);font-weight:600;white-space:nowrap;
-transition:color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease)}
-.links a[aria-current]{color:var(--gold)}
-.links a[aria-current]::after{content:'';display:block;height:2px;margin-top:var(--sp-1);
-border-radius:2px;background:linear-gradient(90deg,var(--gold),transparent)}
+/* 금융정보 서비스의 고정 메뉴: 공개 정보와 개인 작업을 구분한다. */
+.topnav{position:sticky;top:0;z-index:30;background:#102b42;border-bottom:3px solid #365875}
+.navin{display:flex;align-items:center;gap:24px;min-height:76px}
+.brand{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:800;font-size:22px;flex:none}
+.brand-t{display:flex;flex-direction:column;line-height:1.2}
+.brand-t small{font-size:11px;font-weight:400;color:#c1ceda;margin-top:5px;letter-spacing:.02em}
+.brand b{color:#d7e1eb;font-weight:400;font-size:16px}
+.navmark{flex:none;color:#d7e1eb}
+.links{display:flex;gap:4px;margin-left:auto;align-self:stretch;align-items:stretch}
+.links a{display:flex;align-items:center;color:#d7e1eb;text-decoration:none;padding:16px 13px;border-bottom:3px solid transparent;
+font-size:13px;font-weight:600;white-space:nowrap}
+.links a[aria-current]{color:#fff;border-bottom-color:#fff;background:#1b3a54}
+.links a[href='/research']{margin-left:16px;border-left:1px solid #3d566c}
+.links a[href='/portfolio']{color:#fff}
 
 /* 발행 정보 띠 - 이 사이트가 실시간이 아니라는 사실을 상시로 둔다 */
-.asof{margin-top:var(--sp-5);background:var(--fill-1);border-top:1px solid var(--gold-a25);
+.asof{margin-top:0;background:var(--fill-1);border-top:1px solid var(--gold-a25);
 border-bottom:1px solid var(--gold-a25);color:var(--mut);font-size:var(--fs-sm)}
 .asofin{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
 padding-top:var(--sp-3);padding-bottom:var(--sp-3)}
@@ -160,11 +126,11 @@ padding:1px var(--sp-2);border-radius:20px;border:1px solid var(--line2);color:v
 .pubstat.none{color:var(--warnc)}.pubstat.none .pubdot{background:var(--warnc)}
 
 /* 본문 */
-.page{padding-top:var(--sp-7)}
-h1.ph{font-size:var(--fs-xl);font-weight:800;letter-spacing:-.03em;display:flex;
+.page{padding-top:32px}
+h1.ph{font-size:28px;font-weight:700;letter-spacing:-.03em;display:flex;
 align-items:center;gap:var(--sp-3);margin:0}
 .phico{color:var(--gold);display:inline-flex;flex:none}
-.disc{background:var(--gold-a05);border:1px solid var(--gold-a25);border-radius:var(--r2);
+.disc{background:var(--surface-3);border:0;border-left:3px solid var(--gold);border-radius:0;
 padding:var(--sp-3) var(--sp-4);color:var(--gold-tint);font-size:var(--fs-sm);line-height:1.7;
 margin:var(--sp-4) 0}
 .disc b{color:var(--ink)}
@@ -177,15 +143,15 @@ margin:var(--sp-4) 0 var(--sp-2)}
 border-radius:var(--r3);padding:var(--sp-4);box-shadow:var(--elev-2);overflow:hidden;
 transition:transform var(--dur-3) var(--ease),border-color var(--dur-1) var(--ease)}
 .pcard::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;opacity:.8}
-.pc-gold::after{background:linear-gradient(90deg,var(--gold),transparent)}
-.pc-acc::after{background:linear-gradient(90deg,var(--acc),transparent)}
-.pc-ok::after{background:linear-gradient(90deg,var(--ok),transparent)}
-.pc-warn::after{background:linear-gradient(90deg,var(--warnc),transparent)}
+.pc-gold::after{background:var(--gold)}
+.pc-acc::after{background:var(--acc)}
+.pc-ok::after{background:var(--ok)}
+.pc-warn::after{background:var(--warnc)}
 .pcard-t{font-weight:800;color:var(--gold-tint);font-size:var(--fs-md);margin-bottom:6px;
 letter-spacing:-.01em}
 .pcard-s{color:var(--mut);font-size:var(--fs-sm);line-height:1.7}
 
-.histbox{margin-top:40px}
+.histbox{margin-top:28px}
 .histh{display:flex;align-items:center;gap:var(--sp-2);font-weight:800;font-size:var(--fs-md);
 margin-bottom:var(--sp-3);letter-spacing:-.02em}
 .histh .phico{color:var(--gold)}
@@ -236,7 +202,7 @@ font-variant-numeric:tabular-nums;line-height:1.15}
    하나를 위한 값인데, 맨 `table`·`thead th`·`tbody td`로 적혀 있던 동안
    개인 화면의 표까지 끌고 가 360px에서 페이지를 193px 밀어냈다. */
 .tablewrap{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r3);
-overflow-x:auto;box-shadow:var(--elev-3);max-width:760px}
+overflow-x:auto;box-shadow:var(--elev-3);max-width:100%}
 .tablewrap table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);min-width:520px}
 .tablewrap thead th{background:var(--surface-3);color:var(--mut);font-weight:600;text-align:left;
 padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--line);white-space:nowrap;
@@ -258,7 +224,7 @@ white-space:nowrap;color:var(--ink-soft)}
 /* 차트 */
 .chartcard{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r3);
 padding:var(--sp-3);box-shadow:var(--elev-2);overflow:hidden}
-.chartcard img{display:block;width:100%;height:auto;border-radius:10px}
+.chartcard img{display:block;width:100%;height:auto;border-radius:0}
 .empty{padding:34px var(--sp-5);text-align:center;color:var(--mut);font-size:var(--fs-sm)}
 
 /* 리서치 */
@@ -271,7 +237,7 @@ border-radius:var(--r1);font-size:var(--fs-2xs);font-weight:800;letter-spacing:.
 border-radius:var(--r3);padding:var(--sp-4);box-shadow:var(--elev-2);overflow:hidden}
 .rc+.rc{margin-top:var(--sp-2)}
 .rc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
-background:linear-gradient(180deg,var(--gold),transparent)}
+background:var(--line)}
 .rt{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
 .rt b{font-size:var(--fs-md);color:var(--ink);letter-spacing:-.015em;overflow-wrap:anywhere}
 .rt code{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--faint);
@@ -314,8 +280,8 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .sf-links a{color:var(--mut);text-decoration:none;transition:color var(--dur-1) var(--ease)}
 
 @media(hover:hover) and (pointer:fine){
-.links a:hover{color:var(--ink);background:var(--fill-1)}
-.pcard:hover,.rc:hover{transform:translateY(-2px);border-color:var(--gold-a25)}
+.links a:hover{color:#fff;background:#1b3a54}
+.pcard:hover,.rc:hover{border-color:var(--gold-a25)}
 .sf-links a:hover{color:var(--gold)}}
 
 @media(max-width:760px){
@@ -328,10 +294,11 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .asof-x{margin-left:0;flex-basis:100%}
 .tablewrap tbody td,.tablewrap thead th{padding:var(--sp-3)}}
 @media(max-width:520px){
-.navin{height:auto;flex-wrap:wrap;padding-top:10px;padding-bottom:8px;border-radius:24px}
+.navin{height:auto;flex-wrap:wrap;padding-top:14px;padding-bottom:0;gap:12px}
 .brand{flex-shrink:0;white-space:nowrap}
-.links{flex:1 1 100%;min-width:0;margin-left:0;gap:0;justify-content:space-between}
-.links a{padding:8px 6px;font-size:12px}
+.links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));flex:1 1 100%;min-width:0;margin-left:0;gap:0}.links a{justify-content:center}
+.links a[href='/research']{margin-left:0;border-left:0}
+.links a{padding:12px 9px;font-size:12px}
 .spec{grid-template-columns:1fr}
 .spec dd{padding-top:0;border-top:0}
 .research-meta{grid-template-columns:1fr}
@@ -340,6 +307,34 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 .sf-cred dt{margin-top:10px}
 .sc{margin-left:0;flex-basis:100%}
 .st .v{font-size:var(--fs-xl)}}
+
+/* 개인 서비스 작업 공간 */
+[hidden]{display:none!important}
+.action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 16px;border:1px solid #b7c3cf;
+border-radius:3px;background:#fff;color:#183955;text-decoration:none;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.action.primary{background:#183955;border-color:#183955;color:#fff}
+.action:disabled{opacity:.5;cursor:wait}
+.login-panel{max-width:720px;margin:32px 0 56px;padding:36px;border:1px solid var(--line);border-top:3px solid #183955;background:#f8fafc}
+.login-panel h2{font-size:26px;margin:12px 0;font-weight:700}
+.login-panel p{color:var(--mut);font-size:14px;margin-bottom:24px}
+.eyebrow{font-size:11px;letter-spacing:.12em;font-weight:700;color:#526174}
+.workspace-toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center;border-bottom:1px solid var(--line);padding:16px 0;margin:24px 0}
+.workspace-toolbar a{font-size:13px;margin-right:16px}
+.research-form{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:20px;background:#f4f6f8;border:1px solid var(--line)}
+.research-form label{display:flex;flex-direction:column;gap:6px;color:var(--mut);font-size:12px}
+.research-form label:first-child{flex:1;min-width:180px}
+.research-form input,.research-form select{height:40px;min-width:0;border:1px solid #b7c3cf;border-radius:3px;background:#fff;padding:8px;font:inherit;color:var(--ink)}
+.evidence-section{margin-top:28px;border-top:2px solid #183955}
+.evidence-section h3{font-size:17px;margin:0;padding:16px 0;border-bottom:1px solid var(--line)}
+.evidence-section h3 small{font-size:12px;font-weight:400;margin-left:12px;color:var(--mut)}
+.news-row{padding:20px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.news-meta{font-size:12px;color:var(--mut)}
+.news-row h4{margin:6px 0;font-size:16px}.news-row p{font-size:14px;line-height:1.8;white-space:pre-wrap;margin:8px 0}
+.news-row a{font-size:12px;color:var(--acc)}
+.docbody h2{font-size:18px;margin-top:28px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+@media(max-width:760px){.navin{flex-wrap:wrap;padding-top:14px;gap:8px}.links{flex-basis:100%;margin-left:0;flex-wrap:wrap}.links a[href='/research']{margin-left:0}.brand-t small{display:block}}
+@media(max-width:520px){.login-panel{padding:24px 18px}.login-panel h2{font-size:22px}.workspace-toolbar{align-items:start;flex-direction:column}.research-form{padding:14px}.research-form label:first-child{flex-basis:100%}.research-form .action{flex:1}.asofin{gap:6px}.mh-date{font-size:11px}.mh-id{display:none}}
+
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>"""
 
@@ -350,7 +345,7 @@ _NAV_LINKS = (
     ("/", "시장"),
     ("/search", "뉴스 검색"),
     ("/forecast", "예측 컨센서스"),
-    ("/research", "리서치"),
+    ("/research", "내 리서치"),
     ("/portfolio", "내 자산"),
     ("/about", "정보"),
 )
@@ -358,7 +353,7 @@ _NAV_LINKS = (
 _MARK = (
     "<svg class='navmark' width='34' height='34' viewBox='0 0 34 34' fill='none'"
     " aria-hidden='true'>"
-    "<rect x='1.6' y='1.6' width='30.8' height='30.8' rx='9.5'"
+    "<rect x='1.6' y='1.6' width='30.8' height='30.8' rx='3'"
     " fill='currentColor' fill-opacity='.09' stroke='currentColor' stroke-opacity='.4'/>"
     "<path d='M8 22.5l5-6 4 3 4.5-7.5' stroke='currentColor' stroke-width='2'"
     " stroke-linecap='round' stroke-linejoin='round'/>"
@@ -389,8 +384,6 @@ def _head(title: str, description: str, path: str) -> str:
         "<meta property='og:url' content='https://" + SITE_HOST + path + "'>"
         "<title>" + full_title + "</title>" + _STYLE + "</head><body>"
         "<a class='skip' href='#main'>본문 바로가기</a>"
-        "<div class='bg'></div><div class='bg-aurora'></div>"
-        "<div class='bg-grid'></div><div class='bg-grain'></div>"
     )
 
 
@@ -415,9 +408,9 @@ def _header(active: str) -> str:
 _ASOF = (
     "<div class='asof' role='note'><div class='wrap asofin'>"
     "<span class='mh-id'>" + SITE_BRAND_KO + " · 뉴스 주기마다 갱신</span>"
-    "<span class='mh-date' id='asof-date'>산출물 시각을 확인하는 중…</span>"
+    "<span class='mh-date' id='asof-date'>자료 시각 확인 중…</span>"
     "<span class='pubstat' id='asof-stat' hidden><i class='pubdot'></i><span id='asof-stat-t'></span></span>"
-    "<span class='asof-x'>실시간이 아니라 마지막으로 계산된 산출물입니다</span>"
+    "<span class='asof-x'>마지막 집계 기준 · 실시간 시세 아님</span>"
     "</div></div>"
 )
 
@@ -433,15 +426,14 @@ _SITE_FOOT = (
     "<dt>시각 기준</dt><dd>모든 날짜와 시각은 한국 시간입니다. 해외 뉴스의 시각도 "
     "수집할 때 한국 시간으로 바꿉니다.</dd>"
     "<dt>갱신</dt><dd>뉴스 주기마다 갱신하며, 화면의 값은 마지막 계산 시점에 고정됩니다.</dd>"
-    "<dt>원본 자료</dt><dd><code>/api/market</code> · <code>/api/research</code> · "
-    "<code>/api/meta</code> · <code>/market_chart.png</code> — 읽기만 할 수 있고 바꾸는 기능은 없습니다. 비밀번호로 잠긴 개인 화면(내 자산)은 공개 자료에 섞이지 않습니다.</dd>"
+    "<dt>개인 서비스</dt><dd>내 리서치와 내 자산은 Google 로그인 후 계정별로 이용합니다.</dd>"
     "</dl></div>"
     "<div class='sfin'><span class='sf-links'>"
     "<a href='/'>시장</a><a href='/search'>뉴스 검색</a><a href='/forecast'>예측 컨센서스</a>"
     "<a href='/research'>리서치</a><a href='/about'>정보</a>"
     # 이용 조건은 상단 메뉴에 두지 않는다 — 매번 읽는 화면이 아니라 필요할 때
     # 찾는 화면이라, 모든 화면의 꼬리말에서만 닿게 한다.
-    "<a href='/terms'>이용 조건·개인정보</a>"
+    "<a href='/terms'>이용 조건</a> · <a href='/privacy'>개인정보 처리방침</a> · <a href='/portfolio'>Google 로그인 · 내 계정</a>"
     "</span><span>정보 제공 목적이며 투자 권유가 아닙니다.</span></div>"
     "</div></footer></body></html>"
 )
@@ -495,20 +487,19 @@ fetch('/api/meta').then(r=>r.json()).then(d=>{
   const parts=[];
   if(d.news_generated_at)parts.push('뉴스 자료 '+stamp(d.news_generated_at));
   if(d.market_generated_at)parts.push('시장 집계 '+stamp(d.market_generated_at));
-  if(d.research_generated_at)parts.push('리서치 '+stamp(d.research_generated_at));
   const date=document.getElementById('asof-date');
   const stat=document.getElementById('asof-stat');
   const statT=document.getElementById('asof-stat-t');
   if(parts.length){
     date.textContent=parts.join(' · ')+' (한국 시간)';
-    statT.textContent='산출물 있음';
+    statT.textContent='자료 제공 중';
   }else{
-    date.textContent='아직 산출물이 없습니다';
+    date.textContent='아직 제공할 자료가 없습니다';
     stat.className='pubstat none';
     statT.textContent='대기 중';
   }
   stat.hidden=false;
 }).catch(()=>{
-  document.getElementById('asof-date').textContent='산출물 시각을 읽지 못했습니다';
+  document.getElementById('asof-date').textContent='자료 시각을 읽지 못했습니다';
 });
 """

@@ -1,9 +1,4 @@
-"""웹 서버: 공개 화면과 잠긴 개인 화면(`/portfolio`).
-
-별도 프로세스로 실행한다. 공개 라우트는 ``storage/public`` 산출물만 `GET`으로 내보내고,
-쓰기·실행은 비밀번호로 잠긴 `/api/portfolio/*`(`services/web/portfolio/routes.py`)에만
-있다. TLS는 이 프로세스 앞단의 Caddy가 담당한다.
-"""
+"""공개 시장정보와 Google 계정별 개인 리서치·자산관리 서버."""
 
 from __future__ import annotations
 
@@ -29,28 +24,14 @@ from services.web.pages import (
     TERMS_HTML,
 )
 from services.web.pages.portfolio import PORTFOLIO_HTML
+from services.web.pages.privacy import PRIVACY_HTML
 from services.web.pages.search import SEARCH_HTML
 from services.web.pages.errors import ERROR_HTML
-from services.web.core.config import (
-    PORTFOLIO_ADVICE_DIR,
-    PORTFOLIO_ADVICE_HISTORY_LIMIT,
-    PORTFOLIO_ADVICE_MAX_DAILY,
-    PORTFOLIO_ASSETS_FILE,
-    PORTFOLIO_LOGIN_MAX_FAILURES,
-    PORTFOLIO_LOGIN_WINDOW_SECONDS,
-    PORTFOLIO_MAX_ASSETS,
-    PORTFOLIO_MAX_WATCHLIST,
-    PORTFOLIO_PASSWORD,
-    PORTFOLIO_SESSION_COOKIE,
-    PORTFOLIO_SESSION_MAX_AGE_SECONDS,
-    PORTFOLIO_WATCHLIST_FILE,
-    PUBLIC_DIR,
-)
+from services.web.core.config import PUBLIC_DIR
+from services.web.core import config
+from services.web.accounts import Accounts
 from services.web.polymarket.repository import PolymarketRepository, make_etag
-from services.web.portfolio.auth import LoginThrottle
 from services.web.portfolio.routes import build_router
-from services.web.portfolio.service import AdviceService
-from services.web.portfolio.store import AdviceStore, AssetStore, WatchlistStore
 from services.web.search import NewsSearch
 
 POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
@@ -79,7 +60,7 @@ def _content_security_policy(html: str = "") -> str:
 _PAGE_CSP = {path: _content_security_policy(html) for path, html in {
     "/": INDEX_HTML, "/forecast": POLYMARKET_HTML, "/research": RESEARCH_HTML,
     "/about": ABOUT_HTML, "/terms": TERMS_HTML, "/search": SEARCH_HTML,
-    "/portfolio": PORTFOLIO_HTML,
+    "/portfolio": PORTFOLIO_HTML, "/privacy": PRIVACY_HTML,
 }.items()}
 _ERROR_CSP = {status: _content_security_policy(html) for status, html in ERROR_HTML.items()}
 _DEFAULT_CSP = _content_security_policy()
@@ -113,36 +94,21 @@ def _read_json(name: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def build_portfolio_router(*, password: str = PORTFOLIO_PASSWORD, **overrides: Any) -> APIRouter:
-    """설정값으로 개인 화면 라우터를 만든다. 테스트는 저장소·비밀번호·조언 서비스를 바꿔 끼운다."""
-    from services.web.llm.factory import build_portfolio_advisor
-
-    assets = overrides.pop("assets", None) or AssetStore(PORTFOLIO_ASSETS_FILE)
-    advice_store = overrides.pop("advice_store", None) or AdviceStore(PORTFOLIO_ADVICE_DIR)
-    advice = overrides.pop("advice", None) or AdviceService(
-        assets=assets, advice=advice_store, public_dir=PUBLIC_DIR,
-        max_daily=PORTFOLIO_ADVICE_MAX_DAILY, history_limit=PORTFOLIO_ADVICE_HISTORY_LIMIT,
-        advisor_factory=build_portfolio_advisor,
-    )
-    return build_router(
-        password=password,
-        cookie_name=PORTFOLIO_SESSION_COOKIE,
-        max_age=PORTFOLIO_SESSION_MAX_AGE_SECONDS,
-        throttle=overrides.pop("throttle", None)
-        or LoginThrottle(PORTFOLIO_LOGIN_MAX_FAILURES, PORTFOLIO_LOGIN_WINDOW_SECONDS),
-        assets=assets,
-        watchlist=overrides.pop("watchlist", None) or WatchlistStore(PORTFOLIO_WATCHLIST_FILE),
-        advice_store=advice_store,
-        advice=advice,
-        max_assets=PORTFOLIO_MAX_ASSETS,
-        max_watchlist=PORTFOLIO_MAX_WATCHLIST,
-    )
+def build_accounts() -> Accounts:
+    return Accounts(config.USERS_DIR, client_id=config.GOOGLE_CLIENT_ID,
+                    client_secret=config.GOOGLE_CLIENT_SECRET, identity_key=config.ACCOUNT_IDENTITY_KEY,
+                    origin=config.AUTH_ORIGIN,
+                    ready=bool(config.PRIVACY_OPERATOR and config.PRIVACY_CONTACT))
 
 
-def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
+def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts | None = None) -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
     search_repository = NewsSearch(PUBLIC_DIR)
-    app.include_router(portfolio_router or build_portfolio_router())
+    accounts = accounts or build_accounts()
+    app.include_router(accounts.router())
+    app.include_router(portfolio_router or build_router(accounts=accounts))
+    from services.web.personal_research import build_research_router
+    app.include_router(build_research_router(accounts, search_repository))
 
     @app.middleware("http")
     async def response_policy(request: Request, call_next):
@@ -158,8 +124,10 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
             "Content-Security-Policy", _PAGE_CSP.get(request.url.path, _DEFAULT_CSP)
         )
         # 개인 화면은 어떤 캐시(브라우저·프록시)에도 남기지 않는다.
-        if request.url.path.startswith(("/portfolio", "/api/portfolio")):
+        if request.url.path.startswith(("/portfolio", "/research", "/auth/", "/api/portfolio", "/api/research", "/api/account")):
             response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Vary"] = "Cookie"
             response.headers["X-Robots-Tag"] = "noindex, nofollow"
         if request.method == "HEAD":
             # Content-Length와 Set-Cookie를 포함한 GET 헤더는 그대로 보존한다.
@@ -181,8 +149,12 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
 
     @app.api_route("/portfolio", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def portfolio_page() -> str:
-        # 화면은 정적 껍데기다. 값은 잠금을 연 뒤 브라우저가 /api/portfolio/*에서 채운다.
+        # 화면은 정적 껍데기다. 로그인 후 개인 API에서 값을 읽는다.
         return PORTFOLIO_HTML
+
+    @app.api_route("/privacy", methods=["GET", "HEAD"], response_class=HTMLResponse)
+    def privacy_page() -> str:
+        return PRIVACY_HTML
 
     @app.api_route("/search", methods=["GET", "HEAD"], response_class=HTMLResponse)
     def search_page() -> str:
@@ -233,13 +205,10 @@ def build_app(portfolio_router: APIRouter | None = None) -> FastAPI:
     def market() -> dict[str, Any]:
         return _read_json("market.json")
 
-    @app.api_route("/api/research", methods=["GET", "HEAD"])
-    def research() -> dict[str, Any]:
-        return _read_json("research.json")
-
     @app.api_route("/api/meta", methods=["GET", "HEAD"])
     def meta() -> dict[str, Any]:
-        return _read_json("meta.json")
+        return {key: value for key, value in _read_json("meta.json").items()
+                if key != "research_generated_at"}
 
     def polymarket_json(
         request: Request,

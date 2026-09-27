@@ -45,10 +45,10 @@ def test_publish_research_preserves_full_result_and_history(tmp_path, monkeypatc
     _write(tmp_path, "research.json", {"generated_at": "2026-09-24T08:20:00+09:00", "sight": "반도체",
                                        "last_result": result, "history": [{"summary": "이전 결과"}]})
 
-    payload = TestClient(server.build_app()).get("/api/research").json()
-    assert payload["sight"] == "반도체"
-    assert payload["last_result"] == result
-    assert payload["history"] == [{"summary": "이전 결과"}]
+    response = TestClient(server.build_app()).get("/api/research")
+    assert response.status_code in (401, 503)
+    assert "시장 요약" not in response.text
+    assert "반도체" not in response.text
 
 
 def test_public_pages_share_one_shell(tmp_path, monkeypatch):
@@ -81,7 +81,7 @@ def test_research_metadata_uses_the_same_section_card_pattern():
     """연구 결과 메타데이터도 요약·리스크와 같은 섹션형 카드로 표시한다."""
     body = server.RESEARCH_HTML
 
-    assert "</span>연구 결과</div>" in body
+    assert "연구 결과" in body
     assert "<dl class='brief research-meta'>" in body
     assert "<div class='statstrip'>" not in body
 
@@ -261,7 +261,7 @@ def test_forecast_screen_never_names_the_source_service():
 # ── 공유·접근성 ──────────────────────────────────────────────────────────────
 # 모든 공개 화면과 잠긴 개인 화면의 껍데기가 대상이다. 화면을 하나 더 만들면
 # 여기 목록에 넣는다 — 빠진 화면은 검사되지 않는다.
-SCREENS = ("/", "/search", "/forecast", "/research", "/portfolio", "/about", "/terms")
+SCREENS = ("/", "/search", "/forecast", "/research", "/portfolio", "/about", "/terms", "/privacy")
 
 
 def test_terms_screen_states_the_four_things_it_exists_for():
@@ -279,13 +279,11 @@ def test_terms_screen_states_the_four_things_it_exists_for():
     assert "집단 예측 컨센서스" in body
     # 모델이 쓴 문장을 사실로 다루지 않는다는 경고.
     assert "지어내기도" in body
-    # 개인정보: 공개 화면은 받지 않고, 쿠키는 잠금용 하나, 접속 기록은 운영 목적.
-    assert "공개 화면은 개인정보를 받지 않습니다" in body
-    assert "쿠키는 하나뿐입니다" in body
-    assert "접속 기록" in body and "서버 운영 목적" in body
-    # 운영자 연락처 상수가 없다. 없는 창구를 지어내지 않는다.
-    assert "문의" not in body
-    assert "@" not in server.TERMS_HTML.split("<body>", 1)[1]
+    assert "Google 로그인" in body
+    assert "href='/privacy'" in body
+    privacy = client.get("/privacy").text
+    assert "tkddls8848@gmail.com" in privacy
+    assert "계정 식별값" in privacy
 
 
 def test_terms_is_reachable_from_every_footer_and_absent_from_the_top_menu():
@@ -341,8 +339,7 @@ def test_body_text_colors_clear_the_contrast_floor():
     from services.web.pages.shell import _STYLE
 
     tokens = dict(re.findall(r"--([a-z0-9-]+):(#[0-9a-f]{6})", _STYLE))
-    darkest = re.search(r"linear-gradient\(180deg,#[0-9a-f]{6},#[0-9a-f]{6} 40%,(#[0-9a-f]{6})\)",
-                        _STYLE).group(1)
+    darkest = tokens["bg"]
 
     def luminance(color: str) -> float:
         channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]

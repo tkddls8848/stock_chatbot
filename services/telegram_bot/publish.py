@@ -16,14 +16,15 @@ from typing import Any
 from datetime import date, timedelta
 
 from services.telegram_bot.core.clock import now
-from services.telegram_bot.core.config import PUBLIC_DIR
+from services.telegram_bot.core.config import DATA_DIR, PUBLIC_DIR
 from services.telegram_bot.core.storage import write_bytes_atomic, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
 MARKET_JSON = PUBLIC_DIR / "market.json"
 MARKET_CHART = PUBLIC_DIR / "market_chart.png"
-RESEARCH_JSON = PUBLIC_DIR / "research.json"
+# 운영자 봇의 리서치는 개인 기록이다. 공개 저장소에 새 복사본을 만들지 않는다.
+RESEARCH_JSON = DATA_DIR / "research" / "snapshot.json"
 NEWS_JSON = PUBLIC_DIR / "news.json"
 META_JSON = PUBLIC_DIR / "meta.json"
 _META_LOCK = threading.Lock()
