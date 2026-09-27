@@ -15,7 +15,9 @@ EnvironmentFile=/srv/stock-chatbot/shorts/.env
 ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
 Nice=10
 CPUWeight=20
-MemoryMax=768M
+# Blender 합성: 서버 실측 최대 RSS 643MB(2026-09-27, 단일 프로세스). 파이썬과 블렌더가
+# 함께 떠 있으므로 여유를 둔다. 21시에는 다른 무거운 작업이 없다.
+MemoryMax=1G
 TimeoutStartSec=40min
 Restart=on-failure
 RestartSec=15min
