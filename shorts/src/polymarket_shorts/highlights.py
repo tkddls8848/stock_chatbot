@@ -134,11 +134,33 @@ def select_issues(candidates: list[dict], settings: Settings, *, rejected: list 
     )
 
 
+_NUMBER_WORDS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+                 "fourteen fifteen sixteen seventeen eighteen nineteen twenty").split()
+_SCALES = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6, "million": 1e6,
+           "b": 1e9, "bn": 1e9, "billion": 1e9, "t": 1e12, "trillion": 1e12}
+
+
+def _plain(value: float) -> str:
+    return format(value, "f").rstrip("0").rstrip(".") if value % 1 else str(int(value))
+
+
 def _numbers(source: str) -> set[str]:
     for month, name in enumerate(("January", "February", "March", "April", "May", "June", "July",
                                   "August", "September", "October", "November", "December"), 1):
         source = re.sub(rf"\b{name}\b", str(month), source, flags=re.IGNORECASE)
-    return set(re.findall(r"\d+(?:\.\d+)?", source.replace(",", "")))
+    # 영어 수 낱말("one day after launch")은 번역에서 숫자("1일 후")가 된다(실측 2026-09-27).
+    for value, word in enumerate(_NUMBER_WORDS):
+        source = re.sub(rf"\b{word}\b", str(value), source, flags=re.IGNORECASE)
+    text = source.replace(",", "")
+    found = set(re.findall(r"\d+(?:\.\d+)?", text))
+    # 금액 단위는 한국어로 바뀐다: $100M → 1억, $2.5B → 25억, $50M → 5000만.
+    for amount, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mn|[kmbt])\b",
+                                   text, re.IGNORECASE):
+        total = float(amount) * _SCALES[unit.lower()]
+        for korean_unit in (1e12, 1e8, 1e4):          # 조·억·만
+            if total >= korean_unit:
+                found.add(_plain(round(total / korean_unit, 4)))
+    return found
 
 
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July",

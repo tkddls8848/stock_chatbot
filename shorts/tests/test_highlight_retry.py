@@ -92,3 +92,12 @@ def test_a_label_missing_only_the_deadline_gets_it_from_the_question():
 def test_other_label_errors_are_not_papered_over():
     assert highlights._with_question_date("금리 인상", "Will the Fed hike by 25 bps?") is None
     assert highlights._with_question_date("10월 금리 인상", "Fed decision in October?") is None
+
+
+def test_number_words_and_amount_units_count_as_grounded():
+    source = "Will the variant token FDV be above $100M one day after launch?"
+    known = highlights._numbers(source)
+    assert {"1", "100"} <= known                         # one → 1, $100M → 1억
+    highlights._translation("변이형 토큰의 FDV가 출시 1일 후에 1억 달러를 넘을까요?", source, "question")
+    assert "25" in highlights._numbers("above $2.5B?")   # 25억
+    assert "5000" in highlights._numbers("$50M")         # 5000만
