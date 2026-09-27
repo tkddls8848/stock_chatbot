@@ -35,10 +35,10 @@ def latest_root(settings: Settings) -> Path | None:
     return days[-1] if days else None
 
 
-def current_status(settings: Settings) -> dict[str, Any]:
-    root = latest_root(settings)
+def current_status(settings: Settings, *, root: Path | None = None) -> dict[str, Any]:
+    root = root or latest_root(settings)
     if root is None:
-        return {"state": "empty", "output_dir": str(settings.output_dir)}
+        return {"state": "empty", "output_dir": str(settings.output_dir), "uploaded": False, "url": None}
     selection = _read(root / "selection.json")
     payload: dict[str, Any] = {
         "state": "ok",
@@ -46,6 +46,8 @@ def current_status(settings: Settings) -> dict[str, Any]:
         "root": str(root),
         "selection_status": selection.get("status"),
         "failure": selection.get("error") or selection.get("failed_stage"),
+        "uploaded": False,
+        "url": None,
     }
     if not (root / REVIEW_FILE).is_file() and not (root / "workflow.json").is_file():
         payload["review_status"] = None
@@ -55,6 +57,12 @@ def current_status(settings: Settings) -> dict[str, Any]:
     except ReviewError as error:
         return {**payload, "state": "error", "failure": str(error)}
     record = _read(target / REVIEW_FILE)
+    from .youtube import uploaded_record
+    try:
+        uploaded = uploaded_record(target, record)
+    except ReviewError as error:
+        return {**payload, "state": "error", "failure": str(error)}
+    payload.update(uploaded=bool(uploaded.get("video_id")), url=uploaded.get("url"))
     video = target / str(record.get("video") or "")
     payload.update({
         "target": str(target),

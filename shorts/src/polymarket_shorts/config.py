@@ -91,6 +91,11 @@ class Settings:
     video_model: str = "bytedance/seedance-2.0/fast/image-to-video"
     video_api_key: str = field(default="", repr=False)
     clip_seconds: int = 8
+    youtube_client_id: str = field(default="", repr=False)
+    youtube_client_secret: str = field(default="", repr=False)
+    youtube_refresh_token: str = field(default="", repr=False)
+    youtube_privacy: str = "private"
+    youtube_category_id: str = "25"
 
     def __post_init__(self) -> None:
         if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
@@ -103,6 +108,11 @@ class Settings:
             raise ValueError("SHORTS_MAX_DURATION_SECONDS must be finite and positive")
         font = os.getenv("SHORTS_FONT_FILE", "").strip()
         return cls(
+            youtube_client_id=os.getenv("SHORTS_YOUTUBE_CLIENT_ID", "").strip(),
+            youtube_client_secret=os.getenv("SHORTS_YOUTUBE_CLIENT_SECRET", "").strip(),
+            youtube_refresh_token=os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "").strip(),
+            youtube_privacy=os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip(),
+            youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),

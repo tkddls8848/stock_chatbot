@@ -15,7 +15,7 @@ from .highlights import select_issues, write_issues
 from .markets import _topic, shortlist, prepare_issue
 from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
-from .review import write_json, write_review
+from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
 from .tts import synthesize
 
@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 def produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
     """확정된 제작 원고만 렌더한다. 원자료 재조회·재요약을 하지 않는다."""
+    with operation_lock(plan_path.parent, ".workflow.lock"):
+        return _produce_editorial(plan_path, settings)
+
+
+def _produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     rows = plan.get("scenes", [])
     sectors = {row.get("sector_key") for row in rows if row.get("kind") == "consensus"}
@@ -247,6 +252,12 @@ def produce_daily(
     force: bool = False,
 ) -> ProductionResult:
     today = production_date or datetime.now(settings.timezone).date()
+    # 예약 제작·강제 재제작이 업로드 중인 원본을 바꾸지 못하게 한다.
+    with operation_lock(settings.output_dir / today.isoformat(), ".workflow.lock"):
+        return _produce_daily(settings, today=today, force=force)
+
+
+def _produce_daily(settings: Settings, *, today: date, force: bool) -> ProductionResult:
     day = today.isoformat()
     state = _read_json(settings.state_file)
     previous = (state.get("days") or {}).get(day) if isinstance(state.get("days"), dict) else None

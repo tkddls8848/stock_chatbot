@@ -343,7 +343,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | `/shorts run` | 지금 제작(하루 한 편 규칙을 넘기려면 `/shorts run force`) |
   | `/shorts preview` | 최신 수정본 MP4와 제목·설명·태그를 채팅으로 보낸다 |
   | `/shorts edit <자연어>` | 기존 자연어 편집 흐름으로 수정·재렌더한 뒤 새 MP4를 보낸다 |
-  | `/shorts done` | 현재 수정본을 검수 완료로 기록한다 |
+  | `/shorts done` | 현재 수정본을 검수 완료로 기록하고 YouTube에 업로드한다 |
+  | `/shorts upload` | 검수 완료된 현재 수정본 업로드를 재시도한다 |
   **봇은 쇼츠를 import하지 않는다.** 쇼츠는 이 저장소 코드를 import하지 않는 별개
   패키지이고 반대 방향도 같다. 봇은 쇼츠 CLI를 **쇼츠 자기 venv의 하위 프로세스로**
   부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태도 CLI(`--status`)가 `storage/shorts/`를 읽어
@@ -353,7 +354,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   제작·재렌더는 수 분이 걸리므로 접수 안내 뒤 백그라운드로 돌고 끝나면 채팅으로
   알린다(수동 브리핑과 같은 방식). 로컬 브라우저 검수 패널(`--browser`)과 대화형
   검수(`--interactive`)는 개발용으로 남기되 운영 절차의 기준은 텔레그램이다.
-  업로드는 지금처럼 자동화하지 않는다.
+  검수하지 않은 영상은 업로드하지 않는다. `/shorts done` 뒤에 검수 완료본을 업로드하며
+  기본 공개 범위는 비공개(`SHORTS_YOUTUBE_PRIVACY=private`)다. 같은 날짜·수정본의
+  업로드 이력을 원자적으로 보존해 중복을 막고, 실패하면 `/shorts upload`로 재시도한다.
+  YouTube 자격 증명은 쇼츠가 `shorts/.env`에서 읽으며 봇 환경으로 넘기지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
 - **관심종목은 `storage/portfolio/watchlist.json` 한 벌이다.** 사람의 추가·삭제는 웹

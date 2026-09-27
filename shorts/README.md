@@ -119,7 +119,8 @@ import하지 않고 이 venv의 파이썬으로 CLI를 하위 프로세스로 �
 | `/shorts run` · `run force` | 인자 없음 · `--force` |
 | `/shorts preview` | `--status`로 영상 경로를 받아 MP4를 채팅으로 보냄 |
 | `/shorts edit 수정할 내용` | `--edit "수정할 내용"` |
-| `/shorts done` | `--complete` |
+| `/shorts done` | `--complete` 성공 뒤 `--upload <검수한 수정본>` |
+| `/shorts upload` | `--upload` (검수 완료본만 재시도) |
 
 비대화형 명령은 stdout에 JSON 한 줄만 쓰고, 실패하면 stderr 마지막 줄에 이유를 남기고
 0이 아닌 코드로 끝납니다. 이 JSON이 봇과의 계약입니다(`src/polymarket_shorts/status.py`).
@@ -190,6 +191,60 @@ $env:PYTHONPATH='shorts/src'
 
 `review.md`만 직접 수정해도 영상에는 반영되지 않습니다. 대화형 편집을 사용하거나
 제작 원고를 수정하고 `--plan`으로 다시 렌더하세요.
+
+## YouTube 업로드 설정 (최초 한 번)
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 프로젝트를 만들고
+   API 및 서비스 → 라이브러리에서 **YouTube Data API v3**를 사용 설정합니다.
+2. Google Auth Platform의 브랜딩·대상(또는 OAuth 동의 화면)을 설정합니다.
+   외부 앱을 테스트 상태로 만들고 테스트 사용자에 업로드할 채널 소유자의 Google 계정을 추가합니다.
+3. 클라이언트(또는 사용자 인증 정보 → OAuth 클라이언트 ID 만들기)에서
+   **데스크톱 앱**을 선택합니다. 발급된 ID와 secret을 운영자 PC의 `shorts/.env`에
+   `SHORTS_YOUTUBE_CLIENT_ID`, `SHORTS_YOUTUBE_CLIENT_SECRET`으로 넣습니다.
+4. 저장소 루트에서 쇼츠 패키지가 설치된 Python으로 아래 명령을 실행하고 브라우저에서
+   해당 YouTube 채널 계정으로 승인합니다. 서버에서 실행하지 않습니다.
+
+   ```powershell
+   $env:PYTHONPATH='shorts/src'
+   python -m polymarket_shorts.cli --youtube-auth
+   ```
+
+   127.0.0.1 임의 포트로 승인 결과를 받으며 PKCE와 state를 검사합니다.
+   화면에 출력된 `SHORTS_YOUTUBE_REFRESH_TOKEN=...`을 복사합니다. 도구는 토큰을
+   파일로 저장하지 않습니다. 터미널 출력도 외부에 공유하지 마세요.
+5. 서버의 `shorts/.env`에 같은 ID·secret과 refresh token을 넣습니다.
+   `SHORTS_YOUTUBE_PRIVACY=private`, `SHORTS_YOUTUBE_CATEGORY_ID=25`가 기본값입니다.
+   테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
+   검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
+
+매일 21:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
+필요하면 `/shorts edit`로 수정한 다음 `/shorts done`을 누릅니다. 검수 완료 기록 뒤
+그 수정본만 업로드하고 링크를 채팅으로 알립니다. 기본 비공개이며 공개 전환은 운영자가
+YouTube Studio에서 합니다. 업로드 실패·자격 누락이어도 검수 완료는 유지됩니다.
+`/shorts upload`로 재시도할 수 있고 같은 수정본은 `already_uploaded`를 반환합니다.
+
+CLI의 `--complete`는 검수 완료만 기록합니다. 수동 업로드는 다음과 같습니다.
+
+```powershell
+python -m polymarket_shorts.cli --upload
+python -m polymarket_shorts.cli --upload storage/shorts/2026-09-27
+python -m polymarket_shorts.cli --status
+```
+
+`--upload`는 `status`(uploaded/already_uploaded/not_reviewed/no_credentials),
+`video_id`, `url`을 JSON 한 줄로 출력합니다. `--status`에는 기존 필드와 함께
+`uploaded`·`url`이 있습니다. 금지 문구·영상 변경·HTTP 실패는 안전한 오류 한 줄로
+거부합니다. 제목·설명·태그는 검수 기록 그대로이며 한국어·아동용 아님·
+변경/합성 콘텐츠(`containsSyntheticMedia=true`) 표시를 함께 설정합니다.
+
+각 수정본의 `upload.json`은 수정본 ID·영상 ID·URL·업로드 시각을 원자적으로 보존합니다.
+전송 중에는 재개 세션 주소를 보존하므로 응답을 못 받았어도 같은 세션을 조회해 이어갑니다.
+세션 만료(404)나 손상된 기록은 자동으로 새 영상을 만들지 않습니다. YouTube Studio에서
+실제 게시 여부를 먼저 확인하고 복구해야 합니다. 이 파일은 비공개 저장소 안에 둡니다.
+
+구현 기준: [재개 업로드 프로토콜](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol),
+[데스크톱 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app),
+[영상 status 필드](https://developers.google.com/youtube/v3/docs/videos#status).
 
 ## 하루 한 번 실행
 
@@ -374,7 +429,8 @@ flux 이슈 PNG를 무음 영상으로 확장합니다. 기본값은 꺼짐이�
 - `backgrounds/<이슈 해시>.mp4`를 캐시합니다. 도입은 따로 그린 정지 그림을 쓰고(클립 없음) 마무리는
   정지 배경입니다. 자연어 수정본은 원본 폴더의 캐시를 재사용합니다.
 - 클립은 VSE movie 스트립으로 장면 끝까지 반복하고, 비트 PNG와 자막을 위에 얹어 한 번 인코딩합니다.
-  정지 구간만 전체 영상 시각의 드리프트를 적용합니다. 음악과 업로드 자동화는 추가하지 않습니다.
+  정지 구간만 전체 영상 시각의 드리프트를 적용합니다. 음악은 추가하지 않습니다.
+  업로드는 위 검수 완료 절차를 따릅니다.
 
 8초 × 5개는 새 이슈 PNG 5장에 대해 최대 40초 분량의 유료 생성입니다. 계획서의
 fast 720p 추정 기준은 하루 약 $9.7, 30일 약 $290이며 고정 요금 상한이 아닙니다.

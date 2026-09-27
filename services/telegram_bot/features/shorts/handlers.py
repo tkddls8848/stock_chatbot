@@ -6,11 +6,12 @@
 | `/shorts run` (`run force`) | 지금 제작(하루 한 편 규칙을 넘기려면 force) |
 | `/shorts preview` | 현재 수정본 MP4와 제목·설명·태그 |
 | `/shorts edit <자연어>` | 자연어 수정 → 재렌더 → 새 MP4 |
-| `/shorts done` | 현재 수정본을 검수 완료로 기록 |
+| `/shorts done` | 현재 수정본을 검수 완료로 기록하고 업로드 |
+| `/shorts upload` | 검수 완료본 업로드 재시도 |
 
 제작·수정은 수 분이 걸려 접수 안내 뒤 백그라운드로 돌고 끝나면 알린다. 잠금 하나로
 줄을 세운다 — 제작과 수정이 겹치면 같은 산출물 폴더를 서로 덮는다(예약 제작과의
-충돌은 쇼츠 쪽 폴더 잠금이 막는다). 업로드는 하지 않는다.
+충돌은 쇼츠 쪽 폴더 잠금이 막는다). 업로드는 검수 완료본만 기본 비공개로 한다.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from services.telegram_bot.features.shorts.runner import ShortsError, ShortsRunn
 
 logger = logging.getLogger(__name__)
 
-USAGE = "/shorts · /shorts run [force] · /shorts preview · /shorts edit 수정할 내용 · /shorts done"
+USAGE = "/shorts · /shorts run [force] · /shorts preview · /shorts edit 수정할 내용 · /shorts done · /shorts upload"
 _REVIEW = {"pending": "검수 대기", "reviewed": "검수 완료", "superseded": "새 수정본으로 대체됨"}
 _SELECTION = {"no_suitable_issues": "적합한 이슈 없음", "failed": "제작 실패", "script_ready": "원고 준비됨"}
 
@@ -79,6 +80,8 @@ def status_text(status: dict[str, Any], *, busy: bool) -> str:
             if status.get("duration_seconds"):
                 lines.append(f"길이: {float(status['duration_seconds']):.0f}초")
     lines.append(f"다음 예약 제작: {next_schedule_text()} (한국 시간)")
+    if status.get("uploaded"):
+        lines.append("YouTube 업로드 완료: " + html.escape(str(status.get("url") or "")))
     if busy:
         lines.append("⏳ 지금 제작·수정 작업이 돌고 있습니다.")
     return "\n".join(lines)
@@ -119,12 +122,29 @@ async def _background(message, context, label: str, args: list[str], timeout: fl
     if lock.locked():
         await message.reply_text("쇼츠 작업이 이미 돌고 있습니다. 끝나면 알려 드립니다.")
         return
-    await message.reply_text(f"{label}을(를) 시작했습니다. 몇 분 걸립니다.")
+    await lock.acquire()
 
     async def job() -> None:
-        async with lock:
+        try:
             try:
                 result = await _runner(context).call(args, timeout=timeout)
+                if args == ["--complete"]:
+                    await message.reply_text("검수 완료로 기록했습니다. YouTube에 업로드합니다.")
+                    # 완료한 수정본을 고정한다. 업로드 단계는 검수 여부를 다시 확인한다.
+                    target = result.get("target")
+                    if not target:
+                        raise ShortsError("검수한 수정본 경로가 없습니다. /shorts에서 상태를 확인하세요.")
+                    result = await _runner(context).call(
+                        ["--upload", target], timeout=SHORTS_RUN_TIMEOUT_SECONDS)
+                if args and args[0] in {"--complete", "--upload"}:
+                    outcome = result.get("status")
+                    if outcome in {"uploaded", "already_uploaded"}:
+                        await message.reply_text("YouTube 업로드 완료: " + str(result.get("url") or ""))
+                    else:
+                        reason = {"not_reviewed": "현재 수정본을 먼저 검수 완료하세요.",
+                                  "no_credentials": "shorts/.env에 YouTube 자격 증명을 설정한 뒤 /shorts upload로 재시도하세요."}
+                        await message.reply_text("YouTube 업로드: " + reason.get(outcome, "응답을 확인하세요."))
+                    return
                 status = await _runner(context).call(["--status"], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
             except ShortsError as error:
                 await message.reply_text(f"{label} 실패: {error}")
@@ -133,6 +153,8 @@ async def _background(message, context, label: str, args: list[str], timeout: fl
                 logger.exception("[SHORTS] %s 실패", label)
                 await message.reply_text(f"{label} 실패: 로그를 확인하세요.")
                 return
+        finally:
+            lock.release()
         head = f"{label} 끝."
         if result.get("summary"):
             head += f"\n변경: {html.escape(str(result['summary']))}"
@@ -143,6 +165,11 @@ async def _background(message, context, label: str, args: list[str], timeout: fl
         if preview and status.get("video_path"):
             await _send_preview(message, status)
 
+    try:
+        await message.reply_text(f"{label}을(를) 시작했습니다. 몇 분 걸립니다.")
+    except BaseException:
+        lock.release()
+        raise
     tasks: set[asyncio.Task] = context.bot_data.setdefault("shorts_tasks", set())
     task = asyncio.create_task(job(), name="shorts-" + args[0] if args else "shorts-run")
     tasks.add(task)
@@ -176,12 +203,11 @@ async def cmd_shorts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await _background(message, context, "쇼츠 수정", ["--edit", instruction],
                               SHORTS_EDIT_TIMEOUT_SECONDS, preview=True)
         elif command == "done":
-            if _lock(context).locked():
-                await message.reply_text("제작·수정이 끝난 뒤에 검수 완료를 기록하세요.")
-                return
-            status = await runner.call(["--complete"], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
-            await message.reply_text("검수 완료로 기록했습니다.\n\n" + status_text(status, busy=False),
-                                     parse_mode="HTML")
+            await _background(message, context, "검수 완료·YouTube 업로드", ["--complete"],
+                              SHORTS_STATUS_TIMEOUT_SECONDS, preview=False)
+        elif command == "upload":
+            await _background(message, context, "YouTube 업로드", ["--upload"],
+                              SHORTS_RUN_TIMEOUT_SECONDS, preview=False)
         else:
             await message.reply_text(USAGE)
     except ShortsError as error:

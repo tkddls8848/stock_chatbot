@@ -12,7 +12,7 @@ from .pipeline import produce_daily, produce_editorial
 from .review import ReviewError, read_script
 
 
-_GATES = ("plan", "review", "workflow", "browser", "status", "edit", "complete")
+_GATES = ("plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth")
 
 
 def main() -> None:
@@ -29,10 +29,12 @@ def main() -> None:
     parser.add_argument("--status", action="store_true", help="최근 제작일의 제작·검수 상태 JSON")
     parser.add_argument("--edit", metavar="TEXT", help="최근 제작일의 현재 수정본을 자연어로 고치고 다시 렌더")
     parser.add_argument("--complete", action="store_true", help="최근 제작일의 현재 수정본을 검수 완료로 기록")
+    parser.add_argument("--upload", nargs="?", const="latest", metavar="DIR", help="검수 완료된 현재 수정본 업로드")
+    parser.add_argument("--youtube-auth", action="store_true", help="운영자 PC에서 최초 YouTube 승인")
     args = parser.parse_args()
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
-        parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete는 한 번에 하나만 씁니다")
+        parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth는 한 번에 하나만 씁니다")
     if chosen and (args.date or args.force):
         parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
     if args.interactive and chosen and chosen != ["plan"]:
@@ -44,6 +46,17 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = Settings.from_env()
     try:
+        if args.youtube_auth:
+            from .youtube import authorize
+            print("SHORTS_YOUTUBE_REFRESH_TOKEN=" + authorize(settings))
+            return
+        if args.upload:
+            from .status import latest_root
+            from .youtube import upload
+            root = latest_root(settings) if args.upload == "latest" else Path(args.upload).resolve()
+            payload = upload(root, settings) if root else {"status": "not_reviewed", "video_id": None, "url": None}
+            print(json.dumps(payload, ensure_ascii=False))
+            return
         if args.status or args.edit is not None or args.complete:
             print(json.dumps(_panel(args, settings), ensure_ascii=False))
             return
@@ -88,7 +101,7 @@ def _panel(args, settings: Settings) -> dict:
     if args.complete:
         with operation_lock(root, ".workflow.lock"):
             complete_review(current_target(root))
-        return current_status(settings)
+            return current_status(settings, root=root)
     _, summary = revise(root, args.edit, settings)
     return {**current_status(settings), "summary": summary}
 
