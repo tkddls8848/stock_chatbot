@@ -123,6 +123,11 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         audit["llm_calls"] += 1
         save()
         scripts = write_issues(issues, settings)
+        written = {script["id"] for script in scripts}
+        for issue in issues:
+            if issue["id"] not in written:
+                audit["rejected"].append({"id": issue["id"], "reason": "원고 검증 실패(교정 후)"})
+        issues = [issue for issue in issues if issue["id"] in written]
         scenario = build_scenario(snapshot, issues, scripts, production_date=today)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
         save()

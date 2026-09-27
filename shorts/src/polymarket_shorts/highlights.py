@@ -101,7 +101,7 @@ def validate_selection(payload: dict, candidates: list[dict], maximum: int, *, r
     return selected
 
 
-def _ask_checked(settings: Settings, *, system: str, user: str, max_tokens: int, check):
+def _ask_checked(settings: Settings, *, system: str, user: str, max_tokens: int, check, salvage=None):
     """의미 검증에 걸리면 사유를 붙여 **딱 한 번** 다시 묻는다.
 
     검증(원문에 없는 숫자 금지 등)은 환각 방지라 풀지 않는다. 다만 한 필드의 위반으로
@@ -118,7 +118,13 @@ def _ask_checked(settings: Settings, *, system: str, user: str, max_tokens: int,
             "직전 응답의 해당 부분만 고쳐 같은 형식의 JSON 전체를 다시 반환하세요.\n"
             f"직전 응답: {json.dumps(payload, ensure_ascii=False)}"
         )
-        return check(chat_json(settings, system=system, user=retry, max_tokens=max_tokens))
+        second = chat_json(settings, system=system, user=retry, max_tokens=max_tokens)
+        try:
+            return check(second)
+        except HighlightError as final:
+            if salvage is None:
+                raise
+            return salvage(second, final)
 
 
 def select_issues(candidates: list[dict], settings: Settings, *, rejected: list | None = None) -> list[dict]:
@@ -319,7 +325,19 @@ def write_issues(issues: list[dict], settings: Settings) -> list[dict]:
     } for issue in issues]
     budget = max(60, (settings.target_script_chars - 100) // len(issues))
     prompt = PROMPT + f"\n각 이슈의 질문·선택지·해설·확인점을 합쳐 약 {budget}자로 간결하게 쓰세요. 조건 보존이 길이보다 우선입니다."
+    def salvage(payload: dict, error: HighlightError) -> list[dict]:
+        # 교정 뒤에도 틀린 이슈만 빼고 나머지로 만든다(실측 2026-09-27: 이슈 하나의 라벨이
+        # 기한을 계속 빠뜨려 그날 영상 전체가 실패했다). 구조 오류(개수·순서)는 이슈를
+        # 가를 수 없어 그대로 실패한다. 뺀 이슈는 파이프라인이 selection.json에 남긴다.
+        failing = set(re.findall(r"이슈 (\S+) ", str(error)))
+        keep = [issue for issue in issues if str(issue["id"]) not in failing]
+        rows = payload.get("scripts") if isinstance(payload.get("scripts"), list) else []
+        if not failing or not keep or len(rows) != len(issues):
+            raise error
+        kept_rows = [row for row, issue in zip(rows, issues) if str(issue["id"]) not in failing]
+        return validate_scripts({"scripts": kept_rows}, keep)
+
     return _ask_checked(
         settings, system=prompt, user=json.dumps(source, ensure_ascii=False), max_tokens=3500,
-        check=lambda payload: validate_scripts(payload, issues),
+        check=lambda payload: validate_scripts(payload, issues), salvage=salvage,
     )

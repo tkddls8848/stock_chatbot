@@ -109,3 +109,20 @@ def test_a_label_may_use_either_form_of_an_amount():
     highlights._translation("출시 1일 후 FDV 100M 달러 초과", question, "label")
     with pytest.raises(HighlightError):
         highlights._translation("출시 직후 FDV 초과", question, "label")      # 수치 조건이 모두 빠졌다
+
+
+def test_one_issue_that_stays_wrong_is_dropped_and_the_rest_are_kept(monkeypatch):
+    good = {"id": "1", "title": "Fed decision?", "description": "", "news": [],
+            "markets": [{"id": "m1", "question": "Fed cut?"}]}
+    bad = {"id": "2", "title": "Token FDV above $300M one day after launch?", "description": "", "news": [],
+           "markets": [{"id": "m2", "question": "Token FDV above $300M one day after launch?"}]}
+
+    def row(issue, label):
+        return {"id": issue["id"], "headline": "연준 결정 이슈", "question": "연준이 금리를 내릴까요?",
+                "context": "금리 결정은 자금조달 비용과 연결됩니다.", "watch_point": "연준의 결정문을 확인하세요.",
+                "market_labels": [{"id": issue["markets"][0]["id"], "label": label}], "news_ids": []}
+
+    reply = {"scripts": [row(good, "금리 인하"), row(bad, "3억 달러 이상")]}   # 둘째는 '1일 후'가 빠졌다
+    monkeypatch.setattr(highlights, "chat_json", lambda settings, **kwargs: reply)
+    scripts = highlights.write_issues([good, bad], Settings.from_env())
+    assert [script["id"] for script in scripts] == ["1"]
