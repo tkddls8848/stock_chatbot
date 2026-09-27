@@ -38,6 +38,8 @@ class Scene:
     event_id: str = ""
     market_ids: tuple[str, ...] = ()
     background: str = ""
+    # 내레이션에서 확률을 말하기 시작하는 위치(0~1). 0이면 예전 고정 시점을 쓴다.
+    options_at: float = 0.0
 
     def __post_init__(self) -> None:
         # 제작 원고(`scenario.json`)에서 되읽으면 리스트로 온다. 렌더가 카운트업
@@ -136,7 +138,7 @@ def build_scenario(
             if market["id"] != label["id"]:
                 raise ValueError("개별 질문과 확률이 일치하지 않습니다")
             options.append((label["label"], market["yes"], market["yes_probability"]))
-            spoken.append((label["label"], market["yes_probability"]))
+            spoken.append((label["label"], market["yes"]))
             evidence.append(f"시장 {market['id']}: {market['question']} / 예 {market['yes']} / 아니오 {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         end_text = deadline.strftime("%Y-%m-%d %H:%M %z")
@@ -148,16 +150,23 @@ def build_scenario(
         # (`watch_point`)은 화면에 넣지 않고 검수 기록에만 남긴다 — 장면마다
         # 읽으면 "…확인하세요"가 네댓 번 반복되고, 말하지 않는 당부를 화면에만
         # 띄우면 보는 것과 듣는 것이 어긋난다. 고지문은 마무리에서 한 번이다.
+        # 선정 이유(왜 이 이슈인가)를 먼저 말하고, 질문을 던진 뒤 확률로 답한다
+        # (운영자 결정 2026-09-27: 예전 순서는 확률 → 이유였다).
+        lead = " ".join(part for part in (
+            transition(index),
+            end_sentence(to_polite_text(script["context"])),
+            to_spoken_question(script["question"]),
+        ) if part)
+        markets_line = speak_markets(spoken)
+        narration = f"{lead} {markets_line}".strip()
+        # 선택지가 화면에 뜨는 때를 확률을 말하기 시작하는 자리에 맞춘다(글자 비율).
+        options_at = len(lead) / len(narration) if markets_line else 0.0
         scenes.append(Scene(
             kind="consensus", title=script["headline"], kicker=f"{index + 1:02d} · {issue['sector_label']}",
             body="\n".join(f"{label} — 예 {percent}" for label, percent, _ in options),
             options=tuple(options),
-            narration=" ".join(part for part in (
-                transition(index),
-                to_spoken_question(script["question"]),
-                speak_markets(spoken),
-                end_sentence(to_polite_text(script["context"])),
-            ) if part),
+            narration=narration,
+            options_at=options_at,
             accent=("gold", "blue", "red")[index % 3],
             # 잔글씨는 화면에 그대로 뜬다. 예전 "종료 예정 2026-10-01 03:59 +0000"은
             # 시각 표기의 절반이 다음 줄로 넘어갔고, `+0000`은 읽는 사람에게 아무

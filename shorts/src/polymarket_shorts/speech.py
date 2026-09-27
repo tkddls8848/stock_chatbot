@@ -1,10 +1,9 @@
 """화면이 아니라 귀를 위한 한국어. 모델 없이 규칙만으로 동작한다.
 
-**화면과 음성의 역할을 나눈다.** 확률의 정확한 값은 화면에 남기고(`99.95%`),
-소리로는 듣는 사람 기준으로 푼다("사실상 굳어진 분위기입니다"). 2026-09-23
-산출물의 내레이션이 "9월 WTI 90달러 이하: 예 99.95%, 아니오 0.05%"를 그대로
-낭독했는데, 소수점 둘째 자리와 예·아니오 쌍은 눈으로 읽는 표의 문법이지
-말의 문법이 아니다. 귀로는 어느 쪽이 얼마나 유력한지만 남는다.
+**확률은 화면과 같은 퍼센트로 짧게 말한다**("…쪽은 64.5%입니다"). 운영자
+결정(2026-09-27): "셋 중 둘꼴"·"다섯에 둘쯤" 같은 비유는 오히려 낯설고 길었다.
+다만 예·아니오 쌍은 읽지 않는다 — '예' 확률 하나만 말한다(2026-09-23 산출물이
+"예 99.95%, 아니오 0.05%"를 통째로 낭독해 표를 읽는 소리가 났다).
 
 Cloudflare 무료 한도가 떨어져도 원고의 자연스러움이 같아야 하므로 이 모듈은
 LLM을 부르지 않는다. 모델이 쓰는 것은 질문·해설 문장뿐이고, 확률을 말로
@@ -22,30 +21,6 @@ _HANGUL_LAST = 0xD7A3
 _JONGSEONG = 28
 _JONG_N = 4   # ㄴ
 _JONG_B = 17  # ㅂ
-
-# 확률을 말로 옮기는 눈금. 각 줄은 (하한, 그 구간의 말)이고 위에서부터 찾는다.
-# 구간 폭은 사람이 실제로 쓰는 분수에 맞췄다 — 0.75는 "넷 중 셋", 0.2는
-# "다섯 번에 한 번"이다. 그래서 경계가 일정 간격이 아니다.
-_ODDS: tuple[tuple[float, str], ...] = (
-    (.965, "사실상 굳어진 분위기입니다"),
-    (.895, "열에 아홉은 그렇게 봅니다"),
-    (.830, "열에 여덟쯤으로 봅니다"),
-    (.720, "넷 중 셋은 그렇게 봅니다"),
-    (.640, "셋 중 둘꼴로 봅니다"),
-    (.580, "다섯에 셋 정도로 봅니다"),
-    (.520, "반반에서 조금 기운 정도입니다"),
-    (.480, "거의 반반입니다"),
-    (.420, "반반에 조금 못 미칩니다"),
-    (.360, "다섯에 둘쯤으로 봅니다"),
-    (.280, "셋에 하나꼴로 봅니다"),
-    (.170, "다섯 번에 한 번꼴로 봅니다"),
-    (.105, "여덟 번에 한 번꼴로 봅니다"),
-    (.075, "열 번에 한 번꼴로 봅니다"),
-    (.035, "스무 번에 한 번꼴로 봅니다"),
-    (.000, "사실상 없다고 봅니다"),
-)
-# 49.5 대 50.5처럼 눈금 하나 차이는 기울었다고 말하지 않는다.
-_EVEN_BAND = .01
 
 # 장면을 잇는 말. "첫째·다음은·마지막으로"처럼 세어 나가면 목록을 읽는 소리가
 # 난다. 화면에는 이미 `01 / 04` 번호가 있으니 말은 번호를 다시 세지 않는다.
@@ -125,42 +100,16 @@ def end_sentence(text: str) -> str:
     return body if body.endswith((".", "!", "?", "…")) else f"{body}."
 
 
-def odds_phrase(probability: float) -> str:
-    """확률 하나를 듣는 사람 기준의 말로 옮긴다."""
-    if abs(probability - .5) <= _EVEN_BAND:
-        return "정확히 반반입니다"
-    for floor, phrase in _ODDS:
-        if probability >= floor:
-            return phrase
-    return _ODDS[-1][1]
+def speak_markets(rows: Sequence[tuple[str, str]]) -> str:
+    """개별 선택지의 '예' 확률을 화면과 같은 퍼센트로 말한다.
 
-
-def _with(word: str) -> str:
-    """받침에 맞는 접속 조사. 한글이 아니면 모음 뒤로 본다."""
-    last = word.strip()[-1:]
-    if not last or not _is_hangul(last):
-        return "와"
-    return "과" if (ord(last) - _HANGUL_BASE) % _JONGSEONG else "와"
-
-
-def speak_markets(rows: Sequence[tuple[str, float]]) -> str:
-    """개별 선택지의 확률을 말로 푼다. 숫자는 한 개도 발음하지 않는다.
-
-    두 선택지의 말이 같으면 한 문장으로 합친다 — 49.5 대 49.5를 따로 읽으면
-    같은 문장을 두 번 듣게 된다.
+    `rows`는 (선택지 이름, 화면에 뜨는 퍼센트 문자열)이다. 화면과 음성이 같은 숫자를
+    말해야 듣는 사람이 화면에서 바로 찾는다.
     """
     if not rows:
         return ""
-    phrases = [(label, odds_phrase(probability)) for label, probability in rows]
-    if len(phrases) == 2 and phrases[0][1] == phrases[1][1]:
-        first, second = phrases[0][0], phrases[1][0]
-        return f"{first}{_with(first)} {second}, 둘 다 {phrases[0][1]}."
-    spoken = [f"{phrases[0][0]} 쪽은 {phrases[0][1]}."]
-    for index in range(1, len(phrases)):
-        label, phrase = phrases[index]
-        link = "반면 " if abs(rows[index][1] - rows[index - 1][1]) >= .25 else "그리고 "
-        spoken.append(f"{link}{label} 쪽은 {phrase}.")
-    return " ".join(spoken)
+    parts = [f"{label} 쪽은 {percent}" for label, percent in rows]
+    return ", ".join(parts) + "입니다."
 
 
 def transition(index: int) -> str:

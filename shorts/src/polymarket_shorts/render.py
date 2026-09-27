@@ -494,7 +494,10 @@ def _beats(scene: Scene, seconds: float) -> list[Beat]:
     그대로 두면 화면이 멈춘 것처럼 보인다.
     """
     if scene.options:
-        opening = min(3.2, seconds * .35)
+        # 확률을 말하기 시작하는 자리에서 선택지를 띄운다. 이유·질문이 먼저 나오므로
+        # 고정 3.2초를 쓰면 말보다 화면이 앞서 간다. 비율이 없으면 예전 값.
+        opening = (min(max(seconds * scene.options_at, 1.0), seconds * .8)
+                   if scene.options_at else min(3.2, seconds * .35))
         beats: list[Beat] = [("question", opening, scene, 0)]
         share = (seconds - opening) / len(scene.options)
         for shown in range(1, len(scene.options) + 1):

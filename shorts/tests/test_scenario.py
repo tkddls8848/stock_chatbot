@@ -17,7 +17,7 @@ def test_video_uses_individual_questions_and_preserves_probabilities(issue_sourc
     assert scene.body == "10월 금리 동결 — 예 55%\n10월 금리 25bp 인상 — 예 40%"
     # 화면은 정확한 수치를, 음성은 그 수치가 뜻하는 바를 맡는다.
     assert scene.metric == "55%" and scene.probability == .55
-    assert "반반에서 조금 기운" in scene.narration and "다섯에 둘쯤" in scene.narration
+    assert "55%" in scene.narration and "40%" in scene.narration
     assert scene.volume_share == 0
     assert scene.market_ids == ("m1", "m2")
     assert "개별 판정 시각과 다를 수 있음" in " ".join(scene.evidence)
@@ -47,19 +47,21 @@ def _five_issues(issue_source):
     return build_scenario(snapshot, issues, scripts, production_date=date(2026, 9, 23))
 
 
-def test_narration_never_reads_the_screen_numbers_out_loud(issue_source):
-    """2026-09-23 산출물은 "예 99.95%, 아니오 0.05%"를 그대로 낭독했다.
+def test_issue_narration_gives_the_reason_first_then_the_percent(issue_source):
+    """선정 이유 → 질문 → 확률 순서로 말한다(운영자 결정 2026-09-27).
 
-    소수점 둘째 자리와 예·아니오 쌍은 표를 눈으로 읽는 문법이다. 귀로는 어느
-    쪽이 얼마나 유력한지만 남으므로 숫자는 화면에 두고 소리로는 풀어 말한다.
+    확률은 화면과 같은 퍼센트로 말하고, 예·아니오 쌍은 읽지 않는다.
     """
     scenario = _five_issues(issue_source)
-
-    for scene in scenario.scenes:
-        assert "%" not in scene.narration, scene.narration
-        assert not re.search(r"\d+\.\d\d", scene.narration), scene.narration
-        assert not re.search(r"예 .*아니오", scene.narration), scene.narration
-    # 화면에는 원자료의 정확한 확률이 그대로 남아 있다.
+    scene = scenario.scenes[1]
+    context_at = scene.narration.index("자금조달")
+    question_at = scene.narration.index("?")
+    percent_at = scene.narration.index("55%")
+    assert context_at < question_at < percent_at
+    assert not re.search(r"예 .*아니오", scene.narration)
+    # 선택지는 확률을 말하기 시작할 때 뜬다.
+    assert 0 < scene.options_at < 1
+    assert scene.narration[round(scene.options_at * len(scene.narration)):].lstrip().startswith("10월")
     assert scenario.scenes[1].options[0] == ("10월 금리 동결", "55%", .55)
 
 
