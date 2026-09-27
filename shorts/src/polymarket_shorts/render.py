@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 import subprocess
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
@@ -270,36 +270,7 @@ def probe_duration(audio_path: Path, *, ffprobe_bin: str) -> float:
         raise RenderError("오디오 길이를 읽지 못했습니다") from exc
 
 
-def _concat_file(frames: Iterable[Path], durations: Iterable[float], target: Path) -> None:
-    lines: list[str] = []
-    frame_list = list(frames)
-    for frame, duration in zip(frame_list, durations, strict=True):
-        safe = frame.resolve().as_posix().replace("'", "'\\''")
-        lines.extend((f"file '{safe}'", f"duration {duration:.3f}"))
-    safe_last = frame_list[-1].resolve().as_posix().replace("'", "'\\''")
-    lines.append(f"file '{safe_last}'")
-    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _drift_filter() -> str:
-    """정지 카드가 숨 쉬게 하는 아주 느린 흐름.
-
-    자르는 창의 크기는 고정이고 위치만 매 프레임 계산된다 — FFmpeg의 crop은
-    출력 크기를 한 번만 정하므로 확대는 할 수 없고, 이동만 한다. 되돌려 키우는
-    비율은 1.5%라 글자가 무뎌지지 않는다.
-    """
-    period_x, period_y = DRIFT_PERIODS
-    return (
-        f"crop=w={WIDTH - 2 * DRIFT_MARGIN}:h={HEIGHT - 2 * DRIFT_MARGIN}"
-        f":x='{DRIFT_MARGIN}+{DRIFT_AMPLITUDE}*sin(2*PI*t/{period_x})'"
-        f":y='{DRIFT_MARGIN}+{DRIFT_AMPLITUDE}*sin(2*PI*t/{period_y})',"
-        f"scale={WIDTH}:{HEIGHT}"
-    )
-
-
-# 자막은 쇼츠 관례대로 하단 1/3을 크게 차지한다. 38은 1080 폭에서 본문보다 작아
-# 화면 중간에 떠 있는 주석처럼 보였다. 이 크기면 한 줄에 한글 13자쯤 들어가고,
-# 발화 한 덩어리(_PHRASE_CHARS)가 1~2줄로 떨어진다.
+# 자막은 하단 1/3에 두고 libass FontSize=56과 같은 글자 크기를 유지한다.
 CAPTION_FONT_SIZE = 56
 CAPTION_MARGIN_L = 72
 CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
@@ -309,20 +280,7 @@ CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
 CAPTION_WIDTH = round((WIDTH - CAPTION_MARGIN_L - CAPTION_MARGIN_R) * .92)
 
 
-def _subtitle_filter(path: Path, font_name: str = "Noto Sans CJK KR") -> str:
-    escaped = path.resolve().as_posix().replace(":", "\\:").replace("'", "\\'")
-    style = (
-        f"PlayResX={WIDTH},PlayResY={HEIGHT},FontName={font_name},FontSize={CAPTION_FONT_SIZE},"
-        "Bold=1,PrimaryColour=&H00F5F1E8,OutlineColour=&H00080D11,BackColour=&H96000000,"
-        "BorderStyle=1,Outline=5,Shadow=2,WrapStyle=2,"
-        # MarginV는 아래 가장자리로부터의 거리다. 이 값이면 자막의 아래 끝이
-        # SAFE_BOTTOM(1540)에 닿는다 — Shorts UI에 가리지 않는 가장 아래다.
-        f"Alignment=2,MarginV={CAPTION_MARGIN_V},MarginL={CAPTION_MARGIN_L},MarginR={CAPTION_MARGIN_R}"
-    )
-    return f"subtitles='{escaped}':force_style='{style}'"
-
-
-# 자막은 자기 첫 단어보다 이만큼 먼저 뜬다. edge-tts의 문장 큐가 쓰던 값과 같다.
+# 자막은 자기 첫 단어보다 이만큼 먼저 뜬다.
 CAPTION_LEAD = 0.05
 # 장면이 바뀔 때는 더 일찍 넘긴다. tts가 넓혀 둔 장면 경계 쉼의 뒤쪽 이만큼이
 # 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
@@ -497,7 +455,7 @@ def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path, *, font_path
         + "\n".join(_caption_lines(draw, phrase.text, font)) + "\n"
         for index, phrase in enumerate((p for scene in scenes for p in scene), start=1)
     ]
-    path.write_text("\n".join(blocks), encoding="utf-8")
+    path.write_text("\n".join(blocks), encoding="utf-8", newline="\n")
 
 
 Beat = tuple[str, float, Scene, "int | None"]
@@ -556,37 +514,37 @@ def render_video(
     output_path: Path,
     work_dir: Path,
     font_path: Path,
-    ffmpeg_bin: str,
+    blender_bin: str,
     ffprobe_bin: str,
     max_duration: float,
     background_paths: tuple[Path | None, ...] | None = None,
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
-    if background_paths and any(path and path.suffix == ".mp4" for path in background_paths):
-        from .clip_render import render_video as render_clips
-
-        return render_clips(
-            scenario, audio_path=audio_path, scene_words=scene_words, output_path=output_path,
-            work_dir=work_dir, font_path=font_path, ffmpeg_bin=ffmpeg_bin, ffprobe_bin=ffprobe_bin,
-            max_duration=max_duration, background_paths=background_paths,
-        )
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
     scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions, font_path=font_path)
-    frames, holds, timeline = [], [], []
+    images, movies, timeline = [], [], []
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
     cursor, merging = 0.0, None
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
+        background = selected[index - 1]
+        is_clip = background is not None and background.suffix.lower() == ".mp4"
+        if is_clip:
+            tone = _COLORS.get(scene.accent, _COLORS["gold"]).lstrip("#")
+            movies.append({"path": str(background.resolve()), "start": cursor, "duration": seconds,
+                           "multiply": [1 - _TONE_STRENGTH + _TONE_STRENGTH * int(tone[n:n + 2], 16) / 255
+                                        for n in (0, 2, 4)],
+                           "brightness": (_BRIGHTNESS[index % len(_BRIGHTNESS)] - 1) * .2})
         for position, (beat, hold, display_scene, shown) in enumerate(_beats(scene, seconds), start=1):
             frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                         background_path=selected[index - 1], shown=shown)
-            frames.append(frame)
-            holds.append(hold)
+                         background_path=background, shown=shown, transparent=is_clip)
+            images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold,
+                           "drift": not is_clip})
             # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가
             # 머무는 구간이지 그 안의 정지 화면 여덟 장이 아니다. 앞 장면과 제목이
             # 같을 수 있으므로(도입 제목 = 첫 이슈 제목) 장면 번호로 구분한다.
@@ -597,29 +555,17 @@ def render_video(
                                  "scene": scene.title, "beat": beat})
             merging = (index, beat)
             cursor += hold
-    frame_concat = work_dir / "frames.txt"
-    _concat_file(frames, holds, frame_concat)
-    # Static layers are already composited by render_frame. Two sparse image streams
-    # feeding fps/overlay queued gigabytes of frames on the production FFmpeg build.
-    filters = ",".join((
-        "fps=30",
-        # 프레임 전체를 아주 조금 잘라 내고 그 안에서 천천히 흘린다. 자막은 이
-        # 다음에 얹으므로 제자리에 고정된다.
-        _drift_filter(),
-        _subtitle_filter(captions, font_path.stem),
-        "tpad=stop_mode=clone:stop_duration=1",
-    ))
-    command = [
-        ffmpeg_bin, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(frame_concat),
-        "-i", str(audio_path), "-filter_threads", "1", "-vf", filters, "-map", "0:v", "-map", "1:a",
-        "-r", "30", "-c:v", "libx264", "-threads", "2", "-preset", "medium", "-crf", "20",
-        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-af", "apad=pad_dur=0.6",
-        "-t", f"{duration:.3f}", "-movflags", "+faststart", str(output_path),
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode or not output_path.is_file():
-        raise RenderError(f"ffmpeg 렌더링 실패: {(result.stderr or result.stdout)[-1000:]}")
+    from .blender_render import compose
+
+    draw = ImageDraw.Draw(Image.new("L", (1, 1)))
+    font = _font(font_path, CAPTION_FONT_SIZE)
+    subtitles = [{"start": phrase.start, "end": phrase.end,
+                  "text": "\n".join(_caption_lines(draw, phrase.text, font))}
+                 for group in scene_phrases for phrase in group]
+    compose(images=images, movies=movies, subtitles=subtitles, audio_path=audio_path,
+            output_path=output_path, work_dir=work_dir, font_path=font_path,
+            duration=duration, blender_bin=blender_bin)
     output_path.with_suffix(".timeline.json").write_text(
-        json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
     )
     return duration
