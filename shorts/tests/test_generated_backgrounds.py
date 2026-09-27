@@ -58,3 +58,32 @@ def test_generation_can_be_turned_off(tmp_path, monkeypatch):
     settings = replace(_settings(), generated_backgrounds=False)
     scenes = (_scene("consensus", "cargo; topic: Hormuz"),)
     assert media.backgrounds_for(scenes, tmp_path, settings) == (media.background_for("consensus", "cargo; topic: Hormuz"),)
+
+
+def _fake_image():
+    from PIL import Image
+    return Image.new("RGB", (1080, 1920), "#223344")
+
+
+def test_a_background_with_people_or_text_is_redrawn(tmp_path, monkeypatch):
+    draws = []
+    monkeypatch.setattr(media, "_draw", lambda subject, settings: draws.append(subject) or _fake_image())
+    verdicts = iter([["people"], ["text"], []])
+    monkeypatch.setattr(media, "_flagged", lambda image, settings: next(verdicts))
+    target = tmp_path / "bg.png"
+    assert media._generate_background("ships", target, _settings()) == target and target.is_file()
+    assert len(draws) == 3
+
+
+def test_a_background_that_keeps_failing_the_check_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(media, "_draw", lambda subject, settings: _fake_image())
+    monkeypatch.setattr(media, "_flagged", lambda image, settings: ["people"])
+    target = tmp_path / "bg.png"
+    assert media._generate_background("ships", target, _settings()) is None and not target.exists()
+
+
+def test_the_check_can_be_turned_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(media, "_draw", lambda subject, settings: _fake_image())
+    monkeypatch.setattr(media, "_flagged", lambda image, settings: (_ for _ in ()).throw(AssertionError()))
+    target = tmp_path / "bg.png"
+    assert media._generate_background("ships", target, replace(_settings(), background_check=False)) == target

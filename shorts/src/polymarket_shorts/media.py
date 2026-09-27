@@ -57,32 +57,75 @@ _BACKGROUND_PROMPT = (
 WIDTH, HEIGHT = 1080, 1920
 
 
+# 그림 모델은 "사람·글자 금지"를 가끔 무시한다(실측 2026-09-27: 연준 배경에 노트북 앞
+# 인물, 휴전 배경에 'STRAIT' 글자). 그래서 그린 뒤 비전 모델로 한 번 보고, 걸리면 다시
+# 그린다. 끝까지 걸리면 저장 배경(사람·글자 없음)으로 간다 — 배경 때문에 제작을 멈추지 않는다.
+_CHECKS = (
+    ("people", "Is there any person, human figure or human face in this image? Answer yes or no."),
+    ("text", "Is there any written text, letters, numbers or words in this image? Answer yes or no."),
+)
+_BACKGROUND_ATTEMPTS = 3
+
+
+def _draw(subject: str, settings: Any) -> Image.Image:
+    url = (f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}"
+           f"/ai/run/{settings.image_model}")
+    response = requests.post(
+        url, headers={"Authorization": f"Bearer {settings.editor_api_token}"},
+        json={"prompt": _BACKGROUND_PROMPT.format(subject=subject), "steps": 8},
+        timeout=(10, 90),
+    )
+    response.raise_for_status()
+    encoded = response.json()["result"]["image"]
+    with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
+        image = image.convert("RGB")
+        # flux-1-schnell은 정사각형만 준다. 가운데를 9:16으로 잘라 세로 화면에 맞춘다.
+        width, height = image.size
+        crop = min(width, round(height * WIDTH / HEIGHT))
+        left = (width - crop) // 2
+        return image.crop((left, 0, left + crop, height)).resize((WIDTH, HEIGHT), Image.LANCZOS)
+
+
+def _flagged(image: Image.Image, settings: Any) -> list[str]:
+    """비전 모델이 사람·글자를 봤으면 그 항목 이름들. 검사 자체가 실패하면 통과로 보지 않는다."""
+    small = image.copy()
+    small.thumbnail((512, 512))
+    buffer = io.BytesIO()
+    small.save(buffer, format="JPEG", quality=85)
+    url = (f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}"
+           f"/ai/run/{settings.vision_model}")
+    found = []
+    for name, question in _CHECKS:
+        response = requests.post(
+            url, headers={"Authorization": f"Bearer {settings.editor_api_token}"},
+            json={"image": list(buffer.getvalue()), "prompt": question, "max_tokens": 8},
+            timeout=(10, 60),
+        )
+        response.raise_for_status()
+        answer = str(response.json()["result"]["description"]).strip().lower()
+        if not answer.startswith("no"):
+            found.append(name)
+    return found
+
+
 def _generate_background(subject: str, target: Path, settings: Any) -> Path | None:
     """Cloudflare Workers AI로 세로 배경 한 장을 만든다. 실패하면 None(호출자가 저장 배경으로)."""
     if not settings.editor_account_id or not settings.editor_api_token:
         return None
-    url = (f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}"
-           f"/ai/run/{settings.image_model}")
-    try:
-        response = requests.post(
-            url, headers={"Authorization": f"Bearer {settings.editor_api_token}"},
-            json={"prompt": _BACKGROUND_PROMPT.format(subject=subject), "steps": 8},
-            timeout=(10, 90),
-        )
-        response.raise_for_status()
-        encoded = response.json()["result"]["image"]
-        with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
-            image = image.convert("RGB")
-            # flux-1-schnell은 정사각형만 준다. 가운데를 9:16으로 잘라 세로 화면에 맞춘다.
-            width, height = image.size
-            crop = min(width, round(height * WIDTH / HEIGHT))
-            left = (width - crop) // 2
-            image = image.crop((left, 0, left + crop, height)).resize((WIDTH, HEIGHT), Image.LANCZOS)
+    for attempt in range(1, _BACKGROUND_ATTEMPTS + 1):
+        try:
+            image = _draw(subject, settings)
+            flagged = _flagged(image, settings) if settings.background_check else []
+        except (requests.RequestException, KeyError, TypeError, ValueError, OSError) as exc:
+            logger.warning("배경 생성 실패, 저장 배경을 쓴다: %s (%s)", subject[:60], exc)
+            return None
+        if not flagged:
             image.save(target, format="PNG")
-        return target
-    except (requests.RequestException, KeyError, TypeError, ValueError, OSError) as exc:
-        logger.warning("배경 생성 실패, 저장 배경을 쓴다: %s (%s)", subject[:60], exc)
-        return None
+            return target
+        logger.warning("배경에 %s 보여 다시 그린다(%d/%d): %s", "·".join(flagged), attempt,
+                       _BACKGROUND_ATTEMPTS, subject[:60])
+    logger.warning("배경 %d번 모두 사람·글자가 보여 저장 배경을 쓴다: %s", _BACKGROUND_ATTEMPTS, subject[:60])
+    return None
 
 
 # 도입 배경은 첫 이슈 그림을 다시 쓰지 않는다 — 도입과 첫 장면이 같은 그림으로 이어져
