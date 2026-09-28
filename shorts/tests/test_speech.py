@@ -36,11 +36,11 @@ def test_written_questions_are_turned_into_spoken_ones(written, spoken):
 
 
 def test_the_opening_names_the_issue_and_the_size_of_the_day():
-    one = speech.opening_line("10월 금리 결정", 1)
-    many = speech.opening_line("10월 금리 결정", 3)
+    one = speech.opening_line(1)
+    many = speech.opening_line(3)
 
-    assert one.startswith("10월 금리 결정.") and "질문 하나를" in one
-    assert "이런 질문 3개를" in many
+    assert one.startswith("오늘의 시장 컨센서스 이슈를 선정하였습니다.") and "질문 하나를" in one
+    assert "질문 3개를" in many
     # 한 글자 관형사(이·그·저)는 TTS가 한 음절로 스쳐 지나가 들리지 않는다.
     for line in (one, many, speech.CLOSING_LINE):
         assert not re.search(r"(?:^|\s)[이그저]\s", line), line

@@ -124,7 +124,7 @@ def build_scenario(
         # 질문을 띄워 바로 끌어들이고, 편수는 잔글씨 한 줄로 내린다.
         kind="intro", title=scripts[0]["headline"], kicker=f"오늘의 전망 · {production_date:%m.%d}",
         body=to_spoken_question(scripts[0]["question"]),
-        narration=opening_line(scripts[0]["headline"], len(issues), production_date),
+        narration=opening_line(len(issues), production_date),
         bullets=(f"오늘의 질문 · {len(issues)}개",),
         source_note=f"자료 기준 {shown_stamp}",
         evidence=(issues[0]["title"],),
