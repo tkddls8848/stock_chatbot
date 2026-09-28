@@ -59,3 +59,9 @@ def test_scenario_is_english_with_the_fixed_opening_and_closing():
 def test_binary_question_reads_yes_and_no():
     line = english.speak_markets("binary", "Fed cut", [("Fed cut in October", "64.5%", "35.5%")])
     assert line == "On Fed cut in October, 64.5% of participants say yes and 35.5% say no."
+
+
+def test_description_states_the_info_time_in_minutes():
+    from polymarket_shorts.pipeline import info_time
+    assert info_time("2026-09-28T16:00:00.748469+09:00") == "2026-09-28 16:00"
+    assert info_time("2026-09-28T07:00:00+00:00") == "2026-09-28 16:00"

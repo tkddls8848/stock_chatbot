@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import tempfile
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .client import PolymarketWebClient, SourceError
 from .clips import clips_for, review_details, visual_payload
@@ -229,6 +230,12 @@ def video_title(date_text: str) -> str:
     return f"{date_text} 시장 컨센서스"
 
 
+def info_time(stamp: str) -> str:
+    """설명란의 기준 시각. ISO 원문(마이크로초·오프셋) 대신 한국 시각을 분까지만 적는다
+    (운영자 결정 2026-09-28: "정보 기준 시각: 2026-09-28 18:00")."""
+    return datetime.fromisoformat(stamp).astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
+
+
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
     return {
@@ -236,7 +243,7 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
         "description": (
             "참여가 활발하고 금융시장과 관련이 깊은 집단 예측 컨센서스 이슈를 골랐습니다.\n\n"
             f"오늘 다룬 이슈: {', '.join(labels)}\n"
-            f"원자료 기준 시각: {scenario.source_written_at}\n"
+            f"정보 기준 시각: {info_time(scenario.source_written_at)}\n"
             "확률은 해외 집단 예측 참여자들의 전망을 모은 값이며, 사실 확정이나 "
             "투자 조언이 아닙니다.\n\n#집단예측 #컨센서스 #경제전망 #Shorts"
         ),

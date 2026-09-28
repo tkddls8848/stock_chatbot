@@ -20,7 +20,7 @@ from .clips import review_details, visual_payload
 from .config import Settings
 from .highlights import HighlightError, _ask_checked, _number_groups, _numbers, _text
 from .media import backgrounds_for
-from .pipeline import ProductionResult, _read_json
+from .pipeline import ProductionResult, _read_json, info_time
 from .render import find_font, probe_duration, render_video
 from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene
@@ -270,7 +270,7 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
         "description": (
             "Crowd forecast consensus on questions with active participation and close ties to financial markets.\n\n"
             f"Today's issues: {', '.join(labels)}\n"
-            f"Data as of: {scenario.source_written_at}\n"
+            f"Data as of: {info_time(scenario.source_written_at)} KST\n"
             "Probabilities aggregate the outlook of crowd forecast participants. "
             "They are not established facts or investment advice.\n\n#Consensus #Economy #Markets #Shorts"
         ),
