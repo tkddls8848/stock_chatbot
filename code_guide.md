@@ -361,6 +361,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   예외: `SHORTS_AUTO_PUBLISH=true`면 제작이 끝나는 즉시 검수 완료로 기록하고 올린다
   (운영자 결정, 2026-09-28 — 서버는 켜져 있다). 그날 이미 올린 영상이 있으면 재제작해도
   다시 올리지 않는다. 업로드 오류는 서비스 실패로 끝나 timer 재시도가 다시 올린다.
+  `SHORTS_ENGLISH_EDITION=true`면 같은 이슈로 영어판을 `storage/shorts/en/<날짜>/`에 따로
+  만들고 올린다(운영자 결정, 2026-09-28). 텔레그램 패널은 한국어판만 다룬다.
   모든 모듈의 설정은 저장소 루트 `.env` 하나에서 관리한다. 하위 폴더에 `.env`를 두지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.

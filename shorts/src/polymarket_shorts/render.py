@@ -174,7 +174,17 @@ def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8", center=
     raise RenderError("화면 텍스트가 안전 영역을 넘습니다: " + text[:70])
 
 
-def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, shown: int) -> None:
+# 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
+_CHROME = {
+    "ko": {"yes": "예", "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
+           "footer": "집단 예측 컨센서스 · 투자 조언 아님", "ai_background": " · AI 배경"},
+    "en": {"yes": "YES", "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
+           "footer": "Crowd forecast consensus · not investment advice", "ai_background": " · AI background"},
+}
+
+
+def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, shown: int,
+                   yes: str = "예") -> None:
     """선택지를 이름 + 큰 '예' 확률 + 게이지 한 줄로 그린다.
 
     예전 화면은 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%,
@@ -199,7 +209,7 @@ def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, sho
         number_y = y + round(height * .30)
         draw.text((x, number_y), percent, font=number, fill=accent)
         draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(height * .26)),
-                  "예", font=_font(font_path, 34), fill=_COLORS["muted"])
+                  yes, font=_font(font_path, 34), fill=_COLORS["muted"])
         filled = round((right - x) * min(1.0, max(0.0, probability)))
         if filled > OPTION_BAR:
             draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=8, fill=accent)
@@ -215,7 +225,9 @@ def render_frame(
     background_path: Path | None = None,
     shown: int | None = None,
     transparent: bool = False,
+    language: str = "ko",
 ) -> None:
+    chrome = _CHROME[language]
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     accent = _COLORS.get(scene.accent, _COLORS["gold"])
@@ -236,7 +248,7 @@ def render_frame(
 
     if scene.options:
         _options_block(draw, scene, font_path, accent, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
-                       shown=len(scene.options) if shown is None else shown)
+                       shown=len(scene.options) if shown is None else shown, yes=chrome["yes"])
     else:
         _text_block(draw, scene.body, font_path, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
                     size=66, center=True)
@@ -245,10 +257,9 @@ def render_frame(
     _text_block(draw, " · ".join(b.replace(" · ", " ") for b in scene.bullets),
                 font_path, (SAFE_LEFT, META_Y, BODY_RIGHT, META_Y + 76), size=27, color=_COLORS["muted"])
     draw.text((SAFE_LEFT, FOOTER_Y),
-              "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님" if scene.options
-              else "집단 예측 컨센서스 · 투자 조언 아님",
+              chrome["footer_options"] if scene.options else chrome["footer"],
               font=_font(font_path, 23), fill=_COLORS["muted"])
-    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note + (" · AI 배경" if background_path else ""),
+    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note + (chrome["ai_background"] if background_path else ""),
               font=_font(font_path, 22), fill=accent)
     if not transparent:
         background = _background(background_path, index=index, total=total, accent=scene.accent)
@@ -286,7 +297,9 @@ CAPTION_LEAD = 0.05
 # 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
 SCENE_LEAD = 0.55
 # 한 자막에 담는 글자 수. 커진 자막(CAPTION_FONT_SIZE)에서 두 줄에 들어가는 양이다.
+# 영문은 글자 폭이 한글의 절반쯤이라 같은 두 줄에 더 담는다.
 _PHRASE_CHARS = 26
+_PHRASE_CHARS_BY_LANGUAGE = {"ko": _PHRASE_CHARS, "en": 44}
 _SENTENCE_END = (".", "?", "!")
 # 끊기 좋은 자리와 나쁜 자리. 쉼표는 말하는 사람이 이미 쉬는 자리이고 연결어미
 # ("…다르니")도 한 마디가 끝나는 자리다. 반대로 "…와·…과·…의"는 다음 말에 붙는
@@ -322,6 +335,7 @@ class Phrase:
 
 def _phrases(
     narrations: Sequence[str], scenes: Sequence[Sequence[Word]], duration: float,
+    *, phrase_chars: int = _PHRASE_CHARS,
 ) -> tuple[tuple[Phrase, ...], ...]:
     """장면 원고를 실제 단어 경계에 맞춰 자막 문구로 나눈다.
 
@@ -368,7 +382,7 @@ def _phrases(
         groups: list[list[int]] = []
         for sentence in sentences:
             length = len(text_of(sentence[0], sentence[-1]))
-            parts = max(1, -(-length // _PHRASE_CHARS))
+            parts = max(1, -(-length // phrase_chars))
             if parts == 1 or len(sentence) < parts:
                 groups.append(sentence)
                 continue
@@ -520,7 +534,8 @@ def render_video(
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
-    scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
+    scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration,
+                             phrase_chars=_PHRASE_CHARS_BY_LANGUAGE[scenario.language])
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions, font_path=font_path)
@@ -541,7 +556,8 @@ def render_video(
         for position, (beat, hold, display_scene, shown) in enumerate(_beats(scene, seconds), start=1):
             frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
             render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                         background_path=background, shown=shown, transparent=is_clip)
+                         background_path=background, shown=shown, transparent=is_clip,
+                         language=scenario.language)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가
             # 머무는 구간이지 그 안의 정지 화면 여덟 장이 아니다. 앞 장면과 제목이

@@ -98,6 +98,9 @@ class Settings:
     youtube_category_id: str = "25"
     # 켜면 예약·수동 제작이 끝나는 즉시 검수 완료로 기록하고 업로드한다(운영자 승인 없음).
     auto_publish: bool = False
+    # 켜면 한국어판을 만든 뒤 같은 이슈로 영어판(원고·화면·음성·게시 문구)을 따로 만든다.
+    english_edition: bool = False
+    english_voice: str = "en-US-AriaNeural"
 
     def __post_init__(self) -> None:
         if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
@@ -116,6 +119,8 @@ class Settings:
             youtube_privacy=os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip(),
             youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
             auto_publish=_bool("SHORTS_AUTO_PUBLISH", False),
+            english_edition=_bool("SHORTS_ENGLISH_EDITION", False),
+            english_voice=os.getenv("SHORTS_EN_TTS_VOICE", "en-US-AriaNeural").strip(),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),

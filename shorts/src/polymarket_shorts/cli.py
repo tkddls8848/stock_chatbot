@@ -81,6 +81,8 @@ def main() -> None:
             ))
             if settings.auto_publish and not args.interactive:
                 payload["upload"] = _auto_publish(payload, settings)
+            if settings.english_edition and not args.interactive:
+                payload["english"] = _english(payload, settings, force=args.force)
         if args.interactive and payload.get("video_path"):
             from .workflow import interact
             interact(Path(payload["video_path"]).parent, settings)
@@ -90,7 +92,22 @@ def main() -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
-def _auto_publish(payload: dict, settings: Settings) -> dict | None:
+def _english(payload: dict, settings: Settings, *, force: bool) -> dict | None:
+    """한국어판을 만든(또는 이미 있는) 날에 영어판을 만들고, 자동 업로드면 올린다.
+
+    한국어판 업로드가 끝난 뒤에 돈다 — 영어판 실패가 한국어판 게시를 막지 않는다.
+    """
+    from .english import english_root, produce_english
+
+    if payload.get("status") not in {"pending_review", "already_produced"}:
+        return None
+    result = asdict(produce_english(settings, date.fromisoformat(payload["date"]), force=force))
+    if settings.auto_publish:
+        result["upload"] = _auto_publish(result, settings, root=english_root(settings, payload["date"]))
+    return result
+
+
+def _auto_publish(payload: dict, settings: Settings, *, root: Path | None = None) -> dict | None:
     """제작 결과를 검수 없이 바로 올린다. 그날 이미 올린 영상이 있으면 건너뛴다.
 
     업로드 오류는 ReviewError로 올라가 서비스가 실패하고, timer의 재시도는
@@ -102,7 +119,7 @@ def _auto_publish(payload: dict, settings: Settings) -> dict | None:
 
     if payload.get("status") not in {"pending_review", "already_produced"}:
         return None
-    root = settings.output_dir / payload["date"]
+    root = root or settings.output_dir / payload["date"]
     if not (root / "review.json").is_file() and not (root / "workflow.json").is_file():
         return None
     for record in root.rglob("upload.json"):

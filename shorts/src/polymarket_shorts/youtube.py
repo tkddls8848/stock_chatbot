@@ -88,12 +88,14 @@ def _metadata(record: dict, settings: Settings) -> dict:
         raise ReviewError("게시 제목·설명·태그를 확인하세요")
     text = " ".join([metadata["title"], metadata["description"], *metadata["tags"]])
     compact = re.sub(r"\s+", "", text).casefold()
-    if any(word in compact for word in ("polymarket", "폴리마켓", "베팅", "배팅", "예측시장", "거래량", "유동성")):
+    if any(word in compact for word in ("polymarket", "폴리마켓", "베팅", "배팅", "예측시장", "거래량", "유동성",
+                                             "betting", "predictionmarket", "wager", "gambl")):
         raise ReviewError("게시 문구에 금지된 출처 이름 또는 표현이 있어 업로드를 거부합니다")
     if settings.youtube_privacy not in {"private", "unlisted", "public"}:
         raise ReviewError("SHORTS_YOUTUBE_PRIVACY는 private, unlisted, public 중 하나여야 합니다")
     return {"snippet": {**{key: metadata[key] for key in ("title", "description", "tags")},
-                        "categoryId": settings.youtube_category_id, "defaultLanguage": "ko"},
+                        "categoryId": settings.youtube_category_id,
+                        "defaultLanguage": record.get("language") or "ko"},
             "status": {"privacyStatus": settings.youtube_privacy,
                        "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}}
 
