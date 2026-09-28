@@ -295,9 +295,9 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
         )
         measured = probe_duration(audio, ffprobe_bin=settings.ffprobe_bin)
         if measured > settings.max_duration_seconds:
-            logger.info(
-                "내레이션 %.1f초가 목표 길이를 넘지만 원래 속도와 전체 음성을 유지합니다",
-                measured,
+            logger.warning(
+                "내레이션 %.1f초가 허용 길이 %.0f초를 넘지만 원래 속도와 전체 음성을 유지합니다",
+                measured, settings.max_duration_seconds,
             )
         duration = render_video(
             scenario,

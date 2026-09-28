@@ -103,7 +103,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        maximum = float(os.getenv("SHORTS_MAX_DURATION_SECONDS", "180"))
+        maximum = float(os.getenv("SHORTS_MAX_DURATION_SECONDS", "150"))
         if not math.isfinite(maximum) or maximum <= 0:
             raise ValueError("SHORTS_MAX_DURATION_SECONDS must be finite and positive")
         font = os.getenv("SHORTS_FONT_FILE", "").strip()
