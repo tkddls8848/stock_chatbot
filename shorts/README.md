@@ -79,10 +79,16 @@ Workers AI API 토큰입니다. 저장소 루트 `.env.example`을 참고해 루
 ```dotenv
 CLOUDFLARE_ACCOUNT_ID=계정_ID
 CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
-SHORTS_EDITOR_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
-# 추론 모델(예: @cf/deepseek-ai/deepseek-v4-flash-0731)은 none으로 생각 단계를 끈다
-SHORTS_EDITOR_REASONING_EFFORT=
+SHORTS_EDITOR_MODEL=@cf/deepseek-ai/deepseek-v4-flash-0731
+# 추론 모델은 none으로 생각 단계를 끈다(채팅 템플릿 인자로 끈다 — reasoning_effort "none"은 무시된다)
+SHORTS_EDITOR_REASONING_EFFORT=none
 ```
+
+이슈 선정·원고·자연어 편집은 이 모델 하나가 맡습니다. 2026-09-28 같은 입력으로 6개 모델
+(qwen3-30b·qwen3.8-27b·mistral-small-3.1·gpt-oss-20b·glm-4.7-flash·deepseek-v4-flash)을
+비교해 한국어 어순·인명 표기·질문의 뜻을 모두 지킨 deepseek-v4-flash를 골랐습니다. 단가는 입력
+100만 토큰당 $0.44·출력 $1.32로, 하루 한 편이면 한 달 약 $0.2~0.4입니다. 코드 기본값은 여전히
+qwen3-30b라 `.env`에 적어야 바뀝니다. 생각 단계를 켜 두면 생각이 토큰 상한을 먹어 응답이 잘립니다.
 
 ### 개별 베팅에서 영상까지
 
@@ -93,13 +99,17 @@ SHORTS_EDITOR_REASONING_EFFORT=
    같은 주제의 날짜·가격 변형은 후보 두 개까지 허용하고, 분야별 최대 10개(전체 최대 50개)를 남깁니다.
    최근 `SHORTS_REPEAT_DAYS`(7)일 안에 영상으로 다룬 이벤트와 같은 주제(날짜·숫자만 다른 변형 포함)는 후보에서 뺍니다.
    2026-09-23~27 네 편이 모두 같은 연준·호르무즈 질문이었던 반복을 막습니다. 뺀 목록은 `selection.json`의 `recently_featured`에 남습니다.
-3. 기존 Cloudflare 모델을 한 번 호출해 시장 관련성과 시의성을 평가합니다. 각 0~3점 중 모두 2점 이상인 이슈를
-   분야·주제당 최대 하나, 전체 최대 `SHORTS_MAX_GROUPS`개(상한 5개) 선정합니다. 중복 제안은 제외 기록을 남깁니다.
+3. `SHORTS_EDITOR_MODEL`을 한 번 호출해 시장 관련성과 시의성을 평가합니다. 각 0~3점 중 모두 2점 이상인 이슈를
+   분야·주제당 최대 하나, 전체 최대 `SHORTS_MAX_GROUPS`개(상한 5개) 선정합니다. 기준을 넘는 후보가 둘 이상이면
+   최소 2개를 고르라고 프롬프트에 적습니다(검증으로 강제하지 않아 호출이 늘지 않습니다). 중복 제안은 제외 기록을 남깁니다.
 4. 선정한 이슈만 상세와 Google News RSS를 조회합니다. 각각 최대 5회입니다.
    자료 시점 이전 7일 이내 뉴스 제목 최대 3개만 보조 자료로 쓰며 기사 본문을 읽었다고 주장하지 않습니다.
 5. 두 번째 모델 호출로 질문·선택지를 한국어로 옮기고 시장 연결점과 관찰 조건을 작성합니다.
    각 이벤트의 거래량 상위 유효 베팅 최대 두 개를 보여 줍니다. 예·아니오 가격은 해당 시장 ID의 원자료에서
    직접 넣고, 독립적인 질문들의 확률 합계를 100%로 바꾸지 않습니다. 거래량은 이벤트 전체 값입니다.
+   선택지 이름은 선택지끼리 다른 부분(인물·수치·기한)만 씁니다. 모든 선택지에 공통인 날짜·연도는 제목과
+   질문이 말하므로 검증도 요구하지 않습니다 — 예전에는 "니콜라스 마두로 지도자 2026년"처럼 군더더기가 붙었습니다.
+   선택지를 가르는 수치와 상승·하락 방향("hit (LOW) $186" → "186달러까지 하락")은 계속 검사합니다.
 6. 선정 기록·원자료·원고를 저장한 뒤 기존 TTS·영상 렌더·검수 흐름으로 진행합니다.
 
 한 번의 실행은 모델 최대 2회, 상세 최대 5회, 뉴스 검색 최대 5회입니다. 자격증명이나 원고 검증에 문제가 있으면
@@ -304,8 +314,8 @@ $env:PYTHONPATH='shorts/src'
 ```text
 기존 웹 앱 API
   → generation·freshness 검증
-  → 최신 컨센서스 1~3개 선정
-  → 3분 이하 시나리오 구성
+  → 최신 컨센서스 최대 5개 선정(가능하면 2개 이상)
+  → 시나리오 구성(허용 상한 150초)
   → Edge TTS 음성·VTT 자막
   → Pillow 세로 장면 + Blender VSE 합성·인코딩
   → MP4·시나리오·검수 원고 저장
@@ -327,9 +337,8 @@ $env:PYTHONPATH='shorts/src'
 - [Planet Money 제작진 인터뷰](https://www.linkinbio.news/p/lets-talk-about-brands-on-tiktok): 짧은 세로 영상에 맞춘 설명과 독립적인 스토리 구성.
 - [Planet Money의 공개 성과 사례](https://www.nationalpublicmedia.com/insights/articles/planet-money-tiktok-builds-awareness-among-young-audiences/): 2023년 SVB 영상 170만 회 이상 사례. TikTok 사례이며 YouTube 성과와 동일시하지 않습니다.
 
-현재 영상은 오늘의 이슈 하나로 열고, 선정 분야 안의 거래 비중과 질문 비중을 비교합니다.
-각 분야는 큰 거래량 숫자 → 완결된 설명 문장 순서로 전환합니다. 오래되거나 실패한
-요약은 읽지 않습니다.
+도입은 "2026년 9월 28일 시장 컨센서스 이슈를 선정하였습니다. 오늘은 질문 N개를 숫자와
+함께 짚어 보겠습니다"로 말하고, 화면에는 첫 질문을 띄웁니다. 오래되거나 실패한 요약은 읽지 않습니다.
 
 **이슈 장면은 선정 이유 → 질문 → 확률 순서로 말합니다.** 확률은 화면과 같은
 퍼센트로 말하고 질문 유형에 따라 문장을 고릅니다(2026-09-27 운영자 결정).
@@ -340,8 +349,9 @@ $env:PYTHONPATH='shorts/src'
 눈치 닷 라이브에 방문하여 확인해 보세요"라고 말하고 화면에는 nunchi.live를 적습니다. 규칙은 `src/polymarket_shorts/speech.py`에
 있고 LLM을 부르지 않습니다. 화면의 선택지는 확률을 말하기 시작하는 자리
 (`Scene.options_at`, 원고 글자 비율)에 맞춰 뜹니다.
-장면은 "첫째·다음은·마지막으로"로 세지 않습니다 — 화면에 이미 `01 / 04` 번호가
-있습니다. 장면별 확인점(`watch_point`)은 **화면에 넣지 않고** 검수 기록
+둘째 이슈부터는 "다음은 주식·시장 테마의 주요 컨센서스 현황을 살펴봅니다"처럼 다음
+이슈의 테마(분야)를 알리며 엽니다(2026-09-28 운영자 결정 — 예전의 "이번엔 분위기가 좀
+다릅니다"는 무엇이 다른지 알려 주지 않았습니다). 장면별 확인점(`watch_point`)은 **화면에 넣지 않고** 검수 기록
 (`review.md`)에만 남기고, 고지문은
 마무리에서 한 번만 말합니다. 말하지 않는 당부를 화면에만 띄우면 보는 것과
 듣는 것이 어긋납니다. 장면마다 "…확인하세요"를 붙이면 같은 당부를 다섯 번
@@ -403,27 +413,29 @@ libass는 한글도 중국어·일본어처럼 아무 글자에서나 끊어서 
 고르게 맞추므로 뒷줄에 한 어절만 남지 않습니다.
 MP4 옆의 `.timeline.json`에서 장면과 숫자·해석 화면의 시각을 확인할 수 있습니다.
 합성은 Blender VSE의 image/movie/sound/text 스트립으로 수행하며 MPEG4/H.264·AAC 192k,
-1080×1920·30fps·yuv420p로 출력합니다. 작업 폴더의 `blender-manifest.json`에 입력 경로와
+1080×1920·30fps·yuv420p로 출력합니다. 내레이션은 `blender_render.NARRATION_GAIN`(1.3배, +2.3dB)으로
+키워 넣습니다 — 실측 최대치가 -3.6dB(한국어)·-3.1dB(영어)라 키워도 0dBFS 아래에 남습니다. 작업 폴더의 `blender-manifest.json`에 입력 경로와
 비트·자막 시각, 반복할 클립 구간(이미지 크기·위치는 고정),
 음성 뒤 0.6초 여운과 마지막 프레임 1초 연장 범위를 기록합니다. 최종 길이는 음성+0.6초로
 제한하므로 프레임 연장이 영상 길이를 늘리지 않습니다. `phrases.srt`는 검수용으로 유지합니다.
 자막은 기본 Noto Sans CJK KR Bold 또는 `SHORTS_FONT_FILE`로 56px 상당, 외곽선·그림자를
 적용하고 아래 끝 y=1540, 좌 72·우 190px 안전 영역을 지킵니다.
 
-배경은 `assets/backgrounds/`에 미리 저장한 GPT Image PNG를 재사용합니다.
-복합·공급망·지정학 장면과 마무리는 `global-trade.png`, 나머지 장면은
-`financial-city.png`를 사용합니다. **같은 파일이라도 장면마다 다르게 잡습니다** —
-크롭 위치는 장면 순서를 따라 옮기고, 짝수 장면은 좌우를 뒤집고, 색조는 그 장면의
-accent(gold/blue/red)로 입히고, 밝기도 번갈아 바꿉니다(`render._background`).
-그림이 둘뿐이라 예전에는 네 장면이 모두 같은 도시 야경이었습니다. 새 미디어
-소스도 생성 호출도 네트워크도 쓰지 않습니다.
-생성 방식과 원본 프롬프트는 같은 폴더의 `provenance.json`에 있습니다.
-일일 렌더에는 이미지 API 키나 이미지 생성 비용이 필요하지 않습니다.
+**배경은 그날 이슈로 새로 그립니다**(`media.backgrounds_for`). 원고가 쓴 글자 없는 장면
+묘사(`image_scene`)를 Cloudflare `SHORTS_IMAGE_MODEL`(`flux-1-schnell`)로 그리고, 정사각형
+결과의 가운데를 9:16으로 잘라 씁니다. 도입은 첫 이슈 그림을 다시 쓰지 않고 도입용 풍경을
+따로 그립니다. 그린 뒤 `SHORTS_VISION_MODEL`(LLaVA)로 사람·글자가 보이는지 묻고, 보이면 최대
+3번까지 다시 그립니다. 끝까지 걸리거나 호출이 실패하면 `assets/backgrounds/`의 저장 배경
+(`global-trade.png`·`financial-city.png`)으로 갑니다 — 배경 한 장 때문에 제작을 멈추지 않습니다.
+그림은 날짜 폴더 `backgrounds/`에 묘사의 해시로 저장해 수정·재렌더가 같은 그림을 다시 씁니다.
+화면에 "AI 배경" 표기는 두지 않습니다(2026-09-28). FLUX.2 klein 4b도 비교했지만(2026-09-29)
+배경으로는 차이가 거의 없고 한 장에 수 분이 걸려 schnell을 유지합니다.
+저장 배경은 **장면마다 다르게 잡습니다** — 크롭 위치를 장면 순서대로 옮기고, 짝수 장면은
+좌우를 뒤집고, 색조를 그 장면의 accent(gold/blue/red)로 입힙니다(`render._background`).
+`SHORTS_GENERATED_BACKGROUNDS=false`이면 생성하지 않고 저장 배경만 씁니다.
 `SHORTS_VISUALS_ENABLED=false`이면 기본 단색 배경을 사용하며, 이미지가 없거나
 손상됐을 때도 경고를 기록하고 단색 배경으로 진행합니다.
 HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합니다.
-새 배경은 ChatGPT/Codex 내장 이미지 생성으로 준비해 위 파일을 교체하면 됩니다.
-이미 생성한 MP4에는 소급 적용되지 않으며 다음 렌더부터 반영됩니다.
 
 ### 선택 기능: Seedance 모션 배경
 

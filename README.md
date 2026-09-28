@@ -25,7 +25,7 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 
 ### LLM은 Cloudflare Workers AI를 사용합니다
 
-시장상황·감성·리서치·브리핑 분석이 모두 Cloudflare Workers AI(`@cf/qwen/qwen3-30b-a3b-fp8`)로 동작합니다. 로컬 GPU나 별도 추론 서버가 필요 없어서 **1GB 메모리 무료 VM에서도 돌아갑니다.**
+봇의 시장상황·감성·리서치·브리핑 분석이 모두 Cloudflare Workers AI(`@cf/qwen/qwen3-30b-a3b-fp8`, `CLOUDFLARE_MODEL`)로 동작합니다. 쇼츠는 같은 계정을 쓰되 원고·이슈 선정을 `@cf/deepseek-ai/deepseek-v4-flash-0731`(`SHORTS_EDITOR_MODEL`, 생각 단계 끔)로, 배경 그림을 `flux-1-schnell`로 만듭니다([`shorts/README.md`](shorts/README.md)). 로컬 GPU나 별도 추론 서버가 필요 없어서 **1GB 메모리 무료 VM에서도 돌아갑니다.**
 
 - 무료 한도는 **하루 10,000 Neurons**이며 UTC 00시(UTC +9 오전 9시)에 리셋됩니다. 리서치 분석은 입력 깊이를 늘린 뒤(뉴스 16건 × 본문 600자, 후보 24개) 1회에 약 400~600 Neurons로 추정되며, 이전의 얕은 입력(6건 × 240자) 기준 실측치는 약 110 Neurons였습니다.
 - 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 4시간마다 **발행할지부터 판정합니다.** 4시간은 검토 주기이지 발행 주기가 아닙니다 — 그 시장이 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`(8)에 못 미치면 LLM을 부르지 않고 보류하고, 모델이 직전 보고서 대비 새로울 것이 없다고 판정해도 보류합니다. 연속 보류가 `NEWS_REPORT_MAX_HELD_HOURS`(12)를 넘으면 판정과 무관하게 발행합니다. 따라서 LLM 호출 수는 기사 수가 아니라 **발행·검토한 시장 수**에 비례합니다.
@@ -82,17 +82,19 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 있습니다. compact manifest 크기는 다음으로 잽니다.
 
 ```powershell
-.\venv\Scripts\python.exe web\tests\polymarket_manifest_size_probe.py
+.\venv\Scripts\python.exe services\web\tests\polymarket_manifest_size_probe.py
 ```
 
 ## 주요 기능
 
 - 중국·홍콩·미국·한국·일본·글로벌 시장 뉴스 수집과 시장상황 보고서(4시간마다 발행 판정)
-- 시장별 뉴스 감성 차트 — 하루 세 번 예약 갱신해 웹에 게시
+- 시장별 뉴스 감성 차트 — 하루 세 번(07:40·13:40·19:40 UTC+9) 예약 갱신해 웹에 게시. 최근 30일의 일별 점 위에 기사 수로 가중한 커널 회귀 추세선을 그린다
 - 관심 종목 뉴스·감성 요약
 - 뉴스 기반 시장 리서치 — 매일 예약 실행, 결과는 웹에 게시하고 관심종목에 자동 적용
 - 개장 전·마감 브리핑
 - 중국·홍콩·한국·미국 종목 DB
+- 공개 웹(nunchi.live) — 집단 예측 컨센서스 대시보드·시장 감성·리서치. Google 로그인 계정마다 개인 자산·관심종목을 따로 둔다
+- 쇼츠 — 매일 18:00(UTC+9) 그날의 컨센서스로 세로 영상을 만들어 YouTube에 올린다(한국어, 선택으로 영어판)
 
 ## 텔레그램 명령
 
@@ -101,7 +103,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 | `/start`, `/help` | 사용 안내와 메뉴 표시 |
 | `/market` | 시장 감성 지금 갱신(웹 차트 다시 굽기) |
 | `/system watchlist` | 관심 종목 공유 파일 상태(편집은 웹 `/portfolio`) |
-| `/shorts` | 쇼츠 상태·`run`·`preview`·`edit 내용`·`done` |
+| `/shorts` | 쇼츠 상태·`run`·`preview`·`edit 내용`·`done`(검수 완료 후 업로드)·`upload` |
 | `/research show\|set\|clear\|run` | 리서치 주제 보기·바꾸기·비우기, 지금 실행 |
 | `/web` | 웹 산출물 갱신 상태 |
 | `/briefing morning\|evening` | 브리핑 생성 |
@@ -112,7 +114,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 
 `/stockdb build`는 AkShare에서 중국·홍콩 종목을, FinanceDataReader와 Nasdaq Trader에서 각각 한국·미국 전체 상장종목을 수집합니다.
 
-종목 DB는 `data/instruments/stock_db.json`에 캐시됩니다. 외부 식별자 매핑 API는 사용하지 않습니다.
+종목 DB는 `storage/bot/instruments/stock_db.json`에 캐시됩니다. 외부 식별자 매핑 API는 사용하지 않습니다.
 
 > **중국·홍콩 갱신은 현재 도쿄 서버에서 실패합니다(2026-09-22 실측).** AkShare의
 > A주 목록·홍콩 시세가 중국 본토 IP로 나가는데, 그 경로가 China Telecom 국제
@@ -124,7 +126,7 @@ RUN_POLYMARKET_SMOKE=1 python -m pytest -q -m polymarket_smoke
 
 ## 데이터와 접근 제어
 
-- `data/`에는 관심 종목, 발송 이력, 뉴스 로그, 종목 DB가 소유 기능별 하위 디렉토리(`news/`, `watchlist/`, `instruments/`, `research/`, `market_sentiment/`, `news_prefilter/`, `runtime/`)에 저장됩니다. 공개 웹이 내보내는 산출물은 `webpub/`에 따로 쌓입니다.
+- 실행 중 데이터는 전부 공유 저장소 `storage/`(`STORAGE_DIR`, Git 제외)에 둡니다. 봇 상태·캐시는 `storage/bot/<기능키>/`, 공개 웹 산출물은 `storage/public/`, 웹 계정별 자산·관심종목은 `storage/users/<계정키>/`, 쇼츠 산출물은 `storage/shorts/`입니다. 옛 `data/`는 없습니다(배치 규칙은 `code_guide.md`).
 - `ALLOWED_CHAT_IDS`에 쉼표로 구분한 채팅 ID를 설정해야 하며, 여기 적힌 채팅에서만 명령을 처리합니다. 비워 두거나 유효한 ID가 하나도 없으면 봇이 기동하지 않습니다 — 개인 운영용이라 빈 값을 전체 허용으로 해석하지 않습니다.
 - 뉴스·시세 제공처가 일시적으로 실패해도 다른 기능은 계속 동작하며, 다음 주기에 다시 수집합니다.
 
@@ -143,7 +145,7 @@ services/web/              읽기 전용 공개 웹 (8788) + docs/ tests/
 shorts/           쇼츠 영상 자동 생성. 자기 pyproject·venv를 가진 별개 패키지
                   + src/ docs/ tests/
 infra/            인프라 코드 — systemd/, scripts/, Caddyfile, host-contract.md, server-ops.md
-data/             실행 중 생성되는 상태·캐시 데이터, 소유 기능별 하위 디렉토리 (Git 제외)
+storage/          공유 저장소 — bot/ public/ users/ portfolio/ shorts/ (Git 제외)
 ```
 
 저장소 루트가 import root입니다. 진입점은 모두 루트에서 `-m`으로 부릅니다.
