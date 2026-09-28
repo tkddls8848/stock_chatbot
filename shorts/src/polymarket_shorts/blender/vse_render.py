@@ -96,7 +96,8 @@ def render(manifest):
         text.shadow_color = (0, 0, 0, .41)
         text.shadow_offset = 2 / caption["em_size"]
         text.shadow_angle = math.radians(135)
-    strips.new_sound("narration", manifest["audio"], channel=4, frame_start=1)
+    narration = strips.new_sound("narration", manifest["audio"], channel=4, frame_start=1)
+    narration.volume = manifest.get("narration_gain", 1.0)
     bpy.ops.render.render(animation=True)
 
 

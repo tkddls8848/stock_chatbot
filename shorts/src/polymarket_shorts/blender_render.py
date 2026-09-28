@@ -13,6 +13,11 @@ from .render import (
 )
 
 
+# 내레이션 음량 배율(운영자 요청 2026-09-28: 30% 키운다 = +2.3dB). 실측 최대치가
+# -3.6dB(한국어)·-3.1dB(영어)라 키워도 0dBFS 아래에 남는다.
+NARRATION_GAIN = 1.3
+
+
 def compose(*, images: list[dict], movies: list[dict], subtitles: list[dict],
             audio_path: Path, output_path: Path, work_dir: Path, font_path: Path,
             duration: float, blender_bin: str) -> None:
@@ -25,6 +30,7 @@ def compose(*, images: list[dict], movies: list[dict], subtitles: list[dict],
     manifest.write_text(json.dumps({
         "width": WIDTH, "height": HEIGHT, "fps": 30, "duration": duration,
         "audio": str(audio_path.resolve()), "output": str(output_path.resolve()),
+        "narration_gain": NARRATION_GAIN,
         "tail_seconds": .6, "clone_padding_seconds": 1,
         "images": images, "movies": movies, "subtitles": subtitles,
         "caption": {"font": str(caption_font.resolve()), "size": CAPTION_FONT_SIZE,
