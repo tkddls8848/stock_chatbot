@@ -26,7 +26,9 @@ def _shorts_ok(monkeypatch):
 def prepared(tmp_path, monkeypatch):
     settings = replace(Settings.from_env(), output_dir=tmp_path,
                        youtube_client_id="client", youtube_client_secret="secret",
-                       youtube_refresh_token="refresh")
+                       youtube_refresh_token="refresh",
+                       # 운영 .env의 공개 설정(SHORTS_YOUTUBE_PRIVACY=public)에 기대지 않는다.
+                       youtube_privacy="private")
     root = tmp_path / "2026-09-27"
     root.mkdir()
     (root / "clip.mp4").write_bytes(b"0123456789")
