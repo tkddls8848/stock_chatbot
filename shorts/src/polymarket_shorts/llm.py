@@ -35,18 +35,25 @@ def chat_json(settings: Settings, *, system: str, user: str, max_tokens: int) ->
         f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}"
         "/ai/v1/chat/completions"
     )
+    body: dict[str, Any] = {
+        "model": settings.editor_model, "temperature": 0.2, "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if settings.editor_reasoning_effort == "none":
+        # 이 엔드포인트는 reasoning_effort "none"을 무시하고 생각을 계속한다. 채팅 템플릿
+        # 인자로 꺼야 꺼진다(deepseek-v4-flash 실측 2026-09-28: 1327자 → 0자).
+        body["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
+    elif settings.editor_reasoning_effort:
+        body["reasoning_effort"] = settings.editor_reasoning_effort
     try:
         response = requests.post(
             url,
             headers={"Authorization": f"Bearer {settings.editor_api_token}"},
-            json={
-                "model": settings.editor_model, "temperature": 0.2, "max_tokens": max_tokens,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
+            json=body,
             timeout=(10, 120),
         )
         response.raise_for_status()

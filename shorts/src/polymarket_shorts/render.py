@@ -177,9 +177,9 @@ def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8", center=
 # 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
 _CHROME = {
     "ko": {"yes": "예", "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
-           "footer": "집단 예측 컨센서스 · 투자 조언 아님", "ai_background": " · AI 배경"},
+           "footer": "집단 예측 컨센서스 · 투자 조언 아님"},
     "en": {"yes": "YES", "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
-           "footer": "Crowd forecast consensus · not investment advice", "ai_background": " · AI background"},
+           "footer": "Crowd forecast consensus · not investment advice"},
 }
 
 
@@ -259,7 +259,7 @@ def render_frame(
     draw.text((SAFE_LEFT, FOOTER_Y),
               chrome["footer_options"] if scene.options else chrome["footer"],
               font=_font(font_path, 23), fill=_COLORS["muted"])
-    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note + (chrome["ai_background"] if background_path else ""),
+    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note,
               font=_font(font_path, 22), fill=accent)
     if not transparent:
         background = _background(background_path, index=index, total=total, accent=scene.accent)

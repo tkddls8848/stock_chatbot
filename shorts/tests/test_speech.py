@@ -10,16 +10,11 @@ import pytest
 from polymarket_shorts import speech
 
 
-def test_scene_links_never_count_the_scenes_off():
-    """"첫째·다음은·마지막으로"로 이으면 목록을 읽는 소리가 난다."""
-    links = [speech.transition(index) for index in range(5)]
-
-    assert links[0] == ""                      # 첫 이슈는 도입에 바로 이어진다
-    assert len(set(links)) == len(links)
-    for link in links:
-        for counter in ("첫째", "둘째", "셋째", "다음은", "마지막으로", "이어서"):
-            assert counter not in link
-    assert speech.transition(9) == ""          # 상한(5개)을 넘어도 조용히 비운다
+def test_scene_links_name_the_next_theme():
+    """장면 사이는 다음 이슈의 테마를 알린다(운영자 결정 2026-09-28)."""
+    assert speech.transition(0, "지정학") == ""        # 첫 이슈는 도입에 바로 이어진다
+    assert speech.transition(1, "주식·시장") == "다음은 주식·시장 테마의 주요 컨센서스 현황을 살펴봅니다."
+    assert speech.transition(7, "") == "다음은 주요 컨센서스 현황을 살펴봅니다."
 
 
 @pytest.mark.parametrize(

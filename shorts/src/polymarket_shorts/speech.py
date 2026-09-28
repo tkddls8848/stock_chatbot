@@ -22,16 +22,8 @@ _JONGSEONG = 28
 _JONG_N = 4   # ㄴ
 _JONG_B = 17  # ㅂ
 
-# 장면을 잇는 말. "첫째·다음은·마지막으로"처럼 세어 나가면 목록을 읽는 소리가
-# 난다. 화면에는 이미 `01 / 04` 번호가 있으니 말은 번호를 다시 세지 않는다.
-_TRANSITIONS: tuple[str, ...] = (
-    "",
-    "이번엔 분위기가 좀 다릅니다.",
-    "여기서 한 번 더 눈길이 갑니다.",
-    "비슷해 보여도 결이 다릅니다.",
-    "짚고 갈 게 하나 더 있습니다.",
-)
-
+# 장면을 잇는 말은 다음 이슈의 테마(분야)를 알린다(운영자 결정 2026-09-28). 예전의
+# "이번엔 분위기가 좀 다릅니다" 같은 말은 무엇이 다른지 알려 주지 않았다.
 # 고지문은 마무리에서 한 번만 말한다. 장면마다 "…확인하세요"를 붙이면 같은
 # 당부가 네댓 번 반복돼 아무도 듣지 않는다 — 장면별 확인점은 화면에 남긴다.
 # 마무리는 고정 멘트다(운영자 결정 2026-09-27). 주소는 소리로 "눈치 닷 라이브"라고
@@ -134,9 +126,12 @@ def speak_markets(event_type: str, topic: str, rows: Sequence[tuple[str, str, st
     return f"{parts}입니다."
 
 
-def transition(index: int) -> str:
+def transition(index: int, theme: str = "") -> str:
     """이슈 사이를 잇는 말. 첫 이슈는 도입에 바로 이어지므로 비어 있다."""
-    return _TRANSITIONS[index] if 0 <= index < len(_TRANSITIONS) else ""
+    if index <= 0:
+        return ""
+    subject = f"{theme} 테마의 " if theme else ""
+    return f"다음은 {subject}주요 컨센서스 현황을 살펴봅니다."
 
 
 def to_spoken_question(question: str) -> str:

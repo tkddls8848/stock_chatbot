@@ -78,6 +78,9 @@ class Settings:
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
     editor_model: str = "@cf/qwen/qwen3-30b-a3b-fp8"
+    # 추론 모델(deepseek-v4 등)의 reasoning_effort. "none"이면 생각 단계를 끈다 — 켜 두면
+    # 생각이 토큰 상한과 시간을 먹어 원고가 잘린다(실측 2026-09-28). 비우면 보내지 않는다.
+    editor_reasoning_effort: str = ""
     # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
     generated_backgrounds: bool = True
     image_model: str = "@cf/black-forest-labs/flux-1-schnell"
@@ -124,6 +127,7 @@ class Settings:
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),
+            editor_reasoning_effort=os.getenv("SHORTS_EDITOR_REASONING_EFFORT", "").strip(),
             web_url=os.getenv("POLYMARKET_WEB_URL", "https://nunchi.live").rstrip("/"),
             timezone=ZoneInfo(os.getenv("SHORTS_TIMEZONE", "Asia/Seoul")),
             output_dir=_storage_dir() / "shorts",

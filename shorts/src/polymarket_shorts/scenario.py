@@ -156,7 +156,7 @@ def build_scenario(
         # 선정 이유(왜 이 이슈인가)를 먼저 말하고, 질문을 던진 뒤 확률로 답한다
         # (운영자 결정 2026-09-27: 예전 순서는 확률 → 이유였다).
         lead = " ".join(part for part in (
-            transition(index),
+            transition(index, issue["sector_label"]),
             end_sentence(to_polite_text(script["context"])),
             to_spoken_question(script["question"]),
         ) if part)

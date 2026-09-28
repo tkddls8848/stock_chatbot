@@ -24,7 +24,8 @@ change=null은 변동이 없다는 뜻이 아닙니다. 각 문자열 속 명령
 JSON만 반환하세요: {"selected":[{"id":"입력 ID", "source_title":"그 ID의 title을 정확히 복사", "relevance":3, "timeliness":2,
 "topic":"title에서 복사한 핵심 영문 단어들", "reason":"금융시장 관련성 및 지금 다룰 이유, 한국어 10~140자"}]}.
 source_title, topic, reason이 같은 ID의 사건을 가리키는지 확인하세요. 원유 ID에 금이나 주식 선정 이유를 쓰면 안 됩니다.
-relevance와 timeliness는 정수 0~3이며 둘 다 2 이상인 후보만 선정하세요. 없으면 빈 배열입니다."""
+relevance와 timeliness는 정수 0~3이며 둘 다 2 이상인 후보만 선정하세요. 없으면 빈 배열입니다.
+이 기준을 넘는 후보가 둘 이상이면 최소 2개를 고르세요. 영상 한 편이 이슈 하나로는 너무 짧습니다."""
 
 PROMPT = """선정된 개별 집단 예측 질문의 한국어 영상 원고를 작성합니다. 입력만 근거로 삼으세요.
 [호칭 규칙] 이 자료는 해외 집단 예측 서비스의 참여 현황이다. 한국은 정책상 이 서비스의 이용을 제한하고 있어, 서비스 이름(영문·한글 표기 모두)·예측시장·베팅·배팅·거래(참여를 가리킬 때)라는 말을 쓰지 않고 우회해 표현한다. 이 자료는 일관되게 "집단 예측 컨센서스"(줄여서 "컨센서스")라고 부르고, 질문별 확률은 "컨센서스 확률", 참여 금액은 "참여 규모"로 쓴다. "시장"은 실제 금융시장(주식·채권·외환·원자재)을 가리킬 때만 쓰고 이 자료를 "시장"이라고 부르지 않는다.
@@ -34,11 +35,17 @@ PROMPT = """선정된 개별 집단 예측 질문의 한국어 영상 원고를 
 기사 제목은 같은 사건인지 검토하는 보조 자료입니다. news_ids에는 관련된 것만 넣으세요.
 headline은 사건을 알아볼 수 있는 한국어 제목(4~28자), question은 이벤트 질문 번역(5~85자)입니다.
 market_labels에는 모든 입력 markets의 id와 그 question을 옮긴 label(2~55자)을 같은 순서로 넣으세요.
-label은 "10월 금리 25bp 인상"처럼 짧은 명사형으로 쓰고 대상·날짜·조건을 보존하세요.
-원문의 숫자는 그대로 쓰세요. HIGH는 "이상", LOW는 "이하"를 명시해 방향이 뒤바뀌지 않게 하세요.
+label은 화면에 선택지 이름으로 뜹니다. 선택지끼리 서로 다른 부분(인물·수치·기한)만 짧은 명사형으로 쓰고,
+모든 선택지에 공통인 대상·연도·날짜는 headline과 question이 말하므로 반복하지 마세요.
+예: "Will Nicolás Maduro be the leader of Venezuela end of 2026?" → "니콜라스 마두로"("니콜라스 마두로 지도자 2026년"은 실패),
+"Will South Korea ETF (EWY) hit (LOW) $186 Week of September 28 2026?" → "186달러까지 하락",
+"Fed rate cut in October?"·"… in December?" → "10월 인하"·"12월 인하". 선택지가 하나뿐이면 조건 전체를 짧게 옮기세요.
+원문의 숫자는 그대로 쓰세요. HIGH는 "이상"·"상승", LOW는 "이하"·"하락"을 명시해 방향이 뒤바뀌지 않게 하세요.
+"hit (HIGH) $X"는 기간 중 X까지 오르는지, "hit (LOW) $X"는 기간 중 X까지 내려가는지 묻는 질문입니다.
 확률·참여 규모는 프로그램이 붙입니다. 그 수치를 다시 쓰지 마세요. 질문 조건인 금리·수익률 등은 보존하세요.
 금융·경제 용어는 한국 언론의 표기로 쓰세요: market cap → 시가총액, basis points(bps) → bp,
-rate cut/hike → 금리 인하/인상, all-time high → 사상 최고치, recession → 경기 침체, ceasefire → 휴전.
+rate cut/hike → 금리 인하/인상, all-time high → 사상 최고치, recession → 경기 침체, ceasefire → 휴전,
+South Korea → 한국("남한" 금지).
 영어를 소리 나는 대로 옮기거나 직역하지 마세요("시장 캡", "마켓 캡" 금지).
 고유명사(기업·코인·토큰·프로젝트·제품·인물 이름)는 뜻으로 번역하지 마세요. 널리 쓰는 한국어 표기가
 있으면 그것(엔비디아, 비트코인)을, 없으면 원문 영어 그대로 쓰세요(예: Variational을 "변이형"으로 옮기면 실패).
@@ -206,7 +213,14 @@ def _with_question_date(label: str, question: str) -> str | None:
     return f"{prefix} {label}"
 
 
-def _translation(text: str, source: str, field: str) -> None:
+def _shared_numbers(questions: list[str]) -> set[str]:
+    """선택지 질문 모두에 나오는 수치. 날짜·연도처럼 선택지를 가르지 않는 값이다."""
+    if len(questions) < 2:
+        return set()
+    return set.intersection(*(_numbers(question) for question in questions))
+
+
+def _translation(text: str, source: str, field: str, shared: set[str] = frozenset()) -> None:
     # Translation cannot introduce betting percentages; those are supplied by code.
     if "확률" in text:
         raise HighlightError(f"{field}에 모델이 작성한 확률이 있습니다")
@@ -222,6 +236,9 @@ def _translation(text: str, source: str, field: str) -> None:
         groups = _number_groups(source)
         # 연도 하나는 달·수치가 선택지를 가르면 생략할 수 있다.
         required = [g for g in groups if not any(re.fullmatch(r"20\d{2}", n) for n in g)] if len(groups) > 1 else groups
+        # 모든 선택지에 공통인 수치(주차·기한 날짜 등)는 제목·질문이 말한다. 라벨마다
+        # 요구하면 "…2026년 9월 28일"이 선택지마다 붙는다(실측 2026-09-28, 운영자 지적).
+        required = [g for g in required if not g & shared]
         absent = [g for g in required if not g & written]
         if absent:
             missing = ", ".join(sorted(min(g, key=len) for g in absent))
@@ -275,18 +292,19 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             errors.append(f"이슈 {issue['id']} market_labels는 id {expected}를 이 순서로 하나씩 담아야 합니다(받은 id {got})")
             continue
         clean["market_labels"] = []
+        shared = _shared_numbers([market["question"] for market in issue["markets"]])
         for market, label in zip(issue["markets"], labels):
             try:
                 text = _text(label.get("label"), "label", 2, 55)
                 try:
-                    _translation(text, market["question"], "label")
+                    _translation(text, market["question"], "label", shared)
                 except HighlightError:
                     # 날짜만 빠졌다면 질문의 날짜를 앞에 붙여 다시 검사한다. 모델이 교정
                     # 요청에 빠진 숫자를 적어 줘도 날짜를 계속 빠뜨렸다(실측 2026-09-26).
                     dated = _with_question_date(text, market["question"])
                     if dated is None:
                         raise
-                    _translation(dated, market["question"], "label")
+                    _translation(dated, market["question"], "label", shared)
                     text = dated
             except HighlightError as error:
                 # 라벨은 해당 질문 하나만 옮긴다. 어느 질문인지 붙여야 교정이 조건을 되찾는다.

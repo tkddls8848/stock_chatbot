@@ -77,8 +77,9 @@ def test_the_same_closing_line_is_not_repeated_every_scene(issue_source):
     assert scenario.scenes[1].takeaway == "연준의 공식 결정문을 확인하세요."
     endings = [scene.narration[-12:] for scene in scenario.scenes[1:-1]]
     assert len(set(endings)) == 1  # 같은 해설 문장이면 끝도 같다(입력 탓)
-    # 다만 장면의 시작은 서로 달라야 한다 — 같은 틀로 열면 목록을 읽는 소리가 난다.
-    assert len({scene.narration[:10] for scene in scenario.scenes[1:-1]}) == 5
+    # 둘째 이슈부터는 다음 테마를 알리며 연다(운영자 결정 2026-09-28).
+    for scene in scenario.scenes[2:-1]:
+        assert scene.narration.startswith("다음은 ") and "테마의 주요 컨센서스 현황을 살펴봅니다." in scene.narration
 
 
 def test_screen_text_never_says_betting_in_any_language(issue_source):

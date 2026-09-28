@@ -18,7 +18,7 @@ from typing import Any, Sequence
 
 from .clips import review_details, visual_payload
 from .config import Settings
-from .highlights import HighlightError, _ask_checked, _number_groups, _numbers, _text
+from .highlights import HighlightError, _ask_checked, _number_groups, _numbers, _shared_numbers, _text
 from .media import backgrounds_for
 from .pipeline import ProductionResult, _read_json, info_time
 from .render import find_font, probe_duration, render_video
@@ -41,7 +41,10 @@ question: the event title (not any single market) asked the way a narrator would
 e.g. "Prime Minister of Israel after the next election?" becomes "Who will be Israel's next prime minister?".
 market_labels: for every input market, in the same order, {"id": market id, "label": short noun phrase naming that choice (2-60 characters)},
 e.g. "Gadi Eizenkot" or "Fed cut of 25 bps in October". No question mark, no "probability", no percentages.
-Keep the subject, date and threshold of each question. Copy numbers exactly. For (HIGH) write "above", for (LOW) write "below".
+Name only what tells the choices apart (person, threshold, deadline). Leave out the subject, year or date that every choice shares;
+the headline and question already say it: "Will Nicolás Maduro be the leader of Venezuela end of 2026?" becomes "Nicolás Maduro", not "Nicolás Maduro 2026".
+With a single market, keep its full condition. Copy numbers exactly. For (HIGH) write "above", for (LOW) write "below";
+"hit (LOW) $186 Week of ..." asks whether the price falls to $186 during that week and becomes "Falls to $186".
 context (15-120 characters): one complete sentence that ties the event to a financial market or economic variable, conditionally.
 Vary how the context sentences end across issues.
 watch_point (10-90 characters): one complete sentence naming the next announcement or condition to check.
@@ -59,13 +62,13 @@ SECTORS = {
     "geopolitics": "Geopolitics", "general": "General",
 }
 
-_TRANSITIONS = (
-    "",
-    "This next one has a different feel.",
-    "Here is another one worth a look.",
-    "It looks similar, but the details differ.",
-    "One more to cover.",
-)
+
+def _transition(index: int, theme: str) -> str:
+    """Links scenes by naming the next theme (operator decision 2026-09-28)."""
+    if index <= 0:
+        return ""
+    return f"Next, let's look at the key consensus on {theme}." if theme else "Next, let's look at the key consensus."
+
 
 CLOSING_LINE = (
     "These numbers are only what people expect, not settled outcomes or investment advice. "
@@ -110,7 +113,7 @@ def _sentence(text: str) -> str:
     return body if body.endswith((".", "!", "?")) else f"{body}."
 
 
-def _check(text: str, source: str, field: str) -> None:
+def _check(text: str, source: str, field: str, shared: set[str] = frozenset()) -> None:
     if _FORBIDDEN.search(text):
         raise HighlightError(f"{field} uses a forbidden word: {text}")
     # 선택지 이름은 "…에 51.4%" 앞에 그대로 읽힌다(실측 2026-09-28: "Gadi Eizenkot PM probability").
@@ -127,7 +130,8 @@ def _check(text: str, source: str, field: str) -> None:
         groups = _number_groups(source)
         written = _numbers(text)
         required = [g for g in groups if not any(re.fullmatch(r"20\d{2}", n) for n in g)] if len(groups) > 1 else groups
-        missing = [min(g, key=len) for g in required if not g & written]
+        # 모든 선택지에 공통인 날짜·연도는 제목과 질문이 말한다(운영자 지적 2026-09-28).
+        missing = [min(g, key=len) for g in required if not g & written and not g & shared]
         if missing:
             raise HighlightError(f"label dropped a date or threshold ({', '.join(sorted(missing))}): {text}")
         for direction, pattern in (("(HIGH)", r"above|over|at least|high|reach|hit|rise"),
@@ -163,10 +167,11 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             errors.append(f"이슈 {issue['id']} market_labels must hold ids {expected} in this order (got {got})")
             continue
         clean["market_labels"] = []
+        shared = _shared_numbers([market["question"] for market in issue["markets"]])
         for market, label in zip(issue["markets"], labels):
             try:
                 text = _text(label.get("label"), "label", 2, 60)
-                _check(text, market["question"], "label")
+                _check(text, market["question"], "label", shared)
             except HighlightError as error:
                 errors.append(f"이슈 {issue['id']} market {market['id']} ({market['question']}) {error}")
                 continue
@@ -233,7 +238,7 @@ def build_scenario(
             evidence.append(f"Market {market['id']}: {market['question']} / yes {market['yes']} / no {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         lead = " ".join(part for part in (
-            _TRANSITIONS[index] if index < len(_TRANSITIONS) else "",
+            _transition(index, SECTORS.get(issue["sector"], "")),
             _sentence(script["context"]), _sentence(script["question"]),
         ) if part)
         markets_line = speak_markets(issue.get("event_type", ""), script["headline"], spoken)

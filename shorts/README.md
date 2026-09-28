@@ -80,6 +80,8 @@ Workers AI API 토큰입니다. 저장소 루트 `.env.example`을 참고해 루
 CLOUDFLARE_ACCOUNT_ID=계정_ID
 CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
 SHORTS_EDITOR_MODEL=@cf/qwen/qwen3-30b-a3b-fp8
+# 추론 모델(예: @cf/deepseek-ai/deepseek-v4-flash-0731)은 none으로 생각 단계를 끈다
+SHORTS_EDITOR_REASONING_EFFORT=
 ```
 
 ### 개별 베팅에서 영상까지
