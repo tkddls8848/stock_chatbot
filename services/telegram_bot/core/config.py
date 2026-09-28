@@ -388,7 +388,8 @@ NEWS_SOURCE_MARKETS = {
     "fed-press": "US",
 }
 # 시장 감성 예약 갱신의 조회 일수와 대상 시장 집합. 웹 화면이 이 기간의 차트를 그린다.
-MARKET_CHART_LOOKBACK_DAYS = 7
+# 30일로 넓히고 차트는 비선형 추세선을 그린다(2026-09-28). 다이제스트 보관(30일)과 같다.
+MARKET_CHART_LOOKBACK_DAYS = 30
 MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR", "JP"})
 # 아래는 일별 감성 다이제스트 전용이다.
 MARKET_CHART_MIN_ARTICLES = 6

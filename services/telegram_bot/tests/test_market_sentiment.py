@@ -1,4 +1,5 @@
 import asyncio
+import math
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -257,3 +258,32 @@ def test_panel_refresh_failure_says_the_web_keeps_the_last_chart(monkeypatch, ca
 
     assert "직전 차트" in message.replies[-1]
     assert "수동 갱신 실패" in caplog.text
+
+
+def test_trend_curve_follows_a_nonlinear_shape_without_leaving_the_range():
+    """30일 점 위에 커널 회귀 추세선을 그린다(2026-09-28). 잡음을 지나 곡선 모양을 따른다."""
+    from datetime import datetime
+
+    from services.telegram_bot.features.market_sentiment.chart import _trend_curve
+
+    dates = [datetime(2026, 9, 1) + timedelta(days=day) for day in range(30)]
+    shape = [0.8 * math.sin(day / 29 * math.pi) - 0.3 for day in range(30)]
+    noisy = [value + (0.25 if day % 2 else -0.25) for day, value in enumerate(shape)]
+    curve_dates, curve = _trend_curve(dates, noisy, [20] * 30)
+
+    assert curve_dates[0] == dates[0] and curve_dates[-1] == dates[-1]
+    assert all(-1 <= value <= 1 for value in curve)
+    middle = curve[len(curve) // 2]
+    assert middle > curve[0] + 0.4 and middle > curve[-1] + 0.4   # 가운데가 솟은 추세
+    assert abs(middle - 0.5) < 0.2                                 # 격일 잡음은 상쇄된다
+    assert _trend_curve(dates[:3], noisy[:3], [20] * 3) is None
+
+
+def test_chart_renders_thirty_days_with_gaps():
+    from services.telegram_bot.features.market_sentiment.chart import render_market_chart
+
+    daily = [{"date": f"2026-09-{day:02d}", "avg_sentiment": (day % 7 - 3) / 5, "count": 12}
+             for day in range(1, 29) if day % 5]
+    image = render_market_chart({"US": {"avg_sentiment": 0.1, "daily": daily},
+                                 "KR": {"avg_sentiment": -0.2, "daily": daily[:3]}}, 30)
+    assert image.getvalue().startswith(b"\x89PNG")
