@@ -67,10 +67,10 @@ def test_status_escapes_titles_and_shows_the_next_schedule():
 
 
 def test_next_schedule_rolls_to_tomorrow_after_the_slot():
-    before = datetime(2026, 9, 24, 20, 0, tzinfo=JST)
-    after = datetime(2026, 9, 24, 21, 30, tzinfo=JST)
-    assert handlers.next_schedule_text(before) == "09-24 21:00"
-    assert handlers.next_schedule_text(after) == "09-25 21:00"
+    before = datetime(2026, 9, 24, 17, 0, tzinfo=JST)
+    after = datetime(2026, 9, 24, 18, 30, tzinfo=JST)
+    assert handlers.next_schedule_text(before) == "09-24 18:00"
+    assert handlers.next_schedule_text(after) == "09-25 18:00"
 
 
 def test_schedule_hour_matches_the_systemd_timer():

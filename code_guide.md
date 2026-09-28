@@ -337,7 +337,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   제한한다. 예약 실행과 패널 실행이 겹치면 잠금으로 줄을 세운다 — 두 분석이 같은
   history를 읽고 서로의 결과를 덮지 않게 한다.
 - **쇼츠는 텔레그램 관리 패널에서 운영한다(`/shorts`).** 제작은 지금처럼
-  `polymarket-shorts.timer`(매일 21:00)가 돌리고, 운영자는 텔레그램에서 다음을 한다.
+  `polymarket-shorts.timer`(매일 18:00)가 돌리고, 운영자는 텔레그램에서 다음을 한다.
   | 명령 | 하는 일 |
   |---|---|
   | `/shorts` | 오늘·최근 제작 상태(성공·실패 단계·`no_suitable_issues`), 검수 여부, 다음 예약 시각 |

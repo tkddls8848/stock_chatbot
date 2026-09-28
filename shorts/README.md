@@ -218,7 +218,7 @@ $env:PYTHONPATH='shorts/src'
    테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
    검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
 
-매일 21:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
+매일 18:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
 필요하면 `/shorts edit`로 수정한 다음 `/shorts done`을 누릅니다. 검수 완료 기록 뒤
 그 수정본만 업로드하고 링크를 채팅으로 알립니다. 기본 비공개이며 공개 전환은 운영자가
 YouTube Studio에서 합니다. 업로드 실패·자격 누락이어도 검수 완료는 유지됩니다.
@@ -249,7 +249,7 @@ python -m polymarket_shorts.cli --status
 
 ## 하루 한 번 실행
 
-한국시간 21시에 실행되는 systemd timer가 저장소의 `infra/systemd/`에 있습니다.
+한국시간 18시에 실행되는 systemd timer가 저장소의 `infra/systemd/`에 있습니다.
 
 유닛은 다른 앱 유닛과 같은 계정·경로를 쓴다 — `stockbot` 계정으로
 `/srv/stock-chatbot/shorts`에서 실행하며, 가상환경(`.venv`)과 `.env`도 그 아래에 둔다
@@ -262,7 +262,7 @@ sudo systemctl enable --now polymarket-shorts.timer
 systemctl list-timers | grep polymarket-shorts
 ```
 
-21시 실행 시점에 웹 앱의 숫자 generation과 줄글 generation이 잠시 어긋나 있으면 서비스가 실패 후 15분 간격으로 최대 8번 재시도합니다. 날짜 상태 파일은 완성 후에만 기록하므로 실패한 시도가 당일 제작 기회를 소모하지 않습니다.
+18시 실행 시점에 웹 앱의 숫자 generation과 줄글 generation이 잠시 어긋나 있으면 서비스가 실패 후 15분 간격으로 최대 8번 재시도합니다. 날짜 상태 파일은 완성 후에만 기록하므로 실패한 시도가 당일 제작 기회를 소모하지 않습니다.
 
 수동 실행과 로그 확인:
 

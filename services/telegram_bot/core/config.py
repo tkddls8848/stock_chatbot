@@ -519,7 +519,7 @@ SHORTS_PYTHON = Path(
 SHORTS_WORKDIR = BASE_DIR
 # 예약 제작 시각. infra/systemd/polymarket-shorts.timer의 OnCalendar와 같아야 한다
 # (test_shorts_panel.py가 대조한다). 표시용이며 실행은 timer가 한다.
-SHORTS_SCHEDULE_HOUR = 21
+SHORTS_SCHEDULE_HOUR = 18
 SHORTS_STATUS_TIMEOUT_SECONDS = 60
 # 제작은 이슈 선별·TTS·렌더까지 유닛의 TimeoutStartSec(20분)과 같게 둔다.
 SHORTS_RUN_TIMEOUT_SECONDS = 20 * 60
