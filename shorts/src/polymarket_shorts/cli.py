@@ -79,6 +79,8 @@ def main() -> None:
                 production_date=date.fromisoformat(args.date) if args.date else None,
                 force=args.force,
             ))
+            if settings.auto_publish and not args.interactive:
+                payload["upload"] = _auto_publish(payload, settings)
         if args.interactive and payload.get("video_path"):
             from .workflow import interact
             interact(Path(payload["video_path"]).parent, settings)
@@ -86,6 +88,32 @@ def main() -> None:
     except ReviewError as exc:
         raise SystemExit(str(exc)) from exc
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def _auto_publish(payload: dict, settings: Settings) -> dict | None:
+    """제작 결과를 검수 없이 바로 올린다. 그날 이미 올린 영상이 있으면 건너뛴다.
+
+    업로드 오류는 ReviewError로 올라가 서비스가 실패하고, timer의 재시도는
+    already_produced를 거쳐 여기로 다시 온다(아직 안 올렸으므로 다시 시도한다).
+    """
+    from .review import complete_review, operation_lock
+    from .workflow import current_target
+    from .youtube import upload
+
+    if payload.get("status") not in {"pending_review", "already_produced"}:
+        return None
+    root = settings.output_dir / payload["date"]
+    if not (root / "review.json").is_file() and not (root / "workflow.json").is_file():
+        return None
+    for record in root.rglob("upload.json"):
+        revisions = json.loads(record.read_text(encoding="utf-8")).get("revisions", {})
+        if any(entry.get("video_id") for entry in revisions.values()):
+            return {"status": "day_already_uploaded"}
+    with operation_lock(root, ".workflow.lock"):
+        complete_review(current_target(root))
+    result = upload(root, settings)
+    logging.getLogger(__name__).info("자동 업로드: %s", result)
+    return result
 
 
 def _panel(args, settings: Settings) -> dict:

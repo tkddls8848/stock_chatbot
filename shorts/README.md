@@ -218,7 +218,8 @@ $env:PYTHONPATH='shorts/src'
    테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
    검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
 
-매일 18:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
+`SHORTS_AUTO_PUBLISH=true`면 제작 직후 검수 없이 바로 업로드합니다(그날 이미 올린 영상이 있으면
+건너뜁니다). 끄면(기본값) 매일 18:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
 필요하면 `/shorts edit`로 수정한 다음 `/shorts done`을 누릅니다. 검수 완료 기록 뒤
 그 수정본만 업로드하고 링크를 채팅으로 알립니다. 기본 비공개이며 공개 전환은 운영자가
 YouTube Studio에서 합니다. 업로드 실패·자격 누락이어도 검수 완료는 유지됩니다.

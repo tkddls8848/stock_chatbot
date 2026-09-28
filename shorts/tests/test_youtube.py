@@ -251,3 +251,26 @@ def test_video_that_is_not_a_short_is_not_uploaded(monkeypatch, tmp_path):
 
 def test_links_point_to_the_shorts_address():
     assert youtube.shorts_url("abc") == "https://www.youtube.com/shorts/abc"
+
+
+def test_auto_publish_marks_reviewed_uploads_once_per_day(prepared, monkeypatch):
+    from polymarket_shorts import cli
+
+    root, settings = prepared
+    record = json.loads((root / "review.json").read_text(encoding="utf-8"))
+    write_json(root / "review.json", {**record, "status": "pending"})
+    calls = []
+
+    def fake_upload(day, _settings):
+        calls.append(day)
+        assert json.loads((day / "review.json").read_text(encoding="utf-8"))["status"] == "reviewed"
+        write_json(day / "upload.json", {"revisions": {"r": {"video_id": "abc"}}})
+        return {"status": "uploaded", "video_id": "abc", "url": "u"}
+
+    monkeypatch.setattr(youtube, "upload", fake_upload)
+    produced = {"status": "pending_review", "date": root.name}
+    assert cli._auto_publish(produced, settings)["status"] == "uploaded"
+    # 같은 날 재제작(force)이나 재실행은 두 번째 영상을 올리지 않는다.
+    assert cli._auto_publish(produced, settings) == {"status": "day_already_uploaded"}
+    assert cli._auto_publish({"status": "no_suitable_issues", "date": root.name}, settings) is None
+    assert calls == [root]

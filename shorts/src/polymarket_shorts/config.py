@@ -96,6 +96,8 @@ class Settings:
     youtube_refresh_token: str = field(default="", repr=False)
     youtube_privacy: str = "private"
     youtube_category_id: str = "25"
+    # 켜면 예약·수동 제작이 끝나는 즉시 검수 완료로 기록하고 업로드한다(운영자 승인 없음).
+    auto_publish: bool = False
 
     def __post_init__(self) -> None:
         if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
@@ -113,6 +115,7 @@ class Settings:
             youtube_refresh_token=os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "").strip(),
             youtube_privacy=os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip(),
             youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
+            auto_publish=_bool("SHORTS_AUTO_PUBLISH", False),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),
