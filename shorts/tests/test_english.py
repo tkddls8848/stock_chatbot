@@ -80,3 +80,12 @@ def test_threshold_percent_in_a_label_is_allowed():
     assert english.validate_scripts({"scripts": [row]}, [issue])
     with pytest.raises(HighlightError):
         english.validate_scripts({"scripts": [_script(market_labels=[{"id": "1", "label": "yield at 12% chance"}])]}, [issue])
+
+
+def test_descriptions_lead_with_the_site_link():
+    from polymarket_shorts.pipeline import metadata_for as korean_metadata
+    summary = {"generated_at": "2026-09-28T16:00:00+09:00", "generation_id": "g1"}
+    scenario = english.build_scenario(summary, [_issue()], [_script()], production_date=date(2026, 9, 28),
+                                      visual_queries={})
+    for metadata in (english.metadata_for(scenario), korean_metadata(scenario)):
+        assert metadata["description"].splitlines()[0].endswith("https://nunchi.live")
