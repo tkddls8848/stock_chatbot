@@ -20,7 +20,7 @@ from .clips import review_details, visual_payload
 from .config import Settings
 from .highlights import HighlightError, _ask_checked, _number_groups, _numbers, _shared_numbers, _text
 from .media import backgrounds_for
-from .pipeline import SITE_URL, ProductionResult, _read_json, info_time
+from .pipeline import CONTACT_LINE, SITE_URL, ProductionResult, _read_json, info_time
 from .render import find_font, probe_duration, render_video
 from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene
@@ -278,7 +278,7 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
     return {
         "title": f"{scenario.date} Market Consensus",
         "description": (
-            f"See every question's conditions and the full consensus here 👉 {SITE_URL}\n\n"
+            f"See every question's conditions and the full consensus here 👉 {SITE_URL}\n{CONTACT_LINE}\n\n"
             "Crowd forecast consensus on questions with active participation and close ties to financial markets.\n\n"
             f"Today's issues: {', '.join(labels)}\n"
             f"Data as of: {info_time(scenario.source_written_at)} KST\n"

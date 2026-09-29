@@ -89,3 +89,4 @@ def test_descriptions_lead_with_the_site_link():
                                       visual_queries={})
     for metadata in (english.metadata_for(scenario), korean_metadata(scenario)):
         assert metadata["description"].splitlines()[0].endswith("https://nunchi.live")
+        assert metadata["description"].splitlines()[1] == "Business inquiries: tkddls8848@gmail.com"

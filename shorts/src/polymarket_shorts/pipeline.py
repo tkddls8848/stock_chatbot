@@ -238,6 +238,8 @@ def info_time(stamp: str) -> str:
 
 # 설명란 맨 위에 두는 사이트 주소. 더보기를 펼치지 않아도 보이는 자리다(운영자 결정 2026-09-29).
 SITE_URL = "https://nunchi.live"
+# 사업 문의 줄. 한국어판·영어판 모두 영문 한 줄로 단다(운영자 결정 2026-09-29).
+CONTACT_LINE = "Business inquiries: tkddls8848@gmail.com"
 
 
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
@@ -245,7 +247,7 @@ def metadata_for(scenario: Scenario) -> dict[str, Any]:
     return {
         "title": video_title(scenario.date),
         "description": (
-            f"질문별 조건과 전체 컨센서스는 여기서 확인하세요 👉 {SITE_URL}\n\n"
+            f"질문별 조건과 전체 컨센서스는 여기서 확인하세요 👉 {SITE_URL}\n{CONTACT_LINE}\n\n"
             "참여가 활발하고 금융시장과 관련이 깊은 집단 예측 컨센서스 이슈를 골랐습니다.\n\n"
             f"오늘 다룬 이슈: {', '.join(labels)}\n"
             f"정보 기준 시각: {info_time(scenario.source_written_at)}\n"
