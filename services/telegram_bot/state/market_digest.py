@@ -25,6 +25,11 @@ def digest_key(market: str, day: date) -> str:
     return f"{str(market).strip().upper()}:{day.isoformat()}"
 
 
+# 그날 값을 만드는 방식의 판. 2 = 헤드라인별 점수의 평균(2026-09-30). 판이 다른 날은
+# 확정돼 있어도 다시 계산한다 — 옛 방식(모델이 매긴 숫자 하나)과 한 선에 섞이지 않게.
+DIGEST_SCHEME = 2
+
+
 class MarketDigestStore:
     def __init__(self, file_path: Path, retention_days: int = 30):
         self._file_path = file_path
@@ -83,6 +88,8 @@ class MarketDigestStore:
         neutral: int | None = None,
         headlines: list[str] | None = None,
         final: bool = False,
+        overall: float | None = None,
+        scored: int | None = None,
     ) -> None:
         """하루치 다이제스트를 저장한다. 같은 날을 다시 넣으면 덮어쓴다.
 
@@ -104,6 +111,9 @@ class MarketDigestStore:
                 "headlines": list(headlines or []),
                 "computed_at": now().isoformat(timespec="seconds"),
                 "final": bool(final),
+                "scheme": DIGEST_SCHEME,
+                "overall": overall,
+                "scored": scored,
             }
             self._evict()
             try:
@@ -139,10 +149,19 @@ class MarketDigestStore:
                         # 보존 범위 밖이라 저장해도 곧 지워진다. 계산하지 않는다.
                         continue
                     entry = self._entries.get(digest_key(market, day))
-                    if entry is None or not entry.get("final"):
+                    if (entry is None or not entry.get("final")
+                            or entry.get("scheme") != DIGEST_SCHEME):
                         pending.append(day)
                 result[market] = pending
             return result
+
+    async def stored_headlines(self, market: str, day: date) -> list[str]:
+        """확정된 날에 저장해 둔 헤드라인. 새 방식으로 다시 매길 때 뉴스를 다시 긁지 않는다."""
+        async with self._lock:
+            entry = self._entries.get(digest_key(market, day))
+            if not entry or not entry.get("final"):
+                return []
+            return [str(title) for title in entry.get("headlines") or [] if title]
 
     async def series(
         self,

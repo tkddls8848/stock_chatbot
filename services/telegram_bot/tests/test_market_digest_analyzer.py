@@ -28,74 +28,57 @@ def _analyzer(response, **kwargs):
     )
 
 
-def test_parses_digest_and_counts():
+def test_day_value_is_the_mean_of_headline_scores():
+    """그날 값은 헤드라인별 점수의 평균이다(2026-09-30). 모델의 종합 판단은 따로 남긴다."""
     analyzer = _analyzer(
-        '{"positive": 2, "negative": 1, "neutral": 1, '
-        '"sentiment": 0.25, "summary": "반도체 강세."}'
+        '{"scores": [0.6, -0.2, 0, 0.4], "sentiment": 0.5, "summary": "반도체 강세."}'
     )
 
     result = analyzer.analyze("KR", "2026-08-05", ["a", "b", "c", "d"])
 
-    assert result["sentiment"] == 0.25
+    assert result["sentiment"] == 0.2
+    assert result["overall"] == 0.5
+    assert result["scored"] == 4
     assert result["summary"] == "반도체 강세."
     assert (result["positive"], result["negative"], result["neutral"]) == (2, 1, 1)
 
 
-def test_large_count_drift_drops_counts_but_keeps_the_day():
-    """크게 어긋나면 건수만 버린다.
+def test_broken_scores_fall_back_to_the_overall_judgement_and_keep_the_day():
+    """점수 목록이 없거나 크게 모자라면 종합 판단으로 살린다.
 
-    차트가 읽는 값은 sentiment와 summary뿐이고 건수는 읽는 곳이 없다. 그날을
-    통째로 버리면 캐시에 아무것도 남지 않아 `/market`을 부를 때마다 같은 날을
+    그날을 통째로 버리면 캐시에 아무것도 남지 않아 예약 갱신마다 같은 날을
     다시 받아 다시 호출하게 된다.
     """
-    analyzer = _analyzer(
-        '{"positive": 2, "negative": 1, "neutral": 1, "sentiment": 0.1, "summary": "x"}'
-    )
+    for body in ('{"sentiment": 0.1, "summary": "x"}',
+                 '{"scores": [0.5, 0.5], "sentiment": 0.1, "summary": "x"}',
+                 '{"scores": "high", "sentiment": 0.1, "summary": "x"}'):
+        result = _analyzer(body).analyze("KR", "2026-08-05", [f"h{i}" for i in range(10)])
 
-    result = analyzer.analyze("KR", "2026-08-05", [f"h{i}" for i in range(10)])
-
-    assert result["sentiment"] == 0.1
-    assert result["summary"] == "x"
-    assert (result["positive"], result["negative"], result["neutral"]) == (
-        None,
-        None,
-        None,
-    )
+        assert result["sentiment"] == 0.1
+        assert result["scored"] == 0
+        assert (result["positive"], result["negative"], result["neutral"]) == (None, None, None)
 
 
-@pytest.mark.parametrize(
-    "counts,headline_count",
-    [
-        ((7, 6, 5), 17),  # 실측 사례: 18 vs 17
-        ((3, 2, 2), 6),   # 실측 사례: 7 vs 6
-        ((7, 6, 6), 20),  # 19 vs 20 (과소 카운트)
-        # 2026-08-12 실측. MARKET_DIGEST_ARTICLES_PER_DAY를 20에서 40으로 올린
-        # 뒤 첫 백필에서 목록이 길어지자 오차가 5까지 벌어졌다(US 08-10 35→30,
-        # US 08-08 40→35, CN 07-24 35→30). 같은 실행에서 35건짜리가 오차 1·2로
-        # 통과하기도 했으므로 편향이 아니라 분산이다.
-        ((12, 10, 8), 35),
-        ((13, 12, 10), 40),
-        ((4, 3, 3), 8),  # 작은 표본의 과대 카운트(KR 08-08 8→10)
-    ],
-)
-def test_off_by_one_is_tolerated(counts, headline_count):
-    """세기 부정확은 정상 범위다. /no_think로 추론을 껐으니 더 그렇다.
+@pytest.mark.parametrize("given,headline_count", [(16, 17), (5, 6), (32, 40), (40, 40)])
+def test_a_few_missing_scores_are_tolerated(given, headline_count):
+    """긴 목록에서 점수 몇 개가 빠지는 건 정상 범위다(허용 = 헤드라인 수의 20%)."""
+    scores = ", ".join(["0.5"] * given)
+    analyzer = _analyzer(f'{{"scores": [{scores}], "sentiment": -0.3, "summary": "x"}}')
 
-    2026-08-08 실측에서 7회 중 2회가 +1로 어긋났다. 이걸 버리면 호출 비용의
-    약 29%가 그대로 낭비된다. 게다가 실패한 날은 캐시에 남지 않으므로
-    `/market`을 부를 때마다 같은 날을 다시 받아 다시 호출한다.
-    """
-    positive, negative, neutral = counts
-    analyzer = _analyzer(
-        f'{{"positive": {positive}, "negative": {negative}, "neutral": {neutral}, '
-        '"sentiment": 0.1, "summary": "x"}'
-    )
+    result = analyzer.analyze("US", "2026-08-05", [f"h{i}" for i in range(headline_count)])
 
-    result = analyzer.analyze(
-        "US", "2026-08-05", [f"h{i}" for i in range(headline_count)]
-    )
+    assert result["sentiment"] == 0.5
+    assert result["scored"] == given
 
-    assert result["sentiment"] == 0.1
+
+def test_extra_scores_and_non_numbers_are_ignored():
+    analyzer = _analyzer('{"scores": [1, "x", 3.0, true, -1, 0.5], "sentiment": 0, "summary": "x"}')
+
+    result = analyzer.analyze("US", "2026-08-05", ["a", "b", "c"])
+
+    # 앞 3개만 보고, 숫자가 아닌 값은 버리고, 범위를 넘는 값은 ±1로 자른다.
+    assert result["scored"] == 2
+    assert result["sentiment"] == 1.0
 
 
 def test_tolerance_scales_with_headline_count():
@@ -109,24 +92,16 @@ def test_tolerance_scales_with_headline_count():
     assert analyzer._count_tolerance(40) == 8
 
 
-def test_missing_counts_are_rejected_when_strict():
-    analyzer = _analyzer('{"sentiment": 0.1, "summary": "x"}')
-
-    with pytest.raises(MarketDigestError, match="counts are missing"):
-        analyzer.analyze("KR", "2026-08-05", ["a"])
-
-
 def test_sentiment_is_clamped():
-    analyzer = _analyzer(
-        '{"positive": 1, "negative": 0, "neutral": 0, "sentiment": 9.9, "summary": "x"}'
-    )
+    analyzer = _analyzer('{"scores": [9.9], "sentiment": 9.9, "summary": "x"}')
 
-    assert analyzer.analyze("US", "2026-08-05", ["a"])["sentiment"] == 1.0
+    result = analyzer.analyze("US", "2026-08-05", ["a"])
+    assert result["sentiment"] == 1.0 and result["overall"] == 1.0
 
 
 def test_non_numeric_sentiment_is_rejected():
     analyzer = _analyzer(
-        '{"positive": 1, "negative": 0, "neutral": 0, "sentiment": "up", "summary": "x"}'
+        '{"scores": [0.1], "sentiment": "up", "summary": "x"}'
     )
 
     with pytest.raises(MarketDigestError, match="sentiment must be a number"):
@@ -160,7 +135,7 @@ def test_empty_headlines_do_not_call_backend():
 
 def test_payload_carries_market_date_and_headlines():
     backend = BackendStub(
-        '{"positive": 1, "negative": 0, "neutral": 0, "sentiment": 0.1, "summary": "x"}'
+        '{"scores": [0.1], "sentiment": 0.1, "summary": "x"}'
     )
     analyzer = MarketDigestAnalyzer(backend, PROMPT, num_predict=256)
 
@@ -175,9 +150,9 @@ def test_payload_carries_market_date_and_headlines():
     assert backend.calls[0]["max_tokens"] == 256
 
 
-def test_prompt_forbids_thinking_leak_and_demands_counts():
+def test_prompt_demands_one_score_per_headline():
     text = PROMPT.read_text(encoding="utf-8")
 
-    assert "positive" in text and "negative" in text and "neutral" in text
+    assert "scores" in text and "같은 순서, 같은 개수" in text
     assert "JSON만 출력" in text
 

@@ -1,4 +1,4 @@
-"""하루치 헤드라인을 한 번에 분석해 시장 감성과 분류 건수를 산출한다."""
+"""하루치 헤드라인을 한 번에 분석해 헤드라인별 점수와 그 평균(그날의 시장 감성)을 산출한다."""
 
 import json
 import logging
@@ -63,6 +63,14 @@ class MarketDigestAnalyzer:
         return self._parse(raw, expected_count=len(headlines))
 
     def _parse(self, raw: str, *, expected_count: int) -> dict[str, Any]:
+        """그날 값은 헤드라인별 점수의 평균이다(2026-09-30 운영자 결정).
+
+        예전에는 모델이 그날 분위기를 숫자 하나로 매겼다. 값이 ±0.15·0.25·0.45처럼
+        띄엄띄엄 나오고 하루하루 크게 흔들려(표준편차 0.26~0.39) 30일 추세가 0 근처로
+        뭉개졌다. 같은 호출에서 헤드라인마다 점수를 받아 평균하면 호출 수는 그대로다.
+        점수 목록이 깨진 날은 모델의 종합 판단(`sentiment`)으로 살린다 — 그날을 버리면
+        캐시가 비어 예약 갱신마다 같은 날을 다시 부른다.
+        """
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -73,46 +81,44 @@ class MarketDigestAnalyzer:
         if not isinstance(data, dict):
             raise MarketDigestError("digest JSON must be an object")
 
-        sentiment = data.get("sentiment")
-        if not isinstance(sentiment, (int, float)):
+        overall = data.get("sentiment")
+        if not isinstance(overall, (int, float)) or isinstance(overall, bool):
             raise MarketDigestError("digest sentiment must be a number")
+        overall = max(-1.0, min(1.0, float(overall)))
 
-        raw_counts = {
-            name: data.get(name)
-            for name in ("positive", "negative", "neutral")
-        }
-        if not all(isinstance(value, int) for value in raw_counts.values()):
-            # 필드가 비었으면 envelope이 깨진 응답이다. 여기까지는 엄격히 본다.
-            raise MarketDigestError("digest counts are missing")
-        counts = {name: int(value) for name, value in raw_counts.items()}
-        normalized_counts: dict[str, int | None] = dict(counts)
-
-        total = sum(counts.values())
-        drift = abs(total - expected_count)
+        raw_scores = data.get("scores")
+        scores: list[float] = []
+        if isinstance(raw_scores, list):
+            scores = [
+                max(-1.0, min(1.0, float(value)))
+                for value in raw_scores[:expected_count]
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            ]
         tolerance = self._count_tolerance(expected_count)
-        if drift > tolerance:
-            # 건수만 버리고 그날은 살린다. 차트가 읽는 값은 sentiment와 summary뿐이고
-            # 건수는 저장만 될 뿐 읽는 곳이 없다. 반대로 그날을 통째로 버리면 캐시에
-            # 아무것도 남지 않아 `missing_digest_days`가 매번 다시 집어오고,
-            # `/market`을 부를 때마다 같은 날을 다시 받아 다시 호출하게 된다.
+        if scores and expected_count - len(scores) <= tolerance:
+            if len(scores) != expected_count:
+                logger.info(
+                    "[DIGEST] 점수 개수 오차 %d (scores=%d headlines=%d, 허용 %d)",
+                    expected_count - len(scores), len(scores), expected_count, tolerance,
+                )
+            sentiment = sum(scores) / len(scores)
+            counts: dict[str, int | None] = {
+                "positive": sum(1 for value in scores if value > 0.1),
+                "negative": sum(1 for value in scores if value < -0.1),
+                "neutral": sum(1 for value in scores if -0.1 <= value <= 0.1),
+            }
+        else:
             logger.warning(
-                "[DIGEST] 건수를 믿을 수 없어 버림 (counts=%d headlines=%d, 허용 %d)",
-                total,
-                expected_count,
-                tolerance,
+                "[DIGEST] 헤드라인 점수를 쓸 수 없어 종합 판단으로 대체 (scores=%d headlines=%d, 허용 %d)",
+                len(scores), expected_count, tolerance,
             )
-            normalized_counts = dict.fromkeys(normalized_counts, None)
-        elif drift:
-            logger.info(
-                "[DIGEST] 건수 합 오차 %d (counts=%d headlines=%d, 허용 %d)",
-                drift,
-                total,
-                expected_count,
-                tolerance,
-            )
+            sentiment, scores = overall, []
+            counts = dict.fromkeys(("positive", "negative", "neutral"))
 
         return {
-            "sentiment": max(-1.0, min(1.0, float(sentiment))),
+            "sentiment": round(sentiment, 4),
+            "overall": overall,
+            "scored": len(scores),
             "summary": str(data.get("summary") or "").strip(),
-            **normalized_counts,
+            **counts,
         }

@@ -407,10 +407,11 @@ MARKET_DIGEST_MIN_ARTICLES = 5
 MARKET_DIGEST_RETENTION_DAYS = 30
 # 요청당 LLM 호출 상한. 40회 ≈ 350 Neurons.
 MARKET_DIGEST_MAX_CALLS_PER_REQUEST = 40
-MARKET_DIGEST_NUM_PREDICT = 512
+# 헤드라인 40건의 점수 목록 + 요약 한두 문장. 점수 목록이 붙어 512에서 올렸다(2026-09-30).
+MARKET_DIGEST_NUM_PREDICT = 900
 MARKET_DIGEST_TIMEOUT = 60
-# 감성 건수의 합이 입력 헤드라인 수와 크게 다르면 그 건수를 버린다(그날의
-# sentiment·summary는 남긴다). 허용 오차 = max(1, ceil(헤드라인 수 × 이 비율)).
+# 헤드라인 점수가 입력 헤드라인 수보다 이만큼 넘게 모자라면 점수 평균을 버리고 모델의
+# 종합 판단으로 대체한다(그날의 summary는 남긴다). 허용 오차 = max(1, ceil(헤드라인 수 × 이 비율)).
 # 이 비율은 `MARKET_DIGEST_ARTICLES_PER_DAY`와 함께 봐야 한다. 모델의 세기
 # 오차는 목록이 길어질수록 비례 이상으로 커진다 — 20건 시절 실측은 93일 중
 # 78일이 오차 0, 최대 2였지만 35~40건에서는 5까지 벌어졌다. 상한을 40으로

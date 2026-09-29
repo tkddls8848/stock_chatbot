@@ -1,6 +1,7 @@
 """차트용 일별 시장 감성 수집.
 
-하루치 헤드라인을 모아 **한 번의 LLM 호출**로 그날의 감성을 계산한다. 기사마다
+하루치 헤드라인을 모아 **한 번의 LLM 호출**로 헤드라인마다 점수를 받고, 그 평균을 그날의
+감성으로 쓴다(2026-09-30부터. 예전에는 모델이 그날 분위기를 숫자 하나로 매겼다). 기사마다
 번역·감성 분석을 돌리던 방식은 헤드라인 한 줄을 보려고 프롬프트 전체를 매번 다시
 보내는 낭비였고(실측: 프롬프트 912자 vs 기사 193자), 하루 20건×4시장×30일이면
 34,560 Neurons로 무료 한도의 3.5배가 나와 애초에 불가능했다. 다이제스트 방식은
@@ -76,31 +77,37 @@ async def backfill_market_digests(
     for market, day in _interleave_market_days(markets, days_by_market, []):
         if calls >= max_calls:
             break
-        query = queries.get(market)
-        if not query:
-            logger.warning("[DIGEST] no history query configured for %s", market)
-            continue
-        try:
-            articles = await asyncio.to_thread(
-                fetch_google_news_history, query, day, market
-            )
-        except Exception as exc:
-            logger.warning("[DIGEST] fetch failed for %s %s: %s", market, day, exc)
-            continue
-        articles = filter_articles_for_jst_day(articles, day)[:articles_per_day]
-        if len(articles) < min_articles:
+        # 옛 방식으로 확정된 날은 저장해 둔 그날 헤드라인에 점수만 다시 매긴다.
+        # 같은 기사를 다시 쓰므로 값의 차이는 계산 방식 차이뿐이다.
+        stored = await store.stored_headlines(market, day) if day < today else []
+        if len(stored) >= min_articles:
+            headlines = stored[:articles_per_day]
+        else:
+            query = queries.get(market)
+            if not query:
+                logger.warning("[DIGEST] no history query configured for %s", market)
+                continue
+            try:
+                articles = await asyncio.to_thread(
+                    fetch_google_news_history, query, day, market
+                )
+            except Exception as exc:
+                logger.warning("[DIGEST] fetch failed for %s %s: %s", market, day, exc)
+                continue
+            articles = filter_articles_for_jst_day(articles, day)[:articles_per_day]
+            headlines = [article.title for article in articles if article.title]
+        if len(headlines) < min_articles:
             # 표본이 얕은 날을 계산해 봐야 차트가 다시 출렁인다. 건너뛰고
             # 다음 호출에서 다시 시도한다.
             logger.info(
                 "[DIGEST] %s %s 표본 부족(%d/%d), 건너뜀",
                 market,
                 day,
-                len(articles),
+                len(headlines),
                 min_articles,
             )
             continue
 
-        headlines = [article.title for article in articles if article.title]
         calls += 1
         try:
             async with analyze_semaphore:
@@ -124,6 +131,8 @@ async def backfill_market_digests(
             negative=result.get("negative"),
             neutral=result.get("neutral"),
             headlines=headlines,
+            overall=result.get("overall"),
+            scored=result.get("scored"),
             # 오늘은 아직 기사가 다 모이지 않았으므로 확정하지 않는다.
             # 확정해 버리면 장중에 하루치가 몇 건에서 멈춘다.
             final=day < today,

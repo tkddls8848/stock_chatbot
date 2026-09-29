@@ -121,3 +121,44 @@ def test_corrupt_cache_starts_empty(tmp_path):
     store = MarketDigestStore(path, 30)
 
     assert asyncio.run(store.stats())["entries"] == 0
+
+
+def test_days_from_the_old_scheme_are_rescored_from_their_stored_headlines(tmp_path, monkeypatch):
+    """옛 방식(모델이 매긴 숫자 하나)으로 확정된 날은 다시 계산한다(2026-09-30).
+
+    뉴스를 다시 긁지 않고 저장해 둔 그날 헤드라인에 점수만 다시 매긴다 — 같은 기사라
+    값의 차이는 계산 방식 차이뿐이다.
+    """
+    from services.telegram_bot.news import backfill
+
+    store = _store(tmp_path)
+    yesterday = kst_today() - timedelta(days=1)
+    old = {"market": "KR", "date": yesterday.isoformat(), "sentiment": 0.45, "article_count": 6,
+           "summary": "옛", "headlines": [f"h{i}" for i in range(6)], "final": True}
+    (tmp_path / "daily_digest.json").write_text(json.dumps({digest_key("KR", yesterday): old}),
+                                               encoding="utf-8")
+    store = _store(tmp_path)
+
+    def no_fetch(*args, **kwargs):
+        raise AssertionError("저장된 헤드라인이 있으면 뉴스를 다시 긁지 않는다")
+
+    monkeypatch.setattr(backfill, "fetch_google_news_history", no_fetch)
+
+    class Analyzer:
+        def analyze(self, market, day, headlines):
+            assert headlines == [f"h{i}" for i in range(6)]
+            return {"sentiment": 0.1, "overall": 0.45, "scored": 6, "summary": "새",
+                    "positive": 2, "negative": 1, "neutral": 3}
+
+    async def exercise():
+        missing = await store.missing_digest_days({"KR"}, 2)
+        assert yesterday in missing["KR"]
+        await backfill.backfill_market_digests(
+            store, Analyzer(), asyncio.Semaphore(1), {"KR"}, {"KR": "q"},
+            {"KR": [yesterday]}, articles_per_day=40, min_articles=5, max_calls=5)
+        return await store.missing_digest_days({"KR"}, 2)
+
+    missing = asyncio.run(exercise())
+    entry = json.loads((tmp_path / "daily_digest.json").read_text(encoding="utf-8"))[digest_key("KR", yesterday)]
+    assert entry["sentiment"] == 0.1 and entry["overall"] == 0.45 and entry["scheme"] == 2
+    assert yesterday not in missing["KR"]
