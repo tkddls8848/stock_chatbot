@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+from pathlib import Path
 import re
 from typing import Any, Literal
 
@@ -35,6 +36,11 @@ from services.web.portfolio.routes import build_router
 from services.web.search import NewsSearch
 
 POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
+# 화면 글꼴은 저장소에 넣은 서브셋 파일을 이 프로세스가 직접 내려준다(외부 CDN을 부르지 않는다).
+# 이름을 고정 목록으로만 받아 경로 조작이 끼어들 틈을 두지 않는다. 파일 이름에 내용이 바뀌면
+# 이름도 바꾸는 규칙이라 1년 캐시(immutable)로 둔다.
+FONT_DIR = Path(__file__).parent / "static" / "fonts"
+FONTS = {"pretendard-sub.woff2", "noto-serif-kr-bold-sub.woff2"}
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +57,7 @@ def _content_security_policy(html: str = "") -> str:
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'self'; "
-        "img-src 'self' data:; connect-src 'self'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
         "script-src " + hashes("script") + "; script-src-attr 'none'; "
         "style-src " + hashes("style") + "; style-src-attr 'none'"
     )
@@ -330,6 +336,13 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
         if payload is None:
             raise HTTPException(status_code=404, detail="이 event가 현재 generation에 없습니다.")
         return polymarket_json(request, payload, "event_detail", {"event_id": event_id})
+
+    @app.api_route("/fonts/{name}", methods=["GET", "HEAD"])
+    def font_file(name: str) -> Response:
+        if name not in FONTS:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse(FONT_DIR / name, media_type="font/woff2",
+                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     @app.api_route("/market_chart.png", methods=["GET", "HEAD"])
     def market_chart(request: Request) -> Response:

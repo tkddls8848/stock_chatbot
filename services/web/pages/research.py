@@ -4,13 +4,13 @@ from services.web.pages.shell import I_LAYERS, JS_UTIL, h1, page
 _MAIN = h1(I_LAYERS, "내 리서치") + """
 <p class='sub2'>관심 주제와 종목에 맞춰 공개 뉴스와 시장 자료를 정리합니다.</p>
 <section id='r-login' class='login-panel'>
- <div class='eyebrow'>PERSONAL RESEARCH</div><h2>내 관심사로 읽는 시장</h2>
+ <div class='eyebrow'>개인 리서치</div><h2>내 관심사로 읽는 시장</h2>
  <p>관심 주제, 관심종목, 리서치 기록은 로그인한 계정에만 저장됩니다.</p>
  <a class='action primary' href='/auth/google?next=/research'>Google 계정으로 로그인</a>
  <p class='sub2'>이름·이메일·프로필 사진은 요청하지 않습니다. <a href='/privacy'>개인정보 처리방침</a></p>
 </section>
 <div id='r-app' hidden>
- <div class='workspace-toolbar'><span class='eyebrow'>PRIVATE WORKSPACE</span>
+ <div class='workspace-toolbar'><span class='eyebrow'>내 작업 공간</span>
  <div><a href='/portfolio'>관심종목·계정 관리</a> <button id='r-logout' class='action'>로그아웃</button></div></div>
  <form id='r-form' class='research-form'>
   <label>관심 주제<input id='r-topic' maxlength='200' placeholder='예: 반도체, 미국 금리' autocomplete='off'></label>

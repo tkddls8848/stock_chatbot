@@ -7,14 +7,14 @@ from services.web.pages.shell import (
     I_SHIELD,
     I_SPEC,
     JS_UTIL,
-    SITE_BRAND_KO,
+    SITE_BRAND,
     h1,
     page,
     sec,
 )
 
 _ABOUT_MAIN = (
-    h1(I_DOC, SITE_BRAND_KO + "는 어떤 사이트인가요?")
+    h1(I_DOC, SITE_BRAND + "는 어떤 사이트인가요?")
     + "<div class='disc'>정해진 주기마다 기계가 중국·홍콩·미국·한국·일본 뉴스를 읽어 "
     "시장별 하루치 요약과 <b>−1 ~ +1</b> 감성 점수를 만들고, 관심 주제에 대한 리서치 "
     "결과를 남기는 <b>자동 관측 기록</b>입니다. 정보 제공 목적이며 투자 권유가 "
@@ -107,6 +107,6 @@ ABOUT_HTML = page(
     "/about",
     _ABOUT_MAIN,
     _ABOUT_SCRIPT,
-    description="눈치가 어떤 사이트인지, 무엇을 보여 주고 무엇을 하지 않는지 정리했습니다. "
+    description="nunchi가 어떤 사이트인지, 무엇을 보여 주고 무엇을 하지 않는지 정리했습니다. "
     "뉴스에서 읽는 시장 감성을 주기마다 자동으로 기록합니다.",
 )

@@ -177,3 +177,16 @@ def test_caddy_has_transport_security_and_removes_server_header():
     caddy = (Path(__file__).resolve().parents[3] / "infra/Caddyfile.example").read_text("utf-8")
     assert 'header Strict-Transport-Security "max-age=31536000; includeSubDomains"' in caddy
     assert "header -Server" in caddy
+
+
+def test_fonts_are_served_from_a_fixed_list_with_a_long_cache(client):
+    """화면 글꼴은 저장소의 서브셋 파일을 이 서버가 직접 내려준다(외부 CDN 없음)."""
+    for name in server.FONTS:
+        response = client.get("/fonts/" + name)
+        assert response.status_code == 200, name
+        assert response.headers["content-type"] == "font/woff2"
+        assert response.content[:4] == b"wOF2"
+        assert "immutable" in response.headers["cache-control"]
+    for name in ("../server.py", "OFL-Pretendard.txt", "missing.woff2"):
+        assert client.get("/fonts/" + name).status_code == 404, name
+    assert "font-src 'self'" in client.get("/").headers["content-security-policy"]

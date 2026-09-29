@@ -317,9 +317,9 @@ def test_every_screen_carries_a_description_and_open_graph_tags():
         properties = dict(re.findall(r"<meta property='(og:[^']+)' content='([^']*)'>", head))
         assert properties["og:type"] == "website", path
         assert properties["og:locale"] == "ko_KR", path
-        assert properties["og:site_name"] == "눈치", path
+        assert properties["og:site_name"] == "nunchi", path
         assert properties["og:description"] == description.group(1), path
-        assert properties["og:title"].endswith(" · 눈치"), path
+        assert properties["og:title"].endswith(" · nunchi"), path
         assert properties["og:url"] == "https://nunchi.live" + path, path
         # 이미지 파일이 없다. 없는 주소를 적으면 미리보기가 깨진 그림 자리를 만든다.
         assert "og:image" not in properties, path

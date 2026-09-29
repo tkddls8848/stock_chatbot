@@ -6,7 +6,7 @@ from services.web.pages.shell import I_SHIELD, JS_UTIL, h1, page
 
 PRIVACY_HTML = page("개인정보 처리방침", "/privacy", h1(I_SHIELD, "개인정보 처리방침") + """
 <div class='docbody'>
-<p>적용일: 2026년 9월 27일. 눈치의 개인 리서치와 자산 서비스에 적용됩니다.</p>
+<p>적용일: 2026년 9월 27일. nunchi의 개인 리서치와 자산 서비스에 적용됩니다.</p>
 <h2>운영자와 문의</h2>
 <p>개인정보 처리 및 보호 담당: """ + escape(PRIVACY_OPERATOR) + " · " + escape(PRIVACY_CONTACT) + """.
 열람·정정·삭제 요청이나 개인정보 관련 문의를 이 이메일로 보내실 수 있습니다.</p>
@@ -49,4 +49,4 @@ Cloudflare Workers AI에 전송합니다. 계정 식별값·개인 자산·연�
 개인 서비스를 사용하려면 계정 식별값을 처리해야 합니다. Google 권한은 Google 계정 설정에서 관리할 수 있으나,
 Google 연결 해제만으로 이 서비스의 저장 데이터가 삭제되지는 않으므로 탈퇴 기능도 이용해 주세요.</p>
 </div>""", "<script>" + JS_UTIL + "</script>",
-    description="눈치 개인 서비스의 Google 인증, 저장하는 자산·리서치 데이터, 보관 기간, 내보내기·삭제 및 개인정보 문의 방법을 안내합니다.")
+    description="nunchi 개인 서비스의 Google 인증, 저장하는 자산·리서치 데이터, 보관 기간, 내보내기·삭제 및 개인정보 문의 방법을 안내합니다.")

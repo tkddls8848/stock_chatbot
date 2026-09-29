@@ -10,13 +10,13 @@ from services.web.pages.shell import I_LAYERS, I_SCALE, I_SHIELD, I_SPEC, JS_UTI
 _MAIN = (
     """<style>
 .pf-hide{display:none!important}
-.pf-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r2);padding:16px;margin:12px 0}
+.pf-card{background:var(--surface-2);border:0;border-top:1px solid var(--rule);border-radius:0;padding:16px 0;margin:16px 0}
 .pf-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pf-row-end{justify-content:flex-end}.pf-row-spaced{margin-top:10px}
 .pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .pf-card input,.pf-card select,.pf-btn{min-height:var(--ctl);border:1px solid var(--line);border-radius:var(--r1);
  background:var(--surface-1);color:var(--ink);padding:8px 10px;font:inherit;font-size:var(--fs-sm)}
-.pf-btn{cursor:pointer;font-weight:700}.pf-btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pf-btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.pf-btn.pri{background:var(--gold);color:#fff;border-color:var(--gold)}
 .pf-btn:disabled{opacity:.5;cursor:wait}
 .pf-field{display:flex;flex-direction:column;gap:4px;font-size:var(--fs-xs);color:var(--mut)}
 .pf-scroll{overflow-x:auto}
@@ -28,7 +28,7 @@ _MAIN = (
    버튼 두 개가 아래로 쌓이면 칸 폭이 버튼 하나 너비로 줄어든다. */
 .pf-table td.act{white-space:normal}
 .pf-table td.act .pf-btn{min-height:32px;padding:5px 8px}
-.pf-bar{height:10px;background:var(--fill-2,#e8e3d6);border-radius:99px;overflow:hidden}.pf-bar i{display:block;height:100%;background:var(--acc)}
+.pf-bar{height:10px;background:var(--fill-2);border-radius:0;overflow:hidden}.pf-bar i{display:block;height:100%;background:var(--acc)}
 .pf-cls{display:grid;grid-template-columns:90px 1fr 110px;gap:10px;align-items:center;margin:6px 0;font-size:var(--fs-sm)}
 .pf-msg{font-size:var(--fs-sm);color:var(--mut);margin:8px 0}.pf-msg.err{color:var(--warnc)}
 .pf-advice p{line-height:1.8;margin:0 0 12px}
@@ -43,7 +43,7 @@ _MAIN = (
     "Google 계정별로 저장되며 입력한 자산은 본인에게만 보입니다. 계좌번호·실명·상세 주소는 입력하지 마세요. "
     "조언은 <b>참고 정보이며 투자 권유가 아닙니다.</b></div>"
     + """
-<div id='pf-lock' class='login-panel'><div class='eyebrow'>PERSONAL PORTFOLIO</div><h2>내 자산을 한눈에</h2><p>자산 구성부터 만기와 편중까지, 나만의 포트폴리오를 관리하세요.</p>
+<div id='pf-lock' class='login-panel'><div class='eyebrow'>개인 포트폴리오</div><h2>내 자산을 한눈에</h2><p>자산 구성부터 만기와 편중까지, 나만의 포트폴리오를 관리하세요.</p>
  <a id='pf-login' class='pf-btn pri' href='/auth/google?next=/portfolio'>Google 계정으로 로그인</a>
  <p class='pf-msg'>이름·이메일·프로필 사진을 요청하지 않습니다. <a href='/privacy'>개인정보 처리방침</a></p>
  <p id='pf-lock-msg' class='pf-msg'></p>

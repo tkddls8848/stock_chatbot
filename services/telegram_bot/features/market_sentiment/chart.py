@@ -18,6 +18,15 @@ MARKET_LABELS = {
 }
 
 
+# 웹 화면(`services/web/pages/shell.py`)과 같은 팔레트다. 막대는 한국 시장 관례를 따라
+# 빨강이 긍정, 파랑이 부정이다 — 예전 초록·빨강은 화면의 다른 수치와 방향이 반대였다.
+_INK, _MUT, _LINE = "#0d1b2a", "#4c5a6b", "#d3d9e1"
+_POS, _NEG, _FLAT = "#b42331", "#1f57b0", "#8a96a5"
+MARKET_COLORS = {
+    "US": "#16324f", "KR": "#b08d57", "JP": "#2e7d6b", "CN": "#8e3b46", "HK": "#5b6fa8",
+}
+
+
 def market_label(market: str) -> str:
     return MARKET_LABELS.get(market, market)
 
@@ -88,20 +97,30 @@ def render_market_chart(
     ordered = sorted(markets.items(), key=lambda item: item[1]["avg_sentiment"], reverse=True)
     labels = [market_label(key) for key, _ in ordered]
     values = [item["avg_sentiment"] for _, item in ordered]
-    colors = ["#16a34a" if value > 0.1 else "#dc2626" if value < -0.1 else "#64748b" for value in values]
+    colors = [_POS if value > 0.1 else _NEG if value < -0.1 else _FLAT for value in values]
 
     fig, (ranking_ax, trend_ax) = plt.subplots(1, 2, figsize=(12, 5), gridspec_kw={"width_ratios": [0.9, 1.4]})
-    fig.patch.set_facecolor("#f8fafc")
-    ranking_ax.set_facecolor("#f8fafc")
-    trend_ax.set_facecolor("#f8fafc")
-    ranking_ax.barh(labels, values, color=colors, height=0.58)
-    ranking_ax.axvline(0, color="#94a3b8", linewidth=0.9)
+    fig.patch.set_facecolor("#ffffff")
+    for ax in (ranking_ax, trend_ax):
+        ax.set_facecolor("#ffffff")
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.spines[["left", "bottom"]].set_color(_LINE)
+        ax.tick_params(colors=_MUT, labelsize=9)
+        ax.xaxis.label.set_color(_MUT)
+        ax.yaxis.label.set_color(_MUT)
+    ranking_ax.barh(labels, values, color=colors, height=0.5)
+    ranking_ax.axvline(0, color=_MUT, linewidth=0.9)
+    ranking_ax.tick_params(axis="y", length=0, labelcolor=_INK)
+    ranking_ax.grid(axis="x", color=_LINE, linewidth=0.6)
+    ranking_ax.set_axisbelow(True)
     ranking_ax.set_xlim(-1, 1)
-    ranking_ax.set_title(f"Average news sentiment ({lookback_days}d)")
+    ranking_ax.set_title(f"Average news sentiment ({lookback_days}d)", loc="left", fontsize=11,
+                         fontweight="bold", color=_INK, pad=12)
     ranking_ax.set_xlabel("-1 negative     0 neutral     +1 positive")
     ranking_ax.invert_yaxis()
     for index, value in enumerate(values):
-        ranking_ax.text(value + (0.03 if value >= 0 else -0.03), index, f"{value:+.2f}", va="center", ha="left" if value >= 0 else "right", fontsize=9)
+        ranking_ax.text(value + (0.03 if value >= 0 else -0.03), index, f"{value:+.2f}", va="center", ha="left" if value >= 0 else "right", fontsize=9,
+                        fontweight="bold", color=_POS if value > 0.1 else _NEG if value < -0.1 else _MUT)
 
     # 날마다 찍은 점은 흐리게 두고, 그 위에 비선형 추세선을 굵게 그린다(2026-09-28 운영자 요청).
     # 30일 치 점을 선으로 이으면 하루하루의 잡음만 보이고 방향은 읽히지 않는다.
@@ -111,18 +130,22 @@ def render_market_chart(
         curve = _trend_curve(dates, sentiments, counts)
         (line,) = trend_ax.plot(
             *(curve or (dates, sentiments)),
-            linewidth=2.4,
+            linewidth=2.2,
+            color=MARKET_COLORS.get(market),
             label=market_label(market),
         )
         trend_ax.scatter(dates, sentiments, s=14, alpha=0.35, color=line.get_color(), linewidths=0)
-    trend_ax.axhline(0, color="#94a3b8", linewidth=0.9)
+    trend_ax.axhline(0, color=_MUT, linewidth=0.9)
     trend_ax.set_ylim(-1, 1)
-    trend_ax.set_title(f"Sentiment trend ({lookback_days}d, kernel regression)")
+    trend_ax.set_title(f"Sentiment trend ({lookback_days}d, kernel regression)", loc="left", fontsize=11,
+                       fontweight="bold", color=_INK, pad=12)
     trend_ax.set_ylabel("Average sentiment")
     trend_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
     trend_ax.tick_params(axis="x", rotation=45)
-    trend_ax.legend(loc="best", frameon=False)
-    trend_ax.grid(axis="y", alpha=0.2)
+    trend_ax.legend(loc="upper left", frameon=False, ncol=5, fontsize=8.5, bbox_to_anchor=(0, 1.0),
+                    handlelength=1.6, columnspacing=1.2)
+    trend_ax.grid(axis="y", color=_LINE, linewidth=0.6)
+    trend_ax.set_axisbelow(True)
     fig.tight_layout()
 
     image = BytesIO()

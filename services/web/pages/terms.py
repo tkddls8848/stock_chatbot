@@ -16,7 +16,7 @@ from services.web.pages.shell import (
     I_SHIELD,
     I_SPEC,
     JS_UTIL,
-    SITE_BRAND_KO,
+    SITE_BRAND,
     SITE_HOST,
     h1,
     page,
@@ -25,7 +25,7 @@ from services.web.pages.shell import (
 
 _TERMS_MAIN = (
     h1(I_DOC, "이용 조건과 개인정보")
-    + "<div class='disc'>" + SITE_BRAND_KO + "(" + SITE_HOST + ")를 쓸 때의 약속을 쉬운 말로 "
+    + "<div class='disc'>" + SITE_BRAND + "(" + SITE_HOST + ")를 쓸 때의 약속을 쉬운 말로 "
     "적었습니다. 이 사이트는 <b>정보 제공 목적</b>이며 투자 권유나 투자 자문이 "
     "아닙니다.</div>"
     + "<div class='sub2'>내용이 바뀌면 이 화면이 함께 바뀝니다. 따로 알려 드리지 "
@@ -110,6 +110,6 @@ TERMS_HTML = page(
     "/terms",
     _TERMS_MAIN,
     _TERMS_SCRIPT,
-    description="눈치의 이용 조건, 투자 권유가 아니라는 안내, 자료의 성격과 개인정보 처리 "
+    description="nunchi의 이용 조건, 투자 권유가 아니라는 안내, 자료의 성격과 개인정보 처리 "
     "방법을 쉬운 한국어로 정리했습니다.",
 )

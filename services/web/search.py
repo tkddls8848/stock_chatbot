@@ -200,7 +200,7 @@ class NewsSearch:
                             "id": f"market:{market}:{day['date']}", "kind": "market", "market": market,
                             "title": f"{MARKETS.get(market, market)} 일일 시장 요약",
                             "text": day["summary"], "date": day["date"], "published_at": "",
-                            "source": "눈치 국가별 뉴스 감성", "sentiment": day.get("avg_sentiment"),
+                            "source": "nunchi 국가별 뉴스 감성", "sentiment": day.get("avg_sentiment"),
                         })
             docs = [_prepare(row) for row in rows if isinstance(row, dict) and row.get("date")]
             self._cache[name] = (signature, docs, str(payload.get("generated_at") or ""))
