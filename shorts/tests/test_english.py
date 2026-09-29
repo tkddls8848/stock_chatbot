@@ -65,3 +65,9 @@ def test_description_states_the_info_time_in_minutes():
     from polymarket_shorts.pipeline import info_time
     assert info_time("2026-09-28T16:00:00.748469+09:00") == "2026-09-28 16:00"
     assert info_time("2026-09-28T07:00:00+00:00") == "2026-09-28 16:00"
+
+
+def test_slightly_long_context_is_still_accepted():
+    context = "A change in Israel's leadership could shift how investors price regional risk across oil futures, defense stocks and the Israeli shekel."
+    assert 120 < len(context) <= 170
+    assert english.validate_scripts({"scripts": [_script(context=context)]}, [_issue()])

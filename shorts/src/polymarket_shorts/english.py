@@ -151,7 +151,10 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         clean: dict[str, Any] = {"id": issue["id"]}
         base = " ".join([issue["title"], *(m["question"] for m in issue["markets"])])
         for field, low, high in (("headline", 4, 40), ("question", 5, 110),
-                                 ("context", 15, 120), ("watch_point", 10, 90)):
+                                 # 프롬프트 목표(120·90자)보다 넉넉히 받는다. 영어는 같은 뜻에 글자가
+                                 # 많고, 조금 넘었다고 그날 영어판 전체를 버리면 안 된다(실측
+                                 # 2026-09-29: deepseek 원고가 121~132자로 전 이슈 탈락).
+                                 ("context", 15, 170), ("watch_point", 10, 140)):
             source = base if field == "headline" else f"{base} {issue.get('description') or ''}"
             try:
                 text = _text(row.get(field), field, low, high)
