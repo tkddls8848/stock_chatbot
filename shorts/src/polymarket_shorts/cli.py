@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
 import json
 import logging
 from pathlib import Path
 
 from .config import Settings
-from .pipeline import produce_daily, produce_editorial
+from .pipeline import produce_daily, produce_editorial, prune_old_days
 from .review import ReviewError, read_script
 
 
@@ -74,6 +74,8 @@ def main() -> None:
         if args.plan:
             payload = asdict(produce_editorial(args.plan.resolve(), settings))
         else:
+            # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
+            prune_old_days(settings, datetime.now(settings.timezone).date())
             payload = asdict(produce_daily(
                 settings,
                 production_date=date.fromisoformat(args.date) if args.date else None,

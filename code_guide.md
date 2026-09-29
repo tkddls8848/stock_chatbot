@@ -363,6 +363,11 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   다시 올리지 않는다. 업로드 오류는 서비스 실패로 끝나 timer 재시도가 다시 올린다.
   `SHORTS_ENGLISH_EDITION=true`면 같은 이슈로 영어판을 `storage/shorts/en/<날짜>/`에 따로
   만들고 올린다(운영자 결정, 2026-09-28). 텔레그램 패널은 한국어판만 다룬다.
+  **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정
+  2026-09-29). 일일 제작이 렌더 전에 오늘 포함 14일보다 오래된 `storage/shorts/<날짜>/`와
+  `storage/shorts/en/<날짜>/`를 통째로 지운다 — 영상은 YouTube에 있고, 배경·클립·수정본이
+  매일 쌓여 로컬 디스크를 채운다. 반복 회피(`SHORTS_REPEAT_DAYS`)가 읽는 기간보다는
+  짧게 지우지 않는다. `state/`는 건드리지 않는다.
   모든 모듈의 설정은 저장소 루트 `.env` 하나에서 관리한다. 하위 폴더에 `.env`를 두지 않는다.
 - **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import json
 import logging
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -79,6 +80,42 @@ def recently_featured(settings: Settings, today: date) -> tuple[set[str], set[st
                 ids.add(str(scene["event_id"]))
     topics.discard("")
     return ids, topics
+
+
+# 서버 로컬 디스크에 제작일 폴더를 보관하는 기간(운영자 결정 2026-09-29). 영상은 YouTube에
+# 올라가 있고, 날짜 폴더는 배경·클립·수정본까지 담아 매일 쌓이면 디스크를 채운다.
+RETENTION_DAYS = 14
+
+
+def prune_old_days(settings: Settings, today: date) -> list[Path]:
+    """보관 기간이 지난 제작일 폴더(한국어판·영어판)를 통째로 지운다.
+
+    오늘 포함 `RETENTION_DAYS`일만 남긴다. 반복 회피(`recently_featured`)가 지난
+    `repeat_days`일 폴더를 읽으므로 그보다 짧게 지우지 않는다. 이름이 날짜가 아닌
+    폴더(`state/` 등)는 건드리지 않는다. 지우지 못한 폴더는 경고만 남긴다 — 정리
+    실패가 제작을 막지 않는다.
+    """
+    cutoff = today - timedelta(days=max(RETENTION_DAYS, settings.repeat_days + 1) - 1)
+    removed = []
+    for parent in (settings.output_dir, settings.output_dir / "en"):
+        if not parent.is_dir():
+            continue
+        for folder in sorted(parent.iterdir()):
+            try:
+                day = date.fromisoformat(folder.name)
+            except ValueError:
+                continue
+            if not folder.is_dir() or day >= cutoff:
+                continue
+            try:
+                shutil.rmtree(folder)
+            except OSError as exc:
+                logger.warning("보관 기간이 지난 쇼츠 폴더를 지우지 못했습니다: %s (%s)", folder, exc)
+                continue
+            removed.append(folder)
+    if removed:
+        logger.info("보관 기간(%d일)이 지난 쇼츠 폴더 %d개를 지웠습니다", RETENTION_DAYS, len(removed))
+    return removed
 
 
 def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:

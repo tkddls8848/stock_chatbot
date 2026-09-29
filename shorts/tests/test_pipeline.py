@@ -99,3 +99,36 @@ def test_failed_selection_records_error_and_does_not_fall_back_to_summary(tmp_pa
     assert audit["status"] == "failed" and audit["error"] == "bad selection"
     assert audit["llm_calls"] == 1
     assert not (tmp_path / "scenario.json").exists()
+
+
+def test_prune_old_days_keeps_two_weeks_of_korean_and_english_folders(tmp_path):
+    from polymarket_shorts.pipeline import RETENTION_DAYS, prune_old_days
+
+    output = tmp_path / "output"
+    settings = replace(Settings.from_env(), output_dir=output, repeat_days=7)
+    old, kept = output / "2026-09-15", output / "2026-09-16"
+    old_en, kept_en = output / "en" / "2026-09-15", output / "en" / "2026-09-16"
+    for folder in (old, kept, old_en, kept_en, output / "state"):
+        (folder / "media").mkdir(parents=True)
+        (folder / "media" / "video.mp4").write_bytes(b"x")
+
+    removed = prune_old_days(settings, date(2026, 9, 29))
+
+    assert RETENTION_DAYS == 14
+    assert sorted(removed) == sorted([old, old_en])
+    assert not old.exists() and not old_en.exists()
+    assert kept.is_dir() and kept_en.is_dir() and (output / "state").is_dir()
+
+
+def test_prune_old_days_never_drops_folders_repeat_avoidance_reads(tmp_path):
+    from polymarket_shorts.pipeline import prune_old_days
+
+    output = tmp_path / "output"
+    settings = replace(Settings.from_env(), output_dir=output, repeat_days=20)
+    (output / "2026-09-10").mkdir(parents=True)
+    (output / "2026-09-08").mkdir(parents=True)
+
+    removed = prune_old_days(settings, date(2026, 9, 29))
+
+    assert removed == [output / "2026-09-08"]
+    assert (output / "2026-09-10").is_dir()
