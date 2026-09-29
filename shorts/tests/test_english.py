@@ -71,3 +71,12 @@ def test_slightly_long_context_is_still_accepted():
     context = "A change in Israel's leadership could shift how investors price regional risk across oil futures, defense stocks and the Israeli shekel."
     assert 120 < len(context) <= 170
     assert english.validate_scripts({"scripts": [_script(context=context)]}, [_issue()])
+
+
+def test_threshold_percent_in_a_label_is_allowed():
+    issue = {**_issue(), "markets": [{"id": "1", "question": "Will the 10-year Treasury yield hit 5.3% before 2027?",
+                                      "yes": "12%", "no": "88%", "yes_probability": .12}]}
+    row = _script(market_labels=[{"id": "1", "label": "10-year yield hits 5.3%"}])
+    assert english.validate_scripts({"scripts": [row]}, [issue])
+    with pytest.raises(HighlightError):
+        english.validate_scripts({"scripts": [_script(market_labels=[{"id": "1", "label": "yield at 12% chance"}])]}, [issue])

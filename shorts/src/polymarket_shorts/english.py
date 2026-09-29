@@ -40,7 +40,7 @@ e.g. "Israel's next prime minister".
 question: the event title (not any single market) asked the way a narrator would say it, ending with "?" (5-110 characters),
 e.g. "Prime Minister of Israel after the next election?" becomes "Who will be Israel's next prime minister?".
 market_labels: for every input market, in the same order, {"id": market id, "label": short noun phrase naming that choice (2-60 characters)},
-e.g. "Gadi Eizenkot" or "Fed cut of 25 bps in October". No question mark, no "probability", no percentages.
+e.g. "Gadi Eizenkot" or "Fed cut of 25 bps in October". No question mark, no "probability". A percentage only when it is the question's threshold.
 Name only what tells the choices apart (person, threshold, deadline). Leave out the subject, year or date that every choice shares;
 the headline and question already say it: "Will Nicolás Maduro be the leader of Venezuela end of 2026?" becomes "Nicolás Maduro", not "Nicolás Maduro 2026".
 With a single market, keep its full condition. Copy numbers exactly. For (HIGH) write "above", for (LOW) write "below";
@@ -117,8 +117,10 @@ def _check(text: str, source: str, field: str, shared: set[str] = frozenset()) -
     if _FORBIDDEN.search(text):
         raise HighlightError(f"{field} uses a forbidden word: {text}")
     # 선택지 이름은 "…에 51.4%" 앞에 그대로 읽힌다(실측 2026-09-28: "Gadi Eizenkot PM probability").
-    if field == "label" and re.search(r"\?|%|probabilit|chance", text, re.IGNORECASE):
-        raise HighlightError(f"label must only name the choice (no ?, %, probability): {text}")
+    # 퍼센트 자체는 막지 않는다 — "5.3%"처럼 수익률 기준값이 선택지 이름이다(실측 2026-09-29).
+    # 원문에 없는 퍼센트는 위 검사가 막는다.
+    if field == "label" and re.search(r"\?|probabilit|chance", text, re.IGNORECASE):
+        raise HighlightError(f"label must only name the choice (no ?, probability): {text}")
     if field == "headline" and text.endswith("?"):
         raise HighlightError(f"headline must be a noun phrase without a question mark: {text}")
     if "%" in text and not set(re.findall(r"\d+(?:\.\d+)?%", text)) <= set(re.findall(r"\d+(?:\.\d+)?%", source)):
@@ -150,7 +152,7 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             raise HighlightError("script event id or order is wrong")
         clean: dict[str, Any] = {"id": issue["id"]}
         base = " ".join([issue["title"], *(m["question"] for m in issue["markets"])])
-        for field, low, high in (("headline", 4, 40), ("question", 5, 110),
+        for field, low, high in (("headline", 4, 60), ("question", 5, 110),
                                  # 프롬프트 목표(120·90자)보다 넉넉히 받는다. 영어는 같은 뜻에 글자가
                                  # 많고, 조금 넘었다고 그날 영어판 전체를 버리면 안 된다(실측
                                  # 2026-09-29: deepseek 원고가 121~132자로 전 이슈 탈락).
