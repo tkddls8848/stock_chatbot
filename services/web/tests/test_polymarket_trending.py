@@ -80,11 +80,11 @@ def test_candidates_keep_only_top_volume():
 
 
 @pytest.mark.parametrize("volume,liquidity,eligible", [
-    (49_999.99, 100_000.0, False),
-    (50_000.0, 24_999.99, False),
-    (50_000.0, 25_000.0, True),
-    (100_000.0, None, False),
-    (None, 100_000.0, False),
+    (99_999.99, 100_000.0, False),
+    (100_000.0, 24_999.99, False),
+    (100_000.0, 25_000.0, True),
+    (200_000.0, None, False),
+    (None, 200_000.0, False),
 ])
 def test_candidates_require_both_participation_floors(volume, liquidity, eligible):
     event = dict(_event(1, volume=volume), liquidity=liquidity)
@@ -97,8 +97,9 @@ def test_build_does_not_fill_spotlight_with_thin_large_moves(tmp_path):
     events = [
         _event(1, volume=4_709.0),
         _event(2, volume=32_147.0),
-        dict(_event(3, volume=58_227.0), liquidity=13_739.0),
-        _event(4, volume=79_138.0),
+        dict(_event(3, volume=158_227.0), liquidity=13_739.0),
+        _event(6, volume=79_138.0),
+        _event(4, volume=132_904.0),
         _event(5, volume=186_475.0),
     ]
     _write_manifest(root, events)
@@ -109,7 +110,7 @@ def test_build_does_not_fill_spotlight_with_thin_large_moves(tmp_path):
     ], generation_id="g2")
     result = build(root=root, target=target)
     assert result["candidate_count"] == 2
-    assert result["min_volume"] == 50_000.0
+    assert result["min_volume"] == 100_000.0
     assert [row["id"] for row in result["spotlight"]] == ["5", "4"]
     assert all(row["basis_change"] == 0.03 for row in result["spotlight"])
 
@@ -251,7 +252,7 @@ def test_new_and_volume_lists(tmp_path):
 
     _write_manifest(
         root,
-        [_event(1, volume=125_000.0), _event(2, volume=90_000.0)],
+        [_event(1, volume=125_000.0), _event(2, volume=110_000.0)],
         generation_id="g2",
     )
     result = build(root=root, target=target)

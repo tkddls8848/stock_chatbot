@@ -43,7 +43,7 @@ class _Analyzer:
         return f"{group_label} 단락 " + "가" * 80
 
 
-def _event(index, tags, *, volume=100.0, probability=0.7, status="ok"):
+def _event(index, tags, *, volume=50_000.0, probability=0.7, status="ok"):
     return {
         "id": str(index),
         "title": f"event {index}",
@@ -188,7 +188,7 @@ def test_multi_choice_events_keep_the_leading_candidate():
 
 def test_aggregate_is_not_truncated_by_the_name_limit(tmp_path):
     root = tmp_path / "polymarket"
-    _write_current(root, [_event(i, ["stocks"], volume=1.0) for i in range(50)])
+    _write_current(root, [_event(i, ["stocks"]) for i in range(50)])
     analyzer = _Analyzer()
 
     result = build(root=root, target=tmp_path / "brief.json", analyzer=analyzer,
@@ -199,6 +199,23 @@ def test_aggregate_is_not_truncated_by_the_name_limit(tmp_path):
     assert equities["named_count"] == 5
     assert len(analyzer.calls[0][2]) == 5
     assert analyzer.calls[0][1]["event_count"] == 50
+
+
+def test_thin_events_are_pruned_before_grouping(tmp_path):
+    root = tmp_path / "polymarket"
+    events = [_event(i, ["stocks"]) for i in range(5)]
+    events += [_event(9, ["stocks"], volume=24_999.99), _event(10, ["stocks"], volume=None)]
+    _write_current(root, events)
+    analyzer = _Analyzer()
+
+    result = build(root=root, target=tmp_path / "brief.json", analyzer=analyzer,
+                   min_events=1, min_volume=25_000.0)
+
+    equities = next(g for g in result["groups"] if g["key"] == "equities")
+    assert equities["event_count"] == 5
+    assert [row["title"] for row in analyzer.calls[0][2]] == [f"event {i}" for i in range(5)]
+    assert result["min_volume"] == 25_000.0
+    assert set(result["previous"]) == {str(i) for i in range(5)}
 
 
 # ── 표본과 실패 ────────────────────────────────────────────────────────────

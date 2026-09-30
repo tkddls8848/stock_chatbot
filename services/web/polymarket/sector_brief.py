@@ -23,6 +23,7 @@ from services.web.core.config import (
     POLYMARKET_BRIEF_FILE,
     POLYMARKET_BRIEF_MIN_EVENTS,
     POLYMARKET_BRIEF_MIN_EVENTS_BY_GROUP,
+    POLYMARKET_BRIEF_MIN_VOLUME,
     POLYMARKET_BRIEF_NAMED_LIMIT,
     POLYMARKET_BRIEF_QUIET_HOURS,
     POLYMARKET_WEB_DIR,
@@ -136,6 +137,7 @@ def build(
     named_limit: int = POLYMARKET_BRIEF_NAMED_LIMIT,
     min_events: int = POLYMARKET_BRIEF_MIN_EVENTS,
     min_events_by_group: dict[str, int] | None = None,
+    min_volume: float = POLYMARKET_BRIEF_MIN_VOLUME,
     quiet_hours: set[int] | None = None,
 ) -> dict[str, Any] | None:
     # 야간에는 줄글만 멈춘다. refresh는 계속 돌아 확률 숫자는 미장 마감 직전
@@ -154,7 +156,12 @@ def build(
         logger.warning("[POLYMARKET_BRIEF] current generation이 없어 종료한다.")
         return None
 
-    buckets = collect_groups(events)
+    # 잔가지를 먼저 친다. 집계의 "전부"는 하한을 넘은 전부다.
+    buckets = collect_groups([
+        event for event in events
+        if isinstance(event, dict)
+        and (_number(event.get("volume24hr")) or 0.0) >= min_volume
+    ])
     analyzer = analyzer or build_polymarket_brief_analyzer()
     previous = _read_json(target)
     previous_groups = {
@@ -218,6 +225,7 @@ def build(
         "written_at": now().isoformat(),
         "state": "ok",
         "named_limit": named_limit,
+        "min_volume": min_volume,
         "groups": groups,
         "previous": snapshot_probabilities(buckets),
     }
