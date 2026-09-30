@@ -152,6 +152,12 @@ def test_japan_market_uses_japanese_locale_and_stock_queries():
     assert len(sources._MARKET_STOCK_NEWS_QUERIES["JP"]) == 3
 
 
+def test_europe_market_uses_british_english_locale_and_stock_queries():
+    # 미국판 로케일은 같은 질의에도 월가 기사가 앞을 채운다.
+    assert "hl=en-GB&gl=GB&ceid=GB:en" in sources._google_news_url("STOXX 600", "EU")
+    assert len(sources._MARKET_STOCK_NEWS_QUERIES["EU"]) == 3
+
+
 def test_cls_timestamp_parses_only_with_published_date():
     from services.telegram_bot.news.utils import parse_news_datetime
 

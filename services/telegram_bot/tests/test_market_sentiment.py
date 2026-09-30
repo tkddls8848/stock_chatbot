@@ -186,7 +186,7 @@ def test_thirty_day_refresh_targets_all_markets_and_full_range(monkeypatch):
 
     class StoreStub:
         async def series(self, markets, days):
-            return _ready_series(("CN", "HK", "US", "KR", "JP"), today)
+            return _ready_series(("CN", "HK", "US", "KR", "JP", "EU"), today)
 
         async def missing_digest_days(self, markets, days):
             assert days == 30
@@ -201,7 +201,7 @@ def test_thirty_day_refresh_targets_all_markets_and_full_range(monkeypatch):
 
     asyncio.run(refresh.refresh_market_sentiment(_app(StoreStub()), days=30))
 
-    assert captured["markets"] == {"CN", "HK", "US", "KR", "JP"}
+    assert captured["markets"] == {"CN", "HK", "US", "KR", "JP", "EU"}
     assert all(len(days) == 7 for days in captured["days"].values())
     assert all(days[0] == missing[0] for days in captured["days"].values())
     assert all(days[-1] == missing[-1] for days in captured["days"].values())

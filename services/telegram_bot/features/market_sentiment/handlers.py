@@ -17,7 +17,7 @@ from services.telegram_bot.features.market_sentiment.refresh import refresh_mark
 
 logger = logging.getLogger(__name__)
 # 텔레그램 문구용 한국어 이름. 차트(chart.py)는 폰트 때문에 영문 라벨을 쓴다.
-_MARKET_NAMES = {"CN": "중국", "HK": "홍콩", "US": "미국", "KR": "한국", "JP": "일본"}
+_MARKET_NAMES = {"CN": "중국", "HK": "홍콩", "US": "미국", "KR": "한국", "JP": "일본", "EU": "유럽"}
 
 
 def schedule_text() -> str:

@@ -243,6 +243,9 @@ _GOOGLE_NEWS_LOCALES = {
     # 일본어 로케일로 받아야 종목명이 현지 표기(트요타가 아니라 トヨタ)로 남아
     # 사전선별의 종목 매칭과 리서치 후보 발굴이 본문에서 이름을 찾을 수 있다.
     "JP": "hl=ja&gl=JP&ceid=JP:ja",
+    # 유럽은 공용 언어가 없어 영어로 질의하되 영국판 로케일로 받는다. 미국판은
+    # 같은 질의에도 월가 기사가 앞을 채운다.
+    "EU": "hl=en-GB&gl=GB&ceid=GB:en",
 }
 _DEFAULT_GOOGLE_NEWS_LOCALE = "hl=en-US&gl=US&ceid=US:en"
 
@@ -299,6 +302,11 @@ _MARKET_STOCK_NEWS_QUERIES = {
         "日経平均 株価 終値 when:1d",
         "東証 プライム 決算 銘柄 when:1d",
         "日本株 上昇 銘柄 when:1d",
+    ),
+    "EU": (
+        "European stocks STOXX 600 DAX CAC when:1d",
+        "ECB interest rates eurozone economy when:1d",
+        "European companies earnings shares when:1d",
     ),
 }
 
@@ -425,3 +433,7 @@ def fetch_google_news_kr_stock_articles() -> list[GlobalArticle]:
 
 def fetch_google_news_jp_stock_articles() -> list[GlobalArticle]:
     return fetch_google_news_stock_articles("JP")
+
+
+def fetch_google_news_eu_stock_articles() -> list[GlobalArticle]:
+    return fetch_google_news_stock_articles("EU")

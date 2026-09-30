@@ -23,7 +23,8 @@ font:inherit;padding:12px;border:1px solid var(--line);border-radius:3px;backgro
  placeholder='최근 일주일 일본 금리 뉴스' autocomplete='off'>
  <select id='ns-market' name='market' aria-label='시장 선택'>
  <option value=''>국가 자동 인식</option><option value='CN'>중국</option><option value='HK'>홍콩</option>
- <option value='US'>미국</option><option value='KR'>한국</option><option value='JP'>일본</option></select>
+ <option value='US'>미국</option><option value='KR'>한국</option><option value='JP'>일본</option>
+ <option value='EU'>유럽</option></select>
  <select id='ns-days' name='days' aria-label='검색 기간'>
  <option value=''>기간 자동 인식</option><option value='1'>오늘</option><option value='7'>최근 7일</option>
  <option value='30'>최근 30일</option></select><button type='submit'>검색</button>
@@ -43,7 +44,7 @@ font:inherit;padding:12px;border:1px solid var(--line);border-radius:3px;backgro
 """
 
 _SCRIPT = "<script>" + JS_UTIL + """
-const nsLabels={CN:'중국',HK:'홍콩',US:'미국',KR:'한국',JP:'일본'};
+const nsLabels={CN:'중국',HK:'홍콩',US:'미국',KR:'한국',JP:'일본',EU:'유럽'};
 const nsKind={news:'주요 기사',report:'시장상황 보고서',market:'일일 시장 요약'};
 const nsForm=document.getElementById('ns-form'),nsList=document.getElementById('ns-results');
 const nsStatus=document.getElementById('ns-status');

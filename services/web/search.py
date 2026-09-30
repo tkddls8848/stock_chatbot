@@ -17,13 +17,14 @@ from urllib.parse import urlsplit
 
 from services.web.core.clock import today
 
-MARKETS = {"CN": "중국", "HK": "홍콩", "US": "미국", "KR": "한국", "JP": "일본"}
+MARKETS = {"CN": "중국", "HK": "홍콩", "US": "미국", "KR": "한국", "JP": "일본", "EU": "유럽"}
 _COUNTRIES = {
     "CN": ("중국", "중국 본토", "중화권", "china", "chinese", "a주"),
     "HK": ("홍콩", "hong kong", "hang seng", "항셍"),
     "US": ("미국", "미 증시", "united states", "usa", "미장"),
     "KR": ("한국", "국내", "우리나라", "korea", "korean", "국장"),
     "JP": ("일본", "일 증시", "japan", "japanese", "닛케이", "니케이"),
+    "EU": ("유럽", "유로존", "europe", "european", "eurozone", "stoxx", "dax"),
 }
 # 검색 도메인의 한·영·일·중 표기. 개별 기사마다 번역·주석 호출을 추가하지 않는다.
 _TOPICS = {
@@ -40,6 +41,7 @@ _TOPICS = {
     "경기침체": ("경기침체", "경기 침체", "불황", "recession", "景気後退", "衰退"),
     "연준": ("연준", "연방준비제도", "fomc", "federal reserve", "fed", "美联储"),
     "일본은행": ("일본은행", "일본 은행", "boj", "bank of japan", "日銀", "日本銀行"),
+    "유럽중앙은행": ("유럽중앙은행", "유럽 중앙은행", "ecb", "european central bank", "欧洲央行"),
     "인공지능": ("인공지능", "ai", "artificial intelligence", "人工智能", "生成ai"),
     "비트코인": ("비트코인", "bitcoin", "btc", "ビットコイン", "比特币"),
     "부동산": ("부동산", "real estate", "property", "不動産", "房地产"),

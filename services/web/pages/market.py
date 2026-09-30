@@ -46,7 +46,7 @@ _MARKET_MAIN = (
     _MARKET_STYLE
     + "<p class='kicker' id='mk-kicker'>시장 논조 · 최근 30일</p>"
     + h1(I_CHART, "<span id='headline'>시장별 뉴스 논조</span>")
-    + "<div class='disc' id='deck'>중국·홍콩·미국·한국·일본 뉴스를 시장별로 묶어 하루치 요약을 만들고, "
+    + "<div class='disc' id='deck'>중국·홍콩·미국·한국·일본·유럽 뉴스를 시장별로 묶어 하루치 요약을 만들고, "
     "그 요약에 매긴 <b>−1 ~ +1</b> 감성 점수의 추세를 그립니다. 감성은 보도 논조의 방향이지 "
     "시세나 수익률이 아닙니다.</div>"
     + """
@@ -76,9 +76,9 @@ _MARKET_MAIN = (
 _MARKET_SCRIPT = (
     "<script>" + JS_UTIL + """
 const LABELS={CN:'중국 본토',HK:'홍콩',US:'미국',KR:'한국',JP:'일본',EU:'유럽',OTHER:'기타'};
-const EN={CN:'China',HK:'Hong Kong',US:'United States',KR:'Korea',JP:'Japan'};
-const COLORS={US:'#1b2f4b',KR:'#9a6b2f',JP:'#2f6b5a',CN:'#8c2f3c',HK:'#56627a'};
-const MARKETS=['CN','HK','US','KR','JP'];
+const EN={CN:'China',HK:'Hong Kong',US:'United States',KR:'Korea',JP:'Japan',EU:'Europe'};
+const COLORS={US:'#1b2f4b',KR:'#9a6b2f',JP:'#2f6b5a',CN:'#8c2f3c',HK:'#56627a',EU:'#5f4a7d'};
+const MARKETS=['CN','HK','US','KR','JP','EU'];
 const DAY=86400000;
 // 받침이 있으면 앞 조사, 없으면 뒤 조사.
 const josa=(w,a,b)=>{const c=w.charCodeAt(w.length-1)-0xAC00;return w+(c>=0&&c<11172&&c%28?a:b);};
@@ -164,6 +164,6 @@ INDEX_HTML = page(
     "/",
     _MARKET_MAIN,
     _MARKET_SCRIPT,
-    description="중국·홍콩·미국·한국·일본 뉴스를 시장별로 묶어 매긴 하루치 논조 점수와 그 추세입니다. "
+    description="중국·홍콩·미국·한국·일본·유럽 뉴스를 시장별로 묶어 매긴 하루치 논조 점수와 그 추세입니다. "
     "정보 제공 목적이며 투자 권유가 아닙니다.",
 )

@@ -32,10 +32,11 @@ def test_publish_market_and_serve_it(tmp_path, monkeypatch):
 
 
 def test_market_page_includes_japan_before_its_data_is_ready():
-    assert "const MARKETS=['CN','HK','US','KR','JP']" in server.INDEX_HTML
+    assert "const MARKETS=['CN','HK','US','KR','JP','EU']" in server.INDEX_HTML
     assert "자료 수집·분석 대기" in server.INDEX_HTML
     for body in (server.INDEX_HTML, server.ABOUT_HTML):
         assert "일본" in body
+        assert "유럽" in body
 
 
 def test_publish_research_preserves_full_result_and_history(tmp_path, monkeypatch):

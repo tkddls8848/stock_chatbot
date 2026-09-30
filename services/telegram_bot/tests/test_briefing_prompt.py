@@ -16,13 +16,14 @@ def test_briefing_prompt_supports_all_automatic_session_kinds():
     assert "evening(장후)" in prompt
     assert "남은 장에서 확인할 포인트" in prompt
     assert "일본" in prompt and "JP" in prompt
+    assert "유럽" in prompt and "EU" in prompt
 
 
 def test_briefing_requests_japan_in_balanced_news_selection(monkeypatch):
     collector = AsyncMock(return_value=[])
     monkeypatch.setattr(service, "collect_global_market_news_items", collector)
     asyncio.run(service._collect_briefing_news(SimpleNamespace(bot_data={"news_registry": object()})))
-    assert collector.call_args.kwargs["markets"] == ("CN", "HK", "US", "KR", "JP")
+    assert collector.call_args.kwargs["markets"] == ("CN", "HK", "US", "KR", "JP", "EU")
 
 
 @pytest.mark.parametrize("kind", ["morning", "intraday", "evening"])

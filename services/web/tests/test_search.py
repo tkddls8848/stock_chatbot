@@ -38,6 +38,7 @@ def corpus(tmp_path, rows):
     ("최근 3일 일본 금리 인상에 대한 뉴스", ["JP"], "2026-09-21", "2026-09-23", ["금리", "인상"], None),
     ("2026-09-01부터 2026-09-04까지 중국 뉴스", ["CN"], "2026-09-01", "2026-09-04", [], None),
     ("이번 달 한국 긍정적인 뉴스", ["KR"], "2026-09-01", "2026-09-23", [], "positive"),
+    ("최근 일주일 유럽 금리 뉴스", ["EU"], "2026-09-17", "2026-09-23", ["금리"], None),
 ])
 def test_natural_query_conditions(query, market, start, end, topics, sentiment):
     parsed = search.interpret(query)

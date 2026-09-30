@@ -17,6 +17,7 @@ from services.telegram_bot.news.sources import (
     fetch_cls_articles,
     fetch_em_articles,
     fetch_futu_articles,
+    fetch_google_news_eu_stock_articles,
     fetch_google_news_global_articles,
     fetch_google_news_jp_stock_articles,
     fetch_google_news_kr_stock_articles,
@@ -72,6 +73,11 @@ _BUILTIN_SPECS["gnews_jp"] = (
     "일본 증시 뉴스",
     fetch_google_news_jp_stock_articles,
     "JP",
+)
+_BUILTIN_SPECS["gnews_eu"] = (
+    "유럽 증시 뉴스",
+    fetch_google_news_eu_stock_articles,
+    "EU",
 )
 
 

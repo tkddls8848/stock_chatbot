@@ -118,6 +118,23 @@ def test_japan_stock_source_is_registered_with_its_own_market():
     assert specs["gnews_jp"].market == "JP"
 
 
+def test_europe_sources_are_registered_with_their_own_market():
+    from services.telegram_bot.core.config import NEWS_SOURCE_MARKETS
+
+    # gnews 혼합 질의 하나로는 EU 몫이 큐에서 두 건 남짓이라 발행 게이트에 걸렸다.
+    specs = {
+        spec.key: spec
+        for spec in build_source_specs(
+            ["gnews_eu"],
+            [("ecb-press", "https://example.test/ecb.xml")],
+            NEWS_SOURCE_MARKETS,
+        )
+    }
+
+    assert specs["gnews_eu"].market == "EU"
+    assert specs["rss:ecb-press"].market == "EU"
+
+
 def test_configured_sources_and_feeds_all_resolve():
     # 설정에 적힌 키가 빌트인에 없으면 조용히 무시된다(경고만 남는다).
     # 소스를 추가하고 등록을 빠뜨리면 이 테스트가 잡는다.

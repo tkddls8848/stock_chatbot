@@ -205,15 +205,20 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보여, "뉴스 전송을 고쳐라"는 지시가 죽은 코드로 간다. 되살릴 일이 생기면
   git에서 꺼내는 별도 변경이다.
   예약 뉴스 비용은 기사 수가 아니라 보고서가 검토한 시장 수에 비례한다.
-- **시장은 다섯(중국·홍콩·미국·한국·일본)이고 소스는 아홉이다.** 기본 소스는
-  `NEWS_GLOBAL_SOURCE_KEYS`의 `futu`·`em_global`·`gnews`·`gnews_us`·`gnews_kr`·`gnews_jp`와
-  `NEWS_RSS_FEEDS`의 `mk-stock`·`yonhap-economy`·`fed-press`다. 보고서·시장 감성·브리핑·
-  뉴스 검색이 모두 같은 다섯 시장(`_MARKET_ORDER`·`MARKET_CHART_MARKETS`·
+- **시장은 여섯(중국·홍콩·미국·한국·일본·유럽)이고 소스는 열하나다.** 기본 소스는
+  `NEWS_GLOBAL_SOURCE_KEYS`의 `futu`·`em_global`·`gnews`·`gnews_us`·`gnews_kr`·`gnews_jp`·`gnews_eu`와
+  `NEWS_RSS_FEEDS`의 `mk-stock`·`yonhap-economy`·`fed-press`·`ecb-press`다. 보고서·시장 감성·브리핑·
+  뉴스 검색이 모두 같은 여섯 시장(`_MARKET_ORDER`·`MARKET_CHART_MARKETS`·
   `BRIEFING_NEWS_MARKETS`·`services/web/search.py`의 `MARKETS`)을 쓴다 — 한 곳에만 시장을
   더하거나 빼면 칸이 구조적으로 비거나 보고서 비용이 조용히 바뀐다.
+  웹 화면의 시장 목록(`services/web/pages/market.py`의 `MARKETS`, 검색 선택지,
+  `server.py`의 검색 `market` 허용값)도 같은 여섯이다.
   **일본 칸은 `gnews_jp`(일본어 로케일 `hl=ja`, 日経平均·日本株 질의)가 채운다.** 일본은
   아직 통신사·규제기관 1차 소스가 없고 집계 소스만 있다 — 같은 사실을 한 박자 늦게
   보는 시장이라는 것을 알고 읽는다. 1차 소스를 붙일 때 이 문장을 고친다.
+  **유럽 칸은 `gnews_eu`(영국판 영어 로케일 `hl=en-GB`, STOXX·DAX·ECB 질의)가 채우고
+  ECB 보도자료(`ecb-press`)가 1차 소스다.** 유럽은 시세 요약(`sector_summary_context`)이
+  없어 브리핑의 유럽 판단은 뉴스 근거뿐이다.
   `sina`·`cls`는 기본 목록에서 뺐다(`sina`는 이 서버에서 경로가 막혀 수집 워커를
   수 분씩 붙잡았고, `cls`는 `symbol="重点"` 필터가 얇아 주기당 0~1건이었다. 경위는
   `services/telegram_bot/core/config.py`의 주석). 중화권 속보는 `em_global`이 채운다.

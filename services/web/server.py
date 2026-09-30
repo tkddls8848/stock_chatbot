@@ -169,7 +169,7 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
     @app.api_route("/api/search", methods=["GET", "HEAD"])
     def search(
         q: str = Query(default="", max_length=200),
-        market: Literal["", "CN", "HK", "US", "KR", "JP"] = "",
+        market: Literal["", "CN", "HK", "US", "KR", "JP", "EU"] = "",
         days: int | None = Query(default=None, ge=1, le=30),
         page: int = Query(default=1, ge=1, le=1000),
     ) -> Response:

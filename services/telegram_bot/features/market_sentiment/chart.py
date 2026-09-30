@@ -24,6 +24,7 @@ _INK, _MUT, _LINE = "#0d1b2a", "#4c5a6b", "#d3d9e1"
 _POS, _NEG, _FLAT = "#b42331", "#1f57b0", "#8a96a5"
 MARKET_COLORS = {
     "US": "#16324f", "KR": "#b08d57", "JP": "#2e7d6b", "CN": "#8e3b46", "HK": "#5b6fa8",
+    "EU": "#6b4f8a",
 }
 
 
@@ -142,7 +143,7 @@ def render_market_chart(
     trend_ax.set_ylabel("Average sentiment")
     trend_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
     trend_ax.tick_params(axis="x", rotation=45)
-    trend_ax.legend(loc="upper left", frameon=False, ncol=5, fontsize=8.5, bbox_to_anchor=(0, 1.0),
+    trend_ax.legend(loc="upper left", frameon=False, ncol=6, fontsize=8.5, bbox_to_anchor=(0, 1.0),
                     handlelength=1.6, columnspacing=1.2)
     trend_ax.grid(axis="y", color=_LINE, linewidth=0.6)
     trend_ax.set_axisbelow(True)

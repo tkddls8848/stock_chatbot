@@ -295,16 +295,24 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 #   주는 `em_global`이 실제로 채운다. 큐 슬롯 12개를 0~1건이 점유하는 것도
 #   손해다. "全部"로 바꾸면 20건을 받지만 등급 없는 잡음이 섞인다.
 #
+# 유럽(EU)은 2026-09-30에 여섯 번째 시장으로 올렸다. 그전에는 `gnews` 혼합 질의
+# 하나로만 들어와 큐 슬롯이 두 건 남짓이라 보고서가 보류 한도(12시간)에 걸려야
+# 나갔다. `gnews_eu`가 자기 슬롯을 받고, `ecb-press`가 1차 소스 자리를 채운다.
+# Reuters·Bloomberg·FT는 공개 RSS가 없어 Google News 질의로만 들어온다.
+# 이 피드 주소는 작성 환경에서 외부 접속이 막혀 확인하지 못했다. 배포 뒤 서버에서
+# 소스별 수집 건수를 확인한다. 닿지 않으면 레지스트리가 쿨다운으로 쉬게 한다.
+#
 # `em_global`의 키가 `em`이 아닌 이유가 있다. 2026-07-19(54d1779)에 제거한 `em`은
 # 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은 전역
 # 속보(stock_info_global_em)로 엔드포인트가 다르다.
 NEWS_GLOBAL_SOURCE_KEYS = [
-    "futu", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp",
+    "futu", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp", "gnews_eu",
 ]
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
     ("yonhap-economy", "https://www.yna.co.kr/rss/economy.xml"),
     ("fed-press", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    ("ecb-press", "https://www.ecb.europa.eu/rss/press.html"),
 ]
 NEWS_SOURCE_FAILURE_THRESHOLD = 3
 # 주기가 60분이라 60분 쿨다운은 한 주기도 쉬지 못하고 곧바로 다시 불린다.
@@ -383,14 +391,16 @@ NEWS_SOURCE_MARKETS = {
     "gnews_jp": "JP",
     "gnews_us": "US",
     "gnews_kr": "KR",
+    "gnews_eu": "EU",
     "mk-stock": "KR",
     "yonhap-economy": "KR",
     "fed-press": "US",
+    "ecb-press": "EU",
 }
 # 시장 감성 예약 갱신의 조회 일수와 대상 시장 집합. 웹 화면이 이 기간의 차트를 그린다.
 # 30일로 넓히고 차트는 비선형 추세선을 그린다(2026-09-28). 다이제스트 보관(30일)과 같다.
 MARKET_CHART_LOOKBACK_DAYS = 30
-MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR", "JP"})
+MARKET_CHART_MARKETS = frozenset({"CN", "HK", "US", "KR", "JP", "EU"})
 # 아래는 일별 감성 다이제스트 전용이다.
 MARKET_CHART_MIN_ARTICLES = 6
 MARKET_CHART_MIN_DAYS = 3
@@ -468,7 +478,7 @@ MARKET_SENTIMENT_SCHEDULE_MINUTE = 40
 # GET API를 HTTP로 읽는다(shorts와 같은 방식). 웹은 루프백 8788에만 떠 있다.
 WEB_STATUS_BASE_URL = "http://127.0.0.1:8788"
 WEB_STATUS_TIMEOUT_SECONDS = 5
-BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP")
+BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP", "EU")
 BRIEFING_PROMPT_FILE = PROMPT_DIR / "briefing_ko.txt"
 BRIEFING_TIMEOUT = 180
 # 코멘트 출력 예약 토큰. 헤드라인을 늘린 만큼 코멘트도 길게 받는다.
