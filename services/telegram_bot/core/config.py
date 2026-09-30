@@ -302,8 +302,10 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 같은 날 기존 시장도 보강했다 — 일본은 1차 소스가 없어 `boj-whatsnew`(일본은행)와
 # 공영방송 `nhk-economy`를, 홍콩은 `gnews` 혼합 질의 하나뿐이라 공영방송
 # `rthk-finance`를, 미국은 독자층이 두터운 `cnbc-finance`를 더했다.
-# 이 피드 주소들은 작성 환경에서 외부 접속이 막혀 확인하지 못했다. 배포 뒤 서버에서
-# 소스별 수집 건수를 확인한다. 닿지 않으면 레지스트리가 쿨다운으로 쉬게 한다.
+# 배포 뒤 서버에서 확인했다(2026-09-30): 다섯 곳은 첫 수집에서 큐까지 들어왔고, NHK는
+# 옛 주소(www3.nhk.or.jp/rss/news/cat5.xml)가 열리기는 하나 8월 8일 이후 갱신이 멈춰
+# 48시간 필터에 전부 걸렸다 — NHK가 옮긴 새 주소(news.web.nhk)로 바꿨다.
+# 닿지 않는 피드는 레지스트리가 쿨다운으로 쉬게 한다.
 #
 # `em_global`의 키가 `em`이 아닌 이유가 있다. 2026-07-19(54d1779)에 제거한 `em`은
 # 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은 전역
@@ -318,7 +320,7 @@ NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("cnbc-finance", "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
     ("ecb-press", "https://www.ecb.europa.eu/rss/press.html"),
     ("boj-whatsnew", "https://www.boj.or.jp/rss/whatsnew.xml"),
-    ("nhk-economy", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
+    ("nhk-economy", "https://news.web.nhk/n-data/conf/na/rss/cat5.xml"),
     ("rthk-finance", "https://rthk.hk/rthk/news/rss/c_expressnews_cfinance.xml"),
 ]
 NEWS_SOURCE_FAILURE_THRESHOLD = 3
