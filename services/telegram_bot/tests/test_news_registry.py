@@ -135,6 +135,21 @@ def test_europe_sources_are_registered_with_their_own_market():
     assert specs["rss:ecb-press"].market == "EU"
 
 
+def test_added_primary_and_broadcast_feeds_carry_their_market():
+    from services.telegram_bot.core.config import NEWS_SOURCE_MARKETS
+
+    feeds = [(label, f"https://example.test/{label}.xml") for label in
+             ("cnbc-finance", "boj-whatsnew", "nhk-economy", "rthk-finance")]
+    specs = {spec.key: spec.market for spec in build_source_specs([], feeds, NEWS_SOURCE_MARKETS)}
+
+    assert specs == {
+        "rss:cnbc-finance": "US",
+        "rss:boj-whatsnew": "JP",
+        "rss:nhk-economy": "JP",
+        "rss:rthk-finance": "HK",
+    }
+
+
 def test_configured_sources_and_feeds_all_resolve():
     # 설정에 적힌 키가 빌트인에 없으면 조용히 무시된다(경고만 남는다).
     # 소스를 추가하고 등록을 빠뜨리면 이 테스트가 잡는다.

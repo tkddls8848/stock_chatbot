@@ -205,30 +205,31 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보여, "뉴스 전송을 고쳐라"는 지시가 죽은 코드로 간다. 되살릴 일이 생기면
   git에서 꺼내는 별도 변경이다.
   예약 뉴스 비용은 기사 수가 아니라 보고서가 검토한 시장 수에 비례한다.
-- **시장은 여섯(중국·홍콩·미국·한국·일본·유럽)이고 소스는 열하나다.** 기본 소스는
+- **시장은 여섯(중국·홍콩·미국·한국·일본·유럽)이고 소스는 열여섯이다.** 기본 소스는
   `NEWS_GLOBAL_SOURCE_KEYS`의 `futu`·`em_global`·`gnews`·`gnews_us`·`gnews_kr`·`gnews_jp`·`gnews_eu`와
-  `NEWS_RSS_FEEDS`의 `mk-stock`·`yonhap-economy`·`fed-press`·`ecb-press`다. 보고서·시장 감성·브리핑·
+  `NEWS_RSS_FEEDS`의 `mk-stock`·`yonhap-economy`·`fed-press`·`cnbc-finance`·`ecb-press`·
+  `boj-whatsnew`·`nhk-economy`·`rthk-finance`다. 보고서·시장 감성·브리핑·
   뉴스 검색이 모두 같은 여섯 시장(`_MARKET_ORDER`·`MARKET_CHART_MARKETS`·
   `BRIEFING_NEWS_MARKETS`·`services/web/search.py`의 `MARKETS`)을 쓴다 — 한 곳에만 시장을
   더하거나 빼면 칸이 구조적으로 비거나 보고서 비용이 조용히 바뀐다.
   웹 화면의 시장 목록(`services/web/pages/market.py`의 `MARKETS`, 검색 선택지,
   `server.py`의 검색 `market` 허용값)도 같은 여섯이다.
-  **일본 칸은 `gnews_jp`(일본어 로케일 `hl=ja`, 日経平均·日本株 질의)가 채운다.** 일본은
-  아직 통신사·규제기관 1차 소스가 없고 집계 소스만 있다 — 같은 사실을 한 박자 늦게
-  보는 시장이라는 것을 알고 읽는다. 1차 소스를 붙일 때 이 문장을 고친다.
+  **일본 칸은 `gnews_jp`(일본어 로케일 `hl=ja`, 日経平均·日本株 질의)가 채우고,
+  일본은행 새소식(`boj-whatsnew`)이 1차 소스, NHK 경제(`nhk-economy`)가 공영방송 보강이다.**
   **유럽 칸은 `gnews_eu`(영국판 영어 로케일 `hl=en-GB`, STOXX·DAX·ECB 질의)가 채우고
   ECB 보도자료(`ecb-press`)가 1차 소스다.** 유럽은 시세 요약(`sector_summary_context`)이
   없어 브리핑의 유럽 판단은 뉴스 근거뿐이다.
   `sina`·`cls`는 기본 목록에서 뺐다(`sina`는 이 서버에서 경로가 막혀 수집 워커를
   수 분씩 붙잡았고, `cls`는 `symbol="重点"` 필터가 얇아 주기당 0~1건이었다. 경위는
   `services/telegram_bot/core/config.py`의 주석). 중화권 속보는 `em_global`이 채운다.
-  미국은 연준 보도자료 RSS, 한국은 연합뉴스 경제 RSS가 1차 소스다 — **통신사·규제기관 발표는 매체가 받아쓰기 전에 나오므로,
+  미국은 연준 보도자료 RSS, 한국은 연합뉴스 경제 RSS가 1차 소스다. 미국은 CNBC 금융 RSS를
+  독자층이 두터운 매체로 더 받는다 — **통신사·규제기관 발표는 매체가 받아쓰기 전에 나오므로,
   집계 소스(Google News)만 보면 같은 사실을 한 박자 늦게 본다.**
   `cls` 어댑터(다시 켤 때)만 `df.iloc[::-1]`로 뒤집는다. akshare가 이 표 하나만 발행 시각
   **오름차순**으로 주기 때문이고, 뒤집지 않으면 사전선별의 `feed_rank` 신선도가
   거꾸로 매겨진다. 날짜·시각이 두 열로 쪼개져 오므로 `published_date`를 따로
   넘긴다 — `parse_news_datetime`은 "11:00:00"만으로는 날짜를 모른다.
-- **홍콩 칸은 `gnews`의 HK 질의가 채운다.** 그 전까지 `_MARKET_ORDER`와
+- **홍콩 칸은 `gnews`의 HK 질의와 RTHK 재경 RSS(`rthk-finance`)가 채운다.** 그 전까지 `_MARKET_ORDER`와
   `MARKET_CHART_MARKETS`에 HK가 있는데 HK 기사를 내는 소스가 없어 구조적으로 늘
   비어 있었다(과거 조회용 `NEWS_MARKET_BACKFILL_QUERIES`에만 HK가 있었다).
   번체 로케일(`hl=zh-HK`)로 질의해야 현지 종목명이 본문에 남는다.

@@ -299,7 +299,10 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 하나로만 들어와 큐 슬롯이 두 건 남짓이라 보고서가 보류 한도(12시간)에 걸려야
 # 나갔다. `gnews_eu`가 자기 슬롯을 받고, `ecb-press`가 1차 소스 자리를 채운다.
 # Reuters·Bloomberg·FT는 공개 RSS가 없어 Google News 질의로만 들어온다.
-# 이 피드 주소는 작성 환경에서 외부 접속이 막혀 확인하지 못했다. 배포 뒤 서버에서
+# 같은 날 기존 시장도 보강했다 — 일본은 1차 소스가 없어 `boj-whatsnew`(일본은행)와
+# 공영방송 `nhk-economy`를, 홍콩은 `gnews` 혼합 질의 하나뿐이라 공영방송
+# `rthk-finance`를, 미국은 독자층이 두터운 `cnbc-finance`를 더했다.
+# 이 피드 주소들은 작성 환경에서 외부 접속이 막혀 확인하지 못했다. 배포 뒤 서버에서
 # 소스별 수집 건수를 확인한다. 닿지 않으면 레지스트리가 쿨다운으로 쉬게 한다.
 #
 # `em_global`의 키가 `em`이 아닌 이유가 있다. 2026-07-19(54d1779)에 제거한 `em`은
@@ -312,7 +315,11 @@ NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
     ("yonhap-economy", "https://www.yna.co.kr/rss/economy.xml"),
     ("fed-press", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    ("cnbc-finance", "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
     ("ecb-press", "https://www.ecb.europa.eu/rss/press.html"),
+    ("boj-whatsnew", "https://www.boj.or.jp/rss/whatsnew.xml"),
+    ("nhk-economy", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
+    ("rthk-finance", "https://rthk.hk/rthk/news/rss/c_expressnews_cfinance.xml"),
 ]
 NEWS_SOURCE_FAILURE_THRESHOLD = 3
 # 주기가 60분이라 60분 쿨다운은 한 주기도 쉬지 못하고 곧바로 다시 불린다.
@@ -395,7 +402,11 @@ NEWS_SOURCE_MARKETS = {
     "mk-stock": "KR",
     "yonhap-economy": "KR",
     "fed-press": "US",
+    "cnbc-finance": "US",
     "ecb-press": "EU",
+    "boj-whatsnew": "JP",
+    "nhk-economy": "JP",
+    "rthk-finance": "HK",
 }
 # 시장 감성 예약 갱신의 조회 일수와 대상 시장 집합. 웹 화면이 이 기간의 차트를 그린다.
 # 30일로 넓히고 차트는 비선형 추세선을 그린다(2026-09-28). 다이제스트 보관(30일)과 같다.
