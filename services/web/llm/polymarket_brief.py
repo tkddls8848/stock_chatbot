@@ -43,6 +43,13 @@ INVENTORY_PREDICATE = re.compile(
 )
 
 
+# 분야 이름만 바꾸면 어느 분야에나 들어맞는 상투 첫 문장. 프롬프트의 예시를 모델이 그대로
+# 옮겨, 10/2 00시 수집분에서 다섯 분야 중 넷이 "전체적으로 질문별 전망의 차이가 커 하나의
+# 정책 방향으로 묶기 어렵다"로 시작했다(지정학에도 "정책 방향"). 실제로 반복된 표현만 막는다 —
+# 넓히면 다른 말로 한계를 바르게 쓴 문장까지 반려된다(아래 OUTLOOK 오탐 사례).
+BOILERPLATE_OPENING = re.compile(r"질문별\s*전망의?\s*차이가\s*커|하나의\s*(?:정책|공통된?)\s*방향")
+
+
 def _is_plain_declarative(sentence: str) -> bool:
     """해라체 평서문으로 끝났는가.
 
@@ -73,6 +80,8 @@ def validate_editorial(paragraph: str, totals: dict[str, Any]) -> None:
     # 모델은 이미 전망을 설명해 놓고도 같은 문구를 다시 받아 같은 실수를 반복했다.
     if INVENTORY_PREDICATE.search(opening):
         raise PolymarketBriefError("전체 요약: 나열로 끝맺지 말고 전망의 우세·경합 또는 판단의 한계를 결론으로 쓰십시오")
+    if BOILERPLATE_OPENING.search(opening):
+        raise PolymarketBriefError("상투 문장: 어느 분야에나 붙는 문장 대신 상위 질문의 구체적 관심사와 그 관심사에서 무게가 실리거나 갈리는 쪽을 쓰십시오")
     if not OUTLOOK_MARKERS.search(opening):
         raise PolymarketBriefError("전체 요약: 주제 나열 대신 전망의 차이·경합·우세 또는 판단의 한계를 설명하십시오")
     if 0 < int(totals.get("event_count") or 0) < 10 and not re.search(r"소수|표본|제한|어렵", opening):

@@ -508,7 +508,7 @@ def test_build_exposes_overview_as_first_sentence(tmp_path):
 ])
 def test_editorial_violations_get_exactly_one_correction(tmp_path, opening):
     from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
-    good = "전체적으로 질문별 전망의 차이가 커 하나의 정책 방향으로 묶기 어렵다. 상위 질문에서 시장 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+    good = "전체적으로 연준 금리 경로에서는 동결 쪽에 무게가 실리지만 연내 인하 횟수는 엇갈린다. 상위 질문에서 시장 참여자들은 정책 변경 가능성을 낮게 보고 있다."
     calls = []
     class Backend:
         def generate(self, **kwargs):
@@ -589,6 +589,29 @@ def test_the_two_overview_failures_name_different_causes(tmp_path):
         reasons.append(str(caught.value))
 
     assert reasons[0] != reasons[1]
+
+
+@pytest.mark.parametrize("opening", [
+    "전체적으로 질문별 전망의 차이가 커 하나의 정책 방향으로 묶기 어렵다.",
+    "전체적으로 질문별 전망의 차이가 커 하나의 공통된 방향으로 정리하기 어렵다.",
+    "전체적으로 휴전과 확전 질문이 섞여 하나의 정책 방향으로 보기 어렵다.",
+])
+def test_a_boilerplate_opening_is_sent_back_once(tmp_path, opening):
+    """10/2 00시 다섯 분야 중 넷이 같은 문장으로 시작했다. 어느 분야에나 붙는 문장은 요약이 아니다."""
+    from services.web.llm import PolymarketBriefError
+
+    raw = opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+    with pytest.raises(PolymarketBriefError, match="상투 문장"):
+        _analyzer(tmp_path, raw).analyze("지정학", {"event_count": 20}, [{"title": "t"}])
+
+
+def test_the_prompt_no_longer_hands_out_a_sentence_to_copy():
+    from services.web.core.config import POLYMARKET_BRIEF_PROMPT_FILE
+
+    prompt = POLYMARKET_BRIEF_PROMPT_FILE.read_text(encoding="utf-8")
+
+    assert "하나의 정책\n  방향으로 묶기 어렵다.\"" not in prompt
+    assert "구체적 관심사" in prompt
 
 
 def test_the_prompt_states_the_first_sentence_predicate_contract():
