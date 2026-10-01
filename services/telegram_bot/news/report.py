@@ -8,7 +8,9 @@
 LLM을 부르지 않고 보류한다. ② 모델이 직전 발행분 대비 새로 확인된 사실도
 방향 전환도 없다고 판정하면 보류한다. 보류한 시장의 기사는 큐에 남아 다음
 구간에 더 두꺼운 재료로 다시 평가되고, `NEWS_REPORT_MAX_HELD_HOURS`를 넘기면
-판정과 무관하게 발행한다.
+판정과 무관하게 발행한다. `NEWS_REPORT_ALWAYS_PUBLISH_MARKETS`(미국·한국)는 ②를 건너뛰고
+①을 통과하면 매 구간 발행한다. 어느 시장이든 새 본문이 직전 발행분과 사실상 같으면
+(`NEWS_REPORT_DUPLICATE_RATIO`) 보내지 않는다 — 같은 글을 두 번 읽게 하지 않는다.
 
 재료가 얇은 구간에 한 편을 억지로 쓰게 하면 같은 국면을 다른 문장으로
 반복하게 되고, 그 반복이 보고서를 기계적으로 만든다. 침묵도 출력이다.
@@ -17,6 +19,7 @@ LLM 호출 수는 기사 수가 아니라 ①을 통과한 시장 수에 비례�
 """
 
 import asyncio
+import difflib
 import html
 import logging
 from datetime import datetime, timedelta
@@ -27,6 +30,8 @@ from telegram.ext import Application
 from services.telegram_bot.core.clock import JST, ensure_jst, now
 from services.telegram_bot.core.config import (
     NEWS_DIGEST_MESSAGE_MAX_CHARS,
+    NEWS_REPORT_ALWAYS_PUBLISH_MARKETS,
+    NEWS_REPORT_DUPLICATE_RATIO,
     NEWS_REPORT_INTERVAL_HOURS,
     NEWS_REPORT_MAX_HEADLINES,
     NEWS_REPORT_MAX_HELD_HOURS,
@@ -412,6 +417,15 @@ async def _record_evaluations(
             logger.error("[NEWS REPORT] %s 학습 평가 저장 실패: %s", market, exc)
 
 
+def _repeats_previous(result: dict, previous: dict | None) -> bool:
+    """새 본문이 직전 발행분을 거의 그대로 되풀이하는가. 공백 차이는 무시한다."""
+    if not previous or not previous.get("analysis") or not result.get("analysis"):
+        return False
+    new = " ".join(str(result["analysis"]).split())
+    old = " ".join(str(previous["analysis"]).split())
+    return difflib.SequenceMatcher(None, new, old).ratio() >= NEWS_REPORT_DUPLICATE_RATIO
+
+
 async def _hold_market(
     memory: NewsReportMemory | None,
     market: str,
@@ -525,13 +539,16 @@ async def _send_news_report(app: Application) -> None:
             )
             continue
 
+        previous = memory.previous(market) if memory is not None else None
         result = await _analyze_market(
             analyzer,
             market,
             window,
             market_items,
-            memory.previous(market) if memory is not None else None,
-            must_publish,
+            previous,
+            # 매 구간 발행 시장은 모델에게도 보류하지 말라고 알린다. 실패했을 때 원문
+            # 제목을 나열하는 마지막 수단은 상한에 닿았을 때만 쓴다(아래 must_publish).
+            must_publish or market in NEWS_REPORT_ALWAYS_PUBLISH_MARKETS,
         )
         if result is None:
             # 분석이 실패했다. 상한 전이면 다음 구간이 같은 기사로 다시 본다 —
@@ -544,6 +561,11 @@ async def _send_news_report(app: Application) -> None:
             await _hold_market(
                 memory, market, result["hold_reason"] or "직전 보고서 대비 새로운 것이 없다"
             )
+            continue
+        elif _repeats_previous(result, previous):
+            # 상한에 닿았어도 같은 글을 다시 보내지는 않는다. 기사는 큐에 남는다.
+            await _record_evaluations(market, market_items, result, prefilter)
+            await _hold_market(memory, market, "직전 발행분과 본문이 같다")
             continue
 
         sections.append(

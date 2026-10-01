@@ -792,10 +792,10 @@ def test_the_model_can_hold_a_window_that_adds_nothing(tmp_path):
     """같은 국면이 이어지기만 하는 구간은 보내지 않는다. 침묵도 출력이다."""
     payload = {"publish": False, "hold_reason": "직전 판단이 그대로다",
                "analysis": "", "highlights": [], "evaluations": []}
-    memory = _memory(tmp_path, US=_published_entry(hours_ago=3))
+    memory = _memory(tmp_path, CN=_published_entry(hours_ago=3))
     app, queue, tracker = _gate_app(
         tmp_path,
-        items=[_item(0), _item(1)],
+        items=[_item(0, market="CN"), _item(1, market="CN")],
         analyzer=_analyzer(tmp_path, payload),
         memory=memory,
     )
@@ -805,9 +805,9 @@ def test_the_model_can_hold_a_window_that_adds_nothing(tmp_path):
     assert app.bot.messages == []
     assert tracker.confirmed == []
     assert len(asyncio.run(queue.snapshot())[1]) == 2
-    assert memory.held_windows("US") == 1
+    assert memory.held_windows("CN") == 1
     # 보류해도 직전 발행분은 그대로 남아 다음 호출의 비교 대상이 된다.
-    assert memory.previous("US")["analysis"] == "직전 보고서 본문이다."
+    assert memory.previous("CN")["analysis"] == "직전 보고서 본문이다."
 
 
 def test_a_held_window_still_feeds_the_prefilter_label(tmp_path):
@@ -817,9 +817,9 @@ def test_a_held_window_still_feeds_the_prefilter_label(tmp_path):
     prefilter = _RecordingPrefilter()
     app, _, _ = _gate_app(
         tmp_path,
-        items=[{**_item(0), "prefilter_candidate_id": "cand-1"}],
+        items=[{**_item(0, market="CN"), "prefilter_candidate_id": "cand-1"}],
         analyzer=_analyzer(tmp_path, payload),
-        memory=_memory(tmp_path, US=_published_entry(hours_ago=3)),
+        memory=_memory(tmp_path, CN=_published_entry(hours_ago=3)),
         prefilter=prefilter,
     )
 
@@ -870,13 +870,73 @@ def test_one_market_publishes_while_another_holds(tmp_path):
 def test_the_previous_report_is_sent_to_the_model(tmp_path):
     """무상태로 부르면 모델은 비교 대상이 없어 같은 국면을 새 얘기처럼 다시 쓴다."""
     analyzer = _analyzer(tmp_path, _payload())
-    memory = _memory(tmp_path, US=_published_entry(hours_ago=3, analysis="반도체가 국면이다."))
-    app, _, _ = _gate_app(tmp_path, items=[_item(0)], analyzer=analyzer, memory=memory)
+    memory = _memory(tmp_path, CN=_published_entry(hours_ago=3, analysis="반도체가 국면이다."))
+    app, _, _ = _gate_app(tmp_path, items=[_item(0, market="CN")], analyzer=analyzer, memory=memory)
 
     asyncio.run(send_news_report(app))
 
     assert analyzer._backend.calls[0]["previous"]["analysis"] == "반도체가 국면이다."
     assert analyzer._backend.calls[0]["must_publish"] is False
+
+
+def test_us_and_kr_publish_every_window(tmp_path):
+    """미국·한국은 모델의 보류 판정을 건너뛴다(운영자 결정, 2026-10-01). 보류가 보고서에서
+    시장이 빠진 것으로 읽혔다. 판정은 같은 호출 안이라 추가 호출은 없다."""
+    payload = {"publish": False, "hold_reason": "직전 판단이 그대로다",
+               "analysis": "미국 국면이 이어진다.", "highlights": [], "evaluations": []}
+    analyzer = _analyzer(tmp_path, payload)
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=3))
+    app, _, tracker = _gate_app(tmp_path, items=[_item(0), _item(1)], analyzer=analyzer, memory=memory)
+
+    asyncio.run(send_news_report(app))
+
+    assert analyzer._backend.calls[0]["must_publish"] is True
+    assert "미국" in app.bot.messages[0]
+    assert sorted(tracker.confirmed) == ["gnews_us-0", "gnews_us-1"]
+
+
+def test_us_still_needs_enough_articles(tmp_path, monkeypatch):
+    """매 구간 발행도 1차 게이트(재료 하한)는 그대로다. 얇으면 부르지 않는다."""
+    monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 8)
+    analyzer = _analyzer(tmp_path, _payload())
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=3))
+    app, _, _ = _gate_app(tmp_path, items=[_item(0)], analyzer=analyzer, memory=memory)
+
+    asyncio.run(send_news_report(app))
+
+    assert analyzer._backend.calls == [] and app.bot.messages == []
+
+
+@pytest.mark.parametrize("market", ["US", "CN"])
+def test_a_body_that_repeats_the_previous_report_is_held(tmp_path, market):
+    """미국 12·16시 보고서가 글자째 같았다(2026-10-01). 같은 글을 두 번 보내지 않는다."""
+    body = "미국 주식시장은 채권 수익률 상승과 인플레이션 우려로 혼조세다. 다음 구간은 연준을 본다."
+    memory = _memory(tmp_path, **{market: _published_entry(hours_ago=4, analysis=body)})
+    app, queue, tracker = _gate_app(
+        tmp_path,
+        items=[_item(0, market=market), _item(1, market=market)],
+        analyzer=_analyzer(tmp_path, _payload(analysis=body + " ")),
+        memory=memory,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert app.bot.messages == [] and tracker.confirmed == []
+    assert len(asyncio.run(queue.snapshot())[1]) == 2
+    assert memory.held_windows(market) == 1
+
+
+def test_a_changed_body_is_not_mistaken_for_a_repeat(tmp_path):
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=4, analysis="반도체가 국면이다. 금리를 본다."))
+    app, _, _ = _gate_app(
+        tmp_path, items=[_item(0)],
+        analyzer=_analyzer(tmp_path, _payload(analysis="금리 급등으로 국면이 바뀌었다. 기술주가 꺾였고 은행주가 올랐다.")),
+        memory=memory,
+    )
+
+    asyncio.run(send_news_report(app))
+
+    assert app.bot.messages
 
 
 def test_the_first_report_of_a_market_has_no_previous(tmp_path):
@@ -1069,6 +1129,17 @@ def test_report_prompt_requires_market_inference_instead_of_article_translation(
     assert "UTC +9" in prompt
     assert "기사를 차례로 번역하거나 나열하지 않는다" in prompt
     assert "야간" not in prompt
+
+
+def test_report_prompt_synthesizes_tone_instead_of_quoting_headlines():
+    """일본 보고서가 일본어 제목 원문을 따옴표째 옮기고 円을 원으로 바꿔 적었다(2026-10-01).
+    보고서는 기사 묶음의 분위기와 논조를 전하는 글이지 제목 모음이 아니다."""
+    prompt = _prompt_file().read_text(encoding="utf-8")
+
+    assert "기사 제목을 본문에 직접 언급하지 않는다" in prompt
+    assert "분위기와 논조" in prompt
+    assert "원으로 바꾸지 않는다" in prompt
+    assert "인용이\n  필요하면 「」만 쓴다" not in prompt
 
 
 def test_report_prompt_asks_for_a_publication_verdict_against_the_previous_report():
