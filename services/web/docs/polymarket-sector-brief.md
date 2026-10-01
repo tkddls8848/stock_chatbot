@@ -169,7 +169,7 @@ event는 `id`로 조인한다. 양쪽에 다 있는 것만 이동을 계산한�
 
 ### 4-2. 프롬프트에 들어가는 것
 
-그룹에 넣기 전에 24시간 참여 규모가 `POLYMARKET_BRIEF_MIN_VOLUME`(25,000달러)
+그룹에 넣기 전에 24시간 참여 규모가 `POLYMARKET_BRIEF_MIN_VOLUME`(5,000달러. 25,000달러에서 주식·시장 그룹이 0건으로 비어 2026-10-01에 내렸다)
 미만인 event를 뺀다. 거래가 거의 없는 질문의 확률은 컨센서스가 아니다. 아래
 "전부"와 표본 수는 이 하한을 넘은 전부다.
 
@@ -331,7 +331,7 @@ Cloudflare가 죽은 날 확률 숫자까지 멈춘다.
 ```text
 POLYMARKET_BRIEF_FILE
 POLYMARKET_BRIEF_NAMED_LIMIT        120
-POLYMARKET_BRIEF_MIN_VOLUME       25000     그룹에 넣는 24h 참여 규모 하한
+POLYMARKET_BRIEF_MIN_VOLUME       5000      그룹에 넣는 24h 참여 규모 하한
 POLYMARKET_BRIEF_MIN_EVENTS           5     표본 미달 기준(실측 뒤 10→5)
 POLYMARKET_BRIEF_MIN_EVENTS_BY_GROUP {"composite": 2}  복합만 예외
 POLYMARKET_BRIEF_MOVE_THRESHOLD_PP    3.0
