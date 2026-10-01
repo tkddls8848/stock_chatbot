@@ -29,6 +29,11 @@ SESSION_SECONDS = 12 * 3600
 FLOW_SECONDS = 600
 
 
+def account_lock(root: Path, key: str, *, timeout: float):
+    """계정 하나의 모든 쓰기·생성·삭제를 줄 세우는 잠금. 웹 요청과 뉴스레터 발송이 같이 쓴다."""
+    return file_lock(root / ".locks" / (key + ".lock"), stale_seconds=1800, timeout=timeout)
+
+
 @dataclass(frozen=True)
 class Account:
     key: str
@@ -87,8 +92,7 @@ class Accounts:
         # Serializes mutations, long-running generation and deletion, across threads/processes.
         # Auth is checked again after taking the lock so a deleted session cannot recreate data.
         try:
-            with file_lock(self.root / ".locks" / (account.key + ".lock"),
-                           stale_seconds=1800, timeout=0.1):
+            with account_lock(self.root, account.key, timeout=0.1):
                 self.identify(request)
                 yield account
         except FileLockTimeout as exc:

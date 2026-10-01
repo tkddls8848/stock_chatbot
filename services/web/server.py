@@ -1,4 +1,4 @@
-"""공개 시장정보와 Google 계정별 개인 리서치·자산관리 서버."""
+"""공개 시장정보와 Google 계정별 개인 리서치·자산관리·뉴스레터 구독 서버."""
 
 from __future__ import annotations
 
@@ -25,12 +25,14 @@ from services.web.pages import (
     TERMS_HTML,
 )
 from services.web.pages.portfolio import PORTFOLIO_HTML
+from services.web.pages.newsletter import UNSUBSCRIBE_CONFIRM_HTML
 from services.web.pages.privacy import PRIVACY_HTML
 from services.web.pages.search import SEARCH_HTML
 from services.web.pages.errors import ERROR_HTML
 from services.web.core.config import PUBLIC_DIR
 from services.web.core import config
 from services.web.accounts import Accounts
+from services.web.newsletter.routes import build_newsletter_router, build_unsubscribe_router
 from services.web.polymarket.repository import PolymarketRepository, make_etag
 from services.web.portfolio.routes import build_router
 from services.web.search import NewsSearch
@@ -67,6 +69,8 @@ _PAGE_CSP = {path: _content_security_policy(html) for path, html in {
     "/": INDEX_HTML, "/forecast": POLYMARKET_HTML, "/research": RESEARCH_HTML,
     "/about": ABOUT_HTML, "/terms": TERMS_HTML, "/search": SEARCH_HTML,
     "/portfolio": PORTFOLIO_HTML, "/privacy": PRIVACY_HTML,
+    # 확인·완료·오류 세 화면이 같은 셸이라 스크립트·스타일 해시가 같다.
+    "/newsletter/unsubscribe": UNSUBSCRIBE_CONFIRM_HTML,
 }.items()}
 _ERROR_CSP = {status: _content_security_policy(html) for status, html in ERROR_HTML.items()}
 _DEFAULT_CSP = _content_security_policy()
@@ -113,6 +117,8 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
     accounts = accounts or build_accounts()
     app.include_router(accounts.router())
     app.include_router(portfolio_router or build_router(accounts=accounts))
+    app.include_router(build_newsletter_router(accounts))
+    app.include_router(build_unsubscribe_router(accounts))
     from services.web.personal_research import build_research_router
     app.include_router(build_research_router(accounts, search_repository))
 
@@ -130,7 +136,8 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
             "Content-Security-Policy", _PAGE_CSP.get(request.url.path, _DEFAULT_CSP)
         )
         # 개인 화면은 어떤 캐시(브라우저·프록시)에도 남기지 않는다.
-        if request.url.path.startswith(("/portfolio", "/research", "/auth/", "/api/portfolio", "/api/research", "/api/account")):
+        if request.url.path.startswith(("/portfolio", "/research", "/auth/", "/api/portfolio", "/api/research", "/api/account",
+                                        "/newsletter/")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["Vary"] = "Cookie"

@@ -1,11 +1,11 @@
 """개인 화면(`/portfolio`): 전체 자산 어드바이저.
 
-화면은 정적 껍데기다. Google 로그인 뒤 브라우저가 `/api/portfolio/*`에서
-자산·관심종목·조언을 채운다. 값은 전부 `esc()`를 거쳐 넣는다 — 조언 본문은 모델이
+화면은 정적 껍데기다. Google 로그인 뒤 브라우저가 `/api/portfolio/*`·`/api/account/newsletter`에서
+자산·관심종목·조언·뉴스레터 구독을 채운다. 값은 전부 `esc()`를 거쳐 넣는다 — 조언 본문은 모델이
 쓴 문자열이다. 금액 입력은 만원 단위로 받아 원으로 바꿔 보낸다.
 """
 
-from services.web.pages.shell import I_LAYERS, I_SCALE, I_SHIELD, I_SPEC, JS_UTIL, h1, icon, page
+from services.web.pages.shell import I_DOC, I_LAYERS, I_SCALE, I_SHIELD, I_SPEC, JS_UTIL, h1, icon, page
 
 _MAIN = (
     """<style>
@@ -45,7 +45,7 @@ _MAIN = (
     + """
 <div id='pf-lock' class='login-panel'><div class='eyebrow'>개인 포트폴리오</div><h2>내 자산을 한눈에</h2><p>자산 구성부터 만기와 편중까지, 나만의 포트폴리오를 관리하세요.</p>
  <a id='pf-login' class='pf-btn pri' href='/auth/google?next=/portfolio'>Google 계정으로 로그인</a>
- <p class='pf-msg'>이름·이메일·프로필 사진을 요청하지 않습니다. <a href='/privacy'>개인정보 처리방침</a></p>
+ <p class='pf-msg'>Google 계정의 이름·이메일·프로필 사진은 받아 오지 않습니다. <a href='/privacy'>개인정보 처리방침</a></p>
  <p id='pf-lock-msg' class='pf-msg'></p>
 </div>
 <div id='pf-app' class='pf-hide'>
@@ -104,6 +104,24 @@ _MAIN = (
    <div id='pf-history' class='pf-hist'></div>
   </div>
  </section>
+ <section class='histbox' id='newsletter'><div class='histh'><span class='phico'>"""
+    + icon(I_DOC)
+    + """</span>뉴스레터</div>
+  <div class='pf-card'>
+   <p class='pf-msg'>매일 아침 8시 30분, 여섯 시장의 논조와 시장상황 보고서, 주요 기사를 이메일로 받습니다. 공개 화면과 같은 자료이며 내 자산·관심종목은 담기지 않습니다. 확인 코드를 입력한 주소로만 보냅니다.</p>
+   <p id='nl-state' class='pf-msg'>불러오는 중…</p>
+   <form id='nl-email-form' class='pf-row pf-hide'>
+    <input name='email' type='email' maxlength='254' placeholder='받을 이메일 주소' aria-label='받을 이메일 주소' autocomplete='email' required>
+    <button class='pf-btn pri' type='submit'>확인 코드 받기</button>
+   </form>
+   <form id='nl-code-form' class='pf-row pf-row-spaced pf-hide'>
+    <input name='code' inputmode='numeric' pattern='\\d{6}' maxlength='6' placeholder='6자리 코드' aria-label='확인 코드' autocomplete='one-time-code' required>
+    <button class='pf-btn pri' type='submit'>구독 확인</button>
+   </form>
+   <div class='pf-row pf-row-spaced'><button id='nl-off' class='pf-btn pf-hide' type='button'>뉴스레터 끄기</button></div>
+   <p id='nl-msg' class='pf-msg'></p>
+  </div>
+ </section>
 </div>
 """
 )
@@ -115,10 +133,11 @@ const SRC={deposit_rates:'예적금 금리(금감원)',market_rates:'시장 금�
 const STATE={ok:'정상',missing_key:'키 없음',error:'실패'};
 const won=v=>{v=Math.round(Number(v)||0);const e=Math.floor(Math.abs(v)/1e8),m=Math.floor(Math.abs(v)%1e8/1e4),p=[];if(e)p.push(e.toLocaleString()+'억');if(m||!e)p.push(m.toLocaleString()+'만');return (v<0?'-':'')+p.join(' ')+'원'};
 const $=id=>document.getElementById(id);let assets=[],watch={},editing=null;
-async function api(path,opt={}){const r=await fetch('/api/portfolio/'+path,{credentials:'same-origin',headers:opt.body?{'Content-Type':'application/json'}:{},...opt});
+async function call(url,opt={}){const r=await fetch(url,{credentials:'same-origin',headers:opt.body?{'Content-Type':'application/json'}:{},...opt});
  if(r.status===401){location.replace('/portfolio');throw new Error('로그인이 만료되었습니다.')}
  if(!r.ok){let d='';try{d=(await r.json()).detail}catch(e){}throw new Error(typeof d==='string'&&d?d:('요청 실패 '+r.status))}
  return r.status===204?null:r.json()}
+const api=(path,opt)=>call('/api/portfolio/'+path,opt),nl=(path,opt)=>call('/api/account/newsletter'+path,opt);
 function showLock(msg){$('pf-lock').classList.remove('pf-hide');$('pf-app').classList.add('pf-hide');$('pf-lock-msg').textContent=msg||''}
 function showApp(){$('pf-lock').classList.add('pf-hide');$('pf-app').classList.remove('pf-hide');loadAll()}
 async function boot(){const s=await fetch('/api/portfolio/session',{credentials:'same-origin'}).then(r=>r.json());
@@ -131,7 +150,7 @@ $('pf-delete-account').addEventListener('click',async()=>{
  if(r.ok)location.replace('/portfolio');else alert('삭제하지 못했습니다. 진행 중인 작업이 끝난 뒤 다시 시도하세요.');
 });
 window.addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
-function loadAll(){loadAssets();loadWatch();loadAdviceList()}
+function loadAll(){loadAssets();loadWatch();loadAdviceList();loadNl()}
 async function loadAssets(){const d=await api('assets');assets=d.assets||[];renderAssets();renderSummary()}
 function detail(a){const p=[];if(a.market)p.push(a.market+(a.code?' '+a.code:''));if(a.rate_pct!=null)p.push(a.rate_pct+'%');if(a.maturity)p.push('만기 '+a.maturity);
  if(a.region_code)p.push('지역 '+a.region_code+(a.complex?' '+a.complex:''));if(a.area_m2)p.push(a.area_m2+'㎡');if(a.loan_krw)p.push('대출 '+won(a.loan_krw));return p.join(' · ')}
@@ -176,6 +195,21 @@ function renderAdvice(a){const g=a.diagnosis||{},parts=[];parts.push("<p class='
 $('pf-advise').addEventListener('click',async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='진단하는 중…';
  try{renderAdvice(await api('advice',{method:'POST'}));loadAdviceList()}catch(err){if(err.message!=='locked')$('pf-advice').innerHTML="<p class='pf-msg err'>"+esc(err.message)+"</p>"}
  finally{b.disabled=false;b.textContent='자산 진단하기'}});
+function nlMsg(text,err){$('nl-msg').textContent=text||'';$('nl-msg').classList.toggle('err',!!err)}
+function renderNl(d){const on=d.status==='active',wait=d.status==='pending';
+ $('nl-state').textContent=!d.configured?'메일 발송을 준비 중입니다.':on?d.email+' 주소로 받고 있습니다.'+(d.last_sent_on?' 마지막 발송 '+d.last_sent_on+'.':'')
+  :wait?d.email+' 주소로 보낸 6자리 코드를 입력하세요. 코드는 10분 동안 유효합니다(오늘 '+d.codes_today+' / '+d.codes_per_day+'회).':'구독하지 않았습니다.';
+ $('nl-email-form').classList.toggle('pf-hide',on||!d.configured);$('nl-code-form').classList.toggle('pf-hide',!wait);
+ $('nl-off').classList.toggle('pf-hide',d.status==='none');$('nl-off').textContent=on?'뉴스레터 끄기':'신청 취소'}
+async function loadNl(){try{renderNl(await nl(''))}catch(err){nlMsg(err.message,true)}}
+$('nl-email-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;if(b)b.disabled=true;
+ try{renderNl(await nl('',{method:'PUT',body:JSON.stringify({email:e.target.elements.email.value.trim()})}));nlMsg('확인 코드를 보냈습니다. 메일함(스팸함 포함)을 확인하세요.')}
+ catch(err){nlMsg(err.message,true);loadNl()}finally{if(b)b.disabled=false}});
+$('nl-code-form').addEventListener('submit',async e=>{e.preventDefault();
+ try{renderNl(await nl('/confirm',{method:'POST',body:JSON.stringify({code:e.target.elements.code.value.trim()})}));e.target.reset();nlMsg('구독했습니다. 다음 날 아침부터 받습니다.')}
+ catch(err){nlMsg(err.message,true);loadNl()}});
+$('nl-off').addEventListener('click',async()=>{if(!confirm('뉴스레터를 끄고 저장한 주소를 지웁니다. 계속할까요?'))return;
+ try{await nl('',{method:'DELETE'});nlMsg('뉴스레터를 껐습니다.');loadNl()}catch(err){nlMsg(err.message,true)}});
 syncKind();boot();
 </script>"""
 )

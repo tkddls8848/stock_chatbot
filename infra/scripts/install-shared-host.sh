@@ -80,6 +80,8 @@ for unit in \
   stock-chatbot-polymarket-brief.service \
   stock-chatbot-polymarket-trending.service \
   stock-chatbot-polymarket-annotate.service \
+  stock-chatbot-newsletter.service \
+  stock-chatbot-newsletter.timer \
   polymarket-shorts.service \
   polymarket-shorts.timer; do
   install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "/etc/systemd/system/$unit"
@@ -115,6 +117,11 @@ if [ -x "$APP_DIR/shorts/.venv/bin/python" ] && [ -f "$APP_DIR/.env" ]; then
 else
   warn "쇼츠 venv(shorts/.venv) 또는 .env 가 없어 쇼츠 timer 를 켜지 않았다."
 fi
+
+# 뉴스레터는 구독자가 없으면 조용히 끝나고, 구독자가 있는데 SMTP 설정이 비면 실패로 드러난다.
+# 그래서 설정 여부와 무관하게 켠다 — 설정이 비면 구독 API가 503이라 구독자가 생기지 않는다.
+systemctl enable --now stock-chatbot-newsletter.timer >/dev/null
+ok "뉴스레터 timer 켜짐(매일 08:30 한국 시간)"
 
 # 프로세스마다 자기 설정을 따로 읽는다. 한쪽이 깨져도 다른 쪽은 뜨지만,
 # 설치 직후에는 둘 다 import되는지 확인한다.

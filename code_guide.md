@@ -32,7 +32,7 @@
 - **저장소 루트가 import root다.** 모든 명령을 루트에서 돌린다. 내부 import는
   `from services.telegram_bot.core...`, `from services.telegram_bot.news...`, `from services.web.polymarket...`
   형식이다.
-- 진입점은 여섯이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
+- 진입점은 일곱이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
   `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: services`가 난다.
   | 프로세스 | 명령 |
   |---|---|
@@ -42,6 +42,7 @@
   | 폴리마켓 줄글 one-shot | `python -m services.web.polymarket.sector_brief` |
   | 폴리마켓 트렌드 one-shot | `python -m services.web.polymarket.trending` |
   | 폴리마켓 검색 주석 one-shot | `python -m services.web.polymarket.annotate` |
+  | 뉴스레터 발송 one-shot | `python -m services.web.newsletter.send` |
 - **텔레그램 봇 폴더를 `telegram`으로 이름 붙이지 않는다.** `python-telegram-bot`이
   제공하는 최상위 모듈이 정확히 `telegram`이라, import root에 같은 이름을 두면
   19개 파일의 `from telegram import Update`가 전부 이 폴더를 집는다.
@@ -96,10 +97,12 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
     docs/  tests/
 
   web/                 주력 서비스(별도 프로세스, 8788). 공개 화면 + 인증된 개인 화면
-    server.py          FastAPI 라우트. 공개는 `GET`만, 쓰기는 `/api/portfolio/*` 인증 경로만
+    server.py          FastAPI 라우트. 로그인 없는 쓰기는 「현재 동작 가정」의 공개 쓰기 조건을 지킨다
                        — `python -m services.web.server`
     portfolio/         개인 화면: Google 계정 인증, 자산·관심종목 저장, 외부 시장 데이터
                        (금감원·ECOS·국토부), 규칙 진단, 조언 생성
+    newsletter/        계정별 뉴스레터 구독·확인 코드, SMTP 발송, 일일 다이제스트
+                       — 발송은 `python -m services.web.newsletter.send`(timer 08:30)
     core/              이 프로세스의 설정·시각·원자적 저장. 봇 것과 별개다
     llm/               줄글 브리프용 Cloudflare 백엔드와 분석기
     prompts/           줄글 브리프 프롬프트
@@ -152,6 +155,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `public/market.json`·`market_chart.png`·`news.json`·`meta.json` | 봇 | 웹 |
 | `public/polymarket/` | 예측 컨센서스 one-shot(웹 도메인) | 웹, 봇 `/web` |
 | `users/<계정키>/assets.json`·`advice/`·`watchlist.json`·`research/` | 웹 | 해당 계정의 웹 요청만 |
+| `users/<계정키>/newsletter.json` | 웹(구독 API와 뉴스레터 one-shot, 계정 잠금) | 해당 계정의 웹 요청, 뉴스레터 one-shot |
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
@@ -450,12 +454,19 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   쌓이면 디스크가 상한보다 먼저 찬다. 직전 하나를 남기는 것은 이력이 아니라,
   승격 순간에 이미 들어와 있던 요청이 자기가 읽던 shard를 계속 seek할 수 있게
   하기 위한 것이다. 과거 조회는 만들지 않는다 — 화면은 "지금"만 본다.
-- **공개 화면은 봇과 다른 프로세스이고 `GET`만 가진다.** 쓰기·실행이 있는 곳은
-  개인 화면(`/portfolio`·`/research`)이며 인증 뒤 계정별로 열린다.
+- **공개 화면은 봇과 다른 프로세스다. "공개는 `GET`만" 원칙은 폐기했다(2026-09-30 운영자
+  결정).** 봇이 하던 일이 웹으로 옮겨 오면서 웹이 주력이 됐고, 로그인 없이 쓰는 기능
+  (편지 안의 원클릭 해지 같은 것)을 HTTP 메서드 하나로 막을 이유가 없다. 대신 **로그인 없는
+  쓰기**는 셋을 지킨다. ① 무엇을 바꿀지는 서버가 검증하는 근거(서명 토큰 등)로만 정하고,
+  요청에서 받은 값을 저장 경로로 쓰지 않는다(형식 검사 뒤 서명 대조). ② 본문 크기·횟수에
+  상한을 둔다. ③ 외부 호출·LLM을 부르는 쓰기는 서버 전체 하루 상한 안에서만 돈다.
+  링크로 여는 화면(`GET`)은 상태를 바꾸지 않는다 — 메일 보안 검사기·미리보기가 링크를
+  미리 연다. 계정 데이터의 쓰기는 지금처럼 인증·Origin·계정 잠금을 쓴다.
   봇이 산출물을 갱신할 때 자기 코드로 `storage/public/`에 구워 두고(`market.json`·`market_chart.png`·
   `news.json`·`meta.json`), `services/web/server.py`는 그 파일을 그대로 내보낸다. 요청 때
   렌더하지 않는다 — `render_market_chart`는 dpi 160짜리 12×7.5인치 figure라 지인
-  몇 명의 새로고침만으로 사전선별 보정이 밀린다. **공개 API에 실행 트리거를 열지 않는다.**
+  몇 명의 새로고침만으로 사전선별 보정이 밀린다. **공개 요청이 봇의 예약 작업(보고서·리서치·
+  차트 렌더)을 실행하게 하지 않는다** — 이것은 메서드가 아니라 비용 규칙이라 위 폐기와 무관하게 남는다.
   운영자 봇의 예약 리서치·시장 갱신과 웹 개인 리서치·진단은 별도 흐름이다.
   개인 생성은 인증·계정 잠금·횟수 상한으로 제한한다. 봇 프로세스 안의 관리 웹(8787)은 없앴다(2026-09-24) —
   쓰기 API를 가진 면을 하나 줄인다. 8788도 방화벽에 열지 않는다 — TLS는 앞단 Caddy가 맡는다
@@ -465,7 +476,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **화면(`services/web/pages.py`)은 정적 문자열이고 외부 폰트·CDN·프레임워크를 부르지
   않는다.** 글꼴은 저장소의 서브셋 파일(`services/web/static/fonts/`, OFL)을 이 프로세스가
   `/fonts/*`로 직접 내려준다(2026-09-29, 리서치 리포트형 화면 개편). 페이지는 기동 시 한 번 조립되고 값은 브라우저가 `/api/*`에서 채운다 —
-  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된 자산 진단과 선택형 공개 근거 해설이다), 빌드
+  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된 자산 진단, 선택형 공개 근거 해설, 뉴스레터 확인 코드 메일이다), 빌드
   산출물이 없어야 배포가 파일 복사로 끝나기 때문이다. 값을 넣을 때는 `esc()`를
   거친다: 산출물에는 리서치 `reason`처럼 모델이 쓴 문자열이 그대로 들어 있다.
   화면은 **라이트 전용**이고(`color-scheme:light`) 감성의 부호는 **빨강이 긍정,
@@ -487,6 +498,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | 접근 제어 | `/api/portfolio/*`, `/api/research*`, `/api/account*`는 검증된 세션을 사용한다(세션 상태 확인만 공개). Google 설정이 없으면 503, 미로그인은 401. 변형 요청은 정확한 Origin을 요구한다. 파일 읽기·쓰기·생성·탈퇴는 같은 계정 잠금을 사용하고 잠금 안에서 세션을 다시 확인한다 |
   | 개인 리서치 | 개인 주제·시장·기간·관심종목으로 이미 수집된 공개 뉴스·시장 요약을 검색하고 근거 자료를 모은다. 하루 10회, 앞 20종목·검색별 5건, 최신 결과 한 건. 외부 AI로 개인 주제·관심종목을 보내지 않는다. 사용자가 선택한 경우 공개 근거 최대 15건만 Cloudflare로 보내 해설을 추가한다(서버 전체 하루 20회 예약, 실패도 집계). 종목의 추가·제외 판단을 만들어낸다고 표현하지 않는다 |
   | 개인 자산 | 기존 자산 CRUD·관심종목·진단을 계정 저장소에서 수행한다. 외부 AI로 자산·메모를 전송하지 않는다. 공개 금리와 실거래가를 비교하는 규칙 진단을 하루 10회, 최근 30건 보관한다. 공공데이터 실거래가 API에는 시군구·월만 보내고 단지·면적 매칭은 로컬에서 한다 |
+  | 뉴스레터 | 로그인 계정이 `/portfolio`에서 직접 입력한 주소로만 보낸다(Google에서 이메일을 받아 오지 않는다). 6자리 확인 코드(10분·5회 시도, 원문 미저장)를 입력해야 켜지고, 코드 메일은 계정당 하루 5통(실패도 센다)이다 — 남의 주소를 등록해 메일 폭탄으로 쓰지 못하게 하는 장치다. 주소를 바꾸면 다시 확인할 때까지 멈춘다. 내용은 공개 산출물(`market.json`·`news.json`)로 만든 여섯 시장의 논조·최신 보고서·주요 기사뿐이고 LLM을 부르지 않으며 개인 자산·관심종목·리서치를 담지 않는다. `stock-chatbot-newsletter.timer`가 매일 08:30 한 번 보내고 계정 잠금 안에서 `last_sent_on`을 써 같은 날 두 번 보내지 않는다. 자료가 비었거나 36시간보다 오래됐으면 그날은 보내지 않는다. 발송은 SMTP(465 SMTPS 또는 STARTTLS, 평문 없음)이고 주소를 로그에 남기지 않는다. 해지는 화면에서 하거나 편지 안의 링크로 한다. 링크는 받는 사람마다 계정 키와 주소를 묶은 HMAC 서명(`ACCOUNT_IDENTITY_KEY`에서 용도별로 파생)을 달아, 주소를 바꾸면 옛 링크가 새 구독을 끄지 못한다. 링크를 열면(`GET`) 확인 버튼만 보이고 `POST`가 끈다 — 메일 서비스의 원클릭 해지(RFC 8058, `List-Unsubscribe-Post`)도 같은 `POST`를 다른 출처에서 부르므로 Origin을 요구하지 않는다. 어느 쪽이든 주소까지 지운다. 서명 키가 없으면 끌 수 없는 편지가 되므로 보내지 않는다 |
   | 삭제·내보내기 | `/api/account/export`로 JSON 내려받기, `DELETE /api/account`로 활성 계정 데이터 전체 삭제와 세션 철회. 진행 중 작업과 삭제는 잠금으로 직렬화한다. 백업·스냅샷의 잔존은 방침과 복원 절차에서 별도로 다룬다. 즉시 전체 복사본 삭제를 약속하지 않는다 |
   | 노출 | 개인 화면·API·인증 응답은 `no-store`, `no-referrer`, `Vary: Cookie`, noindex. 운영자 봇 리서치는 `storage/bot/research/snapshot.json`에 저장하고 `/api/research`는 공개 파일을 절대 읽지 않는다. 로그에 토큰·입력·쿼리를 적지 않는다 |
   | 운영자 봇 | 기존 `storage/portfolio/watchlist.json`은 운영자 봇의 목록이다. 웹 계정별 목록과 공유하지 않는다. 봇은 `storage/users`를 읽거나 쓰지 않으며 두 모듈 사이 공용 코드도 만들지 않는다 |
@@ -686,9 +698,9 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 
 ### 죽은 코드는 추측하지 말고 측정한다
 
-여섯 진입점(`services.telegram_bot.main`, `services.web.server`, `services.web.polymarket.refresh`,
+일곱 진입점(`services.telegram_bot.main`, `services.web.server`, `services.web.polymarket.refresh`,
 `services.web.polymarket.sector_brief`, `services.web.polymarket.trending`,
-`services.web.polymarket.annotate`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
+`services.web.polymarket.annotate`, `services.web.newsletter.send`)에서 import 그래프를 따라가 도달하지 못하는 모듈을
 찾는다. 함수 안 지연 import는 그래프에 안 잡히므로 따로 확인한다.
 
 `news/{pipeline,preparation,delivery,selection}.py` 523줄이 이 방법으로 나왔다.

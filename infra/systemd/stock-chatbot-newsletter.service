@@ -1,0 +1,19 @@
+[Unit]
+Description=Send the daily market newsletter to confirmed subscribers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.newsletter.send
+Nice=10
+CPUWeight=20
+MemoryMax=192M
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

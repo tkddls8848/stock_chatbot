@@ -1,0 +1,14 @@
+[Unit]
+Description=Send the daily market newsletter at 08:30 Korea time
+
+[Timer]
+# 07:40 시장 감성 갱신과 08시 시장상황 보고서 판정 뒤다. 그날 아침 자료가 들어간다.
+# 타임존을 명시한다(code_guide.md의 시각 규칙). 같은 날 다시 돌아도 받은 계정은
+# last_sent_on으로 건너뛰므로 Persistent로 놓친 날을 기동 뒤에 따라잡는다.
+OnCalendar=*-*-* 08:30:00 Asia/Seoul
+AccuracySec=1min
+Persistent=true
+Unit=stock-chatbot-newsletter.service
+
+[Install]
+WantedBy=timers.target

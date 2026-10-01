@@ -245,3 +245,24 @@ PORTFOLIO_MATURITY_WINDOW_DAYS = 90    # 이 안에 만기가 오면 알린다
 PORTFOLIO_RATE_GAP_PP = 0.5            # 보유 예적금 금리가 시중 최고보다 이만큼 낮으면 알린다
 PORTFOLIO_LTV_WARNING = 0.6            # 부동산 대출 비율
 PORTFOLIO_MIN_LIQUID_SHARE = 0.1       # 예적금 비중이 이보다 낮으면 유동성 부족
+
+# ── 뉴스레터: 일일 요약 다이제스트(로그인 계정이 확인한 이메일로) ──────────────────
+# 발송은 SMTP 하나다. 호스트·보내는 주소가 비면 구독 API가 503을 돌려주고 발송
+# one-shot은 실패로 끝난다 — 구독자가 받는 줄 알고 있는데 조용히 안 나가는 상태를 만들지 않는다.
+# 465는 처음부터 TLS(SMTPS), 그 밖의 포트는 STARTTLS를 요구한다. 평문 발송 경로는 두지 않는다.
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
+NEWSLETTER_FROM = os.environ.get("NEWSLETTER_FROM", "").strip()
+SMTP_TIMEOUT = 20
+# 확인 코드. 남의 주소를 등록해 메일 폭탄으로 쓰는 것을 막는 것이 목적이라,
+# 코드 발송 횟수를 계정당 하루(한국 시간 달력)로 묶는다.
+NEWSLETTER_CODE_MINUTES = 10
+NEWSLETTER_CODE_ATTEMPTS = 5
+NEWSLETTER_CODES_PER_DAY = 5
+# 다이제스트가 읽는 공개 자료의 범위. 이보다 오래된 시장 요약만 남았으면 보내지 않는다 —
+# 어제와 같은 편지를 오늘 또 보내는 것보다 하루 쉬는 편이 낫다.
+NEWSLETTER_WINDOW_HOURS = 24
+NEWSLETTER_MAX_MARKET_AGE_HOURS = 36
+NEWSLETTER_HEADLINES_PER_MARKET = 3

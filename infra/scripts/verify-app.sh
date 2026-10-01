@@ -25,6 +25,9 @@ check "읽기 웹 active" systemctl is-active --quiet stock-chatbot-web.service
 check "읽기 웹 부팅 시 자동 시작" systemctl is-enabled --quiet stock-chatbot-web.service
 check "Polymarket timer active" systemctl is-active --quiet stock-chatbot-polymarket-refresh.timer
 check "Polymarket timer 부팅 시 자동 시작" systemctl is-enabled --quiet stock-chatbot-polymarket-refresh.timer
+check "뉴스레터 timer active" systemctl is-active --quiet stock-chatbot-newsletter.timer
+check "뉴스레터 마지막 발송 성공" bash -c \
+    "[ \"\$(systemctl show stock-chatbot-newsletter.service -p Result --value)\" = success ]"
 
 say "계정과 비밀"
 # 호스트는 ubuntu 단일 계정이고 그 계정에 sudo 가 있다(remote_coding 의 결정).
