@@ -17,7 +17,7 @@ from services.web.search import NewsSearch
 class ResearchProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     topic: str = Field("", max_length=200)
-    market: Literal["", "CN", "HK", "US", "KR", "JP"] = ""
+    market: Literal["", "CN", "HK", "US", "KR", "JP", "EU"] = ""
     days: int = Field(7, ge=1, le=30)
 
 

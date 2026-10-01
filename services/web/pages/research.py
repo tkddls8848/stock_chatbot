@@ -14,7 +14,7 @@ _MAIN = h1(I_LAYERS, "내 리서치") + """
  <div><a href='/portfolio'>관심종목·계정 관리</a> <button id='r-logout' class='action'>로그아웃</button></div></div>
  <form id='r-form' class='research-form'>
   <label>관심 주제<input id='r-topic' maxlength='200' placeholder='예: 반도체, 미국 금리' autocomplete='off'></label>
-  <label>시장<select id='r-market'><option value=''>전체 시장</option><option value='KR'>한국</option><option value='US'>미국</option><option value='CN'>중국</option><option value='HK'>홍콩</option><option value='JP'>일본</option></select></label>
+  <label>시장<select id='r-market'><option value=''>전체 시장</option><option value='KR'>한국</option><option value='US'>미국</option><option value='CN'>중국</option><option value='HK'>홍콩</option><option value='JP'>일본</option><option value='EU'>유럽</option></select></label>
   <label>자료 기간<select id='r-days'><option value='7'>최근 7일</option><option value='14'>최근 14일</option><option value='30'>최근 30일</option></select></label>
   <button class='action' type='submit'>조건 저장</button>
   <button class='action primary' id='r-create' type='button'>리서치 만들기</button>
