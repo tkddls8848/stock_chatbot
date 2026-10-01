@@ -523,6 +523,27 @@ def test_editorial_violations_get_exactly_one_correction(tmp_path, opening):
     assert calls[1]["events"] == calls[0]["events"]
 
 
+@pytest.mark.parametrize("opening, carries_previous", [
+    ("전체적으로 금과 원유에 대한 기대가 주를 이룬다.", False),          # 첫 문장 반려
+    ("전체적으로 베팅에 대한 참여자들의 판단이 갈린다.", True),            # 금지어
+    ("전체적으로 다양한 이슈에 대한 시장 전망이 분산되어 있습니다.", True),  # 문체
+])
+def test_an_opening_correction_does_not_hand_back_the_rejected_answer(tmp_path, opening, carries_previous):
+    """돌려준 이전 응답을 모델이 글자째 다시 냈다(10/2 주식·시장). 첫 문장 반려는 새로 쓰게 한다."""
+    from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
+    good = "전체적으로 연준 금리 경로에서는 동결 쪽에 무게가 실리지만 연내 인하 횟수는 엇갈린다. 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+    calls = []
+    class Backend:
+        def generate(self, **kwargs):
+            calls.append((json.loads(kwargs["user_prompt"]), kwargs["temperature"]))
+            return opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다." if len(calls) == 1 else good
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("test", encoding="utf-8")
+    assert PolymarketBriefAnalyzer(Backend(), prompt, 900).analyze("거시", {"event_count": 20}, [{"title": "t"}]) == good
+    assert ("previous_response" in calls[1][0]["revision"]) is carries_previous
+    assert calls[0][1] < calls[1][1]  # 교정은 조금 더 높은 온도로 다시 쓴다
+
+
 def test_invalid_correction_is_not_accepted(tmp_path):
     from services.web.llm import PolymarketBriefError
     raw = "전체적으로 기업과 암호자산 관련 이벤트에 대한 예측이 주를 이룬다. 상위 질문에서는 여러 기업과 자산에 대한 질문이 포함되어 있다."
@@ -572,7 +593,8 @@ def test_an_opening_that_ends_in_an_inventory_is_still_rejected(tmp_path, openin
 
     raw = opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
 
-    with pytest.raises(PolymarketBriefError, match="전체 요약"):
+    # "관심이 집중된다"는 관심 소개 사유로 더 구체적으로 반려된다. 어느 쪽이든 반려다.
+    with pytest.raises(PolymarketBriefError, match="전체 요약|관심 소개"):
         _analyzer(tmp_path, raw).analyze("주식", {"event_count": 20}, [{"title": "t"}])
 
 
@@ -605,13 +627,28 @@ def test_a_boilerplate_opening_is_sent_back_once(tmp_path, opening):
         _analyzer(tmp_path, raw).analyze("지정학", {"event_count": 20}, [{"title": "t"}])
 
 
+@pytest.mark.parametrize("opening", [
+    "전체적으로 중동 항로 정상화와 유가 최고가에 관심을 보인다.",
+    "전체적으로 중동 지역 갈등과 미국의 대이란 정책에 관심이 높다.",
+    "전체적으로 중동 지역 갈등에 대한 참여자들의 전망이 집중되고 있다.",
+])
+def test_an_opening_that_only_introduces_interest_gets_a_shaped_correction(tmp_path, opening):
+    """일반 사유로 교정하면 모델이 같은 문장을 그대로 다시 냈다. 고칠 모양을 사유에 담는다."""
+    from services.web.llm import PolymarketBriefError
+
+    raw = opening + " 상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다."
+    with pytest.raises(PolymarketBriefError, match="관심 소개") as caught:
+        _analyzer(tmp_path, raw).analyze("지정학", {"event_count": 20}, [{"title": "t"}])
+    assert "⟨쟁점⟩에서는" in str(caught.value)
+
+
 def test_the_prompt_no_longer_hands_out_a_sentence_to_copy():
     from services.web.core.config import POLYMARKET_BRIEF_PROMPT_FILE
 
     prompt = POLYMARKET_BRIEF_PROMPT_FILE.read_text(encoding="utf-8")
 
     assert "하나의 정책\n  방향으로 묶기 어렵다.\"" not in prompt
-    assert "구체적 관심사" in prompt
+    assert "구체적 쟁점" in prompt
 
 
 def test_the_prompt_states_the_first_sentence_predicate_contract():

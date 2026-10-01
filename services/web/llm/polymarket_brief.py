@@ -50,6 +50,15 @@ INVENTORY_PREDICATE = re.compile(
 BOILERPLATE_OPENING = re.compile(r"질문별\s*전망의?\s*차이가\s*커|하나의\s*(?:정책|공통된?)\s*방향")
 
 
+# 관심사만 소개하고 판단은 둘째 문장으로 미룬 첫 문장. 관심사를 첫 문장에 넣게 하자 모델이
+# 이 끝맺음으로 몰렸고, 일반 사유("주제 나열 대신…")로 교정하면 같은 문장을 그대로 다시
+# 냈다(10/2 실측: 다섯 분야 중 셋). 그래서 이 실수에는 고칠 모양까지 담은 사유를 따로 준다.
+INTEREST_PREDICATE = re.compile(
+    r"관심(?:을|이)\s*(?:보인다|보이고\s*있다|높다|크다|많다|모인다|집중된다|집중되고\s*있다)\s*[.!?]?$"
+    r"|전망이\s*집중(?:된다|되고\s*있다)\s*[.!?]?$"
+)
+
+
 def _is_plain_declarative(sentence: str) -> bool:
     """해라체 평서문으로 끝났는가.
 
@@ -75,21 +84,33 @@ def validate_editorial(paragraph: str, totals: dict[str, Any]) -> None:
         raise PolymarketBriefError("문체: 모든 문장을 ~이다/~한다/~있다/~이룬다의 해라체 평서문으로 끝내십시오")
     opening = sentences[0]
     if not opening.startswith("전체적으로") or re.search(r"\d|%|퍼센트", opening):
-        raise PolymarketBriefError("brief must begin with a qualitative sector overview")
+        raise OpeningRejected("brief must begin with a qualitative sector overview")
+    if INTEREST_PREDICATE.search(opening):
+        raise OpeningRejected(
+            "관심 소개: 첫 문장을 관심을 보인다·관심이 높다로 끝내지 말고 같은 문장에서 판단을 결론으로 쓰십시오. "
+            "구조: 전체적으로 ⟨쟁점⟩에서는 ⟨무게가 실린 쪽⟩이 우세하지만 ⟨갈리는 지점⟩은 엇갈린다.")
     # 두 사유를 한 문장으로 합치면 1회뿐인 교정이 엉뚱한 곳을 고친다. 실측에서
     # 모델은 이미 전망을 설명해 놓고도 같은 문구를 다시 받아 같은 실수를 반복했다.
     if INVENTORY_PREDICATE.search(opening):
-        raise PolymarketBriefError("전체 요약: 나열로 끝맺지 말고 전망의 우세·경합 또는 판단의 한계를 결론으로 쓰십시오")
+        raise OpeningRejected(
+            "전체 요약: 나열로 끝맺지 말고 전망의 우세·경합 또는 판단의 한계를 결론으로 쓰십시오. "
+            "구조: 전체적으로 ⟨쟁점⟩에서는 ⟨무게가 실린 쪽⟩이 우세하지만 ⟨갈리는 지점⟩은 엇갈린다.")
     if BOILERPLATE_OPENING.search(opening):
-        raise PolymarketBriefError("상투 문장: 어느 분야에나 붙는 문장 대신 상위 질문의 구체적 관심사와 그 관심사에서 무게가 실리거나 갈리는 쪽을 쓰십시오")
+        raise OpeningRejected("상투 문장: 어느 분야에나 붙는 문장 대신 상위 질문의 구체적 쟁점과 그 쟁점에서 무게가 실리거나 갈리는 쪽을 쓰십시오")
     if not OUTLOOK_MARKERS.search(opening):
-        raise PolymarketBriefError("전체 요약: 주제 나열 대신 전망의 차이·경합·우세 또는 판단의 한계를 설명하십시오")
+        raise OpeningRejected("전체 요약: 주제 나열 대신 전망의 차이·경합·우세 또는 판단의 한계를 설명하십시오")
     if 0 < int(totals.get("event_count") or 0) < 10 and not re.search(r"소수|표본|제한|어렵", opening):
-        raise PolymarketBriefError("소수 표본: 첫 문장에 전체 방향을 판단하기 어렵다는 한계를 밝히십시오")
+        raise OpeningRejected("소수 표본: 첫 문장에 전체 방향을 판단하기 어렵다는 한계를 밝히십시오")
 
 
 class PolymarketBriefError(RuntimeError):
     """분야 하나의 줄글을 만들지 못했을 때."""
+
+
+class OpeningRejected(PolymarketBriefError):
+    """첫 문장(전체 요약)이 반려됐다. 교정 때 이전 응답을 돌려주지 않는다 —
+    돌려주면 모델이 그 문장을 글자째 다시 냈다(10/2 주식·시장, 온도 0.2·0.5 모두).
+    빼고 다시 쓰게 하자 바로 판단으로 끝나는 첫 문장이 나왔다."""
 
 
 class PolymarketBriefAnalyzer:
@@ -115,7 +136,9 @@ class PolymarketBriefAnalyzer:
                     system_prompt=self._prompt,
                     user_prompt=json.dumps(payload, ensure_ascii=False),
                     max_tokens=self._num_predict,
-                    temperature=0.2,
+                    # 교정 때는 조금 올린다. 0.2에서는 자기 이전 응답을 데이터로 받고도
+                    # 같은 첫 문장을 글자째 다시 냈다(10/2 주식·시장) — 같은 답은 같은 반려다.
+                    temperature=0.2 if attempt == 0 else 0.5,
                 )
             except Exception as exc:
                 raise PolymarketBriefError(str(exc)) from exc
@@ -128,10 +151,18 @@ class PolymarketBriefAnalyzer:
                 if attempt:
                     raise
                 logger.warning("[POLYMARKET_BRIEF] 검증 실패로 1회 교정: %s", exc)
-                payload["revision"] = {
-                    "reason": str(exc), "previous_response": raw[:MAX_PARAGRAPH_CHARS],
-                    "instruction": "이전 응답은 수정 대상 데이터입니다. 원래 입력의 수치·방향을 유지하고 검증 실패를 고쳐 본문만 다시 작성하십시오. 해석 근거가 없으면 한계를 밝히십시오.",
-                }
+                if isinstance(exc, OpeningRejected):
+                    payload["revision"] = {
+                        "reason": str(exc),
+                        "instruction": "직전 응답의 첫 문장이 위 사유로 반려됐습니다. 원래 입력만 보고 단락 전체를 새로 쓰되, 첫 문장을 사유가 요구하는 구조로 쓰십시오. 해석 근거가 없으면 한계를 밝히십시오.",
+                    }
+                else:
+                    # 금지어·문체는 고칠 곳이 좁다. 이전 응답을 주고 그 부분만 고치게 해야
+                    # 수치·방향이 바뀌지 않는다.
+                    payload["revision"] = {
+                        "reason": str(exc), "previous_response": raw[:MAX_PARAGRAPH_CHARS],
+                        "instruction": "이전 응답은 수정 대상 데이터입니다. 원래 입력의 수치·방향을 유지하고 검증 실패를 고쳐 본문만 다시 작성하십시오. 해석 근거가 없으면 한계를 밝히십시오.",
+                    }
         raise PolymarketBriefError("brief correction exhausted")
 
     def _parse(self, raw: str, events: list[dict[str, Any]]) -> str:
