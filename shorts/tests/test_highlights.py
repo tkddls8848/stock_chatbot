@@ -117,3 +117,24 @@ def test_image_scene_that_invites_drawn_text_is_dropped(issue_source):
     safe = "a harbor with many container ships at dusk and cranes"   # many·harbor는 걸리지 않는다
     (clean,) = validate_scripts({"scripts": [{**script, "image_scene": safe}]}, [issue])
     assert clean["image_scene"] == safe
+
+
+@pytest.mark.parametrize(("outlook", "kept"), [
+    ("WTI가 9월에 90달러까지 내릴", True),
+    ("WTI가 9월에 90달러까지 내릴 것", False),     # "것"은 프로그램이 붙인다
+    ("WTI가 9월에 90달러까지 내린다", False),      # 관형형이 아니면 "것으로 봅니다"가 붙지 않는다
+    ("WTI가 9월에 90달러 이상으로 오를", False),   # LOW 질문의 방향을 뒤집었다
+    ("WTI가 9월에 하락할", False),                 # 기준 수치를 뺐다
+])
+def test_outlook_must_be_an_adnominal_clause_with_the_same_numbers_and_direction(outlook, kept):
+    """음성은 "참여자의 N%는 ⟨outlook⟩ 것으로 봅니다"다(운영자 결정 2026-10-02)."""
+    result = highlights._outlook(outlook, "Will WTI hit (LOW) $90 in September?", set())
+    assert (result == outlook) is kept
+
+
+def test_a_bad_outlook_is_dropped_without_failing_the_script(issue_source):
+    """전망 구절이 틀려도 그날 원고를 버리지 않는다. 음성은 라벨로 같은 틀을 만든다."""
+    issue, script = issue_source[3:]
+    labels = [{**label, "outlook": "틀린 것"} for label in script["market_labels"]]
+    (clean,) = validate_scripts({"scripts": [{**script, "market_labels": labels}]}, [issue])
+    assert all("outlook" not in label for label in clean["market_labels"])

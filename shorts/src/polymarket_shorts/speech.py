@@ -1,6 +1,6 @@
 """화면이 아니라 귀를 위한 한국어. 모델 없이 규칙만으로 동작한다.
 
-**확률은 화면과 같은 퍼센트로 짧게 말한다**("…쪽은 64.5%입니다"). 운영자
+**확률은 화면과 같은 퍼센트로 짧게 말한다**("참여자의 64.5%는 …것으로 봅니다"). 운영자
 결정(2026-09-27): "셋 중 둘꼴"·"다섯에 둘쯤" 같은 비유는 오히려 낯설고 길었다.
 다만 예·아니오 쌍은 읽지 않는다 — '예' 확률 하나만 말한다(2026-09-23 산출물이
 "예 99.95%, 아니오 0.05%"를 통째로 낭독해 표를 읽는 소리가 났다).
@@ -95,35 +95,45 @@ def end_sentence(text: str) -> str:
     return body if body.endswith((".", "!", "?", "…")) else f"{body}."
 
 
-def _object(word: str) -> str:
-    """목적격 조사. 받침이 있으면 '을', 없으면 '를'. 한글이 아니면 '을'로 본다."""
+def _with_direction(word: str) -> str:
+    """방향격 조사. 받침이 없거나 ㄹ 받침이면 '로', 그 밖의 받침이면 '으로'."""
     last = word.strip()[-1:]
     if not last or not _is_hangul(last):
-        return "을"
-    return "을" if (ord(last) - _HANGUL_BASE) % _JONGSEONG else "를"
+        return f"{word}으로"
+    jong = (ord(last) - _HANGUL_BASE) % _JONGSEONG
+    return f"{word}로" if jong in (0, 8) else f"{word}으로"
 
 
-def speak_markets(event_type: str, topic: str, rows: Sequence[tuple[str, str, str]]) -> str:
-    """선택지 확률을 질문 유형에 맞는 문장으로 말한다(운영자 결정 2026-09-27).
+def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
+    """선택지 확률을 "참여자의 N%는 ⟨전망⟩ 것으로 봅니다"로 말한다(운영자 결정 2026-10-02).
 
-    `rows`는 (선택지 이름, 화면의 '예' 퍼센트, '아니오' 퍼센트)다. 숫자는 화면과 같다.
-    - 양자택일(선택지 하나): "…에 대해 그렇다고 보는 사람은 전체의 X%, 그렇지 않다고
-      보는 사람은 전체의 Y%입니다."
-    - 여러 선택지 중 하나(exclusive): "주제에 대해 A를 선택한 사람은 전체의 X%, B를
-      선택한 사람은 전체의 Y%입니다."
-    - 여러 개가 함께 참일 수 있는 다중선택(independent): 주제 없이 "A를 선택한 사람은
-      전체의 X%, B를 …"
+    예전 "…를 선택한 사람은 전체의 N%"는 무엇을 보는지가 아니라 무엇을 눌렀는지만
+    말했다. 운영자 지시로 주제에 맞는 동사로 전망을 말한다.
+    `rows`는 (선택지 이름, '예' 퍼센트, '아니오' 퍼센트[, 전망 구절])이고 숫자는 화면과 같다.
+    전망 구절은 모델이 쓴 관형형("휴전이 10월 31일까지 이어질")이다. 없으면 라벨로
+    "…쪽으로 봅니다"를 만든다 — 음성이 모델에 묶이지 않게.
+    - 양자택일: "참여자의 X%는 ⟨전망⟩ 것으로, Y%는 그렇지 않을 것으로 봅니다."
+    - 여러 선택지: "참여자의 X%는 ⟨A⟩ 것으로, Y%는 ⟨B⟩ 것으로 봅니다."
+      한 가지만 고르는 질문(exclusive)은 앞에 "주제에 대해"를 붙인다.
     """
     if not rows:
         return ""
+
+    def clause(row) -> str:
+        label, yes = row[0], row[1]
+        outlook = row[3] if len(row) > 3 else None
+        return f"{yes}는 {outlook} 것으로" if outlook else f"{yes}는 {_with_direction(label + ' 쪽')}"
+
     if event_type == "binary" or len(rows) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
-        label, yes, no = rows[0]
-        return (f"{label}에 대해 그렇다고 보는 사람은 전체의 {yes}, "
-                f"그렇지 않다고 보는 사람은 전체의 {no}입니다.")
-    parts = ", ".join(f"{label}{_object(label)} 선택한 사람은 전체의 {yes}" for label, yes, _ in rows)
+        row = rows[0]
+        no = row[2]
+        if len(row) > 3 and row[3]:
+            return f"참여자의 {clause(row)}, {no}는 그렇지 않을 것으로 봅니다."
+        return f"{row[0]}에 대해 참여자의 {row[1]}는 그렇다고, {no}는 그렇지 않다고 봅니다."
+    spoken = "참여자의 " + ", ".join(clause(row) for row in rows) + " 봅니다."
     if event_type == "exclusive_multi" and topic:
-        return f"{topic}에 대해 {parts}입니다."
-    return f"{parts}입니다."
+        return f"{topic}에 대해 {spoken}"
+    return spoken
 
 
 def transition(index: int, theme: str = "") -> str:

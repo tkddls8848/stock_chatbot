@@ -62,7 +62,7 @@ def test_issue_narration_gives_the_reason_first_then_the_percent(issue_source):
     assert not re.search(r"예 .*아니오", scene.narration)
     # 선택지는 확률을 말하기 시작할 때 뜬다.
     assert 0 < scene.options_at < 1
-    assert "전체의 55%" in scene.narration[round(scene.options_at * len(scene.narration)):]
+    assert "참여자의 55%는" in scene.narration[round(scene.options_at * len(scene.narration)):]
     assert scenario.scenes[1].options[0] == ("10월 금리 동결", "55%", .55)
 
 

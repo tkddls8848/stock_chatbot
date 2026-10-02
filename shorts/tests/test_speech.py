@@ -47,24 +47,43 @@ def test_the_closing_is_the_fixed_line_with_the_site():
     assert "nunchi.live" in speech.CLOSING_SCREEN
 
 
-def test_a_yes_no_question_says_both_sides_as_shares_of_everyone():
-    spoken = speech.speak_markets("binary", "호르무즈 해협 교통",
-                                  [("9월 30일까지 호르무즈 해협 교통 정상화", "0.4%", "99.6%")])
-    assert spoken == ("9월 30일까지 호르무즈 해협 교통 정상화에 대해 그렇다고 보는 사람은 전체의 0.4%, "
-                      "그렇지 않다고 보는 사람은 전체의 99.6%입니다.")
+def test_a_yes_no_question_says_what_participants_expect():
+    """"…선택한 사람은 전체의 N%" 대신 주제에 맞는 동사로 전망을 말한다(운영자 결정 2026-10-02)."""
+    spoken = speech.speak_markets("binary", "호르무즈 해협 통행",
+                                  [("9월 30일까지 정상화", "0.4%", "99.6%", "9월 30일까지 호르무즈 해협 통행이 정상화될")])
+    assert spoken == "참여자의 0.4%는 9월 30일까지 호르무즈 해협 통행이 정상화될 것으로, 99.6%는 그렇지 않을 것으로 봅니다."
 
 
-def test_one_of_several_names_the_topic_then_each_choice():
-    spoken = speech.speak_markets("exclusive_multi", "연준 금리 결정",
-                                  [("10월 금리 25bp 인상", "64.5%", "35.5%"), ("10월 금리 동결", "33.5%", "66.5%")])
-    assert spoken == ("연준 금리 결정에 대해 10월 금리 25bp 인상을 선택한 사람은 전체의 64.5%, "
-                      "10월 금리 동결을 선택한 사람은 전체의 33.5%입니다.")
+def test_several_choices_each_say_their_own_outlook():
+    spoken = speech.speak_markets("independent_multi", "이스라엘·이란 휴전", [
+        ("10월 31일까지", "79.5%", "20.5%", "휴전이 10월 31일까지 이어질"),
+        ("11월 30일까지", "70.5%", "29.5%", "휴전이 11월 30일까지 이어질"),
+    ])
+    assert spoken == ("참여자의 79.5%는 휴전이 10월 31일까지 이어질 것으로, "
+                      "70.5%는 휴전이 11월 30일까지 이어질 것으로 봅니다.")
 
 
-def test_several_can_be_true_lists_each_choice_without_a_topic():
-    spoken = speech.speak_markets("independent_multi", "경기 지표",
-                                  [("미국 경기 침체", "9.5%", "90.5%"), ("유로존 금리 인하", "40%", "60%")])
-    assert spoken == "미국 경기 침체를 선택한 사람은 전체의 9.5%, 유로존 금리 인하를 선택한 사람은 전체의 40%입니다."
+def test_one_of_several_names_the_topic_first():
+    spoken = speech.speak_markets("exclusive_multi", "2026년 연준 금리 인상 횟수", [
+        ("2회 인상", "60.5%", "39.5%", "연준이 2026년에 금리를 2회 인상할"),
+        ("3회 인상", "18.6%", "81.4%", "연준이 2026년에 금리를 3회 인상할"),
+    ])
+    assert spoken.startswith("2026년 연준 금리 인상 횟수에 대해 참여자의 60.5%는 연준이 2026년에 금리를 2회 인상할 것으로")
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    ("355달러 이상", "참여자의 85%는 355달러 이상 쪽으로 봅니다."),
+    ("10월 인하", "참여자의 85%는 10월 인하 쪽으로 봅니다."),
+])
+def test_without_an_outlook_the_label_still_says_an_outlook_not_a_choice(label, expected):
+    """모델이 전망 구절을 못 써도 음성은 같은 틀이다. "선택한 사람"으로 되돌아가지 않는다."""
+    spoken = speech.speak_markets("independent_multi", "", [(label, "85%", "15%")])
+    assert spoken == expected and "선택" not in spoken
+
+
+def test_a_yes_no_without_an_outlook_keeps_both_sides():
+    spoken = speech.speak_markets("binary", "", [("연내 경기 침체", "9.5%", "90.5%")])
+    assert spoken == "연내 경기 침체에 대해 참여자의 9.5%는 그렇다고, 90.5%는 그렇지 않다고 봅니다."
 
 
 def test_no_choices_say_nothing():

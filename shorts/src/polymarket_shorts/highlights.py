@@ -40,6 +40,14 @@ label은 화면에 선택지 이름으로 뜹니다. 선택지끼리 서로 다�
 예: "Will Nicolás Maduro be the leader of Venezuela end of 2026?" → "니콜라스 마두로"("니콜라스 마두로 지도자 2026년"은 실패),
 "Will South Korea ETF (EWY) hit (LOW) $186 Week of September 28 2026?" → "186달러까지 하락",
 "Fed rate cut in October?"·"… in December?" → "10월 인하"·"12월 인하". 선택지가 하나뿐이면 조건 전체를 짧게 옮기세요.
+market_labels의 각 항목에는 outlook(6~60자)도 넣으세요. 그 선택지가 맞는다고 보는 전망을 주어까지 갖춘
+구절로 쓰되, 뒤에 "것으로 봅니다"가 붙도록 '~할'·'~될'·'~일' 같은 관형형으로 끝냅니다. "것"은 쓰지 않습니다.
+프로그램이 "참여자의 79.5%는 ⟨outlook⟩ 것으로 봅니다"로 읽습니다. 주제에 맞는 동사를 고르세요.
+예: "Israel x Iran ceasefire continues through October 31?" → "휴전이 10월 31일까지 이어질",
+"Will 2 Fed rate hikes happen in 2026?" → "연준이 2026년에 금리를 2회 인상할"(숫자는 원문대로),
+"Will Alphabet Inc. (GOOGL) hit (HIGH) $355 …?" → "알파벳 주가가 355달러 이상으로 오를",
+"Will Nicolás Maduro be the leader of Venezuela end of 2026?" → "2026년 말에도 니콜라스 마두로가 베네수엘라를 이끌".
+outlook에도 label과 같은 숫자·방향 규칙이 적용되고 확률·퍼센트는 쓰지 않습니다.
 원문의 숫자는 그대로 쓰세요. HIGH는 "이상"·"상승", LOW는 "이하"·"하락"을 명시해 방향이 뒤바뀌지 않게 하세요.
 "hit (HIGH) $X"는 기간 중 X까지 오르는지, "hit (LOW) $X"는 기간 중 X까지 내려가는지 묻는 질문입니다.
 확률·참여 규모는 프로그램이 붙입니다. 그 수치를 다시 쓰지 마세요. 질문 조건인 금리·수익률 등은 보존하세요.
@@ -62,7 +70,7 @@ context는 이슈마다 끝맺음을 바꿔 같은 틀이 반복되지 않게 �
 image_scene은 배경 그림 묘사입니다. 영어 8~30단어로, 이 이슈를 상징하는 구체적인 사물이나 풍경 한 장면을 쓰세요
 (예: "oil tankers crossing a narrow sea strait at dusk, rocky coastline"). 건물 정면·간판·문서·화면·차트·그래프·국기·사람·글자는 넣지 마세요.
 JSON만 반환하세요: {"scripts":[{"id":"이벤트 ID", "headline":"...", "question":"...",
-"market_labels":[{"id":"개별 시장 ID", "label":"..."}], "context":"...", "watch_point":"...",
+"market_labels":[{"id":"개별 시장 ID", "label":"...", "outlook":"..."}], "context":"...", "watch_point":"...",
 "image_scene":"...", "news_ids":["news:1"]}]}. 모든 입력 이슈에 하나씩 쓰세요. 뉴스가 없거나 무관하면 news_ids는 빈 배열입니다."""
 
 
@@ -249,6 +257,24 @@ def _translation(text: str, source: str, field: str, shared: set[str] = frozense
                 raise HighlightError("개별 베팅의 상승·하락 조건이 번역에서 빠졌습니다")
 
 
+def _outlook(value, question: str, shared: set[str]) -> str | None:
+    """"참여자의 N%는 ⟨outlook⟩ 것으로 봅니다"에 들어갈 관형형 구절. 틀리면 None.
+
+    원고 전체를 다시 묻지 않는다 — 이 구절이 없어도 음성은 라벨로 같은 틀의 문장을
+    만든다(`speech.speak_markets`). 숫자·상승/하락 방향은 라벨과 같은 검사를 거친다.
+    """
+    try:
+        text = _text(value, "outlook", 6, 60)
+        _translation(text, question, "label", shared)
+    except HighlightError:
+        return None
+    last = text[-1]
+    # 관형형 어미 ㄹ(할·될·오를·이끌·일)로 끝나야 뒤에 "것으로 봅니다"가 붙는다.
+    if text.endswith("것") or not ("가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 == 8):
+        return None
+    return text
+
+
 def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
     rows = payload.get("scripts")
     if not isinstance(rows, list) or len(rows) != len(issues):
@@ -310,7 +336,11 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                 # 라벨은 해당 질문 하나만 옮긴다. 어느 질문인지 붙여야 교정이 조건을 되찾는다.
                 errors.append(f"이슈 {issue['id']} 개별 질문 {market['id']}({market['question']}) {error}")
                 continue
-            clean["market_labels"].append({"id": market["id"], "label": text})
+            row_out = {"id": market["id"], "label": text}
+            outlook = _outlook(label.get("outlook"), market["question"], shared)
+            if outlook:
+                row_out["outlook"] = outlook
+            clean["market_labels"].append(row_out)
         news_ids = row.get("news_ids")
         available = {news["id"] for news in issue["news"]}
         # 뉴스는 검수 기록의 보조 근거다. 없는 번호·중복은 버리고 원고는 살린다 — 모델이

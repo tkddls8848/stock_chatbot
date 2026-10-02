@@ -141,7 +141,7 @@ def build_scenario(
             if market["id"] != label["id"]:
                 raise ValueError("개별 질문과 확률이 일치하지 않습니다")
             options.append((label["label"], market["yes"], market["yes_probability"]))
-            spoken.append((label["label"], market["yes"], market["no"]))
+            spoken.append((label["label"], market["yes"], market["no"], label.get("outlook")))
             evidence.append(f"시장 {market['id']}: {market['question']} / 예 {market['yes']} / 아니오 {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         end_text = deadline.strftime("%Y-%m-%d %H:%M %z")
