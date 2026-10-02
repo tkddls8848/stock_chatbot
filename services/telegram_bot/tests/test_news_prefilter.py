@@ -633,3 +633,24 @@ def test_model_save_failure_keeps_current_model(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         asyncio.run(service.optimize_chunk(1))
     assert service._model == previous
+
+
+def test_prefilter_vectors_ignore_the_publisher_tail():
+    """과거 관측 제목에는 " - 매체명"이 있고 새 수집분에는 없다. 같은 기사는 같은 벡터여야 한다."""
+    from services.telegram_bot.features.news_prefilter.optimizer import _vector
+
+    assert _vector("코스피 7000선 회복 - 연합뉴스", {}) == _vector("코스피 7000선 회복", {})
+
+
+def test_event_text_keeps_the_pre_strip_form_so_event_memory_stays_continuous():
+    """사건 메모리는 매체명 꼬리가 있던 원문으로 쌓여 있다. 뗀 제목으로 비교하면 같은 사건이
+    새 사건이 된다(2026-10-02 실측 370건 중 179건)."""
+    from services.telegram_bot.features.news_prefilter.service import _normalize_text
+    from services.telegram_bot.news import sources
+
+    raw = GlobalArticle(article_id="rss:t:1", title="코스피 마감 - 연합인포맥스",
+                        content="코스피 마감\xa0\xa0연합인포맥스", published_at="",
+                        extra={"source": "연합인포맥스"})
+    stripped = sources._google_article(raw, "gnews-kr:1", "KR")
+    assert stripped.title == "코스피 마감"
+    assert _normalize_text(stripped) == _normalize_text(raw)

@@ -104,6 +104,8 @@ def _queue_item(candidate) -> dict:
         "label": candidate.spec.label,
         "market": _market_of(candidate.spec, article),
         "title": article.title[:240],
+        # 실제 매체명(Google News `<source>`). 화면의 출처로만 쓰고 분석 모델에는 보내지 않는다.
+        "publisher": str(article.extra.get("publisher") or ""),
         "url": article.url if len(article.url) <= 500 else "",
         "published_at": article.published_at,
         "published_date": article.published_date or "",
@@ -252,6 +254,27 @@ def _report_time_label(value: str) -> str:
     return display_time(value)
 
 
+def _reportable(items: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(분석에 쓸 기사, 뺄 기사). 제목이 비었거나 article_id가 앞 기사와 같으면 뺀다.
+
+    **자르기(`NEWS_REPORT_MAX_HEADLINES`)와 재료 하한보다 먼저** 정리한다 — 빈 제목이 앞을
+    차지하면 뒤의 정상 기사가 잘려 나가고, 하한이 셀 수 없는 기사까지 센다(2026-10-02 실측:
+    중국 큐 314건 중 92건이 제목 없는 속보였고, 그 하나가 시장 분석 전체를 멈췄다).
+    분석·근거 조회·공개가 모두 이 목록의 위치(index)를 쓰므로 짝이 어긋나지 않는다.
+    """
+    kept: list[dict] = []
+    skipped: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        article_id = str(item.get("article_id") or "").strip()
+        if not str(item.get("title") or "").strip() or not article_id or article_id in seen:
+            skipped.append(item)
+            continue
+        seen.add(article_id)
+        kept.append(item)
+    return kept, skipped
+
+
 def _headline_payload(items: list[dict]) -> list[dict]:
     payload = []
     for index, item in enumerate(items):
@@ -262,8 +285,11 @@ def _headline_payload(items: list[dict]) -> list[dict]:
         payload.append(
             {
                 "index": index,
+                "article_id": str(item.get("article_id") or ""),
                 "title": str(item.get("title") or ""),
+                # 수집 경로 이름이다. 매체명(publisher)은 대조에만 쓰고 모델에 보내지 않는다.
                 "source": str(item.get("label") or item.get("source") or ""),
+                "publisher": str(item.get("publisher") or ""),
                 "published_at": _report_time_label(formatted),
                 "exploration": bool(item.get("prefilter_exploration")),
             }
@@ -494,7 +520,8 @@ def _public_news(published: list, closed_at: datetime) -> list[dict]:
                 "title": highlight["title"], "text": str(item.get("title") or ""),
                 "date": day.isoformat(),
                 "published_at": ensure_jst(occurred).isoformat() if occurred else "",
-                "source": str(item.get("label") or item.get("source") or ""),
+                # 화면의 출처는 실제 매체명이다. 없으면(1차 소스 RSS 등) 수집 경로 이름.
+                "source": str(item.get("publisher") or item.get("label") or item.get("source") or ""),
                 "url": str(item.get("url") or ""), "sentiment": highlight.get("sentiment"),
             })
     return documents
@@ -526,6 +553,26 @@ async def _send_news_report(app: Application) -> None:
     published: list[tuple[str, list[dict], dict | None, str]] = []
     for market, market_items in group_by_market(items):
         window = _market_window(memory, market, opened_at, closed_at)
+        market_items, skipped = _reportable(market_items)
+        kept_ids = {str(item.get("article_id")) for item in market_items}
+        # 제목 없는 항목은 어느 구간에서도 쓸 수 없으니 그 시장의 발행을 기다리지 않고 바로
+        # 큐에서 뺀다 — 발행 때 빼면, 제목 없는 항목만 남은 시장은 발행되지 않아 영영 쌓인다.
+        # 중복 article_id는 앞 항목이 남아 있어 그 시장이 발행될 때 함께 빠진다.
+        # 큐 저장이 성공한 뒤에만 예약을 푼다. 저장이 실패하면 큐가 되돌아가므로(`drop`)
+        # 예약도 그대로 둬야 둘이 어긋나지 않는다.
+        untitled = {str(item.get("article_id") or "") for item in skipped
+                    if str(item.get("article_id") or "") not in kept_ids} - {""}
+        if untitled:
+            try:
+                await queue.drop(untitled)
+            except Exception as exc:
+                logger.error("[NEWS REPORT] %s 제목 없는 기사 정리 실패, 다음 구간에 다시 본다: %s", market, exc)
+            else:
+                logger.warning("[NEWS REPORT] %s 제목 없는 기사 %d건을 큐에서 뺐다", market, len(untitled))
+                for article_id in untitled:
+                    await tracker.release(article_id)
+        if not market_items:
+            continue
         # 상한을 넘겼으면 판정과 무관하게 발행한다. 보류는 재료가 쌓일 때까지
         # 기다리는 것이지 그 시장을 영영 덮는 것이 아니고, 사전선별의 라벨
         # 공급원도 이 보고서 하나뿐이다.

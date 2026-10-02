@@ -216,8 +216,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보여, "뉴스 전송을 고쳐라"는 지시가 죽은 코드로 간다. 되살릴 일이 생기면
   git에서 꺼내는 별도 변경이다.
   예약 뉴스 비용은 기사 수가 아니라 보고서가 검토한 시장 수에 비례한다.
-- **시장은 여섯(중국·홍콩·미국·한국·일본·유럽)이고 소스는 열여섯이다.** 기본 소스는
-  `NEWS_GLOBAL_SOURCE_KEYS`의 `futu`·`em_global`·`gnews`·`gnews_us`·`gnews_kr`·`gnews_jp`·`gnews_eu`와
+- **시장은 여섯(중국·홍콩·미국·한국·일본·유럽)이고 소스는 열넷이다.** 기본 소스는
+  `NEWS_GLOBAL_SOURCE_KEYS`의 `gnews_cn`·`gnews`·`gnews_us`·`gnews_kr`·`gnews_jp`·`gnews_eu`와
   `NEWS_RSS_FEEDS`의 `mk-stock`·`yonhap-economy`·`fed-press`·`cnbc-finance`·`ecb-press`·
   `boj-whatsnew`·`nhk-economy`·`rthk-finance`다. 보고서·시장 감성·브리핑·
   뉴스 검색이 모두 같은 여섯 시장(`_MARKET_ORDER`·`MARKET_CHART_MARKETS`·
@@ -230,16 +230,34 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **유럽 칸은 `gnews_eu`(영국판 영어 로케일 `hl=en-GB`, STOXX·DAX·ECB 질의)가 채우고
   ECB 보도자료(`ecb-press`)가 1차 소스다.** 유럽은 시세 요약(`sector_summary_context`)이
   없어 브리핑의 유럽 판단은 뉴스 근거뿐이다.
-  `sina`·`cls`는 기본 목록에서 뺐다(`sina`는 이 서버에서 경로가 막혀 수집 워커를
-  수 분씩 붙잡았고, `cls`는 `symbol="重点"` 필터가 얇아 주기당 0~1건이었다. 경위는
-  `services/telegram_bot/core/config.py`의 주석). 중화권 속보는 `em_global`이 채운다.
+  **중국 칸은 `gnews_cn`(간체 로케일 `hl=zh-CN`, A股 분석·경제 정책·인민은행 질의)과 `gnews`의
+  영어 질의가 채운다.** 간체 로케일은 `gnews_cn` 질의에만 쓴다(`_STOCK_QUERY_LOCALES`) — 시장
+  로케일 표에 넣으면 `gnews`의 영어 질의(Bloomberg·SCMP)까지 바뀐다.
   미국은 연준 보도자료 RSS, 한국은 연합뉴스 경제 RSS가 1차 소스다. 미국은 CNBC 금융 RSS를
   독자층이 두터운 매체로 더 받는다 — **통신사·규제기관 발표는 매체가 받아쓰기 전에 나오므로,
   집계 소스(Google News)만 보면 같은 사실을 한 박자 늦게 본다.**
-  `cls` 어댑터(다시 켤 때)만 `df.iloc[::-1]`로 뒤집는다. akshare가 이 표 하나만 발행 시각
-  **오름차순**으로 주기 때문이고, 뒤집지 않으면 사전선별의 `feed_rank` 신선도가
-  거꾸로 매겨진다. 날짜·시각이 두 열로 쪼개져 오므로 `published_date`를 따로
-  넘긴다 — `parse_news_datetime`은 "11:00:00"만으로는 날짜를 모른다.
+- **속보는 쓰지 않는다(운영자 결정 2026-10-02).** 이 시스템의 목적은 빠른 기사 취득이 아니라
+  사건과 그 함의의 분석이다. 그때 중국 큐 314건 중 312건이 7×24 속보(`em_global`·`futu`)였고
+  92건은 제목조차 없었다. 속보 어댑터 넷(futu·em_global·sina·cls)을 지웠다 — sina·cls는 그 전에
+  접속·수급 문제로 기본 목록에서 빠져 있었지만 같은 속보 피드라 함께 퇴역했다. 되살리는 것은
+  이 결정을 되돌리는 별도 변경이다. 다른 소스의 【速報】·[속보]·BREAKING처럼 **앞머리 표지로
+  시작하는** 제목, 제목 없는 기사, Yahoo 종목 시세 화면(":株価・株式情報", "Stock Price, News, Quote &
+  History" — 기사가 아니다, 2026-10-02 일본 큐의 25%)은 `news/utils.py`의 `analyzable_articles`가 보고서 수집
+  (사전선별 전)과 리서치 수집 양쪽에서 거른다. 시장 감성의 과거 수집에는 적용하지 않는다.
+- **매체명은 제목에서 떼어 출처로 둔다.** Google News 제목 끝의 " - 매체명"은 RSS `<source>`와
+  정확히 같을 때만 떼어 큐 항목의 `publisher`로 옮긴다(`news/sources.py`의 `_google_article`,
+  요약 끝의 매체명도 뗀다). **매체명 메타데이터(`publisher`·공개 `source`)는 분석 모델에 보내지
+  않는다** — 보고서 입력의 `source`는 수집 경로 이름이고, 웹 개인 리서치도 모델 요청에서 `source`를
+  뺀다. 제목 문자열 안의 매체명은 다 지우지 못한다: RSS `<source>`와 다른 꼬리("BBC Reel" 등)는
+  제목의 일부일 수 있어 그대로 두고, 2026-10-02 배포 전에 큐에 들어간 항목은 꼬리를 단 채 소진된다.
+  사전선별의 사건 군집은 떼기 전 원문(`extra`의 `event_title`·`event_content`)으로 계속 비교한다 —
+  사건 메모리가 그 형태로 쌓여 있어, 뗀 제목으로 비교하면 서버 사건 메모리 실측에서 370건 중 179건이
+  같은 사건을 새 사건으로 봤다(이미 보고한 사건의 재탕 차단이 풀린다). 공개 news.json의
+  `source`와 웹 검색 결과의 출처는 실제 매체명이다(없으면 수집 경로 이름). 웹 키워드 검색은
+  출처도 찾지만 주제 판정에는 넣지 않는다. 사전선별은 학습·추론 모두 `strip_publisher_tail`로
+  꼬리를 뗀 제목을 벡터화한다 — 2026-10-02 이전 관측 제목에는 꼬리가 있다(관측 11,755건 중
+  6,327건, 한 번만 나온 꼬리 표본 40개 전부 매체명). 기존 모델은 따로 버리지 않는다: 새 모델은
+  같은 검증 자료·같은 벡터로 기존 모델과 비교해 나을 때만 저장된다.
 - **홍콩 칸은 `gnews`의 HK 질의와 RTHK 재경 RSS(`rthk-finance`)가 채운다.** 그 전까지 `_MARKET_ORDER`와
   `MARKET_CHART_MARKETS`에 HK가 있는데 HK 기사를 내는 소스가 없어 구조적으로 늘
   비어 있었다(과거 조회용 `NEWS_MARKET_BACKFILL_QUERIES`에만 HK가 있었다).
@@ -298,8 +316,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   보고서가 고른
   `highlights`의 `impact`를 `news/report.py`의 `_log_highlights`가
   `record_outcome`으로 되먹인다. 보고서가 이미 만든 값이라 **추가 LLM 호출이
-  없다.** 사전선별은 제목만 보고 추측하므로 기사를 실제로 읽고 판정하는
-  누군가가 없으면 자기가 맞았는지 영원히 모른다.
+  없다.** 사전선별은 제목 하나만 보고 추측하므로, 기사 묶음을 시장 맥락과 함께 보고 판정하는
+  누군가(보고서 — 이것도 제목 기반이다)가 없으면 자기가 맞았는지 영원히 모른다.
   **이 선은 한 번 끊긴 적이 있다.** 예전 공급원이 기사별 번역 경로였는데
   3시간 보고서로 바꾸면서 그 경로가 죽었고, 오류가 나지 않아 13일 동안
   라벨 0건으로 돌았다(2026-08-30 ~ 09-12). 그래서 둘을 두었다 —
@@ -605,6 +623,14 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 - 번역·분석·브리핑은 Cloudflare Workers AI만 사용한다. 비밀값은 `.env`에만 두고
   로그나 예외에 포함하지 않는다.
 - LLM JSON은 필수 필드를 엄격히 검사하고 현재 응답 envelope만 처리한다.
+- **모델 프롬프트는 그 모듈의 `llm/terminology.py`(`read_prompt`·`with_terminology`)를 거쳐 읽는다.**
+  앞에 `prompts/terminology_ko.txt`의 경제·정치 용어 기준(liquidity → 유동성, Treasury yields →
+  미 국채 금리 같은 한국 경제 매체 표기)이 붙는다(운영자 지시 2026-10-02). 프롬프트 파일을 직접
+  `read_text`하면 그 경로의 글만 직역투로 남는다 — 양쪽 `test_*_terminology.py`가 막는다. 봇·웹은
+  각자 파일을 갖는다(공유하지 않는다). 웹의 표는 예측 컨센서스의 호칭(참여 규모·참여 잔액)을 함께 지킨다.
+  쇼츠는 자기 원고 프롬프트(`highlights.py`)에 용어 규칙을 둔다. 쇼츠 음성의 확률 문장은
+  "참여자의 N%는 ⟨전망⟩ 것으로 봅니다"이고 ⟨전망⟩은 모델이 쓴 선택지별 관형형 구절이다
+  (`speech.speak_markets`, 운영자 결정 2026-10-02 — 예전 "…를 선택한 사람은 전체의 N%"를 대체).
 - **시장상황 보고서는 응답 형식을 스키마로 강제한다(`response_format`).**
   `services/telegram_bot/llm/news_report.py`의 `RESPONSE_FORMAT`이고, 이 경로에만 쓴다.
   **비용은 0이다** — 같은 입력을 구조화 없이/있이 부른 실측(2026-09-21)에서
@@ -616,7 +642,21 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   돌린다.** 지원하지 않는 모델에 이 필드를 실으면 400으로 보고서가 통째로
   실패하고, Cloudflare 문서가 지원 목록에 올려 둔 모델이 실제로는 받지 않은
   전례가 있어 문서로 갈음하지 않는다. 스키마는 모양만 보장하므로
-  `max_tokens` 절단과 index 유효성·중복 같은 의미 검증은 그대로 파서가 한다.
+  `max_tokens` 절단과 기사 ID·원문 제목 일치 및 중복 같은 의미 검증은 파서가 한다.
+  모델에 보내는 `article_id`는 수집 ID의 SHA-256 앞 16자리다(`news-` 접두사).
+  긴 RSS URL을 복사시키지 않는다. 제목이 비었거나 ID가 중복·충돌한 입력 기사는 **그 기사만**
+  빼고 진행한다(남는 기사가 없을 때만 오류) — 한 건이 시장 분석 전체를 멈추면 안 된다
+  (2026-10-02: 제목 없는 속보 하나가 중국 보고서를 매번 멈췄다). `news/report.py`의 `_reportable`이
+  자르기·재료 하한보다 먼저 같은 정리를 하고, 제목 없는 항목은 바로 큐에서 뺀다.
+  모델은 `article_id`와 `source_title`을 같은 입력 기사에서 복사한다. 서버는 이번 호출에
+  보낸 목록에서만 ID를 찾고 원문 제목을 대조한 뒤 내부 index를 복원한다. 대조는 전각·반각(NFKC)과
+  공백, 그리고 **그 기사의 확인된 매체명과 정확히 같은** 끝 꼬리만 맞춘다 — 아무 하이픈 뒤나 자르지
+  않는다. 모델에 보내는 칸은 `article_id`·`title`·`source`·`published_at`뿐이다.
+  **이 대조는 짝(어느 기사인가)을 보장하지 번역의 정확성을 보장하지 않는다.** 2026-10-02 고정 표본
+  3회 재검증에서 회사·통화 규칙을 프롬프트에 넣은 뒤에도 比亚迪(BYD)를 "바이두"로, 央行(인민은행)을
+  "중국은행"으로 옮긴 행이 남았다. 공개 news.json은 번역 제목(`title`) 옆에 원문(`text`)을 함께 둔다.
+  `highlights`와 학습용 `evaluations`에 같은 검증을 적용하며, 불일치 행은 버린다.
+  동일 제목의 다른 기사를 구분하기 위해 제목만으로 찾거나 유사 제목으로 보정하지 않는다.
 - **`finish_reason=length`는 성공이 아니다.** 상한에 걸려 끊긴 응답을 그대로
   돌려주면 호출자는 파싱 오류(`Unterminated string`)만 보고 원인을 못 찾는다.
   `backends.py`가 `truncated`로 실패시키고 `max_tokens`와 실제 output_tokens를

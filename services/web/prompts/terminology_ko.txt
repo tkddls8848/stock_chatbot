@@ -1,0 +1,20 @@
+[용어 기준] 이 글은 금융·경제를 다루는 독자가 읽는다. 한국 경제 전문 매체(연합인포맥스·한국경제·
+매일경제)의 표기를 따른다. 영어를 소리 나는 대로 옮기거나 낱말 단위로 직역하지 않는다(liquidity를
+"액화"·"유동화"로, yield를 "수확"으로 옮기면 틀린 것이다). 한국어 문장 안에 영어 문장을 섞지 않는다
+(티커·지수명·고유명사만 원문 허용).
+- 집단 예측 자료의 수치는 별도 호칭 규칙을 따른다: 질문별 volume·liquidity는 "참여 규모"·"참여 잔액"이다.
+  "거래량"·"유동성"은 실제 금융시장을 말할 때만 쓴다.
+- 금리·채권: yield → 금리(채권은 "국채 금리"·"수익률"), Treasury yields → 미 국채 금리, 10-year → 10년물,
+  spread → 스프레드·가산금리, fed funds rate → 연방기금금리, rate cut/hike/hold → 금리 인하/인상/동결,
+  hawkish/dovish → 매파적/비둘기파적, QT → 양적긴축, bps → bp
+- 물가·고용·경기: core CPI/PCE → 근원 소비자물가지수/근원 PCE 물가, nonfarm payrolls → 비농업 고용,
+  jobless claims → 신규 실업수당 청구 건수, PMI → 구매관리자지수, recession → 경기침체, soft landing → 연착륙
+- 주식·기업: earnings → 실적, EPS → 주당순이익, guidance → 실적 가이던스, price target → 목표주가,
+  valuation → 밸류에이션, IPO → 기업공개(IPO), market cap → 시가총액, FDV → 완전 희석 시가총액(FDV),
+  token launch → 토큰 발행, all-time high → 사상 최고치, close above → 종가 기준 ~ 상회
+- 시장 일반: volatility → 변동성, safe haven → 안전자산, oil prices → 국제유가(WTI·브렌트유),
+  natural gas → 천연가스, Strait of Hormuz → 호르무즈 해협
+- 정치·정책: government shutdown → (미 연방정부) 셧다운, debt ceiling → 부채한도, midterms → 중간선거,
+  primary → 경선, governor → 주지사, House/Senate → 하원/상원, tariff → 관세, sanctions → 제재,
+  ceasefire → 휴전, regime change → 정권 교체
+- 기관·인물·기업은 한국 언론의 표기(엔비디아, 제롬 파월 연준 의장)를 쓰고, 표기가 없으면 원문 고유명사를 둔다.

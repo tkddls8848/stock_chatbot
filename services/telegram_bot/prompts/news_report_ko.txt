@@ -6,12 +6,12 @@
 입력 JSON에는 다음이 들어온다.
 - market: 시장 코드(CN, HK, US, KR 등)
 - window: 보고서가 다루는 UTC +9 시간 구간
-- articles: [{index, title, source, published_at}]
+- articles: [{article_id, title, source, published_at}]
 - previous: 이 시장에 마지막으로 발행한 보고서. {published_at, window, analysis}이며
   발행 이력이 없으면 null이다. 사용자가 실제로 읽은 마지막 글이다.
 - must_publish: true면 이번에는 반드시 발행한다(오래 보고하지 않았거나 매 구간
   발행하는 시장이다).
-- evaluation_indexes: 서버가 무작위로 선정한 학습용 기사 index(최대 10개)
+- evaluation_article_ids: 서버가 무작위로 선정한 학습용 기사 article_id(최대 10개)
 
 발행 판정(publish) 규칙:
 - 먼저 이번 기사 묶음이 previous의 판단을 **바꾸거나 진전시키는지** 판단한다.
@@ -63,11 +63,19 @@ highlights 작성 규칙:
 - 시장상황 판단의 근거가 된 기사만 중요한 순서대로 최대 {max_highlights}건
   고른다. 전체 기사를 번역하거나 나열하지 않는다. 앞쪽에 둔 것일수록 본문의
   판단을 직접 받치는 기사다.
-- index는 입력 articles에 있는 값만 쓰며 없는 index를 만들지 않는다.
-- **같은 index를 두 번 쓰지 않는다.** 한 기사는 한 번만 고른다. 고를 기사가
+- article_id와 source_title은 선택한 입력 기사의 article_id와 title을 정확히 복사한다.
+  source_title은 번역·축약·공백 변경을 하지 않는다. 두 값은 반드시 같은 기사에서 가져온다.
+  서버는 ID와 원문 제목이 일치하지 않으면 해당 행을 버린다.
+- **같은 article_id를 두 번 쓰지 않는다.** 한 기사는 한 번만 고른다. 고를 기사가
   {max_highlights}건에 못 미치면 있는 만큼만 쓴다. 수를 채우려고 앞의 기사를
   다시 넣지 않는다.
 - title은 해당 기사 제목을 자연스러운 한국어 제목으로 옮긴 것이다. 80자를 넘기지 않는다.
+  원문이 영어·중국어·일본어여도 반드시 한국어로 옮긴다. 원문을 그대로 두지 않는다.
+  **회사·기관·인물 이름과 통화·숫자는 원문과 같은 대상을 가리켜야 한다.** 小米는 샤오미, 三井住友는
+  미쓰이스미토모다 — 비슷한 다른 회사(미쓰비시UFJ 등)로 바꾸면 틀린 것이다. 한국어 표기를 모르면
+  원문 표기를 그대로 둔다. 円은 엔, 元·人民币는 위안이다. 원(KRW)으로 바꾸지 않는다.
+  **title은 그 article_id의 기사 제목만 옮긴다.** 다른 기사의 내용이나 본문 분석을 섞지 않는다 —
+  화면에서 이 title은 그 article_id 기사의 원문 링크와 함께 나간다.
   **비워 두지 않는다.** 옮길 제목이 없으면 그 기사를 highlights에서 뺀다.
 - sentiment는 그 기사가 관련 종목·시장에 주는 영향을 -1~1 숫자로 평가한다.
 - impact는 high, medium, low 중 하나다.
@@ -78,7 +86,9 @@ highlights 작성 규칙:
 
 evaluations 작성 규칙:
 - **publish와 무관하게 항상 작성한다.** 보류한 구간에도 이 평가는 서버가 쓴다.
-- evaluation_indexes 중 highlights에 선정되지 않은 기사만 각각 {"index":정수,"impact":"high 또는 medium 또는 low"}로 평가한다.
+- evaluation_article_ids 중 highlights에 선정되지 않은 기사만 각각
+  {"article_id":"입력 ID","source_title":"그 기사의 원문 제목을 정확히 복사","impact":"high 또는 medium 또는 low"}로 평가한다.
+- evaluations도 article_id와 source_title을 같은 입력 기사에서 정확히 복사한다.
 - 보고서 선정 여부와 독립적으로 제목의 시장·기업 영향도를 판단한다. 빠졌다는 이유로 low를 붙이지 않는다.
 - high는 중대한 정책·실적·사업 변화, medium은 구체적이지만 제한적인 영향, low는 시장 관련성이 약하거나 실질적 변화 정보가 적은 경우다. highlights에도 같은 기준을 쓴다.
 - 제목만으로 평가할 수 없으면 해당 항목을 생략한다. 양성·음성 비율을 억지로 맞추지 않는다.
@@ -86,8 +96,10 @@ evaluations 작성 규칙:
 
 출력 규칙:
 - 설명이나 코드블록 없이 아래 형식의 JSON 객체 하나만 출력한다.
-- 문자열 안에 큰따옴표(")를 **쓰지 않는다.** escape(\")도 쓰지 않는다. highlights의
+- source_title은 원문을 보존한다. 큰따옴표·역슬래시·줄바꿈은 JSON 규칙대로
+  이스케이프한다. article_id도 입력을 그대로 복사한다.
+- analysis와 번역 title에는 큰따옴표를 쓰지 않는다. highlights의
   title에 옮길 제목에 따옴표가 있으면 「」로 바꿔 옮긴다. analysis에는 인용 자체를 쓰지 않는다.
   줄바꿈도 넣지 않는다.
 
-{"publish":true,"hold_reason":"","analysis":"450~650자 한국어 시장상황 분석","highlights":[{"index":0,"title":"한국어 제목","sentiment":0.4,"impact":"medium","mentioned_stocks":["600519"]}],"evaluations":[]}
+{"publish":true,"hold_reason":"","analysis":"450~650자 한국어 시장상황 분석","highlights":[{"article_id":"입력 ID","source_title":"입력 원문 제목","title":"한국어 제목","sentiment":0.4,"impact":"medium","mentioned_stocks":["600519"]}],"evaluations":[]}

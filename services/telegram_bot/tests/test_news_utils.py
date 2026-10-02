@@ -7,6 +7,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from services.telegram_bot.core.config import (
     NEWS_DIGEST_ARTICLE_MAX_CHARS,
     NEWS_DIGEST_TITLE_MAX_CHARS,
@@ -164,3 +166,58 @@ def test_digest_article_without_a_body_keeps_only_the_title_line():
         "• 제목 (09:15 JST)",
         "- 감성 : 긍정 +0.40 · 영향 높음",
     ]
+
+
+# ── 분석 재료 거르기(속보·제목 없음)·매체명 꼬리 (운영자 결정 2026-10-02) ──────────────
+
+@pytest.mark.parametrize("title", [
+    "[속보] 코스피 7000 돌파", "  [속보]코스피", "【速報】日経平均", "【快讯】上证指数", "（快讯）沪指",
+    "快讯：沪指收涨", "BREAKING: Fed cuts", "breaking news | Fed", "[Breaking] Fed cuts",
+    "＜속보＞ 환율 급등", "(긴급) 정부 발표",
+])
+def test_flash_titles_are_recognised_by_their_leading_marker(title):
+    from services.telegram_bot.news.utils import is_flash_title
+    assert is_flash_title(title)
+
+
+@pytest.mark.parametrize("title", [
+    "속보 이후 반등한 코스피", "Fed's breaking point on rates", "A股快讯类资讯减少的原因", "", "코스피 [속보] 이후",
+])
+def test_words_inside_a_title_are_not_a_flash_marker(title):
+    from services.telegram_bot.news.utils import is_flash_title
+    assert not is_flash_title(title)
+
+
+def test_analyzable_articles_drop_flash_and_untitled():
+    from services.telegram_bot.news.utils import analyzable_articles
+    articles = [GlobalArticle("a", "", "본문만", ""), GlobalArticle("b", "【速報】株価", "", ""),
+                GlobalArticle("c", "반도체 업황 회복과 코스피 전망", "", ""),
+                GlobalArticle("d", "(株)モダリス【4883】：株価・株式情報（夜間PTS含む）", "", ""),
+                GlobalArticle("e", "Pfizer Inc. (PFE) Stock Price, News, Quote & History", "", ""),
+                GlobalArticle("f", "日経平均株価、終値647円安 半導体株に売り", "", ""),
+                GlobalArticle("g", "必威买球泽连斯基在纽约与特朗普会晤后表示", "", ""),
+                GlobalArticle("h", "澳门博彩股走强 国庆黄金周客流回升", "", ""),
+                GlobalArticle("i", "ManBetx手机版武契奇辞去塞尔维亚总统职务", "", ""),
+                GlobalArticle("j", "yabovip188登录武契奇辞去塞尔维亚总统职务", "", ""),
+                GlobalArticle("k", "武契奇辞去塞尔维亚总统职务", "", "", extra={"publisher": "Pchome电脑之家"}),
+                GlobalArticle("l", "Bet365 plans London listing as profits rise", "", ""),
+                GlobalArticle("m", "Yabotech raises funding for battery recycling", "", ""),
+                GlobalArticle("n", "ManBetx reports annual earnings", "", ""),
+                GlobalArticle("o", "监管部门点名必威等境外博彩网站", "", "")]
+    # 시세 화면(d·e)·도박 광고(g·i·j)·광고를 끼워 넣는 매체(k)는 거른다. 주가 기사(f)·카지노주 기사(h)·
+    # 상표로 시작해도 광고 꼴이 아닌 기업 기사(l·m·n)·제목 중간의 상표명(o)은 남긴다.
+    assert [a.article_id for a in analyzable_articles(articles)] == ["c", "f", "h", "l", "m", "n", "o"]
+
+
+@pytest.mark.parametrize(("title", "expected"), [
+    ("코스피 7000선 회복 - 연합뉴스", "코스피 7000선 회복"),
+    ("Fed holds rates - The Economic Times", "Fed holds rates"),
+    ("株価 - Yahoo!ファイナンス", "株価 - Yahoo!ファイナンス"),   # 남는 제목이 너무 짧으면 그대로
+    ("제목에 하이픈이 없다", "제목에 하이픈이 없다"),
+    ("코스피 7000 탈환 - 머니투데이 - 머니투데이", "코스피 7000 탈환"),   # 반복 꼬리
+    # 매체명을 모르므로 제목 자체의 마지막 하이픈 구절도 뗀다 — 사전선별 벡터 전용이라 감수한다.
+    ("금리 정책 발표 - 시행 전 점검", "금리 정책 발표"),
+])
+def test_publisher_tail_heuristic_for_titles_without_a_known_publisher(title, expected):
+    from services.telegram_bot.news.utils import strip_publisher_tail
+    assert strip_publisher_tail(title) == expected

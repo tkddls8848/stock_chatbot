@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from services.web.llm.backends import LLMBackend
+from services.web.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class PolymarketBriefAnalyzer:
     def __init__(self, backend: LLMBackend, prompt_file: Path, num_predict: int):
         self._backend = backend
         self._num_predict = num_predict
-        self._prompt = prompt_file.read_text(encoding="utf-8")
+        self._prompt = read_prompt(prompt_file)
 
     def analyze(
         self,

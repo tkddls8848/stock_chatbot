@@ -11,7 +11,7 @@ from services.telegram_bot.core.config import NEWS_LIVE_MAX_AGE_HOURS, NEWS_SOUR
 from services.telegram_bot.news.models import SourceCandidate
 from services.telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
 from services.telegram_bot.news.sources import GlobalArticle
-from services.telegram_bot.news.utils import filter_recent_articles
+from services.telegram_bot.news.utils import analyzable_articles, filter_recent_articles
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,11 @@ async def collect_source_candidates(
         return []
 
     fetched_count = len(articles)
-    articles = filter_recent_articles(articles, NEWS_LIVE_MAX_AGE_HOURS)
+    articles = analyzable_articles(filter_recent_articles(articles, NEWS_LIVE_MAX_AGE_HOURS))
     articles = [article for article in articles if article.article_id not in (excluded_article_ids or set())]
     if not articles:
         logger.info(
-            "[%s] 신선도·기존 예약 제외 후 기사 0건 (수집 %d건, 최근 %d시간)",
+            "[%s] 신선도·속보·기존 예약 제외 후 기사 0건 (수집 %d건, 최근 %d시간)",
             spec.key,
             fetched_count,
             NEWS_LIVE_MAX_AGE_HOURS,

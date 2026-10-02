@@ -1,3 +1,5 @@
+import pytest
+
 from services.telegram_bot.news import sources
 
 # 소스 상한은 .env로 튜닝되는 값이다. 개발자 환경 설정에 따라 테스트가 깨지지
@@ -85,7 +87,8 @@ def test_market_stock_query_tags_market_and_id_prefix(monkeypatch):
     articles = sources._fetch_google_news_stock_query("KR", "코스피 when:1d", 0, 4)
 
     assert articles[0].article_id == "gnews-kr:rss:gnews-kr:0:abc"
-    assert articles[0].extra == {"market": "KR", "provider": "google-news"}
+    assert {key: articles[0].extra[key] for key in ("market", "provider", "publisher")} == \
+        {"market": "KR", "provider": "google-news", "publisher": ""}
 
 
 def test_korean_queries_use_korean_locale():
@@ -98,50 +101,46 @@ def test_korean_queries_use_korean_locale():
     )
 
 
-def test_cls_adapter_returns_newest_first_with_split_timestamp(monkeypatch):
-    # akshare는 财联社 전보를 발행 시각 오름차순으로, 날짜와 시각을 두 열로
-    # 쪼개서 돌려준다. 뒤집지 않으면 feed_rank(신선도)가 거꾸로 매겨진다.
-    import pandas as pd
-
-    frame = pd.DataFrame(
-        [
-            {"标题": "오래된 전보", "内容": "본문 A", "发布日期": "2026-09-20", "发布时间": "09:00:00"},
-            {"标题": "", "内容": "", "发布日期": "2026-09-20", "发布时间": "10:00:00"},
-            {"标题": "최신 전보", "内容": "본문 B", "发布日期": "2026-09-20", "发布时间": "11:00:00"},
-        ]
-    )
-    monkeypatch.setattr(sources, "fetch_cls_raw", lambda: frame)
-
-    articles = sources.fetch_cls_articles()
-
-    # 제목·본문이 모두 빈 행은 버린다.
-    assert [article.title for article in articles] == ["최신 전보", "오래된 전보"]
-    assert articles[0].published_at == "11:00:00"
-    assert articles[0].published_date == "2026-09-20"
-    assert articles[0].article_id.startswith("cls:2026-09-20 11:00:00:")
+def _rss(title, publisher, content=""):
+    return sources.GlobalArticle(article_id="rss:t:1", title=title, content=content,
+                                 published_at="", url="https://x/1", extra={"source": publisher})
 
 
-def test_em_adapter_reads_summary_column_and_single_timestamp(monkeypatch):
-    # 东方财富는 본문을 "摘要"에 담고 날짜·시각을 "发布时间" 한 열에 준다.
-    # cls 와 달리 published_date 를 따로 넘기지 않아야 한다.
-    import pandas as pd
+@pytest.mark.parametrize(("title", "publisher", "expected"), [
+    ("코스피 7000선 회복 - 연합뉴스", "연합뉴스", "코스피 7000선 회복"),
+    # 매체명과 다른 꼬리는 제목의 일부일 수 있다. 건드리지 않는다.
+    ("금리 정책 - 시행 전 점검", "연합뉴스", "금리 정책 - 시행 전 점검"),
+    ("Fed holds - what it means - Reuters", "Reuters", "Fed holds - what it means"),
+    ("코스피 7000 탈환 - 머니투데이 - 머니투데이", "머니투데이", "코스피 7000 탈환"),
+    ("제목만 있다", "", "제목만 있다"),
+    (" - 연합뉴스", "연합뉴스", " - 연합뉴스"),   # 떼고 나면 남는 제목이 없다
+])
+def test_google_titles_lose_only_the_exact_publisher_tail(title, publisher, expected):
+    """매체명은 화면의 출처로 남기고 제목에서는 뗀다(운영자 결정 2026-10-02)."""
+    article = sources._google_article(_rss(title, publisher), "gnews-kr:1", "KR")
+    assert article.title == expected
+    assert {key: article.extra[key] for key in ("market", "provider", "publisher")} == \
+        {"market": "KR", "provider": "google-news", "publisher": publisher}
+    # 사전선별의 사건 비교는 떼기 전 원문을 계속 쓴다(사건 메모리 연속성).
+    assert article.extra["event_title"] == title
 
-    frame = pd.DataFrame(
-        [
-            {"标题": "속보 A", "摘要": "본문 A", "发布时间": "2026-09-22 11:32:10", "链接": "https://x/1"},
-            {"标题": "", "摘要": "", "发布时间": "2026-09-22 11:00:00", "链接": ""},
-            {"标题": "속보 B", "摘要": "본문 B", "发布时间": "2026-09-22 10:00:00", "链接": "https://x/2"},
-        ]
-    )
-    monkeypatch.setattr(sources, "fetch_em_raw", lambda: frame)
 
-    articles = sources.fetch_em_articles()
+def test_google_summary_loses_the_trailing_publisher_too():
+    # Google News 요약은 "제목  매체명"이다. 리서치가 이 요약을 모델에 넣는다.
+    article = sources._google_article(
+        _rss("코스피 마감 - 연합인포맥스", "연합인포맥스", "코스피 마감\xa0\xa0연합인포맥스"), "x", "KR")
+    assert article.content == "코스피 마감"
 
-    assert [article.title for article in articles] == ["속보 A", "속보 B"]
-    assert articles[0].published_at == "2026-09-22 11:32:10"
-    assert articles[0].published_date == ""
-    assert articles[0].url == "https://x/1"
-    assert articles[0].article_id.startswith("em_global:2026-09-22 11:32:10:")
+
+def test_china_analysis_queries_use_simplified_chinese_but_the_mixed_query_stays_english(monkeypatch):
+    urls = []
+    monkeypatch.setattr(sources, "fetch_rss_articles", lambda url, label, max_articles=None: urls.append(url) or [])
+    sources.fetch_google_news_cn_stock_articles()
+    sources._fetch_google_news_market("CN")
+    stock_urls, mixed_url = urls[:-1], urls[-1]
+    assert len(stock_urls) == len(sources._MARKET_STOCK_NEWS_QUERIES["CN"])
+    assert all("hl=zh-CN" in url for url in stock_urls)
+    assert "hl=en-US" in mixed_url
 
 
 def test_japan_market_uses_japanese_locale_and_stock_queries():

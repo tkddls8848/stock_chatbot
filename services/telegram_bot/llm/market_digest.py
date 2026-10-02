@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from services.telegram_bot.llm.backends import LLMBackend
+from services.telegram_bot.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class MarketDigestAnalyzer:
         self._backend = backend
         self._num_predict = num_predict
         self._count_tolerance_ratio = max(0.0, float(count_tolerance_ratio))
-        self._prompt = prompt_file.read_text(encoding="utf-8")
+        self._prompt = read_prompt(prompt_file)
 
     def _count_tolerance(self, expected_count: int) -> int:
         """건수를 믿을지 정하는 허용 오차. 최소 1건은 봐준다.

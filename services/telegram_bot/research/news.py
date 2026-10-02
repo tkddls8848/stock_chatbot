@@ -22,7 +22,7 @@ from services.telegram_bot.core.config import (
     RESEARCH_NEWS_MAX_ITEMS,
 )
 from services.telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
-from services.telegram_bot.news.utils import filter_recent_articles
+from services.telegram_bot.news.utils import analyzable_articles, filter_recent_articles
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,8 @@ def _make_news_item(
     url: str = "",
     market: str = "",
 ) -> dict[str, Any]:
-    # 시나처럼 제목 없이 본문만 오는 소스가 있다. 번역을 켜면 모델이 제목을
-    # 만들어 주지만, 원문을 그대로 쓸 때는 본문 앞부분을 제목으로 삼는다.
-    title = title or content[:60]
+    # 제목 없는 기사는 수집 단계(`analyzable_articles`)에서 빠진다. 제목 없이 본문만 주던
+    # 속보 소스(sina 등)는 2026-10-02에 퇴역했다.
     return {
         "source": source,
         "market": market,
@@ -128,7 +127,7 @@ async def _collect_articles_by_market(
             continue
 
         registry.record_success(spec.key)
-        articles = filter_recent_articles(result, NEWS_LIVE_MAX_AGE_HOURS)
+        articles = analyzable_articles(filter_recent_articles(result, NEWS_LIVE_MAX_AGE_HOURS))
         for article in articles[:RESEARCH_NEWS_GLOBAL_LIMIT]:
             buckets.setdefault(_article_market(article, spec), []).append((spec, article))
     return buckets

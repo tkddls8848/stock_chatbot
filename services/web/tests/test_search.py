@@ -137,3 +137,12 @@ def test_server_reads_the_shared_public_folder():
     from services.web.core.config import PUBLIC_DIR, STORAGE_DIR
 
     assert server.PUBLIC_DIR == PUBLIC_DIR == STORAGE_DIR / "public"
+
+
+def test_publisher_is_searchable_but_does_not_create_topics(tmp_path):
+    """매체명은 2026-10-02부터 제목 꼬리가 아니라 출처(source)에 있다. 키워드로 찾되 주제 판정에는
+    쓰지 않는다 — 매체 이름의 낱말이 금리 같은 주제로 읽히면 안 된다."""
+    repo = corpus(tmp_path, [article("a", source="Reuters", title="Yen slides", text="Yen slides"),
+                             article("b", source="Interest Rate Weekly", title="Nikkei rises", text="Nikkei rises")])
+    assert [row["id"] for row in repo.search("Reuters")["results"]] == ["a"]
+    assert repo.search("일본 금리")["results"] == []

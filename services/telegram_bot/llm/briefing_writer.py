@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from services.telegram_bot.llm.backends import LLMBackend
+from services.telegram_bot.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class BriefingWriter:
         self._backend = backend
         self._enabled = enabled
         self._num_predict = num_predict
-        self._prompt = prompt_file.read_text(encoding="utf-8")
+        self._prompt = read_prompt(prompt_file)
 
     @property
     def enabled(self) -> bool:

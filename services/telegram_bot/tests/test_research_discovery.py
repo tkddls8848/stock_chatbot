@@ -122,24 +122,23 @@ def test_raw_articles_are_used_without_translation():
     assert all("mentioned_stocks" not in item for item in items)
 
 
-def test_title_falls_back_to_content_for_titleless_sources():
-    titleless = SourceSpec(
-        key="sina",
-        label="sina",
+def test_research_skips_titleless_and_flash_articles():
+    """리서치도 보고서와 같은 규칙으로 속보·제목 없는 기사를 쓰지 않는다(운영자 결정 2026-10-02)."""
+    stamp = now().strftime("%Y-%m-%d %H:%M:%S")
+    source = SourceSpec(
+        key="gnews_cn",
+        label="중국 증시 뉴스",
         fetch=lambda: [
-            GlobalArticle(
-                article_id="sina:1",
-                title="",
-                content="上证指数收涨 0.5%",
-                published_at=now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
+            GlobalArticle(article_id="a", title="", content="上证指数收涨 0.5%", published_at=stamp),
+            GlobalArticle(article_id="b", title="【快讯】上证指数收涨", content="", published_at=stamp),
+            GlobalArticle(article_id="c", title="A股三季度展望：政策托底与盈利修复", content="", published_at=stamp),
         ],
         market="CN",
     )
 
-    items = _collect([titleless], max_items=1)
+    items = _collect([source], max_items=5)
 
-    assert items[0]["title"] == "上证指数收涨 0.5%"
+    assert [item["title"] for item in items] == ["A股三季度展望：政策托底与盈利修复"]
 
 
 def test_select_balanced_articles_prefers_configured_market_order():

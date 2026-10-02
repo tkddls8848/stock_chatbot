@@ -210,7 +210,11 @@ NEWS_REPORT_TIMEOUT = 180
 # 한국어는 토큰이 비싸서 analysis 400~500자에 번역 제목 8건·evaluations까지
 # 얹으면 2048에 닿는다. 컨텍스트 32,768에 견줘 여유가 크고, 무료 한도 대비
 # 소비도 하루 1,349/10,000(실측 2026-09-17)이라 올릴 자리가 있다.
-NEWS_REPORT_NUM_PREDICT = 4096
+# 2026-10-02 근거·평가가 원문 제목(source_title)을 그대로 복사하게 되며 출력이 늘었다. 같은 날
+# 중국 실측 1,401·1,744토큰이 보통이지만 한 번은 4,037토큰으로 4096 상한 직전까지 갔다 — 잘리면
+# 재시도 없이 그 시장 보고서가 실패한다. 상한은 쓴 만큼만 과금되므로 6144로 둔다
+# (입력 최대 약 16,000토큰 + 6,144 < 컨텍스트 32,768).
+NEWS_REPORT_NUM_PREDICT = 6144
 # 본문을 450~650자로 늘리면서 함께 올렸다. 650자는 한국어 토큰으로 약 1,000이고
 # 근거 기사 8건(제목 80자·부가 필드)이 약 1,300, evaluations 10건이 약 150,
 # 발행 판정 두 필드가 약 100이라 합이 2,600 선이다. 3584에 남는 여유가
@@ -290,19 +294,13 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 돌아가고, 3주기를 모아도 NEWS_REPORT_MIN_ARTICLES(8)에 못 미쳐 발행 게이트에
 # 걸린다. 전용 소스라야 자기 몫의 슬롯을 받는다 — `gnews_jp`를 세운 이유다.
 #
-# 뺀 소스 둘. 정의는 news/registry.py 카탈로그에 그대로 있으니 되살릴 때는
-# 이 목록에 키만 다시 넣는다.
-# - `sina`(2026-09-21 실측, 09-22 재확인): zhibo.sina.com.cn(49.7.36.230)이 이
-#   서버에서 닿지 않는다. DNS는 풀리는데 SYN이 China Telecom 국제 백본(202.97.x)
-#   안쪽에서 조용히 버려진다. ICMP도 전 포트도 무응답이라 사이트의 지역 차단이
-#   아니라 경로 차단이고, 서버를 옮겨도 중국 밖이면 같다. 거절(RST)이 아니라
-#   드롭이라 connect 한 번이 tcp_syn_retries=6 만큼 약 127초를 물고, 재시도 3회가
-#   곱해져 수집 워커가 6분 넘게 잡혔다. 부팅 즉시 도는 수집이 그 창을 만들어,
-#   그 안에 SIGTERM이 오면 종료가 90초 뒤 SIGKILL로 끝났다.
-# - `cls`(2026-09-22): 닿기는 하는데 symbol="重点" 필터가 얇아 주기당 0~1건이다.
-#   중화권 1차 소스 자리를 이름만 지키고 있었고, 그 자리는 한 호출에 200건을
-#   주는 `em_global`이 실제로 채운다. 큐 슬롯 12개를 0~1건이 점유하는 것도
-#   손해다. "全部"로 바꾸면 20건을 받지만 등급 없는 잡음이 섞인다.
+# 속보 소스는 쓰지 않는다(운영자 결정 2026-10-02). 목적은 빠른 기사 취득이 아니라
+# 사건과 그 함의의 분석이다. 그때 큐의 중국 314건 중 312건이 7×24 속보(`em_global`·
+# `futu`)였고, 보고서는 그 한 줄짜리 快讯을 국면 분석의 재료로 쓰고 있었다. 넷(futu·
+# em_global·sina·cls)의 어댑터를 지웠다 — sina·cls는 그 전에 접속·수급 문제로 빠져
+# 있었지만 같은 속보 피드라 같이 퇴역했다. 중국 칸은 `gnews_cn`(간체 로케일의 분석·
+# 정책 질의)과 `gnews`의 영어 질의가 채운다. 다른 소스의 【速報】·[속보] 제목은
+# 수집 단계에서 거른다(`news/utils.py`의 `is_flash_title`).
 #
 # 유럽(EU)은 2026-09-30에 여섯 번째 시장으로 올렸다. 그전에는 `gnews` 혼합 질의
 # 하나로만 들어와 큐 슬롯이 두 건 남짓이라 보고서가 보류 한도(12시간)에 걸려야
@@ -315,12 +313,8 @@ NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
 # 옛 주소(www3.nhk.or.jp/rss/news/cat5.xml)가 열리기는 하나 8월 8일 이후 갱신이 멈춰
 # 48시간 필터에 전부 걸렸다 — NHK가 옮긴 새 주소(news.web.nhk)로 바꿨다.
 # 닿지 않는 피드는 레지스트리가 쿨다운으로 쉬게 한다.
-#
-# `em_global`의 키가 `em`이 아닌 이유가 있다. 2026-07-19(54d1779)에 제거한 `em`은
-# 종목별 검색 API(stock_news_em)였고 그 결정은 그대로 둔다 — 이쪽은 전역
-# 속보(stock_info_global_em)로 엔드포인트가 다르다.
 NEWS_GLOBAL_SOURCE_KEYS = [
-    "futu", "em_global", "gnews", "gnews_us", "gnews_kr", "gnews_jp", "gnews_eu",
+    "gnews_cn", "gnews", "gnews_us", "gnews_kr", "gnews_jp", "gnews_eu",
 ]
 NEWS_RSS_FEEDS: list[tuple[str, str]] = [
     ("mk-stock", "https://www.mk.co.kr/rss/50200011/"),
@@ -402,10 +396,7 @@ NEWS_LOG_RETENTION_DAYS = 30
 # ISO-like market keys (CN, HK, US, KR, JP, ...); an unmapped source is kept as
 # "OTHER" instead of being silently mixed into another market.
 NEWS_SOURCE_MARKETS = {
-    "futu": "CN",
-    "sina": "CN",
-    "cls": "CN",
-    "em_global": "CN",
+    "gnews_cn": "CN",
     "gnews_jp": "JP",
     "gnews_us": "US",
     "gnews_kr": "KR",

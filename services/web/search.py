@@ -170,7 +170,10 @@ def _prepare(row: dict) -> dict:
     public["url"] = _safe_url(str(row.get("url") or ""))
     public["market_label"] = MARKETS.get(row.get("market"), row.get("market", ""))
     searchable = _normal(f"{row.get('title', '')} {row.get('text', '')}")
-    return {"public": public, "text": searchable,
+    # 매체명은 2026-10-02부터 제목 꼬리가 아니라 출처(source)에 있다. 키워드로는 찾게 하되
+    # 주제 판정에는 넣지 않는다 — 매체 이름의 낱말이 금리·반도체 같은 주제로 읽히면 안 된다.
+    keywords = _normal(f"{row.get('title', '')} {row.get('text', '')} {row.get('source', '')}")
+    return {"public": public, "text": keywords,
             "topics": {label for label, pattern in _TOPIC_PATTERNS.items() if pattern.search(searchable)}}
 
 

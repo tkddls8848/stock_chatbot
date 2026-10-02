@@ -1,0 +1,25 @@
+[용어 기준] 이 글은 금융·경제를 다루는 독자가 읽는다. 한국 경제 전문 매체(연합인포맥스·한국경제·
+매일경제)의 표기를 따른다. 영어·중국어·일본어를 소리 나는 대로 옮기거나 낱말 단위로 직역하지 않는다
+(liquidity를 "액화"·"유동화"로, yield를 "수확"으로 옮기면 틀린 것이다). 한국어 문장 안에 영어·중국어
+문장을 섞지 않는다(티커·지수명·고유명사만 원문 허용).
+- 금리·채권: yield → 금리(채권은 "국채 금리"·"수익률"), Treasury yields → 미 국채 금리, 10-year → 10년물,
+  spread → 스프레드·가산금리, yield curve inversion → 장단기 금리 역전, fed funds rate → 연방기금금리,
+  rate cut/hike/hold → 금리 인하/인상/동결, hawkish/dovish → 매파적/비둘기파적, QT → 양적긴축, taper → 테이퍼링
+- 물가·고용·경기: core CPI/PCE → 근원 소비자물가지수/근원 PCE 물가, nonfarm payrolls → 비농업 고용,
+  private payrolls(ADP) → 민간 고용, jobless claims → 신규 실업수당 청구 건수, PMI → 구매관리자지수,
+  housing starts → 주택 착공, soft landing → 연착륙, recession → 경기침체, stagflation → 스태그플레이션
+- 주식·기업: earnings → 실적, EPS → 주당순이익, guidance → 실적 가이던스, beat/miss → 시장 예상치 상회/하회,
+  price target → 목표주가, upgrade/downgrade → 투자의견 상향/하향, valuation → 밸류에이션,
+  buyback → 자사주 매입, IPO → 기업공개(IPO), market cap → 시가총액, rally → 랠리·반등,
+  sell-off → 매도세·급락, bull/bear market → 강세장/약세장, futures → 선물, all-time high → 사상 최고치
+- 시장 일반: liquidity → 유동성, volatility → 변동성, safe haven → 안전자산, risk-on/off → 위험선호/위험회피,
+  oil prices → 국제유가(WTI·브렌트유), natural gas → 천연가스, dollar index → 달러인덱스
+- 정치·정책: government shutdown → (미 연방정부) 셧다운, debt ceiling → 부채한도, midterms → 중간선거,
+  tariff → 관세, sanctions → 제재, ceasefire → 휴전, stimulus → 경기부양책
+- 중화권·일본: 美联储 → 연준, 人民银行 → 인민은행, 降准/降息 → 지급준비율 인하/금리 인하,
+  恒生指数 → 항셍지수, A股 → A주, 港股 → 홍콩 증시, 机管局(홍콩) → 공항관리국, 日銀 → 일본은행,
+  日経平均 → 닛케이225, 円 → 엔(円相場 → 엔화 시세, 円安/円高 → 엔저/엔고 — "원"·"원화"로 옮기면 틀린 것이다),
+  元/人民币 → 위안, 港元 → 홍콩달러. 지수의 수준·변동폭은 통화가 아니라 포인트다
+- 일본·중국 기업은 한국 언론의 표기를 쓴다: トヨタ → 도요타, 東芝 → 도시바, ソニー → 소니,
+  ソフトバンク → 소프트뱅크, 腾讯 → 텐센트, 阿里巴巴 → 알리바바, 比亚迪 → BYD
+- 기관·인물·기업은 한국 언론의 표기(엔비디아, 제롬 파월 연준 의장)를 쓰고, 표기가 없으면 원문 고유명사를 둔다.

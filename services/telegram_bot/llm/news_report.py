@@ -8,14 +8,17 @@
 둔다. 보류한 기사는 버려지지 않고 다음 구간이 더 두꺼운 재료로 다시 본다.
 """
 
+import hashlib
 import json
 import logging
 import random
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 from services.telegram_bot.llm.backends import LLMBackend
+from services.telegram_bot.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +55,26 @@ RESPONSE_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "index": {"type": "integer"},
+                    "article_id": {"type": "string"},
+                    "source_title": {"type": "string"},
                     "title": {"type": "string"},
                     "sentiment": {"type": "number", "minimum": -1, "maximum": 1},
                     "impact": _IMPACT_ENUM,
                     "mentioned_stocks": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["index", "title", "sentiment", "impact", "mentioned_stocks"],
+                "required": ["article_id", "source_title", "title", "sentiment", "impact", "mentioned_stocks"],
             },
         },
         "evaluations": {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"index": {"type": "integer"}, "impact": _IMPACT_ENUM},
-                "required": ["index", "impact"],
+                "properties": {
+                    "article_id": {"type": "string"},
+                    "source_title": {"type": "string"},
+                    "impact": _IMPACT_ENUM,
+                },
+                "required": ["article_id", "source_title", "impact"],
             },
         },
     },
@@ -122,6 +130,21 @@ class NewsReportError(RuntimeError):
     """Raised when a market report cannot be produced for a market."""
 
 
+def _comparable_title(value: Any, publisher: str = "") -> str:
+    """원문 제목 대조용 정규화. 모델이 복사하며 바꾸기 쉬운 것만 맞춘다.
+
+    전각·반각(NFKC)과 공백, 그리고 **그 기사의 확인된 매체명**과 정확히 같은 끝의
+    " - 매체명" 꼬리. 아무 하이픈 뒤나 자르지 않는다 — "정책 - 시행 전"과 "정책 - 시행 후"가
+    같아지면 안 된다. article_id가 함께 맞아야 하므로 이 정규화로 다른 기사에 붙지 않는다.
+    """
+    text = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value or ""))).strip()
+    if publisher:
+        suffix = " - " + re.sub(r"\s+", " ", unicodedata.normalize("NFKC", publisher)).strip()
+        while text.endswith(suffix) and len(text) > len(suffix):
+            text = text[: -len(suffix)].rstrip()
+    return text
+
+
 class NewsReportAnalyzer:
     def __init__(
         self,
@@ -139,7 +162,7 @@ class NewsReportAnalyzer:
         self._highlight_ratio = highlight_ratio
         # 프롬프트에 JSON 예시가 들어 있어 str.format을 쓰면 중괄호가 깨진다.
         # 개수는 호출마다 달라지므로 원본을 두고 analyze에서 치환한다.
-        self._prompt_template = prompt_file.read_text(encoding="utf-8")
+        self._prompt_template = read_prompt(prompt_file)
 
     def _highlight_limit(self, article_count: int) -> int:
         """뽑을 근거 기사 수를 수집량에 비례시킨다.
@@ -169,21 +192,47 @@ class NewsReportAnalyzer:
         if not headlines:
             raise NewsReportError("no headlines to analyze")
 
-        # 탐색 기사가 근거에 뽑히지 않아도 평가를 받을 통로를 확보한다.
-        # 전체 10개 중 최대 절반만 우선 배정하고 나머지는 전체 후보에서 무작위로 뽑는다.
-        exploring = [item["index"] for item in headlines if item.get("exploration")]
-        sample_indexes = random.sample(exploring, min(5, len(exploring)))
-        remaining = [item["index"] for item in headlines if item["index"] not in sample_indexes]
-        sample_indexes += random.sample(remaining, min(10 - len(sample_indexes), len(remaining)))
-        # 모델에게 선별 경로를 노출하면 중요도 평가가 그 정보에 끌릴 수 있다.
-        articles = [{key: value for key, value in item.items() if key != "exploration"}
-                    for item in headlines]
+        # index는 서버 내부 위치다. 모델은 ID와 원문 제목을 복사하고,
+        # 서버는 둘이 같은 입력 기사를 가리키는지 확인한 뒤 위치를 복원한다.
+        known_articles: dict[str, dict[str, Any]] = {}
+        indexes = set()
+        skipped = 0
+        for item in headlines:
+            article_id = item.get("article_id")
+            index = item.get("index")
+            # RSS ID에는 긴 URL이 들어갈 수 있다. URL을 모델이 복사하게 하지
+            # 않고, 순서와 무관한 짧은 ID를 쓴다.
+            identity = ("news-" + hashlib.sha256(article_id.encode("utf-8")).hexdigest()[:16]
+                        if isinstance(article_id, str) and article_id.strip() else "")
+            if (not identity or identity in known_articles
+                    or type(index) is not int or index < 0 or index in indexes
+                    or not isinstance(item.get("title"), str) or not item["title"].strip()):
+                # 그 기사만 뺀다. 한 건 때문에 시장 분석 전체를 멈추지 않는다 — 호출자
+                # (`news/report.py`의 `_reportable`)가 이미 거르므로 여기는 방어선이다.
+                skipped += 1
+                continue
+            known_articles[identity] = item
+            indexes.add(index)
+        if skipped:
+            logger.warning("[NEWS REPORT] %s 입력 기사 %d건을 제목·ID 문제로 뺐다", market, skipped)
+        if not known_articles:
+            raise NewsReportError("news report has no valid input article")
+        exploring = [identity for identity, item in known_articles.items() if item.get("exploration")]
+        sample_ids = random.sample(exploring, min(5, len(exploring)))
+        remaining = [identity for identity in known_articles if identity not in sample_ids]
+        sample_ids += random.sample(remaining, min(10 - len(sample_ids), len(remaining)))
+        # 모델에게 선별 경로나 서버 내부 위치를 노출하지 않는다.
+        # 모델에 보내는 칸은 정해 둔다. 매체명(publisher)·선별 경로·서버 위치는 보내지 않는다 —
+        # 분석에 매체명은 필요 없다(운영자 결정 2026-10-02).
+        articles = [{"article_id": identity,
+                     **{key: item[key] for key in ("title", "source", "published_at") if key in item}}
+                    for identity, item in known_articles.items()]
         payload = {"market": market, "window": window, "articles": articles,
                    "previous": previous or None, "must_publish": bool(must_publish),
-                   "evaluation_indexes": sample_indexes}
+                   "evaluation_article_ids": sample_ids}
         user_prompt = json.dumps(payload, ensure_ascii=False)
-        valid_indexes = {item["index"] for item in headlines}
-        limit = self._highlight_limit(len(headlines))
+        logger.debug("[NEWS REPORT] %s request=%s", market, user_prompt)
+        limit = self._highlight_limit(len(known_articles))
         prompt = self._prompt_template.replace("{max_highlights}", str(limit))
         for attempt in range(1, _VALIDATION_ATTEMPTS + 1):
             try:
@@ -199,6 +248,8 @@ class NewsReportAnalyzer:
                 # 정상 응답의 JSON 형식·스키마가 잘못된 경우에만 다시 요청한다.
                 raise NewsReportError(str(exc)) from exc
 
+            logger.debug("[NEWS REPORT] %s attempt=%d response=%s", market, attempt, raw)
+
             # `salvage`는 "다시 물을 기회가 없다"는 뜻이다. 어긋난 근거 행은
             # 어느 시도에서든 그 행만 버리고, 유효한 근거가 하나도 남지 않았을
             # 때만 한 번 다시 묻는다(`_parse`). 깨진 JSON에서 본문만 건지는
@@ -209,11 +260,12 @@ class NewsReportAnalyzer:
                     raise NewsReportError("empty news report response content")
                 result = self._parse(
                     raw,
-                    valid_indexes=valid_indexes,
+                    known_articles=known_articles,
                     limit=limit,
                     salvage=last,
                     must_publish=bool(must_publish),
                 )
+                sample_indexes = {known_articles[identity]["index"] for identity in sample_ids}
                 result["evaluations"] = [
                     row for row in result["evaluations"] if row["index"] in sample_indexes
                 ]
@@ -233,7 +285,7 @@ class NewsReportAnalyzer:
         self,
         raw: str,
         *,
-        valid_indexes: set[int],
+        known_articles: dict[str, dict[str, Any]],
         limit: int,
         salvage: bool = False,
         must_publish: bool = False,
@@ -295,7 +347,7 @@ class NewsReportAnalyzer:
         # 버리게 되고, 버려질 근거가 학습 표본의 자리까지 차지한다.
         for row in highlights[:limit] if publish else []:
             try:
-                parsed.append(self._parse_highlight(row, valid_indexes, seen))
+                parsed.append(self._parse_highlight(row, known_articles, seen))
             except NewsReportError as error:
                 # **검사는 그대로 엄격하다.** 어긋난 행은 결과에도 NewsLog에도
                 # 사전선별 라벨에도 들어가지 않는다 — 통과시키는 것이 아니라
@@ -313,7 +365,7 @@ class NewsReportAnalyzer:
             )
         if dropped and not parsed and not salvage:
             # 유효한 근거가 하나도 남지 않은 응답은 근거 목록이 아니다 — 모델이
-            # index를 통째로 지어냈거나 한 기사만 되풀이한 것이다. 라벨 공급원이
+            # ID를 통째로 지어냈거나 한 기사만 되풀이한 것이다. 라벨 공급원이
             # 이 호출 하나뿐이라 그때는 한 번 다시 묻는 값어치가 있다.
             # **행 하나가 어긋났다고 다시 묻지는 않는다.** 실측(2026-09-23~25)의
             # `highlight index repeats: 1` 4건·`missing title` 1건은 전부 남은
@@ -334,9 +386,13 @@ class NewsReportAnalyzer:
             for row in rows[:10]:
                 if not isinstance(row, dict):
                     continue
-                index, impact = row.get("index"), row.get("impact")
-                if (type(index) is not int or index not in valid_indexes
-                        or index in evaluation_seen or impact not in ("high", "medium", "low")):
+                try:
+                    index = self._article_index(row, known_articles)
+                except NewsReportError as error:
+                    logger.warning("[NEWS REPORT] 학습용 평가를 버린다: %s", error)
+                    continue
+                impact = row.get("impact")
+                if index in evaluation_seen or impact not in ("high", "medium", "low"):
                     continue
                 evaluation_seen.add(index)
                 evaluations.append({"index": index, "impact": impact})
@@ -350,19 +406,30 @@ class NewsReportAnalyzer:
                 "highlights": parsed, "evaluations": evaluations}
 
     @staticmethod
+    def _article_index(row: dict, known_articles: dict[str, dict[str, Any]]) -> int:
+        article_id = row.get("article_id")
+        if not isinstance(article_id, str) or article_id not in known_articles:
+            raise NewsReportError(f"news report article ID is unknown: {article_id!r}")
+        article = known_articles[article_id]
+        publisher = str(article.get("publisher") or "")
+        if _comparable_title(row.get("source_title"), publisher) != _comparable_title(article["title"], publisher):
+            raise NewsReportError(
+                f"news report source title mismatch for {article_id!r}: "
+                f"expected={article['title']!r}, received={row.get('source_title')!r}"
+            )
+        return article["index"]
+
+    @staticmethod
     def _parse_highlight(
         row: Any,
-        valid_indexes: set[int],
+        known_articles: dict[str, dict[str, Any]],
         seen: set[int],
     ) -> dict[str, Any]:
         if not isinstance(row, dict):
             raise NewsReportError("news report highlight must be an object")
-        index = row.get("index")
-        if not isinstance(index, int) or index not in valid_indexes:
-            raise NewsReportError(f"news report highlight index is unknown: {index!r}")
+        index = NewsReportAnalyzer._article_index(row, known_articles)
         if index in seen:
             raise NewsReportError(f"news report highlight index repeats: {index}")
-        seen.add(index)
 
         title = row.get("title")
         if not isinstance(title, str) or not title.strip():
@@ -377,6 +444,7 @@ class NewsReportAnalyzer:
         if not isinstance(codes, list) or any(not isinstance(code, str) for code in codes):
             raise NewsReportError("news report highlight mentioned_stocks must be strings")
 
+        seen.add(index)
         return {
             "index": index,
             "title": title.strip(),

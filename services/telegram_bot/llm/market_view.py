@@ -6,6 +6,7 @@ from typing import Any
 
 from services.telegram_bot.core.clock import now
 from services.telegram_bot.llm.backends import LLMBackend, LLMBackendError
+from services.telegram_bot.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class MarketViewAnalyzer:
         # 출력 예약을 넘기면 문자열 중간에서 잘려 파싱이 실패한다.
         self._max_actions = max(4, self._max_new_actions + 4)
         self._remove_relevance_threshold = remove_relevance_threshold
-        self._prompt = prompt_file.read_text(encoding="utf-8")
+        self._prompt = read_prompt(prompt_file)
 
     def analyze(
         self,

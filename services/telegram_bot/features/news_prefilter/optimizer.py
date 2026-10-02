@@ -14,6 +14,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Generator
 
+from services.telegram_bot.news.utils import strip_publisher_tail
+
 FEATURE_NAMES = (
     "freshness",
     "watchlist_hit",
@@ -59,7 +61,11 @@ def _lower_current_thread_priority() -> None:
 
 
 def _normalized_title(title: str) -> str:
-    return _TEXT_RE.sub(" ", str(title or "").strip().lower())[:240]
+    # 학습·추론이 같은 규칙을 쓴다. 새 수집분은 매체명 꼬리가 이미 없고, 과거 관측 제목에는
+    # " - 매체명"이 붙어 있다(2026-10-02 이전). 꼬리를 남기면 같은 기사가 수집 시점에 따라
+    # 다른 벡터가 된다. 기존 모델은 따로 버리지 않는다 — 새 모델은 같은 검증 자료·같은
+    # 벡터로 기존 모델과 비교해 나을 때만 저장되므로 기존 가중치도 같은 조건에서 재평가된다.
+    return _TEXT_RE.sub(" ", strip_publisher_tail(str(title or "")).strip().lower())[:240]
 
 
 def _vector(title: str, features: dict[str, float]) -> tuple[tuple[int, float], ...]:

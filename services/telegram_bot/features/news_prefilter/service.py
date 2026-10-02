@@ -104,7 +104,11 @@ class RankedCandidate:
 
 
 def _normalize_text(article: GlobalArticle) -> str:
-    raw = f"{article.title}\n{article.content[:360]}"
+    # 사건 텍스트는 매체명을 떼기 전 원문으로 만든다(`news/sources.py`의 `_google_article`).
+    # 사건 메모리가 그 형태로 쌓여 있어야 같은 사건이 같은 사건으로 남는다.
+    title = str(article.extra.get("event_title") or article.title)
+    content = str(article.extra.get("event_content") or article.content)
+    raw = f"{title}\n{content[:360]}"
     stripped = _TAG_RE.sub(" ", html.unescape(raw)).lower()
     return _SPACE_RE.sub(" ", stripped).strip()[:600]
 

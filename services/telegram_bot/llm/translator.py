@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from services.telegram_bot.llm.backends import LLMBackend
+from services.telegram_bot.llm.terminology import read_prompt
 
 
 _RAW_EXCERPT_CHARS = 200
@@ -66,7 +67,7 @@ class TranslationService:
         self._enabled = enabled
         self._num_predict = num_predict
         self._temperature = temperature
-        self._prompt = (prompt_dir / "global_ko.txt").read_text(encoding="utf-8")
+        self._prompt = read_prompt(prompt_dir / "global_ko.txt")
 
     def translate_article(self, title: str, content: str) -> TranslationResult:
         if not self._enabled:

@@ -89,6 +89,65 @@ def recent_publication_time(
     return None
 
 
+# 속보 표시로 **시작하는** 제목. 운영자 결정(2026-10-02): 목적은 빠른 취득이 아니라
+# 사건과 그 함의의 분석이라 속보는 쓰지 않는다. 제목 중간의 낱말("속보 이후 반등")은
+# 거르지 않는다 — 앞머리 표지만 본다. 전각 괄호·공백·대소문자를 함께 받는다.
+_FLASH_PREFIX = re.compile(
+    r"^\s*(?:[\[【〔(（<＜]\s*(?:속보|긴급|速報|速报|快讯|快訊|突发|突發|breaking(?:\s+news)?)\s*[\]】〕)）>＞]"
+    r"|(?:속보|速報|速报|快讯|快訊|breaking(?:\s+news)?)\s*[:：|｜])",
+    re.IGNORECASE,
+)
+# Google News 제목 끝의 " - 매체명"을 매체명을 모른 채 떼는 휴리스틱. **사전선별 벡터에만** 쓴다
+# (`features/news_prefilter/optimizer.py`) — 화면·보고서 제목은 RSS `<source>`와 정확히 같을 때만
+# 뗀다(`news/sources.py`). 2026-10-02 서버 관측 11,755건 중 6,327건이 이 꼬리를 달았고, 한 번만 나온
+# 꼬리 40개 표본은 전부 매체명이었다(news1.kr, 세계일보, BusinessLine …). 표본 무오탐이 전체 무오탐은
+# 아니다: 사전선별은 새 제목에도 이 규칙을 쓰므로 제목 자체의 마지막 " - 구절"(60자 이하)도
+# 벡터에서는 빠질 수 있다. 영향은 사전선별 점수의 문자 n-gram 일부에 그친다.
+_PUBLISHER_TAIL = re.compile(r"\s+[-–—]\s+[^-–—]{1,60}$")
+
+
+# 기사가 아니라 종목 시세 화면인 제목. Google News 질의("株価 終値" 등)가 Yahoo 시세 페이지를
+# 기사처럼 돌려준다 — 2026-10-02 큐에서 일본 130건 중 32건, 미국 110건 중 11건이었다.
+# 분석할 사건이 없다. 실제로 본 두 형식만 정확히 잡는다(일반 "주가" 낱말은 거르지 않는다).
+_QUOTE_PAGE = re.compile(r"[：:]\s*株価・株式情報|\bStock Price, News, Quote & History\b")
+# 도박 광고 상표가 기사 제목 **앞에** 붙어 오는 경우(2026-10-02 중국 표본: "必威买球泽连斯基…",
+# "ManBetx手机版武契奇…", "yabovip188登录武契奇…"). 앞머리만 본다 — 제목 중간의 상표명은 그 회사의
+# 기사일 수 있고, "博彩"는 마카오 카지노주 기사에 정상적으로 쓰여 넣지 않는다.
+_SPAM = re.compile(r"^\s*(?:必威|买球|manbetx(?:手机|app|官网|登录)|yabo(?:vip|\d)|亚博体育|开云体育|乐鱼体育|华体会)", re.IGNORECASE)
+# 기사를 퍼 와 도박 광고를 끼워 넣는 매체. 같은 날 표본의 광고 제목이 전부 이 매체였다.
+_SPAM_PUBLISHERS = frozenset({"Pchome电脑之家"})
+
+
+def is_flash_title(title: str) -> bool:
+    """속보 표시로 시작하는 제목인가."""
+    return bool(_FLASH_PREFIX.match(str(title or "")))
+
+
+def analyzable_articles(articles: list) -> list:
+    """분석 재료가 되는 기사만 남긴다: 제목이 있고, 속보 표시로 시작하지 않고, 시세 화면·광고가 아닌 기사.
+
+    보고서 수집(사전선별 전)과 리서치 수집이 같은 규칙을 쓴다. 제목 없는 항목은
+    보고서가 근거로 고를 수도, 원문과 대조할 수도 없다.
+    """
+    return [article for article in articles
+            if str(article.title or "").strip() and not is_flash_title(article.title)
+            and not _QUOTE_PAGE.search(article.title) and not _SPAM.search(article.title)
+            and str((getattr(article, "extra", None) or {}).get("publisher") or "") not in _SPAM_PUBLISHERS]
+
+
+def strip_publisher_tail(title: str) -> str:
+    """끝의 " - 매체명"을 뗀 제목. 같은 꼬리가 거듭되면 모두 뗀다("… - 머니투데이 - 머니투데이").
+    남는 제목이 너무 짧으면 그대로 둔다."""
+    text = str(title or "")
+    match = _PUBLISHER_TAIL.search(text)
+    if match is None:
+        return text
+    tail, stripped = match.group(0), text[: match.start()]
+    while stripped.endswith(tail):
+        stripped = stripped[: -len(tail)]
+    return stripped if len(stripped.strip()) >= 8 else text
+
+
 def filter_recent_articles(
     articles: list[T],
     max_age_hours: int,

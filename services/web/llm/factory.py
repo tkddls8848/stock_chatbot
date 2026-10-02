@@ -31,6 +31,7 @@ from services.web.core.config import (
 from services.web.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
 from services.web.llm.polymarket_annotation import PolymarketAnnotator
 from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
+from services.web.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,6 @@ def build_portfolio_advisor():
             model=CLOUDFLARE_MODEL,
             timeout=PORTFOLIO_ADVICE_TIMEOUT,
         ),
-        prompt=PORTFOLIO_ADVICE_PROMPT_FILE.read_text(encoding="utf-8"),
+        prompt=read_prompt(PORTFOLIO_ADVICE_PROMPT_FILE),
         num_predict=PORTFOLIO_ADVICE_NUM_PREDICT,
     )

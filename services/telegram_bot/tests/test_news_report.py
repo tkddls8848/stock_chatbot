@@ -1,6 +1,7 @@
 """매시간 원문 수집과 시장상황 보고서, 그리고 발행 판정."""
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -94,7 +95,8 @@ class _FakeBackend:
             raise self.error
         self.response_formats.append(response_format)
         self.calls.append(json.loads(user_prompt))
-        return json.dumps(self.payload, ensure_ascii=False)
+        payload = self.payload(self.calls[-1]) if callable(self.payload) else self.payload
+        return json.dumps(payload, ensure_ascii=False)
 
 
 class _SequenceBackend:
@@ -191,6 +193,15 @@ def _item(index, *, market="US", event_id=""):
     }
 
 
+def _model_id(index):
+    return "news-" + hashlib.sha256(f"gnews_us-{index}".encode()).hexdigest()[:16]
+
+
+def _headline(index, **kwargs):
+    return {"index": index, "article_id": f"gnews_us-{index}",
+            "title": f"Headline {index}", **kwargs}
+
+
 def _payload(analysis="현재 시장상황 요약이다.", indexes=(0,)):
     return {
         "publish": True,
@@ -198,7 +209,7 @@ def _payload(analysis="현재 시장상황 요약이다.", indexes=(0,)):
         "analysis": analysis,
         "highlights": [
             {
-                "index": index,
+                "article_id": _model_id(index), "source_title": f"Headline {index}",
                 "title": f"한국어 제목 {index}",
                 "sentiment": 0.4,
                 "impact": "high",
@@ -384,7 +395,7 @@ def test_report_collection_releases_articles_the_queue_did_not_take(tmp_path):
 def test_analyzer_returns_analysis_and_highlights(tmp_path):
     analyzer = _analyzer(tmp_path, _payload())
 
-    result = analyzer.analyze("US", "00:00~03:00 UTC +9", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("US", "00:00~03:00 UTC +9", [_headline(0)])
 
     assert result["analysis"] == "현재 시장상황 요약이다."
     assert result["highlights"][0]["title"] == "한국어 제목 0"
@@ -401,7 +412,7 @@ def test_analyzer_uses_first_complete_json_object_and_ignores_trailing_text(tmp_
         max_highlights=8,
     )
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert result["analysis"] == "현재 시장상황 요약이다."
     assert len(backend.calls) == 1
@@ -421,7 +432,7 @@ def test_analyzer_retries_once_when_response_validation_fails(tmp_path):
         max_highlights=8,
     )
 
-    result = analyzer.analyze("KR", "창", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("KR", "창", [_headline(0)])
 
     assert result["analysis"] == "현재 시장상황 요약이다."
     assert len(backend.calls) == 2
@@ -437,20 +448,20 @@ def test_analyzer_stops_after_one_validation_retry(tmp_path):
     )
 
     with pytest.raises(NewsReportError):
-        analyzer.analyze("KR", "창", [{"index": 0, "title": "t"}])
+        analyzer.analyze("KR", "창", [_headline(0)])
 
     assert len(backend.calls) == 2
 
 
-def test_analyzer_rejects_an_index_that_was_not_sent(tmp_path):
-    """없는 index를 받아들이면 엉뚱한 기사에 감성이 붙는다.
+def test_analyzer_rejects_an_article_id_that_was_not_sent(tmp_path):
+    """없는 article_id를 받아들이면 엉뚱한 기사에 감성이 붙는다.
 
     두 번 다 어긋나면 그 행을 버린다. 보고서를 통째로 버리지는 않지만,
     **어긋난 행이 결과에 남지 않는다**는 것이 이 테스트가 지키는 규칙이다.
     """
     analyzer = _analyzer(tmp_path, _payload(indexes=(7,)))
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert result["highlights"] == []
     assert result["analysis"] == "현재 시장상황 요약이다."
@@ -460,7 +471,7 @@ def test_analyzer_rejects_a_repeated_index(tmp_path):
     """같은 기사를 두 번 세면 감성이 이중으로 기록된다."""
     analyzer = _analyzer(tmp_path, _payload(indexes=(0, 0)))
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert [row["index"] for row in result["highlights"]] == [0]
 
@@ -469,7 +480,7 @@ def test_analyzer_caps_highlights_at_the_configured_limit(tmp_path):
     analyzer = _analyzer(tmp_path, _payload(indexes=(0, 1, 2)), max_highlights=2)
 
     result = analyzer.analyze(
-        "US", "창", [{"index": index, "title": "t"} for index in range(3)]
+        "US", "창", [_headline(index) for index in range(3)]
     )
 
     assert len(result["highlights"]) == 2
@@ -485,7 +496,7 @@ def test_the_request_carries_the_response_schema(tmp_path):
     """
     analyzer = _analyzer(tmp_path, _payload())
 
-    analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+    analyzer.analyze("US", "창", [_headline(0)])
 
     sent = analyzer._backend.response_formats[0]
     assert sent["type"] == "json_schema"
@@ -500,13 +511,16 @@ def test_the_schema_declares_every_field_the_parser_requires():
     }
     highlight = schema["properties"]["highlights"]["items"]
     assert set(highlight["required"]) == {
-        "index", "title", "sentiment", "impact", "mentioned_stocks"
+        "article_id", "source_title", "title", "sentiment", "impact", "mentioned_stocks"
     }
     # 파서가 받는 값과 같은 범위·열거여야 한다(`_parse_highlight`).
     assert highlight["properties"]["sentiment"]["minimum"] == -1
     assert highlight["properties"]["sentiment"]["maximum"] == 1
     assert highlight["properties"]["impact"]["enum"] == ["high", "medium", "low"]
     evaluation = schema["properties"]["evaluations"]["items"]
+    assert set(evaluation["required"]) == {"article_id", "source_title", "impact"}
+    assert "index" not in highlight["properties"]
+    assert "index" not in evaluation["properties"]
     assert evaluation["properties"]["impact"]["enum"] == ["high", "medium", "low"]
 
 
@@ -521,18 +535,18 @@ def test_a_schema_shaped_response_passes_the_parser_untouched(tmp_path):
         "hold_reason": "",
         "analysis": "반도체 장비주가 국면을 이끈다.",
         "highlights": [{
-            "index": 0,
+            "article_id": _model_id(0), "source_title": "Headline 0",
             "title": '애플 "비전 프로" 수요가 예상을 넘었다',
             "sentiment": -1,
             "impact": "low",
             "mentioned_stocks": ["AAPL"],
         }],
-        "evaluations": [{"index": 1, "impact": "high"}],
+        "evaluations": [{"article_id": _model_id(1), "source_title": "Headline 1", "impact": "high"}],
     }
     analyzer = _analyzer(tmp_path, payload)
 
     result = analyzer.analyze(
-        "US", "창", [{"index": 0, "title": "a"}, {"index": 1, "title": "b"}]
+        "US", "창", [_headline(0), _headline(1)]
     )
 
     assert result["publish"] is True
@@ -667,7 +681,15 @@ def test_repeated_total_send_failure_does_not_duplicate_news_log(tmp_path):
 
 def test_report_uses_one_llm_call_per_market(tmp_path):
     """기사 수와 무관하게 보고서 한 번에 시장당 한 번만 호출한다."""
-    analyzer = _analyzer(tmp_path, _payload())
+    def response(request):
+        payload = _payload()
+        article = request["articles"][0]
+        payload["highlights"][0].update(
+            article_id=article["article_id"], source_title=article["title"],
+        )
+        return payload
+
+    analyzer = _analyzer(tmp_path, response)
     queue = _queue(tmp_path)
     asyncio.run(queue.enqueue([_item(0, market="US"), _item(1, market="US")]))
     asyncio.run(queue.enqueue([_item(2, market="CN")]))
@@ -813,7 +835,7 @@ def test_the_model_can_hold_a_window_that_adds_nothing(tmp_path):
 def test_a_held_window_still_feeds_the_prefilter_label(tmp_path):
     """호출은 이미 나갔다. 보류가 길어지는 동안 라벨이 마르면 학습이 멈춘다."""
     payload = {"publish": False, "hold_reason": "새로운 것이 없다", "analysis": "",
-               "highlights": [], "evaluations": [{"index": 0, "impact": "high"}]}
+               "highlights": [], "evaluations": [{"article_id": _model_id(0), "source_title": "Headline 0", "impact": "high"}]}
     prefilter = _RecordingPrefilter()
     app, _, _ = _gate_app(
         tmp_path,
@@ -1013,7 +1035,7 @@ def test_publish_defaults_to_true_when_the_model_omits_the_verdict(tmp_path):
     del payload["publish"]
     analyzer = _analyzer(tmp_path, payload)
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "t"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert result["publish"] is True
     assert result["analysis"] == "현재 시장상황 요약이다."
@@ -1024,10 +1046,10 @@ def test_a_hold_verdict_drops_the_body_and_the_highlights(tmp_path):
     payload = _payload(analysis="쓰다 만 판단")
     payload["publish"] = False
     payload["hold_reason"] = "직전과 같다"
-    payload["evaluations"] = [{"index": 0, "impact": "low"}]
+    payload["evaluations"] = [{"article_id": _model_id(0), "source_title": "Headline 0", "impact": "low"}]
 
     result = _analyzer(tmp_path, payload).analyze(
-        "US", "창", [{"index": 0, "title": "t"}]
+        "US", "창", [_headline(0)]
     )
 
     assert result["publish"] is False
@@ -1043,7 +1065,7 @@ def test_must_publish_overrides_a_hold_verdict(tmp_path):
     payload["publish"] = False
 
     result = _analyzer(tmp_path, payload).analyze(
-        "US", "창", [{"index": 0, "title": "t"}], None, True
+        "US", "창", [_headline(0)], None, True
     )
 
     assert result["publish"] is True
@@ -1174,11 +1196,11 @@ def _two_attempt_analyzer(responses):
 def test_a_broken_highlight_no_longer_throws_the_whole_report_away(tmp_path):
     """실측(2026-09-02 CN): 8건 중 하나가 title이 없어 400자 본문이 통째로
     버려지고 원문 제목만 남았다. 비싼 것은 analysis이고 highlight는 근거다."""
-    broken = {"index": 1, "sentiment": 0.1, "impact": "low", "mentioned_stocks": []}
+    broken = {"article_id": _model_id(1), "source_title": "Headline 1", "sentiment": 0.1, "impact": "low", "mentioned_stocks": []}
     analyzer = _two_attempt_analyzer([_bad_highlight_payload(broken)] * 2)
 
     result = analyzer.analyze(
-        "CN", "창", [{"index": 0, "title": "a"}, {"index": 1, "title": "b"}]
+        "CN", "창", [_headline(0), _headline(1)]
     )
 
     assert result["analysis"] == "현재 시장상황 요약이다."
@@ -1187,7 +1209,7 @@ def test_a_broken_highlight_no_longer_throws_the_whole_report_away(tmp_path):
 
 def test_a_repeated_highlight_index_is_dropped_not_fatal(tmp_path):
     duplicate = {
-        "index": 0,
+        "article_id": _model_id(0), "source_title": "Headline 0",
         "title": "같은 기사를 두 번",
         "sentiment": 0.2,
         "impact": "low",
@@ -1195,7 +1217,7 @@ def test_a_repeated_highlight_index_is_dropped_not_fatal(tmp_path):
     }
     analyzer = _two_attempt_analyzer([_bad_highlight_payload(duplicate)] * 2)
 
-    result = analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+    result = analyzer.analyze("CN", "창", [_headline(0)])
 
     assert [row["index"] for row in result["highlights"]] == [0]
 
@@ -1204,9 +1226,9 @@ def test_a_repeated_highlight_index_is_dropped_not_fatal(tmp_path):
     ("bad", "measured"),
     [
         # 서버 실측(2026-09-23~25, 48시간): 이 둘이 시장 보고서를 흔든 전부다.
-        ({"index": 1, "title": "같은 기사를 두 번", "sentiment": 0.2, "impact": "low",
+        ({"article_id": _model_id(1), "source_title": "Headline 1", "title": "같은 기사를 두 번", "sentiment": 0.2, "impact": "low",
           "mentioned_stocks": []}, "news report highlight index repeats: 1"),
-        ({"index": 2, "sentiment": 0.1, "impact": "low", "mentioned_stocks": []},
+        ({"article_id": _model_id(2), "source_title": "Headline 2", "sentiment": 0.1, "impact": "low", "mentioned_stocks": []},
          "news report highlight missing title"),
     ],
 )
@@ -1229,7 +1251,7 @@ def test_one_defective_highlight_costs_neither_the_report_nor_a_second_call(
     with caplog.at_level(logging.WARNING):
         result = analyzer.analyze(
             "CN", "창",
-            [{"index": index, "title": "a"} for index in range(3)],
+            [_headline(index) for index in range(3)],
         )
 
     assert len(backend.calls) == 1
@@ -1241,7 +1263,7 @@ def test_one_defective_highlight_costs_neither_the_report_nor_a_second_call(
 
 def test_a_highlight_list_with_nothing_valid_left_buys_exactly_one_retry(tmp_path):
     """근거가 하나도 남지 않은 응답은 근거 목록이 아니다 — 그때만 다시 묻는다."""
-    dead = {"index": 9, "title": "범위 밖", "sentiment": 0, "impact": "low",
+    dead = {"article_id": _model_id(9), "source_title": "Headline 9", "title": "범위 밖", "sentiment": 0, "impact": "low",
             "mentioned_stocks": []}
     backend = _SequenceBackend(
         [json.dumps({**_payload(indexes=()), "highlights": [dead]}, ensure_ascii=False),
@@ -1251,7 +1273,7 @@ def test_a_highlight_list_with_nothing_valid_left_buys_exactly_one_retry(tmp_pat
         backend=backend, prompt_file=_prompt_file(), num_predict=2048, max_highlights=8
     )
 
-    result = analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+    result = analyzer.analyze("CN", "창", [_headline(0)])
 
     assert len(backend.calls) == 2
     assert [row["index"] for row in result["highlights"]] == [0]
@@ -1259,12 +1281,12 @@ def test_a_highlight_list_with_nothing_valid_left_buys_exactly_one_retry(tmp_pat
 
 def test_a_dropped_highlight_never_reaches_the_newslog_or_the_label(tmp_path):
     """버린 행이 결과에 남으면 엉뚱한 기사에 감성·라벨이 붙는다."""
-    duplicate = {"index": 0, "title": "같은 기사를 두 번", "sentiment": 0.9,
+    duplicate = {"article_id": _model_id(0), "source_title": "Headline 0", "title": "같은 기사를 두 번", "sentiment": 0.9,
                  "impact": "high", "mentioned_stocks": []}
     analyzer = _two_attempt_analyzer([_bad_highlight_payload(duplicate)])
 
     result = analyzer.analyze(
-        "CN", "창", [{"index": 0, "title": "a"}, {"index": 1, "title": "b"}]
+        "CN", "창", [_headline(0), _headline(1)]
     )
 
     assert [row["index"] for row in result["highlights"]] == [0]
@@ -1275,7 +1297,7 @@ def test_the_prompt_forbids_the_two_defects_the_parser_drops():
     """파서가 버리는 결함은 프롬프트가 먼저 막아야 버릴 일이 줄어든다."""
     prompt = _prompt_file().read_text(encoding="utf-8")
 
-    assert "같은 index를 두 번 쓰지 않는다" in prompt
+    assert "같은 article_id를 두 번 쓰지 않는다" in prompt
     assert "비워 두지 않는다" in prompt
 
 
@@ -1291,13 +1313,13 @@ def test_the_schema_does_not_carry_unverified_keywords():
 
 def test_an_empty_report_still_falls_back_to_raw_titles(tmp_path):
     """본문도 없고 근거도 다 버렸으면 빈 섹션보다 제목 나열이 낫다."""
-    broken = {"index": 9, "title": "범위 밖", "sentiment": 0, "impact": "low",
+    broken = {"article_id": _model_id(9), "source_title": "Headline 9", "title": "범위 밖", "sentiment": 0, "impact": "low",
               "mentioned_stocks": []}
     raw = json.dumps({"analysis": "  ", "highlights": [broken]}, ensure_ascii=False)
     analyzer = _two_attempt_analyzer([raw, raw])
 
     with pytest.raises(NewsReportError, match="neither analysis nor highlights"):
-        analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+        analyzer.analyze("CN", "창", [_headline(0)])
 
 
 def test_envelope_errors_are_still_fatal_after_the_retry(tmp_path):
@@ -1305,7 +1327,7 @@ def test_envelope_errors_are_still_fatal_after_the_retry(tmp_path):
     analyzer = _two_attempt_analyzer(['{"analysis":"깨진', '{"analysis":"깨진'])
 
     with pytest.raises(NewsReportError, match="JSON parse failed"):
-        analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+        analyzer.analyze("CN", "창", [_headline(0)])
 
 
 # ── 근거 기사 수는 수집량에 비례한다 ──────────────────
@@ -1341,7 +1363,7 @@ def test_the_prompt_carries_the_scaled_count_not_the_ceiling():
     """프롬프트가 '최대'라고 말해도 제시된 숫자가 모델의 목표가 된다."""
     analyzer = _ratio_analyzer([json.dumps(_payload(), ensure_ascii=False)])
 
-    analyzer.analyze("KR", "창", [{"index": i, "title": "t"} for i in range(11)])
+    analyzer.analyze("KR", "창", [_headline(i) for i in range(11)])
 
     prompt = analyzer._prompt_template.replace("{max_highlights}", "3")
     assert "최대 3건" in prompt
@@ -1355,7 +1377,7 @@ def test_extra_highlights_beyond_the_scaled_count_are_cut():
     )
 
     result = analyzer.analyze(
-        "KR", "창", [{"index": i, "title": "t"} for i in range(11)]
+        "KR", "창", [_headline(i) for i in range(11)]
     )
 
     assert len(result["highlights"]) == 3
@@ -1450,15 +1472,16 @@ def test_logging_still_works_when_the_prefilter_is_off():
 def test_learning_evaluations_are_bounded_and_do_not_change_highlights(tmp_path):
     payload = _payload(indexes=(0,))
     payload["evaluations"] = [
-        {"index": 0, "impact": "low"},
-        {"index": 1, "impact": "low"},
-        {"index": 1, "impact": "high"},
-        {"index": 99, "impact": "low"},
-        {"index": True, "impact": "low"},
-        {"index": 2, "impact": "unknown"},
+        {"article_id": _model_id(0), "source_title": "Headline 0", "impact": "low"},
+        {"article_id": _model_id(1), "source_title": "Headline 1", "impact": "low"},
+        {"article_id": _model_id(1), "source_title": "Headline 1", "impact": "high"},
+        {"article_id": _model_id(99), "source_title": "Headline 99", "impact": "low"},
+        {"article_id": _model_id(True), "source_title": "Headline True", "impact": "low"},
+        {"article_id": _model_id(2), "source_title": "Headline 2", "impact": "unknown"},
     ]
     result = _analyzer(tmp_path, payload)._parse(
-        json.dumps(payload), valid_indexes={0, 1, 2}, limit=3,
+        json.dumps(payload),
+        known_articles={_model_id(i): _headline(i) for i in range(3)}, limit=3,
     )
     assert result["evaluations"] == [{"index": 1, "impact": "low"}]
     assert len(result["highlights"]) == 1
@@ -1484,13 +1507,13 @@ def test_unselected_evaluation_only_feeds_learning():
 
 def test_exploration_gets_evaluated_without_expanding_llm_calls_or_exposing_selection(tmp_path):
     analyzer = _analyzer(tmp_path, _payload(indexes=(0,)))
-    headlines = [{"index": i, "title": f"기사 {i}", "exploration": i >= 25} for i in range(30)]
+    headlines = [_headline(i, exploration=i >= 25) for i in range(30)]
     analyzer.analyze("US", "00~03", headlines)
     assert len(analyzer._backend.calls) == 1
     request = analyzer._backend.calls[0]
-    assert len(request["evaluation_indexes"]) == 10
-    assert len(set(request["evaluation_indexes"])) == 10
-    assert set(range(25, 30)) <= set(request["evaluation_indexes"])
+    assert len(request["evaluation_article_ids"]) == 10
+    assert len(set(request["evaluation_article_ids"])) == 10
+    assert {_model_id(i) for i in range(25, 30)} <= set(request["evaluation_article_ids"])
     assert all("exploration" not in item for item in request["articles"])
 
 
@@ -1516,7 +1539,7 @@ def test_an_unescaped_quote_no_longer_throws_the_whole_body_away(tmp_path):
     )
     analyzer = _two_attempt_analyzer([broken, broken])
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "a"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert result["analysis"] == "현재 시장상황 요약이다. 반도체가 지배적 국면이다."
     # 근거는 잃는다. 그래도 빈 섹션이나 제목 나열보다는 본문이 있는 쪽이 낫다.
@@ -1529,7 +1552,7 @@ def test_a_truncated_body_keeps_only_whole_sentences(tmp_path):
     cut = '{"analysis":"첫 문장이다. 두 번째 문장이다. 세 번째 문장은 여기서 잘'
     analyzer = _two_attempt_analyzer([cut, cut])
 
-    result = analyzer.analyze("KR", "창", [{"index": 0, "title": "a"}])
+    result = analyzer.analyze("KR", "창", [_headline(0)])
 
     assert result["analysis"] == "첫 문장이다. 두 번째 문장이다."
 
@@ -1539,7 +1562,7 @@ def test_a_body_that_cannot_be_salvaged_still_falls_back_to_raw_titles(tmp_path)
     analyzer = _two_attempt_analyzer(["{잘린 쓰레기", "{잘린 쓰레기"])
 
     with pytest.raises(NewsReportError):
-        analyzer.analyze("CN", "창", [{"index": 0, "title": "a"}])
+        analyzer.analyze("CN", "창", [_headline(0)])
 
 
 def test_the_first_attempt_still_retries_before_salvaging_the_body(tmp_path):
@@ -1550,7 +1573,7 @@ def test_the_first_attempt_still_retries_before_salvaging_the_body(tmp_path):
         backend=backend, prompt_file=_prompt_file(), num_predict=2048, max_highlights=8
     )
 
-    result = analyzer.analyze("US", "창", [{"index": 0, "title": "a"}])
+    result = analyzer.analyze("US", "창", [_headline(0)])
 
     assert len(backend.calls) == 2
     assert result["analysis"] == "현재 시장상황 요약이다."
@@ -1583,3 +1606,249 @@ def test_public_export_failure_does_not_repeat_telegram_delivery(tmp_path, monke
     assert len(app.bot.messages) == 1
     assert len(tracker.confirmed) == 2
     assert asyncio.run(queue.snapshot())[1] == []
+
+
+@pytest.mark.parametrize("source_title", [None, "", "Headline 1", "headline 0", "Headline 0 - Reuters"])
+def test_wrong_source_title_never_reaches_links_logs_or_learning(tmp_path, source_title, caplog):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    payload = _payload(indexes=(0, 1))
+    payload["highlights"][0]["source_title"] = source_title
+    analyzer = _analyzer(tmp_path, payload)
+    items = [_item(0), _item(1)]
+    for index, item in enumerate(items):
+        item.update(url=f"https://example.com/{index}", prefilter_candidate_id=f"candidate-{index}")
+    with caplog.at_level(logging.WARNING):
+        result = asyncio.run(news_report._analyze_market(analyzer, "US", "창", items))
+    assert [row["index"] for row in result["highlights"]] == [1]
+    assert len(analyzer._backend.calls) == 1
+    assert "source title mismatch" in caplog.text
+    documents = news_report._public_news([("US", items, result, "창")], datetime.now(JST))
+    articles = [row for row in documents if row["kind"] == "news"]
+    assert [(row["title"], row["text"], row["url"]) for row in articles] == [
+        ("한국어 제목 1", "Headline 1", "https://example.com/1")
+    ]
+    log = _RecordingLog()
+    prefilter = SimpleNamespace(record_outcome=AsyncMock())
+    asyncio.run(news_report._log_highlights("US", items, result, log, prefilter))
+    assert [row["article_id"] for row in log.records] == ["gnews_us-1"]
+    prefilter.record_outcome.assert_awaited_once_with(
+        candidate_id="candidate-1", impact="high", sentiment=0.4,
+    )
+
+
+def test_article_identity_handles_duplicate_titles_and_nonsequential_positions(tmp_path):
+    headlines = [_headline(119, title='Fed says "rates unchanged"'),
+                 _headline(5, title='Fed says "rates unchanged"')]
+    payload = _payload(indexes=(5,))
+    payload["highlights"][0]["source_title"] = headlines[1]["title"]
+    analyzer = _analyzer(tmp_path, payload)
+    result = analyzer.analyze("US", "창", headlines)
+    assert result["highlights"][0]["index"] == 5
+    request = analyzer._backend.calls[0]
+    assert all("index" not in row for row in request["articles"])
+    assert "evaluation_indexes" not in request
+
+
+@pytest.mark.parametrize("title", ['Apple says "demand" rises', 'A \\ B\n新しい政策', '  Fed   holds rates  '])
+def test_source_title_is_compared_without_normalizing_or_changing_json_characters(tmp_path, title):
+    payload = _payload()
+    payload["highlights"][0]["source_title"] = title
+    analyzer = _analyzer(tmp_path, payload)
+    result = analyzer.analyze("US", "창", [_headline(0, title=title)])
+    assert result["highlights"][0]["index"] == 0
+    assert analyzer._backend.calls[0]["articles"][0]["title"] == title
+
+
+def test_rejected_row_does_not_reserve_identity_of_a_later_valid_row(tmp_path):
+    payload = _payload()
+    invalid = {**payload["highlights"][0], "mentioned_stocks": "AAPL"}
+    payload["highlights"].insert(0, invalid)
+    analyzer = _analyzer(tmp_path, payload)
+    result = analyzer.analyze("US", "창", [_headline(0), _headline(1)])
+    assert len(result["highlights"]) == 1
+    assert len(analyzer._backend.calls) == 1
+
+
+def test_hold_evaluations_require_matching_identity_and_source_title(tmp_path, caplog):
+    payload = {"publish": False, "analysis": "", "highlights": [], "evaluations": [
+        {"article_id": _model_id(0), "source_title": "Headline 1", "impact": "high"},
+        {"article_id": _model_id(1), "source_title": "Headline 1", "impact": "low"},
+        {"article_id": _model_id(99), "source_title": "Headline 99", "impact": "high"},
+    ]}
+    analyzer = _analyzer(tmp_path, payload)
+    with caplog.at_level(logging.WARNING):
+        result = analyzer.analyze("US", "창", [_headline(0), _headline(1)])
+    assert result["evaluations"] == [{"index": 1, "impact": "low"}]
+    assert "source title mismatch" in caplog.text
+    assert "article ID is unknown" in caplog.text
+    assert len(analyzer._backend.calls) == 1
+
+
+@pytest.mark.parametrize("identity", [None, "", 0, True, "gnews_us-0"])
+def test_invalid_or_duplicate_input_identity_skips_only_that_article(tmp_path, identity):
+    """한 건 때문에 시장 분석 전체를 멈추지 않는다(2026-10-02: 제목 없는 속보 하나가 중국을 멈췄다)."""
+    analyzer = _analyzer(tmp_path, _payload())
+    result = analyzer.analyze("US", "창", [_headline(0), _headline(1, article_id=identity)])
+    assert [row["title"] for row in analyzer._backend.calls[0]["articles"]] == ["Headline 0"]
+    assert [row["index"] for row in result["highlights"]] == [0]
+
+
+def test_an_input_with_no_valid_article_fails_before_calling_model(tmp_path):
+    analyzer = _analyzer(tmp_path, _payload())
+    with pytest.raises(NewsReportError, match="no valid input article"):
+        analyzer.analyze("US", "창", [_headline(0, title=""), _headline(1, article_id="")])
+    assert analyzer._backend.calls == []
+
+
+@pytest.mark.parametrize("copied", [
+    "Headline 0 ",            # 공백
+    "Ｈｅａｄｌｉｎｅ ０",      # 전각(NFKC)
+    "Headline  0",            # 겹친 공백
+])
+def test_source_title_tolerates_spacing_and_width(tmp_path, copied):
+    payload = _payload()
+    payload["highlights"][0]["source_title"] = copied
+    result = _analyzer(tmp_path, payload).analyze("US", "창", [_headline(0), _headline(1)])
+    assert [row["index"] for row in result["highlights"]] == [0]
+
+
+def test_source_title_tail_is_ignored_only_when_it_is_that_articles_publisher(tmp_path):
+    """매체명 꼬리는 그 기사의 확인된 매체명과 같을 때만 무시한다. 아무 하이픈 뒤나 자르지 않는다."""
+    headlines = [_headline(0, title="Fed holds - Reuters", publisher="Reuters"),
+                 _headline(1, title="Rates - before the vote", publisher="")]
+    payload = _payload(indexes=(0, 1))
+    payload["highlights"][0]["source_title"] = "Fed holds"            # 매체명 꼬리를 떼고 복사
+    payload["highlights"][1]["source_title"] = "Rates"                # 제목 자체의 하이픈을 자름
+    payload["evaluations"] = [{"article_id": _model_id(0), "source_title": "Fed holds", "impact": "high"}]
+    result = _analyzer(tmp_path, payload).analyze("US", "창", headlines)
+    assert [row["index"] for row in result["highlights"]] == [0]
+
+
+def test_publisher_is_never_sent_to_the_model(tmp_path):
+    """매체명은 화면의 출처로만 쓴다. 분석에는 필요 없다(운영자 결정 2026-10-02)."""
+    analyzer = _analyzer(tmp_path, _payload())
+    analyzer.analyze("US", "창", [_headline(0, publisher="Reuters", source="미국 증시 뉴스")])
+    article = analyzer._backend.calls[0]["articles"][0]
+    assert set(article) == {"article_id", "title", "source"}
+    assert article["source"] == "미국 증시 뉴스"
+    assert "Reuters" not in json.dumps(analyzer._backend.calls[0], ensure_ascii=False)
+
+
+def test_untitled_and_duplicate_items_are_removed_before_the_cut():
+    """제목 없는 항목이 앞을 차지해 뒤의 정상 기사를 144건 밖으로 밀어내지 않는다."""
+    untitled = [{**_item(i), "article_id": f"flash-{i}", "title": ""} for i in range(150)]
+    normal = [{**_item(i), "article_id": f"gnews_us-{i}", "title": f"Headline {i}"} for i in range(8)]
+    duplicate = {**normal[0], "title": "다른 제목"}
+
+    kept, skipped = news_report._reportable(untitled + normal + [duplicate])
+
+    assert [row["title"] for row in kept] == [f"Headline {i}" for i in range(8)]
+    assert len(skipped) == 151
+
+
+def test_untitled_items_leave_the_queue_and_release_their_reservation(tmp_path):
+    queue = _queue(tmp_path)
+    asyncio.run(queue.enqueue([{**_item(0), "article_id": "flash-0", "title": ""}, _item(1), _item(2)]))
+    tracker = _RecordingTracker()
+    app = _App(news_report_queue=queue, news_report_analyzer=_analyzer(tmp_path, _payload(indexes=(0,))),
+               sent_tracker=tracker, news_log=None)
+
+    asyncio.run(send_news_report(app))
+
+    assert "flash-0" in tracker.released
+    assert all(row["article_id"] != "flash-0" for row in asyncio.run(queue.snapshot())[1])
+
+
+def test_a_failed_cleanup_keeps_both_the_queue_item_and_its_reservation(tmp_path, monkeypatch):
+    """큐 저장이 실패하면 큐가 되돌아간다. 그때 예약까지 풀면 둘이 어긋난다."""
+    queue = _queue(tmp_path)
+    asyncio.run(queue.enqueue([{**_item(0), "article_id": "flash-0", "title": ""}, _item(1)]))
+    tracker = _RecordingTracker()
+
+    real_persist, failures = queue._persist, []
+
+    async def persist_failing_once():
+        if not failures:
+            failures.append(1)
+            raise OSError("disk full")
+        await real_persist()
+
+    monkeypatch.setattr(queue, "_persist", persist_failing_once)
+    app = _App(news_report_queue=queue, news_report_analyzer=_analyzer(tmp_path, _payload(indexes=(0,))),
+               sent_tracker=tracker, news_log=None)
+    asyncio.run(send_news_report(app))
+
+    # 정리는 실패했지만 보고서는 나갔고, 제목 없는 항목은 예약과 함께 큐에 남아 다음 구간에 다시 정리된다.
+    assert app.bot.messages
+    assert "flash-0" not in tracker.released
+    assert any(row["article_id"] == "flash-0" for row in asyncio.run(queue.snapshot())[1])
+
+
+def test_removing_the_last_untitled_item_resets_the_window_start(tmp_path):
+    queue = _queue(tmp_path)
+    asyncio.run(queue.enqueue([{**_item(0), "article_id": "flash-0", "title": ""}]))
+    app = _App(news_report_queue=queue, news_report_analyzer=_analyzer(tmp_path, _payload()),
+               sent_tracker=_RecordingTracker(), news_log=None)
+    asyncio.run(send_news_report(app))
+    assert asyncio.run(queue.snapshot()) == ("", [])
+
+
+def test_publisher_becomes_the_public_source_but_not_the_title(tmp_path):
+    items = [{**_item(0), "url": "https://example.com/0", "publisher": "연합뉴스"}]
+    result = _analyzer(tmp_path, _payload()).analyze("US", "창", news_report._headline_payload(items))
+    documents = news_report._public_news([("US", items, result, "창")], datetime.now(JST))
+    news = [row for row in documents if row["kind"] == "news"][0]
+    assert news["source"] == "연합뉴스"
+
+
+def test_source_title_does_not_repair_an_unknown_article_id(tmp_path):
+    payload = _payload(indexes=(99, 1))
+    payload["highlights"][0]["source_title"] = "Headline 0"
+    analyzer = _analyzer(tmp_path, payload)
+    result = analyzer.analyze("US", "창", [_headline(0), _headline(1)])
+    assert [row["index"] for row in result["highlights"]] == [1]
+
+
+def test_long_rss_identity_is_shortened_and_stable_when_input_order_changes(tmp_path):
+    original_id = "rss:Reuters:https://example.com/" + "a" * 500
+    headlines = [_headline(0, article_id=original_id), _headline(1)]
+
+    def response(request):
+        article = next(row for row in request["articles"] if row["title"] == "Headline 0")
+        payload = _payload()
+        payload["highlights"][0]["article_id"] = article["article_id"]
+        return payload
+
+    analyzer = _analyzer(tmp_path, response)
+    first = analyzer.analyze("US", "창", headlines)
+    second = analyzer.analyze("US", "창", [headlines[1], {**headlines[0], "index": 119}])
+    identities = [next(row["article_id"] for row in request["articles"]
+                       if row["title"] == "Headline 0") for request in analyzer._backend.calls]
+    assert identities[0] == identities[1]
+    assert len(identities[0]) == 21
+    assert original_id not in json.dumps(analyzer._backend.calls)
+    assert first["highlights"][0]["index"] == 0
+    assert second["highlights"][0]["index"] == 119
+
+
+def test_hash_collision_keeps_only_the_first_article(tmp_path, monkeypatch):
+    """짧은 ID가 겹치면 뒤 기사를 뺀다. 두 기사가 한 ID를 나누면 짝이 어긋난다."""
+    from types import SimpleNamespace
+
+    analyzer = _analyzer(tmp_path, _payload())
+    monkeypatch.setattr(news_report_llm.hashlib, "sha256",
+                        lambda value: SimpleNamespace(hexdigest=lambda: "a" * 64))
+    analyzer.analyze("US", "창", [_headline(0), _headline(1)])
+    assert [row["title"] for row in analyzer._backend.calls[0]["articles"]] == ["Headline 0"]
+
+
+def test_article_outside_the_sent_144_is_not_accepted_even_if_in_server_list(tmp_path):
+    items = [{**_item(0), "article_id": f"gnews_us-{i}", "title": f"Headline {i}"}
+             for i in range(145)]
+    analyzer = _analyzer(tmp_path, _payload(indexes=(144, 0)))
+    result = asyncio.run(news_report._analyze_market(analyzer, "US", "창", items))
+    assert [row["index"] for row in result["highlights"]] == [0]
+    assert len(analyzer._backend.calls) == 1
+    assert len(analyzer._backend.calls[0]["articles"]) == 144

@@ -75,6 +75,7 @@ ENVELOPES = {
 SYSTEM_PROMPT = (
     "당신은 시장 뉴스 분석가다. 주어진 기사 제목을 읽고 한국어로 짧은 시장상황 "
     "판단을 쓰고, 근거가 된 기사를 고른다. analysis는 100자 내외로 쓴다. "
+    "article_id와 source_title은 같은 입력 기사의 ID와 title을 정확히 복사한다. "
     "title은 기사 제목을 한국어로 옮긴 것이며 원문의 인용부호를 그대로 살린다."
 )
 
@@ -85,12 +86,12 @@ USER_PROMPT = json.dumps(
         "market": "US",
         "articles": [
             {
-                "index": 0,
+                "article_id": "apple-news",
                 "title": 'Apple says "Vision Pro" demand beat expectations, shares rise 3%',
                 "source": "Reuters",
             },
             {
-                "index": 1,
+                "article_id": "fed-news",
                 "title": "Fed holds rates steady, signals one cut in 2026",
                 "source": "Bloomberg",
             },
@@ -169,8 +170,9 @@ def _conforms(data: object) -> list[str]:
         if not isinstance(row, dict):
             problems.append(f"highlight가 객체가 아니다: {row!r}")
             continue
-        if not isinstance(row.get("index"), int) or isinstance(row.get("index"), bool):
-            problems.append(f"index가 정수가 아니다: {row.get('index')!r}")
+        for field in ("article_id", "source_title"):
+            if not isinstance(row.get(field), str) or not row[field]:
+                problems.append(f"{field}가 빈 문자열이거나 문자열이 아니다: {row.get(field)!r}")
         if not isinstance(row.get("title"), str) or not row["title"].strip():
             problems.append(f"title이 비었다: {row.get('title')!r}")
         sentiment = row.get("sentiment")
@@ -284,7 +286,7 @@ def _report_payload(article_count: int) -> tuple[str, str]:
         if index % 17 == 0:
             title = f'{subject} says "demand is structural", {verb}'
         articles.append({
-            "index": index,
+            "article_id": f"news-{index}",
             "title": title,
             "source": sources[index % len(sources)],
             "published_at": f"{9 + index % 12:02d}:{index % 60:02d} UTC +9",
@@ -303,7 +305,7 @@ def _report_payload(article_count: int) -> tuple[str, str]:
             ),
         },
         "must_publish": False,
-        "evaluation_indexes": list(range(10)),
+        "evaluation_article_ids": [f"news-{index}" for index in range(10)],
     }
     return prompt, json.dumps(payload, ensure_ascii=False)
 

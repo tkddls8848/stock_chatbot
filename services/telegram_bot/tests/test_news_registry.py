@@ -5,14 +5,14 @@ from services.telegram_bot.news.registry import NewsSourceRegistry, build_source
 
 
 def _registry(**kwargs) -> NewsSourceRegistry:
-    specs = build_source_specs(["futu", "sina"], [])
+    specs = build_source_specs(["gnews_us", "gnews_kr"], [])
     return NewsSourceRegistry(specs, **kwargs)
 
 
 def test_build_source_specs_ignores_unknown_and_duplicates():
-    specs = build_source_specs(["futu", "unknown", "futu", "sina"], [("내RSS", "http://x/feed")])
+    specs = build_source_specs(["gnews_us", "unknown", "gnews_us", "gnews_kr"], [("내RSS", "http://x/feed")])
     keys = [spec.key for spec in specs]
-    assert keys == ["futu", "sina", "rss:내RSS"]
+    assert keys == ["gnews_us", "gnews_kr", "rss:내RSS"]
 
 
 def test_build_source_specs_supports_google_news_provider():
@@ -24,10 +24,9 @@ def test_build_source_specs_supports_google_news_provider():
 def test_builtin_specs_carry_market_tags():
     specs = {
         spec.key: spec
-        for spec in build_source_specs(["futu", "gnews", "gnews_us", "gnews_kr"], [])
+        for spec in build_source_specs(["gnews_us", "gnews", "gnews_us", "gnews_kr"], [])
     }
 
-    assert specs["futu"].market == "CN"
     assert specs["gnews_us"].market == "US"
     assert specs["gnews_kr"].market == "KR"
     # 혼합 소스는 시장 태그를 비워 두고 기사별 extra["market"]로 구분한다.
@@ -38,76 +37,76 @@ def test_source_markets_config_tags_rss_and_overrides_builtin():
     specs = {
         spec.key: spec
         for spec in build_source_specs(
-            ["futu"],
+            ["gnews_us"],
             [("mk-stock", "http://x/feed")],
-            {"rss:mk-stock": "KR", "futu": "HK"},
+            {"rss:mk-stock": "KR", "gnews_us": "HK"},
         )
     }
 
     assert specs["rss:mk-stock"].market == "KR"
-    assert specs["futu"].market == "HK"
+    assert specs["gnews_us"].market == "HK"
 
 
 def test_eastmoney_per_stock_news_provider_is_not_registered():
     # 2026-07-19(54d1779)에 뺀 `em`은 종목별 검색 API(stock_news_em)다. 기사별
     # 뉴스 경로 자체가 그 뒤 삭제됐으므로 이 키는 계속 비어 있어야 한다.
-    # 전역 속보(stock_info_global_em)는 엔드포인트가 달라 `em_global`로 따로
-    # 등록돼 있다 — 아래 test_eastmoney_global_wire_is_registered 가 그쪽을 본다.
     assert build_source_specs(["em"], []) == []
 
 
 def test_source_cooldown_after_consecutive_failures():
     registry = _registry(failure_threshold=3, cooldown_minutes=60)
-    assert [s.key for s in registry.active_specs()] == ["futu", "sina"]
+    assert [s.key for s in registry.active_specs()] == ["gnews_us", "gnews_kr"]
 
-    registry.record_failure("futu", "boom")
-    registry.record_failure("futu", "boom")
-    assert [s.key for s in registry.active_specs()] == ["futu", "sina"]
+    registry.record_failure("gnews_us", "boom")
+    registry.record_failure("gnews_us", "boom")
+    assert [s.key for s in registry.active_specs()] == ["gnews_us", "gnews_kr"]
 
-    registry.record_failure("futu", "boom")
-    assert [s.key for s in registry.active_specs()] == ["sina"]
+    registry.record_failure("gnews_us", "boom")
+    assert [s.key for s in registry.active_specs()] == ["gnews_kr"]
 
 
 def test_cooldown_expires_and_source_returns():
     registry = _registry(failure_threshold=1, cooldown_minutes=60)
-    registry.record_failure("sina", "boom")
-    assert [s.key for s in registry.active_specs()] == ["futu"]
+    registry.record_failure("gnews_kr", "boom")
+    assert [s.key for s in registry.active_specs()] == ["gnews_us"]
 
     # 쿨다운 만료를 시뮬레이션
-    registry._health["sina"].cooldown_until = now() - timedelta(seconds=1)
-    assert [s.key for s in registry.active_specs()] == ["futu", "sina"]
+    registry._health["gnews_kr"].cooldown_until = now() - timedelta(seconds=1)
+    assert [s.key for s in registry.active_specs()] == ["gnews_us", "gnews_kr"]
 
 
 def test_success_resets_failure_streak():
     registry = _registry(failure_threshold=3, cooldown_minutes=60)
-    registry.record_failure("futu", "boom")
-    registry.record_failure("futu", "boom")
-    registry.record_success("futu")
-    registry.record_failure("futu", "boom")
-    registry.record_failure("futu", "boom")
-    assert [s.key for s in registry.active_specs()] == ["futu", "sina"]
+    registry.record_failure("gnews_us", "boom")
+    registry.record_failure("gnews_us", "boom")
+    registry.record_success("gnews_us")
+    registry.record_failure("gnews_us", "boom")
+    registry.record_failure("gnews_us", "boom")
+    assert [s.key for s in registry.active_specs()] == ["gnews_us", "gnews_kr"]
 
 
 def test_status_lines_report_states():
     registry = _registry(failure_threshold=1, cooldown_minutes=60)
-    registry.record_failure("sina", "boom")
+    registry.record_failure("gnews_kr", "boom")
     lines = registry.status_lines()
-    assert lines[0] == "futu: 정상"
-    assert lines[1].startswith("sina: 쿨다운")
+    assert lines[0] == "gnews_us: 정상"
+    assert lines[1].startswith("gnews_kr: 쿨다운")
 
 
-def test_cailianpress_is_registered_as_a_share_source():
-    specs = {spec.key: spec for spec in build_source_specs(["cls"], [])}
+def test_flash_wire_sources_are_retired():
+    """속보(7×24 快讯) 소스는 쓰지 않는다(운영자 결정 2026-10-02). 키가 남아 있으면
+    설정 한 줄로 되살아나 보고서가 다시 한 줄짜리 속보를 국면 분석의 재료로 쓴다."""
+    from services.telegram_bot.core.config import NEWS_GLOBAL_SOURCE_KEYS, NEWS_SOURCE_MARKETS
 
-    assert specs["cls"].market == "CN"
-    assert "财联社" in specs["cls"].label
+    assert build_source_specs(["futu", "em_global", "sina", "cls"], []) == []
+    assert not {"futu", "em_global", "sina", "cls"} & set(NEWS_GLOBAL_SOURCE_KEYS)
+    assert not {"futu", "em_global", "sina", "cls"} & set(NEWS_SOURCE_MARKETS)
 
 
-def test_eastmoney_global_wire_is_registered_as_a_share_source():
-    specs = {spec.key: spec for spec in build_source_specs(["em_global"], [])}
+def test_china_analysis_source_is_registered_with_its_own_market():
+    specs = {spec.key: spec for spec in build_source_specs(["gnews_cn"], [])}
 
-    assert specs["em_global"].market == "CN"
-    assert "东方财富" in specs["em_global"].label
+    assert specs["gnews_cn"].market == "CN"
 
 
 def test_japan_stock_source_is_registered_with_its_own_market():

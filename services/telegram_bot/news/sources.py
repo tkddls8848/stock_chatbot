@@ -1,6 +1,8 @@
-"""전역/개별 뉴스 원천 fetcher와 소스별 정규화 어댑터.
+"""뉴스 원천 fetcher와 소스별 정규화 어댑터.
 
-각 어댑터는 원천 DataFrame/RSS를 GlobalArticle 목록(최신순)으로 변환한다.
+각 어댑터는 원천 RSS를 GlobalArticle 목록(최신순)으로 변환한다. 속보(7×24 快讯)
+어댑터 넷(futu·sina·cls·em_global)은 2026-10-02에 퇴역했다 — 이 시스템의 목적은 빠른
+취득이 아니라 사건과 그 함의의 분석이다(운영자 결정). 되살릴 일은 git에서 꺼내는 별도 변경이다.
 """
 
 import html
@@ -9,34 +11,15 @@ from dataclasses import dataclass, field
 from datetime import date
 from urllib.parse import quote_plus, urlparse
 
-import akshare as ak
-import curl_cffi
 import requests
-import requests.exceptions
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from services.telegram_bot.core.config import NEWS_SOURCE_ARTICLE_LIMIT
 from services.telegram_bot.core.workers import ShutdownThreadPool
 
-def retry_on_network(func):
-    # AkShare 1.18+는 curl_cffi로 요청을 보내므로 curl_cffi 예외도 재시도 대상에
-    # 포함해야 한다(requests.RequestException만 잡으면 재시도가 동작하지 않는다).
-    return retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(
-            (
-                requests.exceptions.RequestException,
-                curl_cffi.CurlError,
-            )
-        ),
-        reraise=True,
-    )(func)
-
 
 @dataclass(frozen=True)
 class GlobalArticle:
-    """소스와 무관한 전역 속보 1건."""
+    """소스와 무관한 기사 1건."""
 
     article_id: str
     title: str
@@ -48,28 +31,6 @@ class GlobalArticle:
 
 
 # ── 원천 fetcher ─────────────────────────────────────
-
-@retry_on_network
-def fetch_futu_raw():
-    return ak.stock_info_global_futu()
-
-
-@retry_on_network
-def fetch_sina_raw():
-    return ak.stock_info_global_sina()
-
-
-@retry_on_network
-def fetch_cls_raw():
-    # "重点"은 财联社가 A/B 등급을 매긴 전보만 돌려준다. "全部"도 한 호출에 20건뿐이라
-    # 등급 없는 잡음이 섞이면 실제로 남는 기사가 몇 건 되지 않는다.
-    return ak.stock_info_global_cls(symbol="重点")
-
-
-@retry_on_network
-def fetch_em_raw():
-    return ak.stock_info_global_em()
-
 
 def fetch_rss_raw(url: str) -> bytes:
     host = urlparse(url).netloc.lower()
@@ -85,112 +46,6 @@ def fetch_rss_raw(url: str) -> bytes:
 
 
 # ── 정규화 어댑터(최신순 반환) ───────────────────────
-
-def _cell(row, key: str) -> str:
-    value = row.get(key)
-    if value is None:
-        return ""
-    text = str(value)
-    return "" if text.lower() in ("nan", "nat", "none") else text
-
-
-def fetch_futu_articles() -> list[GlobalArticle]:
-    df = fetch_futu_raw()
-    articles = []
-    for _, row in df.iterrows():
-        title = _cell(row, "标题")
-        content = _cell(row, "内容")
-        published_at = _cell(row, "发布时间")
-        if not (title or content):
-            continue
-        articles.append(
-            GlobalArticle(
-                article_id=f"{published_at}{content[:20]}",
-                title=title,
-                content=content,
-                published_at=published_at,
-                url=_cell(row, "链接"),
-            )
-        )
-    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
-
-
-def fetch_sina_articles() -> list[GlobalArticle]:
-    df = fetch_sina_raw()
-    articles = []
-    for _, row in df.iterrows():
-        content = _cell(row, "内容")
-        published_at = _cell(row, "时间")
-        if not content:
-            continue
-        articles.append(
-            GlobalArticle(
-                article_id=f"sina:{published_at}:{content[:20]}",
-                title="",
-                content=content,
-                published_at=published_at,
-            )
-        )
-    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
-
-
-def fetch_cls_articles() -> list[GlobalArticle]:
-    """财联社 전보(重点)를 최신순으로 정규화한다.
-
-    akshare는 이 표를 발행 시각 **오름차순**으로 돌려주고 날짜와 시각을 두 열로
-    쪼개 놓는다. 다른 어댑터와 달리 뒤집어야 최신순이 되고, `published_date`를
-    따로 넘겨야 `parse_news_datetime`이 "14:33:21"만으로는 못 읽는 시각을 읽는다.
-    """
-    df = fetch_cls_raw()
-    articles = []
-    for _, row in df.iloc[::-1].iterrows():
-        title = _cell(row, "标题")
-        content = _cell(row, "内容")
-        published_date = _cell(row, "发布日期")
-        published_at = _cell(row, "发布时间")
-        if not (title or content):
-            continue
-        articles.append(
-            GlobalArticle(
-                article_id=f"cls:{published_date} {published_at}:{(title or content)[:20]}",
-                title=title,
-                content=content,
-                published_at=published_at,
-                published_date=published_date,
-            )
-        )
-    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
-
-
-def fetch_em_articles() -> list[GlobalArticle]:
-    """东方财富 글로벌 재경 속보를 정규화한다.
-
-    중화권 수급이 얇아 넣었다(2026-09-22 실측: CN 86건 대 KR 306건). cls 는
-    symbol="重点" 필터가 얇아 주기당 0~1건이라 1차 소스 자리를 이름만 지키고
-    있었다. 이쪽은 같은 호출로 200건을 준다.
-
-    `发布时间`이 "2026-09-22 11:32:10"처럼 날짜와 시각을 한 열에 담으므로
-    published_date 를 따로 넘기지 않는다 — parse_news_datetime 이 그대로 읽는다.
-    """
-    df = fetch_em_raw()
-    articles = []
-    for _, row in df.iterrows():
-        title = _cell(row, "标题")
-        content = _cell(row, "摘要")
-        published_at = _cell(row, "发布时间")
-        if not (title or content):
-            continue
-        articles.append(
-            GlobalArticle(
-                article_id=f"em_global:{published_at}:{(title or content)[:20]}",
-                title=title,
-                content=content,
-                published_at=published_at,
-                url=_cell(row, "链接"),
-            )
-        )
-    return articles[:NEWS_SOURCE_ARTICLE_LIMIT]
-
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -248,11 +103,32 @@ _GOOGLE_NEWS_LOCALES = {
     "EU": "hl=en-GB&gl=GB&ceid=GB:en",
 }
 _DEFAULT_GOOGLE_NEWS_LOCALE = "hl=en-US&gl=US&ceid=US:en"
+# 시장 전용 질의(`_MARKET_STOCK_NEWS_QUERIES`)에만 쓰는 로케일. 위 표에 CN을 넣으면
+# `gnews`의 CN 영어 질의까지 간체 로케일로 바뀐다 — 그 질의는 Bloomberg·SCMP 같은
+# 영어 분석 기사를 받는 자리라 그대로 둔다.
+_STOCK_QUERY_LOCALES = {"CN": "hl=zh-CN&gl=CN&ceid=CN:zh-Hans"}
 
 
-def _google_news_url(query: str, market: str = "") -> str:
-    locale = _GOOGLE_NEWS_LOCALES.get(market.upper(), _DEFAULT_GOOGLE_NEWS_LOCALE)
+def _google_news_url(query: str, market: str = "", locale: str = "") -> str:
+    locale = locale or _GOOGLE_NEWS_LOCALES.get(market.upper(), _DEFAULT_GOOGLE_NEWS_LOCALE)
     return f"https://news.google.com/rss/search?q={quote_plus(query)}&{locale}"
+
+
+def _without_publisher(article: GlobalArticle) -> tuple[str, str]:
+    """(매체명을 뗀 제목, 매체명). Google News 제목은 끝에 " - 매체명"을 단다.
+
+    RSS `<source>`가 준 매체명과 **정확히 같은** 꼬리만 뗀다. 다르면 제목을 건드리지
+    않는다 — "정책 - 시행 전"처럼 제목 자체의 하이픈을 자르지 않기 위해서다.
+    매체명은 화면의 출처로 남기고, 분석 모델에는 보내지 않는다(code_guide).
+    """
+    publisher = str(article.extra.get("source") or "").strip()
+    suffix = f" - {publisher}"
+    title = article.title
+    # 매체가 자기 이름을 제목에 넣고 Google이 한 번 더 붙이는 경우가 있다
+    # (2026-10-02 실측: "… - 머니투데이 - 머니투데이"). 같은 꼬리는 되풀이해 뗀다.
+    while publisher and title.endswith(suffix) and len(title) > len(suffix):
+        title = title[: -len(suffix)].rstrip()
+    return title, publisher
 
 
 def fetch_google_news_history(query: str, day: date, market: str) -> list[GlobalArticle]:
@@ -288,6 +164,18 @@ _REGIONAL_MARKET_QUERIES = {
 # 시장 전용 소스의 질의. 리서치 후보 발굴이 개별 종목 언급에 의존하므로
 # 지수 시황뿐 아니라 종목·실적 질의를 함께 넣는다.
 _MARKET_STOCK_NEWS_QUERIES = {
+    # 중국은 속보(7×24 快讯)를 빼고 사건의 함의를 다루는 기사로 채운다(운영자 결정
+    # 2026-10-02 — 목적은 빠른 취득이 아니라 함의의 분석이다). 간체 로케일로 받는다.
+    # 2026-10-02 실측(국경절 휴장 중)으로 골랐다: "A股 政策" 32건(정책·업종 분석 위주),
+    # "人民银行 货币政策" 8건(재련사 조간 정리·주택대출 이자 지원), "中国经济 政策 影响" 34건(분석 섞임).
+    # 뺀 질의: "A股 市场 分析 解读"는 TradingKey의 미국 개별 종목 기사("AMD股票…原因全解读")가 섞이고,
+    # 证监会·人民币汇率·宏观数据는 홍콩·말레이시아·ECB·아이폰 기사가 절반이었다. 영어
+    # "Chinese stocks outlook"은 나이키 등 무관 기사가 대부분이었다.
+    "CN": (
+        "A股 政策 when:1d",
+        "人民银行 货币政策 when:1d",
+        "中国经济 政策 影响 when:1d",
+    ),
     "US": (
         "US stock market Wall Street when:1d",
         "S&P 500 Nasdaq stocks earnings when:1d",
@@ -309,6 +197,29 @@ _MARKET_STOCK_NEWS_QUERIES = {
         "European companies earnings shares when:1d",
     ),
 }
+
+def _google_article(article: GlobalArticle, article_id: str, market: str) -> GlobalArticle:
+    """Google News 항목을 시장 기사로 바꾼다. 매체명은 제목이 아니라 extra에 둔다."""
+    title, publisher = _without_publisher(article)
+    # Google News의 RSS 요약은 본문이 아니라 "제목  매체명"이다. 리서치가 이 요약을 모델에
+    # 넣으므로 끝의 매체명도 뗀다(매체명은 분석에 보내지 않는다).
+    content = article.content
+    if publisher and content.endswith(publisher):
+        content = content[: -len(publisher)].rstrip(" \xa0")
+    return GlobalArticle(
+        article_id=article_id,
+        title=title,
+        content=content,
+        published_at=article.published_at,
+        published_date=article.published_date,
+        url=article.url,
+        # 사전선별의 사건 군집은 매체명을 떼기 전 원문으로 계속 비교한다. 사건 메모리가 그
+        # 원문으로 쌓여 있어, 뗀 제목으로 비교하면 같은 사건을 새 사건으로 본다(2026-10-02 실측:
+        # 서버 사건 메모리 5,050건에 대고 370건 중 179건). 화면·모델에는 쓰지 않는다.
+        extra={"market": market, "provider": "google-news", "publisher": publisher,
+               "event_title": article.title, "event_content": article.content},
+    )
+
 
 def _interleave(groups: list[list[GlobalArticle]]) -> list[GlobalArticle]:
     result: list[GlobalArticle] = []
@@ -341,18 +252,7 @@ def _fetch_google_news_market(market: str) -> list[GlobalArticle]:
         f"gnews:{market}",
         max_articles=per_market_limit,
     )
-    return [
-        GlobalArticle(
-            article_id=f"gnews:{market}:{article.article_id}",
-            title=article.title,
-            content=article.content,
-            published_at=article.published_at,
-            published_date=article.published_date,
-            url=article.url,
-            extra={"market": market, "provider": "google-news"},
-        )
-        for article in articles
-    ]
+    return [_google_article(article, f"gnews:{market}:{article.article_id}", market) for article in articles]
 
 
 def fetch_google_news_global_articles() -> list[GlobalArticle]:
@@ -378,22 +278,11 @@ def _fetch_google_news_stock_query(
     # article_id 접두사(gnews-us 등)는 sent_ids 호환을 위해 유지한다.
     prefix = f"gnews-{market.lower()}"
     articles = fetch_rss_articles(
-        _google_news_url(query, market),
+        _google_news_url(query, market, _STOCK_QUERY_LOCALES.get(market, "")),
         f"{prefix}:{query_index}",
         max_articles=limit,
     )
-    return [
-        GlobalArticle(
-            article_id=f"{prefix}:{article.article_id}",
-            title=article.title,
-            content=article.content,
-            published_at=article.published_at,
-            published_date=article.published_date,
-            url=article.url,
-            extra={"market": market, "provider": "google-news"},
-        )
-        for article in articles
-    ]
+    return [_google_article(article, f"{prefix}:{article.article_id}", market) for article in articles]
 
 
 def fetch_google_news_stock_articles(market: str) -> list[GlobalArticle]:
@@ -421,6 +310,10 @@ def fetch_google_news_stock_articles(market: str) -> list[GlobalArticle]:
             except Exception:
                 groups.append([])
     return _deduplicate_articles(_interleave(groups))[:NEWS_SOURCE_ARTICLE_LIMIT]
+
+
+def fetch_google_news_cn_stock_articles() -> list[GlobalArticle]:
+    return fetch_google_news_stock_articles("CN")
 
 
 def fetch_google_news_us_stock_articles() -> list[GlobalArticle]:
