@@ -1852,3 +1852,34 @@ def test_article_outside_the_sent_144_is_not_accepted_even_if_in_server_list(tmp
     assert [row["index"] for row in result["highlights"]] == [0]
     assert len(analyzer._backend.calls) == 1
     assert len(analyzer._backend.calls[0]["articles"]) == 144
+
+
+def test_korean_original_keeps_its_own_title_instead_of_the_model_rewrite(tmp_path):
+    """이미 한국어인 제목을 모델이 다시 쓰다가 "李대통령"을 "이재용 회장"으로 바꿨다(2026-10-04 연합뉴스).
+    한국어 원문은 원문 제목을 그대로 공개하고, 매체명 꼬리만 뗀다."""
+    original = '李대통령, 금융기관 개인정보 유출에 "엄중 인식, 철저 조사"'
+    headlines = [_headline(0, title=original + " - 연합뉴스", publisher="연합뉴스"),
+                 _headline(1, title="Fed holds rates")]
+    payload = _payload(indexes=(0, 1))
+    payload["highlights"][0]["source_title"] = original
+    payload["highlights"][0]["title"] = "이재용 회장, 금융기관 개인정보 유출에 엄중 인식 요청"
+    payload["highlights"][1]["source_title"] = "Fed holds rates"
+    payload["highlights"][1]["title"] = "연준, 금리 동결"
+    payload["evaluations"] = []
+    result = _analyzer(tmp_path, payload).analyze("KR", "창", headlines)
+
+    titles = {row["index"]: row["title"] for row in result["highlights"]}
+    assert titles[0] == original               # 한국어 원문: 원문 그대로
+    assert titles[1] == "연준, 금리 동결"         # 외국어 원문: 모델 번역
+
+
+@pytest.mark.parametrize(("title", "korean"), [
+    ("[특징주] 中석유수출 중단에 정유업종 강세…SK이노 10%↑", True),
+    ("美국채 5% 시대 돈 몰릴 곳은", True),
+    ("结构性货币政策再加码 5000亿元额度", False),
+    ("米半導体株高やマイクロンの好決算", False),
+    ("European shares set for worst week", False),
+])
+def test_korean_title_detection(title, korean):
+    from services.telegram_bot.llm.news_report import _is_korean_title
+    assert _is_korean_title(title) is korean

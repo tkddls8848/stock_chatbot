@@ -145,6 +145,22 @@ def _comparable_title(value: Any, publisher: str = "") -> str:
     return text
 
 
+def _is_korean_title(title: str) -> bool:
+    """글자의 절반 이상이 한글이면 한국어 제목이다(한자 약칭 "李·美·中"이 섞여도)."""
+    letters = [char for char in title if char.isalpha()]
+    hangul = sum("가" <= char <= "힣" for char in letters)
+    return bool(letters) and hangul * 2 >= len(letters)
+
+
+def _original_title(title: str, publisher: str = "") -> str:
+    """공개용 원문 제목. 그 기사의 확인된 매체명 꼬리(" - 매체명")만 떼고 공백을 고른다."""
+    text = " ".join(str(title).split())
+    suffix = " - " + " ".join(publisher.split()) if publisher.strip() else ""
+    while suffix and text.endswith(suffix) and len(text) > len(suffix):
+        text = text[: -len(suffix)].rstrip()
+    return text
+
+
 class NewsReportAnalyzer:
     def __init__(
         self,
@@ -431,7 +447,14 @@ class NewsReportAnalyzer:
         if index in seen:
             raise NewsReportError(f"news report highlight index repeats: {index}")
 
-        title = row.get("title")
+        # 한국어 원문은 원문 제목을 그대로 쓴다. 이미 한국어인 제목을 모델이 다시 쓰다가 "李대통령"을
+        # "이재용 회장"으로 바꿨다(2026-10-04 연합뉴스). 공개 중이던 한국어 기사 250건 중 186건이 그렇게
+        # 다시 쓰였고, 다른 기사의 제목이 붙은 것도 있었다. 번역이 필요한 외국어 기사만 모델 title을 쓴다.
+        article = known_articles[row["article_id"]]
+        if _is_korean_title(article["title"]):
+            title = _original_title(article["title"], str(article.get("publisher") or ""))
+        else:
+            title = row.get("title")
         if not isinstance(title, str) or not title.strip():
             raise NewsReportError("news report highlight missing title")
         sentiment = row.get("sentiment")
