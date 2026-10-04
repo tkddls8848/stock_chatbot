@@ -3,7 +3,7 @@
 리서치 리포트 지면처럼 짠다(2026-09-29): 데이터로 쓴 표제와 리드문, 시장별 작은 추세
 차트, "한눈에 보기" 표, 시장별 최신 요약. 차트는 `/api/market`의 일별 값으로 브라우저가
 SVG를 그린다 — 선은 봇 차트(`market_sentiment/chart.py`)와 같은 누적 논조선(날마다 (논조 − 전 시장
-공통 평균)을 그 시장의 하루 변동폭 σ로 나눠 쌓는다, 2026-10-04)이다. 예전 커널 회귀는 선이 평균에
+공통 평균)을 그 시장의 하루 변동폭 σ로 나누고, 이어지는 움직임을 증폭해 쌓는다, 2026-10-04)이다. 예전 커널 회귀는 선이 평균에
 붙어 경향이 보이지 않았다. 도메인끼리 import하지 않으므로 같은 계산을 여기 JS로 한 번 더 적는다.
 """
 
@@ -52,7 +52,7 @@ _MARKET_MAIN = (
     + """
 <div class='mk-grid'>
  <section class='mk-fig' aria-labelledby='mk-fig-title'>
-  <h2 id='mk-fig-title'>시장별 누적 논조 (전 시장 평균 대비)</h2>
+  <h2 id='mk-fig-title'>시장별 논조 경향 (전 시장 평균 대비, 증폭)</h2>
   <div class='mk-small' id='small'><p class='empty'>산출물을 불러오는 중…</p></div>
   <p class='mk-src' id='mk-src'>자료: 시장별 뉴스 헤드라인 일일 요약</p>
  </section>
@@ -66,8 +66,9 @@ _MARKET_MAIN = (
   </div>
   <p class='mk-note'><b>읽는 법.</b> 값은 보도 논조의 방향이며 가격·수익률이 아닙니다.
   <b class='pos'>빨강이 긍정</b>, <b class='neg'>파랑이 부정</b>입니다. 차트의 선은 날마다 그 시장의 논조가
-  전 시장 평균보다 얼마나 긍정적이었는지를 그 시장의 하루 변동폭으로 나눠 쌓은 값입니다. 선이 오르면 평균보다
-  긍정적인 날이 이어지는 중이고, 꺾이는 곳이 국면 전환, 기울기가 경향의 세기입니다. '최근 7일'은 기사 수로
+  전 시장 평균보다 얼마나 긍정적이었는지를 그 시장의 하루 변동폭으로 나눠 쌓은 값입니다. 같은 방향으로 이어지는
+  움직임은 증폭하고 하루씩 엇갈리는 잡음은 줄여, 선의 높이는 상대값입니다. 선이 오르면 평균보다 긍정적인 날이
+  이어지는 중이고, 꺾이는 곳이 국면 전환(하루쯤 늦게 보입니다), 기울기가 경향의 세기입니다. '최근 7일'은 기사 수로
   가중한 최근 일주일 평균 논조, '7일 경향'은 그 기간 선이 오르내린 폭입니다.</p>
  </aside>
 </div>
@@ -94,7 +95,9 @@ function trend(daily,base){
     .filter(p=>!isNaN(p.t)).sort((a,b)=>a.t-b.t);
   const m=pts.reduce((a,p)=>a+p.v,0)/Math.max(pts.length,1);
   const sd=Math.max(Math.sqrt(pts.reduce((a,p)=>a+(p.v-m)**2,0)/Math.max(pts.length,1)),.05);
-  let acc=0;const curve=pts.map(p=>[p.t,acc+=(p.v-base)/sd]);
+  // 경향 증폭: 하루 편차를 반감 1일 지수 평활로 모아 그 크기에 비례해 키운다(봇과 같은 MOMENTUM·GAIN).
+  const MOMENTUM=.5,GAIN=1;let acc=0,mo=0;
+  const curve=pts.map(p=>{mo=MOMENTUM*mo+(1-MOMENTUM)*(p.v-base)/sd;return [p.t,acc+=mo*(1+GAIN*Math.abs(mo))];});
   return {pts,curve};
 }
 function svg(tr,color,t0,t1,lim){

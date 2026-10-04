@@ -46,6 +46,11 @@ def _trend_series(points: list[dict]) -> tuple[list[datetime], list[float]]:
 
 # σ가 이보다 작으면 하루 차이가 과장된다(기사 몇 건만 있던 시장).
 _MIN_SPREAD = 0.05
+# 경향 증폭(2026-10-04 운영자 요청). 하루 편차를 반감 1일짜리 지수 평활(_MOMENTUM)로 모은 뒤, 그 크기에
+# 비례해 키운다(_GAIN). 하루씩 엇갈리는 잡음은 평활에서 상쇄돼 거의 커지지 않고, 같은 방향으로 이어지는
+# 움직임만 커진다. 대신 꺾이는 날이 하루쯤 늦게 보이고, 선의 높이는 상대값이다.
+_MOMENTUM = 0.5
+_GAIN = 1.0
 
 
 def _common_baseline(markets: dict[str, dict]) -> float:
@@ -70,6 +75,7 @@ def _cumulative_tone(
     기준선을 시장 자기 평균으로 두면 끝이 늘 0으로 돌아와 "지금"을 말하지 못하고, 0(중립)으로 두면
     모델의 긍정 쏠림이 쌓여 거의 모든 시장이 오르기만 해서, 전 시장 공통 평균을 쓴다.
     σ로 나누는 것은 변동이 큰 시장(미국)과 작은 시장(중국)을 같은 눈금에서 보려는 것이다.
+    쌓기 전에 `_MOMENTUM`·`_GAIN`으로 이어지는 움직임을 증폭한다(위 상수 설명).
     """
     import numpy as np
 
@@ -77,7 +83,11 @@ def _cumulative_tone(
         return None
     y = np.array(values, dtype=float)
     spread = max(float(y.std()), _MIN_SPREAD)
-    return dates, [float(v) for v in np.cumsum((y - baseline) / spread)]
+    momentum, steps = 0.0, []
+    for deviation in (y - baseline) / spread:
+        momentum = _MOMENTUM * momentum + (1 - _MOMENTUM) * float(deviation)
+        steps.append(momentum * (1 + _GAIN * abs(momentum)))
+    return dates, [float(v) for v in np.cumsum(steps)]
 
 
 def render_market_chart(
@@ -135,9 +145,9 @@ def render_market_chart(
         trend_ax.plot(*curve, linewidth=2.2, marker="o", markersize=2.5,
                       color=MARKET_COLORS.get(market), label=market_label(market))
     trend_ax.axhline(0, color=_MUT, linewidth=0.9)
-    trend_ax.set_title(f"Cumulative tone vs all-market average ({lookback_days}d)", loc="left", fontsize=11,
+    trend_ax.set_title(f"Tone tendency vs all-market average ({lookback_days}d, amplified)", loc="left", fontsize=11,
                        fontweight="bold", color=_INK, pad=12)
-    trend_ax.set_ylabel("Cumulative (daily tone − average) / σ")
+    trend_ax.set_ylabel("Amplified cumulative tone (relative)")
     trend_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
     trend_ax.tick_params(axis="x", rotation=45)
     # 누적선은 위아래 끝까지 쓰므로 범례를 그림 밖 오른쪽에 둔다.

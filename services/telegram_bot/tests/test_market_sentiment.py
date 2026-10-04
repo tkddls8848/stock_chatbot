@@ -260,7 +260,8 @@ def test_panel_refresh_failure_says_the_web_keeps_the_last_chart(monkeypatch, ca
 
 
 def test_cumulative_tone_turns_where_the_regime_turns_instead_of_flattening():
-    """평균에 붙지 않는다(2026-10-04): 긍정 국면 15일 뒤 부정 국면 15일이면 선은 오르다 정확히 그 날 꺾인다."""
+    """평균에 붙지 않는다(2026-10-04): 긍정 국면 15일 뒤 부정 국면 15일이면 선은 오르다 그 무렵 꺾인다.
+    증폭의 평활 때문에 꺾임은 하루쯤 늦을 수 있다."""
     from datetime import datetime
 
     from services.telegram_bot.features.market_sentiment.chart import _cumulative_tone
@@ -270,9 +271,25 @@ def test_cumulative_tone_turns_where_the_regime_turns_instead_of_flattening():
     _, curve = _cumulative_tone(dates, values, baseline=0.0)
 
     peak = max(range(30), key=curve.__getitem__)
-    assert peak == 14                                  # 국면이 바뀐 날 꺾인다
-    assert curve[14] > 5 and curve[-1] < curve[14] - 5  # 꺾인 뒤 뚜렷이 내려간다
+    assert 14 <= peak <= 15                            # 국면이 바뀐 무렵 꺾인다
+    assert curve[peak] > 5 and curve[-1] < curve[peak] - 5
     assert _cumulative_tone(dates[:1], values[:1], 0.0) is None
+
+
+def test_amplification_grows_sustained_moves_more_than_alternating_noise():
+    """경향 증폭: 같은 방향으로 이어지는 날은 커지고, 하루씩 엇갈리는 잡음은 평활에서 상쇄된다."""
+    from datetime import datetime
+
+    from services.telegram_bot.features.market_sentiment.chart import _cumulative_tone
+
+    dates = [datetime(2026, 9, 1) + timedelta(days=day) for day in range(20)]
+    steady = [0.1] * 10 + [-0.1] * 10                 # σ 0.1, 편차 ±1로 이어진다
+    zigzag = [0.1 if day % 2 else -0.1 for day in range(20)]
+    _, steady_curve = _cumulative_tone(dates, steady, 0.0)
+    _, zigzag_curve = _cumulative_tone(dates, zigzag, 0.0)
+
+    assert steady_curve[9] > 10                        # 증폭 없이 쌓으면 10이다
+    assert max(abs(v) for v in zigzag_curve) < 1.5    # 증폭 없이도 1인 잡음은 거의 그대로다
 
 
 def test_cumulative_tone_uses_the_common_baseline_and_not_each_markets_own_mean():
