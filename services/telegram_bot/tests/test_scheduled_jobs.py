@@ -92,6 +92,24 @@ def test_web_status_reads_the_public_api(monkeypatch):
     assert "예측 질문 한국어 검색 준비: 1,400/19,070건" in text
 
 
+def test_web_status_shows_when_the_brief_fell_back(monkeypatch):
+    """줄글이 써진 시각만으로는 해설이 하나도 안 나온 실행을 구분하지 못한다(2026-10-03 검수)."""
+    payloads = {
+        "/api/meta": {},
+        "/api/forecast/health": {},
+        "/api/forecast/sector-brief": {"written_at": "2026-10-03T08:01:00+09:00",
+                                       "group_counts": {"ok": 1, "stale": 2, "facts_only": 2, "empty": 0}},
+        "/api/forecast/trending": {},
+        "/api/forecast/events?page_size=1": {},
+    }
+
+    def fetch(url, timeout):
+        return _Response(payloads[url.removeprefix(web_status.WEB_STATUS_BASE_URL)])
+
+    text = web_status.build_web_status(fetch)
+    assert "예측 컨센서스 줄글: 2026-10-03 08:01 · 해설 1개 · 직전 단락 2 · 확률만 2" in text
+
+
 def test_web_status_says_when_the_web_is_down():
     import requests
 

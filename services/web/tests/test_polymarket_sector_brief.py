@@ -167,10 +167,10 @@ def test_binary_events_carry_only_the_title_probability():
         1,
     )
 
-    assert rows[0]["title_probability"] == 0.26
+    assert rows[0]["title_outlook"] == "낮음"  # 0.26 — 모델에는 숫자가 아니라 등급만 간다
     # leader를 같이 보내면 모델이 둘을 섞어 쓴다.
     assert "leader" not in rows[0]
-    assert "leader_probability" not in rows[0]
+    assert "leader_outlook" not in rows[0]
 
 
 def test_multi_choice_events_keep_the_leading_candidate():
@@ -182,8 +182,8 @@ def test_multi_choice_events_keep_the_leading_candidate():
     )
 
     assert rows[0]["leader"] == "Candidate A"
-    assert rows[0]["leader_probability"] == 0.55
-    assert "title_probability" not in rows[0]
+    assert rows[0]["leader_outlook"] == "엇갈림"
+    assert "title_outlook" not in rows[0]
 
 
 def test_aggregate_is_not_truncated_by_the_name_limit(tmp_path):
@@ -305,16 +305,32 @@ def test_a_failed_group_reuses_the_previous_paragraph(tmp_path):
     assert equities["stale"] is True
 
 
-def test_total_failure_leaves_the_last_good_file_untouched(tmp_path):
+def test_total_failure_rewrites_the_file_with_only_safe_paragraphs(tmp_path):
+    """전부 실패해도 파일을 쓴다. 예전에는 직전 파일을 그대로 둬서, 모델이 다른 질문의 숫자를 붙인 옛 글이
+    계속 나갔다(검수 재현). 같은 형식의 직전 단락은 이어받는다."""
     root = tmp_path / "polymarket"
     target = tmp_path / "brief.json"
     _write_current(root, [_event(i, ["stocks"]) for i in range(12)])
-    build(root=root, target=target, analyzer=_Analyzer(), min_events=10)
-    before = target.read_text(encoding="utf-8")
+    first = build(root=root, target=target, analyzer=_Analyzer(), min_events=10)
+    kept = next(g for g in first["groups"] if g["status"] == "ok")
 
-    assert build(root=root, target=target, analyzer=_Analyzer(fail_all=True),
-                 min_events=10) is None
-    assert target.read_text(encoding="utf-8") == before
+    result = build(root=root, target=target, analyzer=_Analyzer(fail_all=True), min_events=10)
+    row = next(g for g in result["groups"] if g["key"] == kept["key"])
+    assert row["status"] == "failed" and row["stale"] is True and row["paragraph"] == kept["paragraph"]
+    assert json.loads(target.read_text(encoding="utf-8"))["written_at"] == result["written_at"]
+
+
+def test_total_failure_does_not_keep_an_old_paragraph_with_model_written_numbers(tmp_path):
+    root = tmp_path / "polymarket"
+    target = tmp_path / "brief.json"
+    _write_current(root, [_event(i, ["stocks"]) for i in range(12)])
+    target.write_text(json.dumps({"groups": [{"key": "equities", "status": "ok",
+                                              "paragraph": "전체적으로 엇갈린다. 국제유가 사상 최고치 달성 가능성은 20.5%다."}]},
+                                 ensure_ascii=False), encoding="utf-8")
+    result = build(root=root, target=target, analyzer=_Analyzer(fail_all=True), min_events=10)
+    row = next(g for g in result["groups"] if g["key"] == "equities")
+    assert "20.5%" not in row.get("paragraph", "")
+    assert "20.5%" not in target.read_text(encoding="utf-8")
 
 
 def test_quiet_hours_skip_the_model_without_touching_the_file(tmp_path, monkeypatch):
@@ -483,11 +499,12 @@ def test_an_empty_group_never_reaches_the_backend(tmp_path):
 
 def test_overview_must_precede_individual_probabilities(tmp_path):
     from services.web.llm import PolymarketBriefError
-    raw = "전체적으로 서로 다른 정책 질문의 전망이 섞여 있어 하나의 방향으로 묶기 어렵다. 상위 질문에서 참여자들은 정책 변경 가능성을 25%로 보고 있다."
-    assert _analyzer(tmp_path, raw).analyze("거시·통화", {"event_count": 20}, [{"title": "t"}]) == raw
+    raw = "전체적으로 서로 다른 정책 질문의 전망이 섞여 있어 하나의 방향으로 묶기 어렵다. 상위 질문은 정책 변경 여부를 묻는다."
+    events = [{"title": "t", "fact": "‘정책 변경’에 대해 참여자들은 그 가능성을 25%로 본다."}]
+    assert _analyzer(tmp_path, raw).analyze("거시·통화", {"event_count": 20}, events) == \
+        raw + " ‘정책 변경’에 대해 참여자들은 그 가능성을 25%로 본다."
     with pytest.raises(PolymarketBriefError, match="overview"):
-        _analyzer(tmp_path, "정책 변경 가능성은 25%이다. " + raw).analyze(
-            "거시·통화", {"event_count": 20}, [{"title": "t"}])
+        _analyzer(tmp_path, "정책 질문 3개가 열려 있다. " + raw).analyze("거시·통화", {"event_count": 20}, events)
 
 
 def test_build_exposes_overview_as_first_sentence(tmp_path):
@@ -542,6 +559,41 @@ def test_an_opening_correction_does_not_hand_back_the_rejected_answer(tmp_path, 
     assert PolymarketBriefAnalyzer(Backend(), prompt, 900).analyze("거시", {"event_count": 20}, [{"title": "t"}]) == good
     assert ("previous_response" in calls[1][0]["revision"]) is carries_previous
     assert calls[0][1] < calls[1][1]  # 교정은 조금 더 높은 온도로 다시 쓴다
+
+
+@pytest.mark.parametrize("first", [
+    # 확률 반려
+    "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 해협 정상화 가능성은 20.5%로 낮게 평가된다.",
+    # 문체 반려가 먼저 걸리는 숫자 응답(12차 검수 재현)
+    "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 해협 정상화 가능성은 0.205 수준으로 평가됩니다.",
+    # 한글로 쓴 확률
+    "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 해협 정상화 가능성은 백분의 이십 정도로 평가된다.",
+    # 길이 반려 — 사유의 숫자(글자 수)도 보내지 않는다
+    "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. " + "가" * 2000,
+])
+def test_a_correction_never_hands_numbers_back_to_the_model(tmp_path, first):
+    """교정 입력에도 숫자가 없다. 반려된 응답의 숫자를 돌려주면 모델이 다른 질문에 옮겨 붙였다(12차 검수)."""
+    from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
+    good = ("전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 원유 쪽은 연말까지 사상 최고치에 이를 여지를 "
+            "낮게 보고, 해협 통행 정상화도 낮게 평가된다.")
+    prompts = []
+
+    class Backend:
+        def generate(self, **kwargs):
+            prompts.append(kwargs["user_prompt"])
+            return first if len(prompts) == 1 else good
+
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("test", encoding="utf-8")
+    paragraph = PolymarketBriefAnalyzer(Backend(), prompt, 900).analyze("복합", {"event_count": 20}, _composite_rows())
+    assert paragraph.startswith(good)
+    revision = json.loads(prompts[1])["revision"]
+    # 숫자가 든 응답은 돌려주지 않는다. 숫자 없는 응답(길이 반려)은 고칠 데이터로 돌려줘도 된다.
+    assert ("previous_response" in revision) is not (any(char.isdigit() for char in first) or "백분의" in first)
+    assert not any(char.isdigit() for char in json.dumps(revision, ensure_ascii=False))
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert not has_model_probability(json.dumps(revision, ensure_ascii=False))
+    assert json.loads(prompts[1])["events"] == json.loads(prompts[0])["events"]
 
 
 def test_invalid_correction_is_not_accepted(tmp_path):
@@ -665,6 +717,463 @@ def test_the_prompt_states_the_first_sentence_predicate_contract():
 def test_a_paragraph_naming_the_source_service_is_rejected(tmp_path, name):
     from services.web.llm import PolymarketBriefError
     raw = (f"전체적으로 {name} 참여자들의 전망이 엇갈려 하나의 방향으로 묶기 어렵다. "
-           "상위 질문에서 참여자들은 정책 변경 가능성을 25%로 보고 있다.")
+           "상위 질문에서 참여자들은 정책 변경 가능성을 낮게 보고 있다.")
     with pytest.raises(PolymarketBriefError, match="금지어"):
         _analyzer(tmp_path, raw).analyze("거시·통화", {"event_count": 20}, [{"title": "t"}])
+
+
+
+# ── 확률 문장은 서버가 주어와 함께 쓴다 (2026-10-03 복합: 유가 문장에 호르무즈의 20.5%) ──────
+
+_OIL = {"id": "435099", "title": "Crude Oil all time high by...?", "event_type": "independent_multi",
+        "leader": None, "leader_probability": None, "volume24hr": 62870.6}
+_HORMUZ = {"id": "999", "title": "Strait of Hormuz traffic returns to normal by December 31?", "event_type": "binary",
+           "leader": "No", "leader_probability": 0.795, "volume24hr": 16866.3}
+_OIL_DETAIL = {"markets": [
+    {"outcome_label": "May 31", "closed": True, "active": True, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.0},
+    {"outcome_label": "December 31", "closed": False, "active": True, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.37},
+    {"outcome_label": "Inactive", "closed": False, "active": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.9},
+    {"outcome_label": "Bad price", "closed": False, "active": True, "price_valid": False, "yes_label": "Yes", "yes_probability": 0.5},
+]}
+_LABELS = {"435099": "원유 가격이 역사적 최고치를 기록할지", "999": "호르무즈 해협 통행이 정상화될지"}
+
+
+def _composite_rows(detail=lambda event: _OIL_DETAIL):
+    from services.web.polymarket.sector_brief import named_events
+    return named_events([_OIL, _HORMUZ], 120, labels=_LABELS, detail=detail)
+
+
+def test_every_question_carries_its_own_probability_or_says_it_has_none():
+    """유가(independent_multi)는 대표 확률이 없어 입력이 비었고, 모델이 유일한 숫자를 빌려 썼다."""
+    oil, hormuz = _composite_rows()
+    assert oil["options"] == [{"label": "December 31", "outlook": "낮음"}]
+    assert oil["fact"] == "‘Crude Oil all time high by...?’의 열린 선택지별 확률은 December 31 37%다."
+    assert hormuz["fact"] == "‘Strait of Hormuz traffic returns to normal by December 31?’에 대해 참여자들은 그 가능성을 20.5%로 본다."
+    # 모델에는 읽기 쉬운 한국어 이름을 준다(사실 문장의 주어는 원문 제목).
+    assert hormuz["label"] == "호르무즈 해협 통행이 정상화될지"
+    unread, _ = _composite_rows(detail=lambda event: None)
+    assert unread["probability_available"] is False and unread["fact"] is None
+
+
+def test_the_observed_misattribution_is_rejected_and_numbers_come_only_from_the_server(tmp_path):
+    from services.web.llm import PolymarketBriefError
+    rows = _composite_rows()
+    opening = "전체적으로 호르무즈 해협과 원유 가격에서 참여자들의 판단이 엇갈린다. "
+    observed = opening + "국제유가 사상 최고치 달성 가능성은 20.5%로 낮게 평가받고 있다."
+    with pytest.raises(PolymarketBriefError, match="확률 숫자"):
+        _analyzer(tmp_path, observed).analyze("복합", {"event_count": 20}, rows)
+    clean = opening + "해협 정상화는 낮게 보지만 원유 최고치 경신 여지는 남아 있다고 본다."
+    text = _analyzer(tmp_path, clean).analyze("복합", {"event_count": 20}, rows)
+    # 숫자는 서버가 질문 이름과 함께, 참여 규모순으로 붙인다.
+    assert text == clean + (" ‘Crude Oil all time high by...?’의 열린 선택지별 확률은 December 31 37%다."
+                            " ‘Strait of Hormuz traffic returns to normal by December 31?’에 대해 참여자들은 그 가능성을 20.5%로 본다.")
+
+
+def test_the_model_never_sees_the_server_fact_sentences(tmp_path):
+    seen = []
+
+    class Backend:
+        def generate(self, **kwargs):
+            seen.append(json.loads(kwargs["user_prompt"]))
+            return "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 원유 쪽은 연말까지 상승 여지가 남아 있다고 본다."
+
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("test", encoding="utf-8")
+    from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
+    PolymarketBriefAnalyzer(Backend(), prompt, 900).analyze("복합", {"event_count": 20}, _composite_rows())
+    assert all("fact" not in row for row in seen[0]["events"])
+    assert [row["label"] for row in seen[0]["events"]] == ["원유 가격이 역사적 최고치를 기록할지", "호르무즈 해협 통행이 정상화될지"]
+
+
+def test_the_model_input_carries_no_probability_numbers(tmp_path):
+    """1차 장치: 모델은 확률 숫자를 받지 않는다. 입력에 없는 숫자는 다른 질문에 옮겨 붙일 수 없다."""
+    seen = []
+
+    class Backend:
+        def generate(self, **kwargs):
+            seen.append(kwargs["user_prompt"])
+            return "전체적으로 원유와 해협 질문에서 참여자들의 판단이 엇갈린다. 원유 쪽은 연말까지 상승 여지가 남아 있다고 본다."
+
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("test", encoding="utf-8")
+    from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
+    totals = {"event_count": 20, "volume24hr": 79737.0, "probability": {"median": 0.37, "strong": 2, "tight": 3}}
+    PolymarketBriefAnalyzer(Backend(), prompt, 900).analyze("복합", totals, _composite_rows())
+
+    def floats(value):
+        if isinstance(value, float):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from floats(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from floats(item)
+
+    sent = json.loads(seen[0])
+    assert [value for value in floats(sent) if 0 <= value <= 1] == []  # 참여 규모(달러)만 남는다
+    assert sent["totals"]["probability"] == {"median_outlook": "낮음", "strong": 2, "tight": 3}
+    oil, hormuz = sent["events"]
+    assert oil["options"] == [{"label": "December 31", "outlook": "낮음"}]
+    assert hormuz["title_outlook"] == "낮음"
+    assert not any(token in seen[0] for token in ("0.205", "0.795", "0.37", "20.5%", "37%"))
+
+
+@pytest.mark.parametrize(("value", "band"), [
+    (0.0, "매우 낮음"), (0.199, "매우 낮음"), (0.2, "낮음"), (0.4, "엇갈림"), (0.6, "엇갈림"),
+    (0.61, "높음"), (0.8, "높음"), (0.81, "매우 높음"), (1.0, "매우 높음"),
+])
+def test_outlook_bands(value, band):
+    from services.web.llm.polymarket_brief import outlook
+    assert outlook(value) == band
+
+
+@pytest.mark.parametrize("written", ["20.5%", "20.5％", "20.5 퍼센트", "21프로", "확률 0.205", "20.50%", "100%"])
+def test_any_model_written_probability_is_rejected(written):
+    from services.web.llm.polymarket_brief import ProbabilityWritten, attach_facts
+    with pytest.raises(ProbabilityWritten, match="확률 숫자"):
+        attach_facts(f"전체적으로 판단이 엇갈린다. 가능성은 {written} 수준이다.", ["사실."])
+
+
+@pytest.mark.parametrize("text", ["2026년 원유 가격", "10년물 국채", "3개 질문", "프로그램 매매", "1.5배"])
+def test_ordinary_numbers_are_not_probabilities(text):
+    from services.web.llm.polymarket_brief import attach_facts
+    assert attach_facts(f"전체적으로 {text}에서 판단이 엇갈린다.", []) == f"전체적으로 {text}에서 판단이 엇갈린다."
+
+
+def test_at_most_three_facts_are_attached_in_order():
+    from services.web.llm.polymarket_brief import attach_facts
+    assert attach_facts("단락이다.", ["가.", None, "나.", "다.", "라."]) == "단락이다. 가. 나. 다."
+
+
+@pytest.mark.parametrize(("value", "text"), [(0.205, "20.5%"), (0.37, "37%"), (0.0, "0%"), (1.0, "100%"),
+                                             (0.12345, "12.3%"), (0.12355, "12.4%")])
+def test_percent_rendering(value, text):
+    from services.web.polymarket.sector_brief import _percent
+    assert _percent(value) == text
+
+
+def test_named_two_choice_binary_uses_the_leading_choice():
+    from services.web.polymarket.sector_brief import named_events
+    event = {"id": "7", "title": "Bitcoin Up or Down?", "event_type": "binary", "leader": "Up",
+             "leader_probability": 0.6, "outcome_labels": ["Up", "Down"], "volume24hr": 10}
+    row = named_events([event], 10, labels={"7": "비트코인이 오를지 내릴지"})[0]
+    # 지금까지는 binary면 title_probability(None)만 보내 이 질문도 빈칸이었다.
+    assert "title_outlook" not in row and row["leader"] == "Up" and row["leader_outlook"] == "엇갈림"
+    # 흔한 선택지는 방향이 바뀌지 않게 한국어로 옮긴다.
+    assert row["fact"] == "‘Bitcoin Up or Down?’에서는 상승 쪽이 60%로 가장 앞선다."
+
+
+def test_a_failed_group_does_not_inherit_an_old_paragraph_with_model_written_numbers(tmp_path):
+    """옛 형식 단락에는 모델이 숫자를 직접 쓴 글(관측 오류 포함)이 있다. 숫자가 든 것은 이어받지 않는다."""
+    import services.web.polymarket.sector_brief as sb
+    root = tmp_path / "polymarket"
+    _write_current(root, [_event(i, ["stocks"]) for i in range(12)] + [_event(100 + i, ["inflation"]) for i in range(12)])
+    target = tmp_path / "brief.json"
+    target.write_text(json.dumps({"groups": [{"key": "equities", "paragraph": "옛 단락 20.5%."}]}), encoding="utf-8")
+
+    class Mixed:
+        def analyze(self, label, totals, events):
+            if label == "주식·시장":
+                raise sb.PolymarketBriefError("boom")
+            return "전체적으로 판단이 엇갈린다."
+
+    result = build(root=root, target=target, analyzer=Mixed(), min_events=1, quiet_hours=set(),
+                   search_index=tmp_path / "none.json")
+    equities = next(g for g in result["groups"] if g["key"] == "equities")
+    # 옛 단락 대신 서버가 쓴 사실 문장만 둔다.
+    assert equities["status"] == "failed" and equities.get("facts_only") is True
+    assert "옛 단락" not in equities["paragraph"] and "20.5%" not in equities["paragraph"]
+    # 같은 형식의 직전 단락은 이어받는다.
+    target.write_text(json.dumps({"groups": [{"key": "equities", "paragraph": "새 형식 단락.",
+                                              "paragraph_format": sb.PARAGRAPH_FORMAT}]}), encoding="utf-8")
+    result = build(root=root, target=target, analyzer=Mixed(), min_events=1, quiet_hours=set(),
+                   search_index=tmp_path / "none.json")
+    equities = next(g for g in result["groups"] if g["key"] == "equities")
+    assert equities["paragraph"] == "새 형식 단락." and equities["stale"] is True
+    # 옛 형식은 숫자가 없어도 이어받지 않는다 — 형식 번호가 같은 것만(사실 문장만 둔다).
+    target.write_text(json.dumps({"groups": [{"key": "equities", "paragraph": "전체적으로 판단이 엇갈린다."}]}),
+                      encoding="utf-8")
+    result = build(root=root, target=target, analyzer=Mixed(), min_events=1, quiet_hours=set(),
+                   search_index=tmp_path / "none.json")
+    equities = next(g for g in result["groups"] if g["key"] == "equities")
+    assert equities.get("facts_only") is True and "stale" not in equities
+
+
+@pytest.mark.parametrize("written", ["20.5프로다", "20.5프로로 낮다", "확률 0,205"])
+def test_korean_endings_and_comma_decimals_are_still_probabilities(written):
+    """검수에서 찾은 우회: 조사·어미가 붙은 "프로", 쉼표 소수."""
+    from services.web.llm.polymarket_brief import ProbabilityWritten, attach_facts, has_model_probability
+    assert has_model_probability(written)
+    with pytest.raises(ProbabilityWritten):
+        attach_facts(f"전체적으로 판단이 엇갈린다. 가능성은 {written}.", [])
+
+
+@pytest.mark.parametrize("text", ["2.5배", "3개 프로그램", "프로젝트 2건", "1.8조 달러"])
+def test_multipliers_and_words_are_not_probabilities(text):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert not has_model_probability(text)
+
+
+def test_label_is_used_only_when_it_matches_the_current_title_and_its_numbers():
+    from services.web.polymarket.annotate import title_hash
+    from services.web.polymarket.sector_brief import _label
+    fed = {"id": "1", "title": "Fed rate cut by...?"}
+    # 요약이 원문에 없는 날짜를 지어냈다(2026-10-03 실측) → 원문 제목.
+    assert _label(fed, {"1": {"summary": "연준이 2025년 12월 금리를 인하할지", "h": title_hash(fed["title"])}}) == fed["title"]
+    hormuz = {"id": "2", "title": "Strait of Hormuz traffic returns to normal by December 31?"}
+    good = {"summary": "호르무즈 해협 통행이 12월 31일까지 정상화될지", "h": title_hash(hormuz["title"])}
+    assert _label(hormuz, {"2": good}) == good["summary"]   # 영문 달 이름은 숫자로 친다
+    assert _label(hormuz, {"2": {**good, "h": "stale"}}) == hormuz["title"]   # 제목이 바뀐 뒤의 옛 주석
+
+
+def test_option_ordering_ties_limit_and_blank_labels():
+    from services.web.polymarket.sector_brief import _open_options
+    detail = {"markets": [
+        {"outcome_label": "B", "closed": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.4},
+        {"outcome_label": "A", "closed": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.4},
+        {"outcome_label": "C", "closed": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.9},
+        {"outcome_label": "D", "closed": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.1},
+        {"outcome_label": "", "closed": False, "price_valid": True, "yes_label": "Yes", "yes_probability": 0.99},
+        {"outcome_label": "E", "closed": False, "price_valid": True, "yes_label": "Over", "yes_probability": 0.95},
+    ]}
+    options, total = _open_options(detail)
+    assert options == [("C", 0.9), ("A", 0.4), ("B", 0.4)] and total == 4
+
+
+def test_a_broken_detail_read_only_empties_that_question(tmp_path):
+    """상세 하나가 깨져도 분야·실행은 계속된다. 그 질문만 확률 없음."""
+    root = tmp_path / "polymarket"
+    events = [_event(i, ["stocks"]) for i in range(11)]
+    events.append({**_event(99, ["stocks"]), "event_type": "independent_multi", "leader": None,
+                   "leader_probability": None, "generation_id": "x",
+                   "detail_ref": {"shard": "missing.jsonl", "offset": 0, "length": 10, "sha256": "0"}})
+    _write_current(root, events)
+    seen = []
+
+    class Recording:
+        def analyze(self, label, totals, rows):
+            seen.extend(rows)
+            return "전체적으로 판단이 엇갈린다."
+
+    result = build(root=root, target=tmp_path / "brief.json", analyzer=Recording(), min_events=10, quiet_hours=set(),
+                   search_index=tmp_path / "none.json")
+    assert result is not None
+    broken = next(row for row in seen if row["title"] == "event 99")
+    assert broken["probability_available"] is False and broken["fact"] is None
+
+
+def test_a_fact_with_forbidden_copy_is_not_published():
+    from services.web.llm.polymarket_brief import attach_facts
+    assert attach_facts("단락이다.", ["‘Polymarket 질문’에 대해 참여자들은 그 가능성을 20%로 본다.", "좋은 사실."]) == "단락이다. 좋은 사실."
+
+
+
+def test_a_misleading_summary_cannot_become_the_subject_of_a_fact():
+    """2차 검수 재현: 호르무즈 event에 유가 요약(해시 일치, 숫자 없음)을 넣으면 "원유 … 20.5%"가 나왔다.
+    사실 문장의 주어는 원문 제목이라 요약이 무엇이든 숫자는 제 질문에 붙는다."""
+    from services.web.polymarket.annotate import title_hash
+    from services.web.polymarket.sector_brief import named_events
+    wrong = {"999": {"summary": "원유 가격이 역사적 최고치를 기록할지", "h": title_hash(_HORMUZ["title"])}}
+    row = named_events([_HORMUZ], 10, labels=wrong)[0]
+    assert row["fact"] == "‘Strait of Hormuz traffic returns to normal by December 31?’에 대해 참여자들은 그 가능성을 20.5%로 본다."
+    assert "원유" not in row["fact"]
+
+
+def test_facts_only_fallback_uses_the_same_publication_checks(tmp_path):
+    """2차 검수 재현: 실패 대체 경로가 금지어 검사를 우회해 출처 서비스명이 공개됐다."""
+    root = tmp_path / "polymarket"
+    events = [{**_event(i, ["stocks"]), "title": f"Will Polymarket grow {i}?"} for i in range(12)]
+    _write_current(root, events)
+    result = build(root=root, target=tmp_path / "brief.json", analyzer=_Analyzer(fail_all=True), min_events=10,
+                   quiet_hours=set(), search_index=tmp_path / "none.json")
+    assert "Polymarket" not in (tmp_path / "brief.json").read_text(encoding="utf-8")
+    assert result["state"] == "failed"
+
+
+def test_run_state_and_group_counts_tell_a_total_failure_from_success(tmp_path):
+    root = tmp_path / "polymarket"
+    _write_current(root, [_event(i, ["stocks"]) for i in range(12)] + [_event(100 + i, ["inflation"]) for i in range(12)])
+    target = tmp_path / "brief.json"
+    ok = build(root=root, target=target, analyzer=_Analyzer(), min_events=10, quiet_hours=set(),
+               search_index=tmp_path / "none.json")
+    assert ok["state"] == "ok" and ok["group_counts"]["ok"] == 2
+    first_written = {g["key"]: g["paragraph_written_at"] for g in ok["groups"] if g.get("paragraph")}
+
+    failed = build(root=root, target=target, analyzer=_Analyzer(fail_all=True), min_events=10, quiet_hours=set(),
+                   search_index=tmp_path / "none.json")
+    assert failed["state"] == "failed" and failed["group_counts"]["stale"] == 2 and failed["group_counts"]["ok"] == 0
+    # 이어받은 단락은 원래 쓴 시각을 그대로 갖는다.
+    assert {g["key"]: g["paragraph_written_at"] for g in failed["groups"] if g.get("paragraph")} == first_written
+
+
+def test_a_reused_facts_only_paragraph_keeps_its_marker(tmp_path):
+    root = tmp_path / "polymarket"
+    _write_current(root, [_event(i, ["stocks"]) for i in range(12)])
+    target = tmp_path / "brief.json"
+    first = build(root=root, target=target, analyzer=_Analyzer(fail_all=True), min_events=10, quiet_hours=set(),
+                  search_index=tmp_path / "none.json")
+    assert next(g for g in first["groups"] if g["key"] == "equities")["facts_only"] is True
+    again = build(root=root, target=target, analyzer=_Analyzer(fail_all=True), min_events=10, quiet_hours=set(),
+                  search_index=tmp_path / "none.json")
+    row = next(g for g in again["groups"] if g["key"] == "equities")
+    assert row["stale"] is True and row["facts_only"] is True
+
+
+def test_the_page_says_when_only_probabilities_are_shown():
+    from services.web.pages.polymarket import POLYMARKET_HTML
+    assert "확률만 표시" in POLYMARKET_HTML
+
+
+@pytest.mark.parametrize("text", ["2026년", "10년물 국채", "1.2배 상승"])
+def test_more_units_are_not_probabilities(text):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert not has_model_probability(text)
+
+
+def test_per_cent_in_english_is_a_probability():
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability("20.5 per cent") and has_model_probability("20.5 percent")
+
+
+def test_published_length_drops_trailing_facts():
+    from services.web.llm.polymarket_brief import MAX_PUBLISHED_CHARS, attach_facts
+    paragraph = "가" * (MAX_PUBLISHED_CHARS - 20)
+    assert attach_facts(paragraph, ["짧은 사실.", "나" * 50 + "."]) == paragraph + " 짧은 사실."
+
+
+
+@pytest.mark.parametrize("written", ["이십점오 퍼센트", "20.5 퍼 센트", "확률은 0.205도 가능하다", "약 %",
+                                     "확률은 0.205일 것이다", "이십점오 프로다"])
+def test_percent_words_are_rejected_even_without_digits(written):
+    """3차 검수의 우회: 숫자를 한글로 쓰거나 낱말을 띄우거나, 조사 "도"가 단위로 읽히는 경우."""
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(written)
+
+
+def test_facts_only_paragraph_is_also_capped(tmp_path):
+    from services.web.llm.polymarket_brief import MAX_PUBLISHED_CHARS
+    root = tmp_path / "polymarket"
+    _write_current(root, [{**_event(i, ["stocks"]), "title": "T" * 700 + str(i)} for i in range(12)])
+    result = build(root=root, target=tmp_path / "brief.json", analyzer=_Analyzer(fail_all=True), min_events=10,
+                   quiet_hours=set(), search_index=tmp_path / "none.json")
+    row = next(g for g in result["groups"] if g["key"] == "equities")
+    assert row["facts_only"] is True and 0 < len(row["paragraph"]) <= MAX_PUBLISHED_CHARS
+
+
+def test_the_page_shows_when_a_reused_paragraph_was_written():
+    from services.web.pages.polymarket import POLYMARKET_HTML
+    assert "paragraph_written_at" in POLYMARKET_HTML
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("오프로드 차량 수요", False), ("이프로틴", False), ("이 프로그램 매매", False),
+    ("삼 프로 오른다", True), ("20프로대", True), ("21프로", True),
+])
+def test_pro_counts_only_when_followed_by_a_particle_or_boundary(text, expected):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(text) is expected
+
+
+
+@pytest.mark.parametrize("written", ["20프로였다", "20프로보다 낮다", "20프로임을 확인했다", "0.205배분된다", "이십 프로"])
+def test_fifth_review_bypasses_are_rejected(written):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(written)
+
+
+@pytest.mark.parametrize("text", [
+    "20.5프로덕션", "0.25포인트", "0.5배", "관세율 20%", "10/31 회의 이후", "2026/27 시즌", "5분의 시간",
+])
+def test_intended_over_rejection_of_non_probability_numbers(text):
+    """보수 정책: 확률이 아닌 표현도 반려된다. 모델은 숫자 없이 흐름만 쓴다(교정 1회 → 실패하면 사실 문장만)."""
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(text)
+
+
+
+@pytest.mark.parametrize("written", ["삼 프로밖에 안 된다", "삼 프로든 오 프로든", ".205", "영점이공오", "100분의 20"])
+def test_sixth_review_bypasses_are_rejected(written):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(written)
+
+
+@pytest.mark.parametrize("written", [
+    "국제유가 사상 최고치 달성 가능성은 백분의 이십 정도로 낮게 평가된다.", "삼분의 일", "십분의 이", "구십분의 일", "천분의 5",
+    "국제유가 사상 최고치 달성 가능성은 100분의 이십 정도로 낮게 평가된다.", "100분의 일", "10분의 삼", "십 분의 이",
+    "구분의 일", "1/5", "1 / 5",
+    "국제유가 사상 최고치 달성 가능성은 ⅕ 정도로 낮게 평가된다.", "1⁄5", "1∕5",
+    "국제유가 사상 최고치 달성 가능성은 5분의 하나 정도로 낮게 평가된다.", "다섯분의 하나",
+    "국제유가 사상 최고치 달성 가능성은 공점이공오 정도로 낮게 평가된다.",
+    "국제유가 사상 최고치 달성 가능성은 20٪ 정도로 낮게 평가된다.", "제로점 이", "200‰",
+])
+def test_korean_numeral_fractions_are_rejected(written):
+    """7·8차 검수 재현: 한글 수사·혼합 표기 분수도 모델이 쓴 확률이다."""
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert has_model_probability(written)
+
+
+@pytest.mark.parametrize("text", [
+    "업종 구분의 기준이 흔들린다", "이 분의 판단과 엇갈린다", "대부분의 참여자가 낙관한다",
+    "협상 재개 전 다섯 분의 이동 시간이 필요하다는 점에서 일정의 불확실성이 크다.",
+    "항공 점검 강화로 공급 회복 시점이 불확실하다.", "협상 쟁점이 프로그램 종료 여부에 달려 있다.",
+    "협상의 핵심 쟁점이 프로젝트 승인 여부에 달려 있다.", "운영 점검이 길어진다.",
+])
+def test_words_ending_in_bun_ui_are_not_fractions(text):
+    from services.web.llm.polymarket_brief import has_model_probability
+    assert not has_model_probability(text)
+
+
+def test_the_api_never_serves_a_paragraph_of_another_format(tmp_path, monkeypatch):
+    """배포 순간부터, 파일이 새로 써지기 전에도 옛 단락(다른 질문의 숫자가 붙은 글)을 내보내지 않는다."""
+    from fastapi.testclient import TestClient
+    from services.web import server
+    from services.web.core import config
+    public = tmp_path / "public"
+    (public / "polymarket").mkdir(parents=True)
+    monkeypatch.setattr(server, "PUBLIC_DIR", public)
+    (public / "polymarket" / "sector_brief.json").write_text(json.dumps({
+        "generation_id": "g", "groups": [
+            {"key": "composite", "status": "ok", "paragraph": "국제유가 사상 최고치 달성 가능성은 20.5%다.", "overview": "x"},
+            {"key": "macro", "status": "ok", "paragraph": "새 형식 단락이다.",
+             "paragraph_format": config.POLYMARKET_BRIEF_PARAGRAPH_FORMAT},
+            {"key": "general", "status": "ok", "paragraph": "실험 형식 2 단락.", "paragraph_format": 2},
+        ]}, ensure_ascii=False), encoding="utf-8")
+    body = TestClient(server.build_app()).get("/api/forecast/sector-brief").json()
+    groups = {g["key"]: g for g in body["groups"]}
+    assert "paragraph" not in groups["composite"] and groups["composite"]["status"] == "failed"
+    assert "paragraph" not in groups["general"]
+    assert groups["macro"]["paragraph"] == "새 형식 단락이다."
+    assert "20.5%" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_sector_brief_etag_changes_when_old_paragraphs_are_filtered(tmp_path, monkeypatch):
+    """7차 검수 재현: 같은 generation의 옛 응답 ETag로 조건부 요청하면 304가 나가 옛 단락 캐시가 살아남았다."""
+    from fastapi.testclient import TestClient
+    from services.web import server
+    from services.web.core import config
+    from services.web.polymarket.repository import make_etag
+    public = tmp_path / "public"
+    (public / "polymarket").mkdir(parents=True)
+    monkeypatch.setattr(server, "PUBLIC_DIR", public)
+    path = public / "polymarket" / "sector_brief.json"
+
+    def write(group):
+        path.write_text(json.dumps({"generation_id": "g", "groups": [group]}, ensure_ascii=False), encoding="utf-8")
+
+    write({"key": "composite", "status": "ok", "paragraph": "국제유가 사상 최고치 달성 가능성은 20.5%다."})
+    client = TestClient(server.build_app())
+    old_etag = make_etag("g", "sector_brief", {})  # 필터 전 서버가 내보내던 ETag
+    for method in ("get", "head"):
+        response = getattr(client, method)("/api/forecast/sector-brief", headers={"If-None-Match": old_etag})
+        assert response.status_code == 200
+    first = client.get("/api/forecast/sector-brief")
+    assert "20.5%" not in first.text
+    assert client.get("/api/forecast/sector-brief", headers={"If-None-Match": first.headers["etag"]}).status_code == 304
+
+    # 같은 generation 안에서 형식 3 단락이 새로 써지면 ETag가 바뀐다.
+    write({"key": "composite", "status": "ok", "paragraph": "새 단락.",
+           "paragraph_format": config.POLYMARKET_BRIEF_PARAGRAPH_FORMAT})
+    second = client.get("/api/forecast/sector-brief", headers={"If-None-Match": first.headers["etag"]})
+    assert second.status_code == 200 and "새 단락." in second.text
+    assert second.headers["cache-control"] == "no-cache"

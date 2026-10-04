@@ -136,6 +136,10 @@ POLYMARKET_TRENDING_LIST_LIMIT = 5
 # 별도 one-shot이 돌며, 봇 프로세스와 무관하다. 계획서는
 # docs/polymarket-sector-brief.md.
 POLYMARKET_BRIEF_FILE = POLYMARKET_WEB_DIR / "sector_brief.json"
+# 단락 형식 번호. 확률 문장을 서버가 원문 제목과 함께 쓰는 형식이 3이다(2026-10-03). 공개 API는 이 번호가 아닌 단락을
+# 내보내지 않는다 — 그 전 단락에는 모델이 다른 질문의 확률을 붙인 글이 있었다(복합: 유가 문장에 호르무즈의 20.5%).
+# 실험 산출물이 2를 썼으므로 3부터 시작한다. 형식을 바꾸면 번호를 올린다.
+POLYMARKET_BRIEF_PARAGRAPH_FORMAT = 3
 # 프롬프트에 제목을 넣을 최대 event 수. 집계는 전부 반영하고 이름만 자른다.
 # 대상이 1,000건을 넘어 이 상한이 실제로 걸린다 — 거래량 상위부터 채운다.
 POLYMARKET_BRIEF_NAMED_LIMIT = 120

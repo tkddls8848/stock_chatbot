@@ -232,7 +232,7 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
         generation_id = str(payload.get("generation_id") or "none")
         etag = make_etag(generation_id, route, query or {})
         if request.headers.get("if-none-match") == etag:
-            return Response(status_code=304, headers={"ETag": etag})
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
         return JSONResponse(payload, headers={"ETag": etag, "Cache-Control": "no-cache"})
 
     def require_manifest() -> None:
@@ -262,9 +262,20 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
         # previous는 다음 실행이 이동을 계산할 기준일 뿐이다. 화면이 쓰지 않고
         # event 수천 건짜리라 내보내지 않는다.
         payload.pop("previous", None)
+        # 현재 형식이 아닌 단락은 "자료 없음"으로 다룬다(code_guide: 형식이 틀리면 자료 없음). 옛 단락에는 모델이
+        # 다른 질문의 확률을 붙인 글이 있었다 — 배포 순간부터 파일이 새로 써지기 전까지도 내보내지 않는다.
+        for group in payload.get("groups") or []:
+            if isinstance(group, dict) and group.get("paragraph_format") != config.POLYMARKET_BRIEF_PARAGRAPH_FORMAT:
+                group.pop("paragraph", None)
+                group.pop("overview", None)
+                if group.get("status") == "ok":
+                    group["status"] = "failed"  # 화면이 "이번 주기에는 정리하지 못했습니다"를 보이게
         if not payload:
             raise HTTPException(status_code=503, detail="아직 섹터 브리프가 없습니다.")
-        return polymarket_json(request, payload, "sector_brief")
+        # ETag는 거른 뒤의 본문으로 만든다. generation만 쓰면 옛 단락을 담은 캐시가 304로 계속 살아남고,
+        # 같은 generation 안에서 파일이 새로 써져도 바뀌지 않는다(7차 검수).
+        body = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+        return polymarket_json(request, payload, "sector_brief", {"body": body})
 
     @app.api_route("/api/forecast/trending", methods=["GET", "HEAD"])
     def polymarket_trending(request: Request) -> Response:

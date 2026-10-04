@@ -92,7 +92,12 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
                if health.get("last_result") not in (None, "ok", "success") else "")
         )
     brief = _get("/api/forecast/sector-brief", fetch)
-    lines.append(f"예측 컨센서스 줄글: {_stamp((brief or {}).get('written_at'))}")
+    counts = (brief or {}).get("group_counts") or {}
+    # 줄글이 써진 시각만으로는 해설이 하나도 안 나온 실행을 구분하지 못한다. 예외만 붙인다.
+    exceptions = [f"{label} {counts[key]}" for key, label in
+                  (("stale", "직전 단락"), ("facts_only", "확률만"), ("empty", "정리 못한 분야")) if counts.get(key)]
+    lines.append(f"예측 컨센서스 줄글: {_stamp((brief or {}).get('written_at'))}"
+                 + (f" · 해설 {counts.get('ok', 0)}개 · " + " · ".join(exceptions) if exceptions else ""))
     trending = _get("/api/forecast/trending", fetch)
     lines.append(f"예측 컨센서스 트렌드: {_stamp((trending or {}).get('written_at'))}")
     events = _get("/api/forecast/events?page_size=1", fetch)

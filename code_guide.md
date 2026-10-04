@@ -429,6 +429,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   원문 서비스로 가는 외부 링크를 두지 않고, 베팅·배팅·예측시장·거래량·유동성 대신
   예측·참여 규모·참여 잔액으로 쓴다. 모델이 쓰는 문장(줄글 브리프·검색 주석·쇼츠 원고)도
   같은 규칙을 따르고, 줄글 브리프는 `FORBIDDEN_COPY`가 이름이 들어간 응답을 버린다.
+  **줄글 브리프의 확률 숫자는 모델이 아니라 서버가 쓴다** — 모델 입력(교정 입력 포함)에는 확률 숫자 대신 등급만
+  두고, 모델은 숫자 없는 해설만 쓰며(직접 쓴 백분율은 이중 장치로 반려) 분석기가 참여 규모 상위 질문의 **원문 제목**·선택지·확률을 담은 문장을 단락 뒤에 붙인다(모델이 쓴 한국어
+  요약을 주어로 쓰면 다른 질문을 가리킬 수 있다). 해설이 실패한 분야는 직전 단락이나 그 사실 문장만 두고,
+  `state`·`group_counts`로 실행 결과를 밝힌다. 공개 API는 현재 단락 형식(`POLYMARKET_BRIEF_PARAGRAPH_FORMAT`)이 아닌 단락을
+  내보내지 않는다 — 형식을 바꾸면 번호를 올린다. 모델이 숫자를 직접 쓰게 두었더니 다른 질문의 확률을
+  붙였다(2026-10-03 복합). 경위는 `services/web/docs/polymarket-sector-brief.md` 4-5.
   `test_webpub.py`가 공개 화면에, `shorts/tests/test_scenario.py`가 영상 공개 설명에
   이름이 다시 들어오는 것을 막는다. **내부 모듈·폴더·환경변수·systemd 유닛·데이터 경로
   (`services/web/polymarket/`, `POLYMARKET_*`, `storage/public/polymarket/`)와 계획서는

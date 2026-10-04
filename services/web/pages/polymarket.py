@@ -121,7 +121,7 @@ function renderSummary(d){pmGeneration=d.generation_id;const a=d.accounting||{},
 async function loadBrief(){const m=document.getElementById('pm-brief-meta'),b=document.getElementById('pm-brief');const r=await fetch('/api/forecast/sector-brief');if(!r.ok){m.textContent='아직 컨센서스 정리가 없습니다.';b.innerHTML='';return}const d=await r.json();
  m.textContent='기준 '+stamp(d.written_at)+' (한국 시간)'+(d.generation_id!==pmGeneration&&pmGeneration?' · 직전 수집분 기준입니다':'')+' · 집계는 전체, 인용은 참여 규모 상위 '+(d.named_limit||0)+'건';
  b.innerHTML=(d.groups||[]).map(g=>{const head="<div class='pm-brief-h'><b>"+esc(g.label)+"</b><span>질문 "+Number(g.event_count||0).toLocaleString()+" · 24시간 "+money(g.volume24hr)+(g.probability&&g.probability.tight?' · 경합 '+g.probability.tight:'')+"</span></div>";
- const body=g.status==='ok'||g.paragraph?"<p>"+esc(g.paragraph)+(g.stale?" (직전 정리)":"")+"</p>":"<p class='empty'>"+(g.status==='insufficient_sample'?'표본이 부족해 정리하지 않았습니다.':'이번 주기에는 정리하지 못했습니다.')+"</p>";
+ const body=g.status==='ok'||g.paragraph?"<p>"+esc(g.paragraph)+(g.facts_only?" (이번 주기 해설을 만들지 못해 확률만 표시)":"")+(g.stale?" (직전 정리"+(g.paragraph_written_at?" · "+stamp(g.paragraph_written_at):"")+")":"")+"</p>":"<p class='empty'>"+(g.status==='insufficient_sample'?'표본이 부족해 정리하지 않았습니다.':'이번 주기에는 정리하지 못했습니다.')+"</p>";
  return "<div class='pm-brief-g'>"+head+body+"</div>"}).join('')||"<p class='empty'>정리된 분야가 없습니다.</p>"}
 const pp=v=>v==null?'–':(v>0?'+':'')+(Number(v)*100).toFixed(1)+'%p';const moveClass=v=>v==null?'':(v>0?'pos':(v<0?'neg':''));
 function trendMove(r){if(r.leader_changed)return "<span class='pm-trend-move'>1위 교체</span>";return "<span class='pm-trend-move "+moveClass(r.basis_change)+"'>"+esc(pp(r.basis_change))+"</span>"}

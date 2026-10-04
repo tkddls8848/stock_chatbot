@@ -10,6 +10,7 @@
 import json
 import logging
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,115 @@ class PolymarketBriefError(RuntimeError):
     """분야 하나의 줄글을 만들지 못했을 때."""
 
 
+class ProbabilityWritten(PolymarketBriefError):
+    """모델이 확률 숫자를 직접 썼다. 숫자는 서버가 질문 이름과 함께 단락 뒤에 붙인다."""
+
+
+# 모델이 직접 쓴 확률 표현. 전각 ％·"퍼센트"·"프로"·0.xx 소수까지 본다(NFKC 뒤). 숫자는 서버가
+# 질문의 주어와 함께 쓴다 — 모델이 쓰게 두면 다른 질문의 숫자를 붙인다(2026-10-03 복합: 유가 문장에
+# 호르무즈의 20.5%). 표지·숫자 대조로는 주어 오귀속을 못 잡고(계획 검수), 모델에게 자리표시자를 문장
+# 사이에 넣게 하면 다섯 분야 중 넷이 규칙을 어겼다(실측 2026-10-03) — 그래서 숫자는 단락 뒤에 붙인다.
+# 모델은 확률을 말할 필요가 없다 — 숫자는 서버가 붙인다. 그래서 탐지는 열거가 아니라 **보수적인 단순 규칙**이다
+# (조사·어미 목록을 쫓아가다 "20프로였다"·"20프로보다"·"0.205배분된다"가 빠졌다, 5차 검수):
+#   · 백분율 낱말(%·퍼센트·퍼 센트·퍼센티지·percent)은 숫자가 없어도 반려
+#   · 아라비아 숫자 바로 뒤의 "프로"는 무엇이 따라오든 반려
+#   · 0.xx 소수는 단위와 상관없이 반려
+#   · 한글 수사 뒤의 "프로"도 반려한다. 한 글자 수사("오프로드"의 오)는 낱말을 이루는 몇 가지 뒤 글자만 뺀다 —
+#     조사·어미를 열거하면 "삼 프로밖에"·"삼 프로든"이 빠졌다(6차 검수). 그래서 열거의 방향을 뒤집었다
+#   · ".205"·"영점이공오"·"1/5"·"⅕"(NFKC 뒤 분수 슬래시)·"100분의 이십"·"5분의 하나" 같은 소수·분수 표기도 반려
+# **이 탐지는 이중 장치다.** 1차 장치는 입력이다 — 모델은 확률 숫자를 받지 않고 등급(`outlook`)만 받는다.
+# 정규식을 1차 장치로 두자 검수마다 새 표기("공점이공오"·"٪"·"스물다섯 프로"·"일/오")가 나왔다(7~11차).
+# 입력에 없는 숫자는 다른 질문에 옮겨 붙일 수 없으므로, 여기서는 흔한 표기만 막고 정상 문장을 해치지 않는 쪽을
+# 고른다("항공 점검"·"쟁점이 프로그램"·"다섯 분의 이동"은 통과). 말로 풀어 쓴 비율("절반")도 잡지 않는다.
+# "프로그램"·"프로젝트"처럼 "프로"로 시작하는 낱말. 수사 뒤 "프로"에서 뺀다.
+_NOT_PRO_WORD = r"(?!그램|젝트|세스|필|모션|듀서|덕션|토콜|야구|축구|골프|선수|게이머|드|틴|바이오|폴리오|미스|모|파일)"
+_MODEL_PERCENT = re.compile(
+    r"[%％٪‰‱]|퍼\s*센\s*트|퍼센티지|per\s?cent"
+    r"|\d\s*프로"
+    r"|(?<![\d.,])0?[.,]\d"
+    r"|(?<![가-힣])[영공일이삼사오육칠팔구십백]*[십백점][영공일이삼사오육칠팔구십백점]*\s*프로" + _NOT_PRO_WORD
+    + r"|[일이삼사오육칠팔구]\s*프로" + _NOT_PRO_WORD
+    + r"|(?:영|공|제로)\s*점\s*[\d영공일이삼사오육칠팔구]"
+    r"|\d\s*분\s*의|분\s*의\s*\d"
+    r"|(?:[영일이삼사오육칠팔구십백천만]\s*|(?:둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열))분\s*의\s*"
+    r"(?:[영일이삼사오육칠팔구십백천만]|하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열)"
+    r"|\d\s*[/⁄∕]\s*\d",
+    re.IGNORECASE,
+)
+# 단락 뒤에 붙이는 사실 문장 수. 참여 규모 상위부터, 숫자가 있는 질문만.
+FACT_SENTENCES = 3
+
+
+def outlook(probability: float) -> str:
+    """확률을 모델 입력용 등급으로. **모델 입력에는 확률 숫자를 두지 않는다** — 숫자를 받으면 모델이 그것을 다른
+    질문에 옮겨 붙였다(2026-10-03 복합: 유가 문장에 호르무즈의 20.5%). 숫자는 서버가 사실 문장으로만 쓴다."""
+    if probability < 0.2:
+        return "매우 낮음"
+    if probability < 0.4:
+        return "낮음"
+    if probability <= 0.6:
+        return "엇갈림"
+    if probability <= 0.8:
+        return "높음"
+    return "매우 높음"
+
+
+def _model_totals(totals: dict[str, Any]) -> dict[str, Any]:
+    """분야 집계에서 확률 숫자(중앙값)를 등급으로 바꾼다. 건수는 확률이 아니라 그대로 둔다."""
+    distribution = totals.get("probability")
+    if not isinstance(distribution, dict):
+        return totals
+    median = distribution.get("median")
+    rest = {key: value for key, value in distribution.items() if key != "median"}
+    if isinstance(median, (int, float)):
+        rest["median_outlook"] = outlook(float(median))
+    return {**totals, "probability": rest}
+
+
+def _for_model(text: str) -> str | None:
+    """모델에 다시 보내도 되는 글이면 그대로, 숫자(아라비아 숫자·확률 표현)가 있으면 None."""
+    normalized = unicodedata.normalize("NFKC", text)
+    if any(char.isdigit() for char in normalized) or _MODEL_PERCENT.search(normalized):
+        return None
+    return text
+
+
+def has_model_probability(text: str) -> bool:
+    """확률 숫자(백분율·"퍼센트"·0.xx)가 들어 있는가."""
+    return bool(_MODEL_PERCENT.search(unicodedata.normalize("NFKC", text)))
+
+
+# 사실 문장을 붙인 뒤 공개 단락의 상한. 넘으면 뒤의 사실 문장부터 뺀다.
+MAX_PUBLISHED_CHARS = 1600
+
+
+def publishable_facts(facts: list[str | None]) -> list[str]:
+    """공개해도 되는 서버 사실 문장(참여 규모순, 최대 FACT_SENTENCES개). 해설 성공·실패 경로가 같이 쓴다.
+
+    라벨·선택지 원문에 금지어(출처 서비스명 등)가 있으면 그 문장은 뺀다 — 서버 문장도 공개 문구다.
+    """
+    return [fact for fact in facts if fact and not FORBIDDEN_COPY.search(fact)][:FACT_SENTENCES]
+
+
+def join_facts(paragraph: str, facts: list[str | None]) -> str:
+    """단락(없으면 빈 문자열) 뒤에 공개할 사실 문장을 붙인다. 상한을 넘으면 뒤 문장부터 뺀다."""
+    listed = publishable_facts(facts)
+    head = [paragraph] if paragraph else []
+    while listed and len(" ".join([*head, *listed])) > MAX_PUBLISHED_CHARS:
+        listed.pop()
+    return " ".join([*head, *listed])
+
+
+def attach_facts(paragraph: str, facts: list[str]) -> str:
+    """숫자 없는 해설 단락 뒤에 서버가 쓴 사실 문장(참여 규모 상위)을 붙인다."""
+    found = _MODEL_PERCENT.search(unicodedata.normalize("NFKC", paragraph))
+    if found:
+        raise ProbabilityWritten(
+            f"확률 숫자: 본문에 확률을 직접 쓰지 마십시오(찾은 표현: {found.group(0)}). 확률 문장은 서버가 "
+            "질문 이름과 함께 단락 뒤에 붙입니다. 숫자 없이 흐름만 쓰십시오")
+    return join_facts(paragraph, facts)
+
+
 class OpeningRejected(PolymarketBriefError):
     """첫 문장(전체 요약)이 반려됐다. 교정 때 이전 응답을 돌려주지 않는다 —
     돌려주면 모델이 그 문장을 글자째 다시 냈다(10/2 주식·시장, 온도 0.2·0.5 모두).
@@ -130,7 +240,11 @@ class PolymarketBriefAnalyzer:
         if not events:
             raise PolymarketBriefError("no events to analyze")
 
-        payload = {"group": group_label, "totals": {**totals, "named_count": len(events)}, "events": events}
+        # 사실 문장(`fact`)은 서버 전용이다. 참여 규모순으로 단락 뒤에 붙인다.
+        facts = [str(row["fact"]) for row in events if row.get("fact")]
+        model_events = [{key: value for key, value in row.items() if key != "fact"} for row in events]
+        payload = {"group": group_label, "totals": {**_model_totals(totals), "named_count": len(events)},
+                   "events": model_events}
         for attempt in range(2):
             try:
                 raw = self._backend.generate(
@@ -147,22 +261,34 @@ class PolymarketBriefAnalyzer:
                 paragraph = self._parse(raw, events)
                 if totals.get("event_count"):
                     validate_editorial(paragraph, totals)
-                return paragraph
+                return attach_facts(paragraph, facts)
             except PolymarketBriefError as exc:
                 if attempt:
                     raise
                 logger.warning("[POLYMARKET_BRIEF] 검증 실패로 1회 교정: %s", exc)
-                if isinstance(exc, OpeningRejected):
+                # 교정 입력에도 숫자를 다시 넣지 않는다. 이전 응답·반려 사유에 숫자가 있으면(확률 반려는 늘 그렇다)
+                # 보내지 않는다 — 보내면 모델이 그 숫자를 다른 질문에 옮겨 붙일 수 있다(12차 검수).
+                if isinstance(exc, ProbabilityWritten):
+                    reason = "확률 숫자: 본문에 확률을 숫자로 쓰지 마십시오. 확률 문장은 서버가 질문 이름과 함께 붙입니다"
+                else:  # 길이 같은 숫자는 빼고 사유만 준다
+                    reason = _for_model(re.sub(r"\d+", "", str(exc))) or "검증 실패"
+                previous = _for_model(raw[:MAX_PARAGRAPH_CHARS])
+                if isinstance(exc, ProbabilityWritten) or previous is None:
                     payload["revision"] = {
-                        "reason": str(exc),
+                        "reason": reason,
+                        "instruction": "직전 응답은 위 사유로 반려됐습니다. 원래 입력만 보고 단락 전체를 새로 쓰십시오. 확률은 숫자로 쓰지 말고 등급의 말(우세하다·낮게 본다·엇갈린다)로만 쓰십시오. 해석 근거가 없으면 한계를 밝히십시오.",
+                    }
+                elif isinstance(exc, OpeningRejected):
+                    payload["revision"] = {
+                        "reason": reason,
                         "instruction": "직전 응답의 첫 문장이 위 사유로 반려됐습니다. 원래 입력만 보고 단락 전체를 새로 쓰되, 첫 문장을 사유가 요구하는 구조로 쓰십시오. 해석 근거가 없으면 한계를 밝히십시오.",
                     }
                 else:
                     # 금지어·문체는 고칠 곳이 좁다. 이전 응답을 주고 그 부분만 고치게 해야
-                    # 수치·방향이 바뀌지 않는다.
+                    # 판단·방향이 바뀌지 않는다.
                     payload["revision"] = {
-                        "reason": str(exc), "previous_response": raw[:MAX_PARAGRAPH_CHARS],
-                        "instruction": "이전 응답은 수정 대상 데이터입니다. 원래 입력의 수치·방향을 유지하고 검증 실패를 고쳐 본문만 다시 작성하십시오. 해석 근거가 없으면 한계를 밝히십시오.",
+                        "reason": reason, "previous_response": previous,
+                        "instruction": "이전 응답은 수정 대상 데이터입니다. 원래 입력의 방향을 유지하고 검증 실패를 고쳐 본문만 다시 작성하십시오. 해석 근거가 없으면 한계를 밝히십시오.",
                     }
         raise PolymarketBriefError("brief correction exhausted")
 
