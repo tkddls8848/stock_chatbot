@@ -11,7 +11,7 @@
 | `news_prefilter` | 번역 전 로컬 사건 메모리·후보 점수화(Neurons 0) |
 | `watchlist` | 관심종목 공유 파일(`storage/portfolio/watchlist.json`) 읽기와 리서치 자동 적용. 편집은 웹 `/portfolio` |
 | `news_summary` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 4시간 시장상황 보고서 |
-| `market_sentiment` | 날짜별 시장 감성 백필·집계·차트(최근 30일, 커널 회귀 추세선)를 예약 갱신해 웹에 굽는다(`/market`은 지금 갱신) |
+| `market_sentiment` | 날짜별 시장 감성 백필·집계·차트(최근 30일, 전 시장 평균 대비 누적 논조선)를 예약 갱신해 웹에 굽는다(`/market`은 지금 갱신) |
 | `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용, 결과를 웹에 굽는다(`/research`는 주제·지금 실행) |
 | `briefing` | 모닝·마감 브리핑 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |

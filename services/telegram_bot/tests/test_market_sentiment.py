@@ -1,5 +1,4 @@
 import asyncio
-import math
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -260,23 +259,39 @@ def test_panel_refresh_failure_says_the_web_keeps_the_last_chart(monkeypatch, ca
     assert "수동 갱신 실패" in caplog.text
 
 
-def test_trend_curve_follows_a_nonlinear_shape_without_leaving_the_range():
-    """30일 점 위에 커널 회귀 추세선을 그린다(2026-09-28). 잡음을 지나 곡선 모양을 따른다."""
+def test_cumulative_tone_turns_where_the_regime_turns_instead_of_flattening():
+    """평균에 붙지 않는다(2026-10-04): 긍정 국면 15일 뒤 부정 국면 15일이면 선은 오르다 정확히 그 날 꺾인다."""
     from datetime import datetime
 
-    from services.telegram_bot.features.market_sentiment.chart import _trend_curve
+    from services.telegram_bot.features.market_sentiment.chart import _cumulative_tone
 
     dates = [datetime(2026, 9, 1) + timedelta(days=day) for day in range(30)]
-    shape = [0.8 * math.sin(day / 29 * math.pi) - 0.3 for day in range(30)]
-    noisy = [value + (0.25 if day % 2 else -0.25) for day, value in enumerate(shape)]
-    curve_dates, curve = _trend_curve(dates, noisy, [20] * 30)
+    values = [0.2 + (0.05 if day % 2 else -0.05) for day in range(15)] + [-0.2] * 15
+    _, curve = _cumulative_tone(dates, values, baseline=0.0)
 
-    assert curve_dates[0] == dates[0] and curve_dates[-1] == dates[-1]
-    assert all(-1 <= value <= 1 for value in curve)
-    middle = curve[len(curve) // 2]
-    assert middle > curve[0] + 0.4 and middle > curve[-1] + 0.4   # 가운데가 솟은 추세
-    assert abs(middle - 0.5) < 0.2                                 # 격일 잡음은 상쇄된다
-    assert _trend_curve(dates[:3], noisy[:3], [20] * 3) is None
+    peak = max(range(30), key=curve.__getitem__)
+    assert peak == 14                                  # 국면이 바뀐 날 꺾인다
+    assert curve[14] > 5 and curve[-1] < curve[14] - 5  # 꺾인 뒤 뚜렷이 내려간다
+    assert _cumulative_tone(dates[:1], values[:1], 0.0) is None
+
+
+def test_cumulative_tone_uses_the_common_baseline_and_not_each_markets_own_mean():
+    """기준선이 시장 자기 평균이면 끝이 늘 0으로 돌아온다. 전 시장 공통 평균은 그렇지 않다."""
+    from datetime import datetime
+
+    from services.telegram_bot.features.market_sentiment.chart import _common_baseline, _cumulative_tone
+
+    dates = [datetime(2026, 9, 1) + timedelta(days=day) for day in range(10)]
+    warm = [{"date": d.date().isoformat(), "avg_sentiment": 0.3 + (0.1 if i % 2 else 0), "count": 10}
+            for i, d in enumerate(dates)]
+    cold = [{"date": d.date().isoformat(), "avg_sentiment": -0.1 + (0.1 if i % 2 else 0), "count": 10}
+            for i, d in enumerate(dates)]
+    baseline = _common_baseline({"JP": {"daily": warm}, "US": {"daily": cold}})
+    assert abs(baseline - 0.15) < 1e-9                 # 기사 수 가중 전 시장 평균(0.35와 −0.05)
+
+    _, jp = _cumulative_tone(dates, [p["avg_sentiment"] for p in warm], baseline)
+    _, us = _cumulative_tone(dates, [p["avg_sentiment"] for p in cold], baseline)
+    assert jp[-1] > 10 and us[-1] < -10                # 평균보다 따뜻한 시장은 오르고 찬 시장은 내린다
 
 
 def test_chart_renders_thirty_days_with_gaps():

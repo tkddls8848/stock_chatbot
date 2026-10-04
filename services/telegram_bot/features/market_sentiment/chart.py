@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from io import BytesIO
 
 
@@ -44,38 +44,40 @@ def _trend_series(points: list[dict]) -> tuple[list[datetime], list[float]]:
     return [day for day, _ in parsed], [value for _, value in parsed]
 
 
-def _trend_curve(
-    dates: list[datetime], values: list[float], weights: list[float], *, bandwidth_days: float = 4.0,
-) -> tuple[list[datetime], list[float]] | None:
-    """가우시안 커널 국소 선형 회귀로 일별 감성의 추세선을 구한다.
+# σ가 이보다 작으면 하루 차이가 과장된다(기사 몇 건만 있던 시장).
+_MIN_SPREAD = 0.05
 
-    계산하는 날마다 모든 날을 거리에 따라 종 모양(가우시안)으로 가중해 직선을 맞춘다.
-    가장 가까운 k개만 쓰는 LOWESS는 창이 움직일 때 점이 갑자기 들어오고 나가 선에 잔물결이
-    생겼다(2026-09-28 운영자 지적). 가우시안은 가중이 끊기지 않아 곡선이 매끈하다.
-    `bandwidth_days`(표준편차)가 곡선의 부드러움을 정한다. 기사가 많은 날일수록 표본 오차가
-    작으므로 기사 수의 제곱근을 가중에 곱한다. 점이 4개 미만이면 추세라 부를 수 없어 None이다.
+
+def _common_baseline(markets: dict[str, dict]) -> float:
+    """전 시장·전 기간의 기사 수 가중 평균 논조. 감성 모델의 공통 쏠림(대체로 약간 긍정)을 뺄 기준이다."""
+    total = weight = 0.0
+    for stats in markets.values():
+        for point in stats.get("daily") or []:
+            count = max(float(point.get("count") or 0), 1.0)
+            total += float(point["avg_sentiment"]) * count
+            weight += count
+    return total / weight if weight else 0.0
+
+
+def _cumulative_tone(
+    dates: list[datetime], values: list[float], baseline: float,
+) -> tuple[list[datetime], list[float]] | None:
+    """누적 논조선: 날마다 (논조 − 공통 기준선)을 그 시장의 하루 변동폭(σ)으로 나눠 쌓는다.
+
+    오르면 전 시장 평균보다 긍정적인 날이 이어지는 구간, 꺾이면 국면 전환, 기울기가 경향의 세기다.
+    예전 가우시안 커널 회귀(표준편차 4일)는 앞뒤 약 16일을 섞어 선이 평균에 붙었다 — 30일 일별 값이
+    ±0.3을 오가도 선은 폭 0.1~0.25로 평평했다(2026-10-04 운영자 지적). 누적은 평균으로 끌리지 않는다.
+    기준선을 시장 자기 평균으로 두면 끝이 늘 0으로 돌아와 "지금"을 말하지 못하고, 0(중립)으로 두면
+    모델의 긍정 쏠림이 쌓여 거의 모든 시장이 오르기만 해서, 전 시장 공통 평균을 쓴다.
+    σ로 나누는 것은 변동이 큰 시장(미국)과 작은 시장(중국)을 같은 눈금에서 보려는 것이다.
     """
     import numpy as np
 
-    if len(dates) < 4:
+    if len(dates) < 2:
         return None
-    origin = dates[0]
-    x = np.array([(day - origin).total_seconds() / 86400 for day in dates])
     y = np.array(values, dtype=float)
-    w = np.sqrt(np.maximum(np.array(weights, dtype=float), 1.0))
-    grid = np.linspace(x[0], x[-1], max(2, int((x[-1] - x[0]) * 4) + 1))
-    fitted = []
-    for point in grid:
-        kernel = np.exp(-0.5 * ((x - point) / bandwidth_days) ** 2) * w
-        design = np.column_stack([np.ones_like(x), x - point])
-        gram = design.T @ (design * kernel[:, None])
-        if abs(np.linalg.det(gram)) < 1e-9:
-            fitted.append(float(np.average(y, weights=kernel)))
-            continue
-        intercept, _ = np.linalg.solve(gram, design.T @ (kernel * y))
-        fitted.append(float(intercept))
-    curve_dates = [origin + timedelta(days=float(offset)) for offset in grid]
-    return curve_dates, [min(1.0, max(-1.0, value)) for value in fitted]
+    spread = max(float(y.std()), _MIN_SPREAD)
+    return dates, [float(v) for v in np.cumsum((y - baseline) / spread)]
 
 
 def render_market_chart(
@@ -123,28 +125,23 @@ def render_market_chart(
         ranking_ax.text(value + (0.03 if value >= 0 else -0.03), index, f"{value:+.2f}", va="center", ha="left" if value >= 0 else "right", fontsize=9,
                         fontweight="bold", color=_POS if value > 0.1 else _NEG if value < -0.1 else _MUT)
 
-    # 날마다 찍은 점은 흐리게 두고, 그 위에 비선형 추세선을 굵게 그린다(2026-09-28 운영자 요청).
-    # 30일 치 점을 선으로 이으면 하루하루의 잡음만 보이고 방향은 읽히지 않는다.
+    # 누적 논조선(2026-10-04 운영자 요청 — 시간에 따른 논조의 경향을 본다). 일별 점은 단위가 달라 찍지 않는다.
+    baseline = _common_baseline(markets)
     for market, stats in ordered:
         dates, sentiments = _trend_series(stats["daily"])
-        counts = [point.get("count", 0) for point in sorted(stats["daily"], key=lambda point: str(point["date"]))]
-        curve = _trend_curve(dates, sentiments, counts)
-        (line,) = trend_ax.plot(
-            *(curve or (dates, sentiments)),
-            linewidth=2.2,
-            color=MARKET_COLORS.get(market),
-            label=market_label(market),
-        )
-        trend_ax.scatter(dates, sentiments, s=14, alpha=0.35, color=line.get_color(), linewidths=0)
+        curve = _cumulative_tone(dates, sentiments, baseline)
+        if curve is None:
+            continue
+        trend_ax.plot(*curve, linewidth=2.2, marker="o", markersize=2.5,
+                      color=MARKET_COLORS.get(market), label=market_label(market))
     trend_ax.axhline(0, color=_MUT, linewidth=0.9)
-    trend_ax.set_ylim(-1, 1)
-    trend_ax.set_title(f"Sentiment trend ({lookback_days}d, kernel regression)", loc="left", fontsize=11,
+    trend_ax.set_title(f"Cumulative tone vs all-market average ({lookback_days}d)", loc="left", fontsize=11,
                        fontweight="bold", color=_INK, pad=12)
-    trend_ax.set_ylabel("Average sentiment")
+    trend_ax.set_ylabel("Cumulative (daily tone − average) / σ")
     trend_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
     trend_ax.tick_params(axis="x", rotation=45)
-    trend_ax.legend(loc="upper left", frameon=False, ncol=6, fontsize=8.5, bbox_to_anchor=(0, 1.0),
-                    handlelength=1.6, columnspacing=1.2)
+    # 누적선은 위아래 끝까지 쓰므로 범례를 그림 밖 오른쪽에 둔다.
+    trend_ax.legend(loc="upper left", frameon=False, fontsize=8.5, bbox_to_anchor=(1.01, 1.0), handlelength=1.6)
     trend_ax.grid(axis="y", color=_LINE, linewidth=0.6)
     trend_ax.set_axisbelow(True)
     fig.tight_layout()
