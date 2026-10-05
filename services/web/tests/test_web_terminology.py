@@ -38,40 +38,13 @@ def test_no_llm_caller_reads_a_prompt_file_directly():
     assert offenders == []
 
 
-def test_personal_research_prompt_carries_the_guide(monkeypatch):
-    from services.web import personal_research
+def test_personal_research_prompt_carries_the_guide():
+    """개인 리서치는 운영자 리서치와 같은 프롬프트를 웹 사본으로 읽는다. 용어 기준이 앞에 붙는다."""
     from services.web.core import config
-    from services.web.llm import factory
+    from services.web.llm.market_view import MarketViewAnalyzer
 
-    seen = {}
-
-    class Backend:
-        def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
-            seen["system"] = system_prompt
-            return "가" * 50
-
-    monkeypatch.setattr(config, "require_cloudflare_credentials", lambda: None)
-    monkeypatch.setattr(factory, "build_backend", lambda *a, **k: Backend())
-    personal_research.analyze_public_evidence([{"id": 1}])
-    assert seen["system"].startswith("[용어 기준]")
+    analyzer = MarketViewAnalyzer(backend=None, timeout=1, num_predict=1, prompt_file=config.RESEARCH_PROMPT_FILE)
+    assert analyzer._prompt.startswith("[용어 기준]")
+    assert "market_view" in analyzer._prompt and "view_critique" in analyzer._prompt
 
 
-def test_personal_research_does_not_send_the_publisher_to_the_model(monkeypatch):
-    """매체명은 화면의 근거 목록에만 남긴다. 분석에 필요 없다(운영자 결정 2026-10-02)."""
-    import json as _json
-
-    from services.web import personal_research
-    from services.web.core import config
-    from services.web.llm import factory
-
-    seen = {}
-
-    class Backend:
-        def generate(self, *, system_prompt, user_prompt, max_tokens, temperature):
-            seen["user"] = user_prompt
-            return "가" * 50
-
-    monkeypatch.setattr(config, "require_cloudflare_credentials", lambda: None)
-    monkeypatch.setattr(factory, "build_backend", lambda *a, **k: Backend())
-    personal_research.analyze_public_evidence([{"number": 1, "title": "t", "source": "Reuters"}])
-    assert "Reuters" not in seen["user"] and "source" not in _json.loads(seen["user"])[0]

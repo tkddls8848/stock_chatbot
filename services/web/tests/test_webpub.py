@@ -82,7 +82,7 @@ def test_research_metadata_uses_the_same_section_card_pattern():
     """연구 결과 메타데이터도 요약·리스크와 같은 섹션형 카드로 표시한다."""
     body = server.RESEARCH_HTML
 
-    assert "연구 결과" in body
+    assert "리서치 결과" in body
     assert "<dl class='brief research-meta'>" in body
     assert "<div class='statstrip'>" not in body
 

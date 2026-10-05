@@ -336,6 +336,8 @@ border-radius:var(--r1);background:#fff;color:var(--gold);text-decoration:none;f
 .research-form{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:20px;background:var(--fill-1);border:0;border-top:1px solid var(--rule)}
 .research-form label{display:flex;flex-direction:column;gap:6px;color:var(--mut);font-size:12px}
 .research-form label:first-child{flex:1;min-width:180px}
+.research-form textarea{min-height:76px;border:1px solid var(--line);border-radius:0;background:#fff;padding:8px;font:inherit;color:var(--ink);resize:vertical;width:100%}
+.linklike{border:0;background:none;padding:0;color:var(--gold);text-decoration:underline;font:inherit;cursor:pointer}
 .research-form input,.research-form select{height:40px;min-width:0;border:1px solid var(--line);border-radius:0;background:#fff;padding:8px;font:inherit;color:var(--ink)}
 .evidence-section{margin-top:28px;border-top:2px solid var(--ink)}
 .evidence-section h3{font-family:var(--font-serif);font-size:20px;margin:0;padding:16px 0;border-bottom:1px solid var(--line)}

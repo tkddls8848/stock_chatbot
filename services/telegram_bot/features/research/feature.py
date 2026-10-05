@@ -5,16 +5,21 @@
 """
 
 import logging
+from datetime import timedelta
 
 from services.telegram_bot.core.config import (
     RESEARCH_HISTORY_LIMIT,
+    RESEARCH_INPUTS_SCHEDULE_HOURS,
+    RESEARCH_INPUTS_SCHEDULE_MINUTE,
     RESEARCH_SCHEDULE_HOUR,
     RESEARCH_SCHEDULE_MINUTE,
     RESEARCH_STATE_FILE,
 )
 from services.telegram_bot.features.base import CommandSpec, FeatureSpec, MenuSpec
 from services.telegram_bot.llm import build_market_view_analyzer
+from services.telegram_bot.core.clock import now
 from services.telegram_bot.research.handlers import cmd_research
+from services.telegram_bot.research.inputs import refresh_research_inputs
 from services.telegram_bot.research.job import run_research
 from services.telegram_bot.research.news import collect_global_market_news_items
 from services.telegram_bot.research.state import MarketViewManager
@@ -45,7 +50,34 @@ async def _run_scheduled(app) -> None:
         logger.error("[RESEARCH] 예약 실행 실패", exc_info=True)
 
 
+async def _refresh_inputs(app) -> None:
+    try:
+        await refresh_research_inputs(app)
+    except Exception:
+        logger.error("[RESEARCH] 웹 리서치 입력 굽기 실패", exc_info=True)
+
+
 def _install_jobs(scheduler, app) -> None:
+    # 웹 개인 리서치의 입력 묶음. 기동 직후 한 번 굽고 이후 4시간마다 굽는다 — 배포·재시작 뒤
+    # 다음 주기까지 웹 리서치가 묶음 없이 기다리지 않게 한다.
+    scheduler.add_job(
+        _refresh_inputs,
+        trigger="cron",
+        hour=RESEARCH_INPUTS_SCHEDULE_HOURS,
+        minute=RESEARCH_INPUTS_SCHEDULE_MINUTE,
+        args=[app],
+        id="research_inputs",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _refresh_inputs,
+        trigger="date",
+        run_date=now() + timedelta(minutes=3),
+        args=[app],
+        id="research_inputs_startup",
+        max_instances=1,
+    )
     scheduler.add_job(
         _run_scheduled,
         trigger="cron",

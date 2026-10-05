@@ -12,7 +12,7 @@
 | `watchlist` | 관심종목 공유 파일(`storage/portfolio/watchlist.json`) 읽기와 리서치 자동 적용. 편집은 웹 `/portfolio` |
 | `news_summary` | Futu·Sina·Google News(글로벌·미국·한국)·RSS 수집과 4시간 시장상황 보고서 |
 | `market_sentiment` | 날짜별 시장 감성 백필·집계·차트(최근 30일, 전 시장 평균 대비 누적 논조선)를 예약 갱신해 웹에 굽는다(`/market`은 지금 갱신) |
-| `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용, 결과를 웹에 굽는다(`/research`는 주제·지금 실행) |
+| `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용(`/research`는 주제·지금 실행). 웹 개인 리서치의 입력 묶음(`public/research_inputs.json`)을 4시간마다 굽는다 |
 | `briefing` | 모닝·마감 브리핑 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |
 | `web_status` | 공개 웹 산출물의 갱신 상태(`/web`) — 웹 API를 HTTP로 읽는다 |

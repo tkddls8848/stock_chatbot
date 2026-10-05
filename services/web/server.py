@@ -111,7 +111,8 @@ def build_accounts() -> Accounts:
                     ready=bool(config.PRIVACY_OPERATOR and config.PRIVACY_CONTACT))
 
 
-def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts | None = None) -> FastAPI:
+def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts | None = None,
+              research_router: APIRouter | None = None) -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
     search_repository = NewsSearch(PUBLIC_DIR)
     accounts = accounts or build_accounts()
@@ -120,7 +121,7 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
     app.include_router(build_newsletter_router(accounts))
     app.include_router(build_unsubscribe_router(accounts))
     from services.web.personal_research import build_research_router
-    app.include_router(build_research_router(accounts, search_repository))
+    app.include_router(research_router or build_research_router(accounts))
 
     @app.middleware("http")
     async def response_policy(request: Request, call_next):

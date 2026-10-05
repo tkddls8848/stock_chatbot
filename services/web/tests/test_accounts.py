@@ -122,7 +122,7 @@ def test_assets_watchlist_research_and_exports_are_isolated(setup):
     assert b.delete("/api/portfolio/assets/" + row["id"]).status_code == 404
     assert a.put("/api/portfolio/watchlist", json={"items": [{"code": "KR:KOSPI:005930", "name": "삼성전자"}]}).status_code == 200
     assert b.get("/api/portfolio/watchlist").json() == {"items": {}}
-    assert a.put("/api/research/profile", json={"topic": "반도체", "days": 7}).status_code == 200
+    assert a.put("/api/research/profile", json={"topic": "반도체"}).status_code == 200
     assert b.get("/api/research").json()["profile"]["topic"] == ""
     assert "operator research" not in a.get("/api/research").text
     assert "private-a" not in b.get("/api/account/export").text
@@ -167,23 +167,168 @@ def test_delete_waits_for_inflight_mutation_and_logout_revokes_replay(setup):
     assert a.get("/api/portfolio/assets").status_code == 401
 
 
-def test_research_uses_own_profile_and_public_sources_only(setup):
-    _, a, b, public = setup
-    today = now().date().isoformat()
-    (public / "news.json").write_text(json.dumps({"documents": [
-        {"id": "news-1", "kind": "news", "market": "KR", "title": "반도체 투자 확대", "text": "공개 근거",
-         "date": today, "published_at": today, "source": "뉴스", "url": "https://example.com/news"},
-        {"id": "news-2", "kind": "news", "market": "US", "title": "은행 실적", "text": "은행 근거", "date": today},
-    ]}), encoding="utf-8")
-    a.put("/api/research/profile", json={"topic": "반도체", "days": 7})
-    report = a.post("/api/research/reports")
-    assert report.status_code == 201
-    assert report.json()["sections"][0]["evidence"][0]["id"] == "news-1"
-    assert "은행 근거" not in report.text
+def _inputs(path, *, hours_old=0):
+    path.write_text(json.dumps({
+        "format": 1, "generated_at": (now() - timedelta(hours=hours_old)).isoformat(timespec="seconds"),
+        "news_items": [{"title": "Fed signals higher for longer", "content": "Treasury yields rose", "source": "wire",
+                        "market": "US", "url": "https://example.com/fed"}],
+        "candidates": [{"code": "US:NASDAQ:NVDA", "name": "NVIDIA", "market": "US", "in_watchlist": False,
+                        "matched_news": []}],
+        "sector_summary_context": {"sector_top": []},
+    }), encoding="utf-8")
+
+
+class _Analyzer:
+    def __init__(self):
+        self.calls = []
+
+    def analyze(self, topic, watchlist, news_items, candidates, sector, history):
+        self.calls.append({"topic": topic, "watchlist": watchlist, "news": news_items,
+                           "candidates": candidates, "sector": sector, "history": history})
+        return {"generated_at": now().isoformat(timespec="seconds"), "summary": "금리 상승 경로 요약",
+                "actions": [{"ticker": "US:NASDAQ:NVDA", "name": "NVIDIA", "action": "add", "confidence": 0.7,
+                             "relevance": 0.8, "reason": "근거", "evidence": []},
+                            {"ticker": "KR:KOSPI:005930", "name": "삼성전자", "action": "remove", "confidence": 0.6,
+                             "relevance": 0.2, "reason": "약함", "evidence": []}],
+                "risks": ["반전 조건"], "view_critique": []}
+
+
+@pytest.fixture
+def research(tmp_path, monkeypatch):
+    from services.web.personal_research import build_research_router
+    public = tmp_path / "public"
+    public.mkdir()
+    monkeypatch.setattr(server, "PUBLIC_DIR", public)
+    accounts = Accounts(tmp_path / "users", client_id="client", client_secret="secret",
+                        identity_key="k" * 32, origin="https://testserver")
+    analyzer = _Analyzer()
+    inputs = public / "research_inputs.json"
+    pending = []
+    # 실제로는 요청이 끝난 뒤 스레드에서 돈다. 테스트는 응답을 받은 뒤 그 일을 이어서 돌린다.
+    router = build_research_router(accounts, analyzer_factory=lambda: analyzer, start=pending.append,
+                                   inputs_path=inputs)
+    app = server.build_app(accounts=accounts, research_router=router)
+    class Client(TestClient):
+        def post(self, *args, **kwargs):
+            response = super().post(*args, **kwargs)
+            while pending:
+                pending.pop(0)()
+            return response
+
+    clients = []
+    for subject in ("subject-a", "subject-b"):
+        client = Client(app, base_url="https://testserver", headers={"origin": "https://testserver"})
+        client.cookies.set(COOKIE, accounts.issue(subject))
+        clients.append(client)
+    return accounts, clients[0], clients[1], inputs, analyzer
+
+
+def test_research_runs_the_operator_analysis_only_after_consent(research):
+    """운영자 봇 리서치와 같은 분석을 계정 주제로 돈다(2026-10-05). 동의 전에는 실행하지 않는다."""
+    accounts, a, b, inputs, analyzer = research
+    _inputs(inputs)
+    a.put("/api/portfolio/watchlist", json={"items": [{"code": "KR:KOSPI:005930", "name": "삼성전자"}]})
+    a.post("/api/portfolio/assets", json={"kind": "stock", "name": "secret holding", "value_krw": 987654321})
+    a.put("/api/research/profile", json={"topic": "미국 국채금리가 더 오를 수 있을까?"})
+    assert a.post("/api/research/reports").status_code == 403
+    assert analyzer.calls == []
+
+    assert a.put("/api/research/consent", json={"agree": True}).json()["consented_at"]
+    run = a.post("/api/research/reports")
+    assert run.status_code == 202
+
+    call = analyzer.calls[0]
+    assert call["topic"] == "미국 국채금리가 더 오를 수 있을까?"
+    assert call["watchlist"] == {"KR:KOSPI:005930": "삼성전자"}
+    # 관심종목이 후보 맨 앞, 그다음 봇이 구운 후보
+    assert [c["code"] for c in call["candidates"]] == ["KR:KOSPI:005930", "US:NASDAQ:NVDA"]
+    assert call["candidates"][0]["in_watchlist"] is True
+    assert call["news"][0]["title"] == "Fed signals higher for longer"
+    sent = json.dumps(call, ensure_ascii=False)
+    assert all(secret not in sent for secret in ("secret holding", "987654321", "subject-a"))
+
+    state = a.get("/api/research").json()
+    assert state["run"]["status"] == "ok"
+    assert state["report"]["result"]["summary"] == "금리 상승 경로 요약"
+    assert state["history"][0]["actions"] == [{"ticker": "US:NASDAQ:NVDA", "action": "add"},
+                                              {"ticker": "KR:KOSPI:005930", "action": "remove"}]
     assert b.get("/api/research").json()["report"] is None
-    for _ in range(9):
-        assert a.post("/api/research/reports").status_code == 201
+
+    # 다음 실행은 이전 분석을 넘긴다. 주제를 바꾸면 비교 기록을 지운다(봇과 같다).
+    a.post("/api/research/reports")
+    assert len(analyzer.calls[1]["history"]) == 1
+    a.put("/api/research/profile", json={"topic": "다른 주제"})
+    a.post("/api/research/reports")
+    assert analyzer.calls[2]["history"] == []
+
+    # 동의를 철회하면 다시 막힌다.
+    a.put("/api/research/consent", json={"agree": False})
+    assert a.post("/api/research/reports").status_code == 403
+
+
+def test_research_suggestions_change_the_watchlist_only_when_applied(research):
+    _, a, _, inputs, _ = research
+    _inputs(inputs)
+    a.put("/api/portfolio/watchlist", json={"items": [{"code": "KR:KOSPI:005930", "name": "삼성전자"}]})
+    a.put("/api/research/profile", json={"topic": "반도체"})
+    a.put("/api/research/consent", json={"agree": True})
+    a.post("/api/research/reports")
+    assert a.get("/api/portfolio/watchlist").json()["items"] == {"KR:KOSPI:005930": "삼성전자"}
+
+    assert a.post("/api/research/actions", json={"ticker": "US:NASDAQ:NVDA", "action": "add"}).status_code == 200
+    assert a.post("/api/research/actions", json={"ticker": "KR:KOSPI:005930", "action": "remove"}).status_code == 200
+    assert a.get("/api/portfolio/watchlist").json()["items"] == {"US:NASDAQ:NVDA": "NVIDIA"}
+    assert a.get("/api/research").json()["report"]["applied"] == {"US:NASDAQ:NVDA": "add", "KR:KOSPI:005930": "remove"}
+    # 결과에 없는 제안은 적용하지 않는다.
+    assert a.post("/api/research/actions", json={"ticker": "US:NASDAQ:AAPL", "action": "add"}).status_code == 422
+
+
+def test_research_refuses_stale_inputs_and_enforces_daily_limits(research):
+    accounts, a, _, inputs, analyzer = research
+    a.put("/api/research/profile", json={"topic": "반도체"})
+    a.put("/api/research/consent", json={"agree": True})
+    assert a.post("/api/research/reports").status_code == 503          # 묶음 없음
+    _inputs(inputs, hours_old=13)
+    assert a.post("/api/research/reports").status_code == 503          # 오래된 묶음
+    assert a.get("/api/research").json()["inputs"]["ready"] is False
+    _inputs(inputs)
+    for _ in range(10):
+        assert a.post("/api/research/reports").status_code == 202
     assert a.post("/api/research/reports").status_code == 429
+    assert len(analyzer.calls) == 10
+
+
+def test_research_server_quota_and_failed_analysis(research):
+    accounts, a, _, inputs, analyzer = research
+    from services.web.llm.market_view import MarketViewError
+    _inputs(inputs)
+    a.put("/api/research/profile", json={"topic": "반도체"})
+    a.put("/api/research/consent", json={"agree": True})
+
+    def broken(*args):
+        raise MarketViewError("invalid analysis JSON")
+    analyzer.analyze = broken
+    assert a.post("/api/research/reports").status_code == 202
+    state = a.get("/api/research").json()
+    assert state["run"]["status"] == "failed" and state["report"] is None
+
+    (accounts.root / ".research-usage.json").write_text(json.dumps({"day": now().date().isoformat(), "count": 40}))
+    assert a.post("/api/research/reports").status_code == 429
+
+
+def test_a_stale_running_marker_does_not_block_forever(research):
+    accounts, a, _, inputs, _ = research
+    from services.web.accounts import account_lock  # noqa: F401  (same lock the worker uses)
+    _inputs(inputs)
+    a.put("/api/research/profile", json={"topic": "반도체"})
+    root = next(path for path in accounts.root.iterdir() if not path.name.startswith("."))
+    (root / "research").mkdir(exist_ok=True)
+    (root / "research/run.json").write_text(json.dumps({
+        "format": 2, "id": "x", "status": "running",
+        "started_at": (now() - timedelta(hours=1)).isoformat(timespec="seconds")}), encoding="utf-8")
+    assert a.get("/api/research").json()["run"]["status"] == "failed"
+    a.put("/api/research/consent", json={"agree": True})
+    assert a.post("/api/research/reports").status_code == 202
 
 
 def test_missing_credentials_never_restore_legacy_password_or_public_research(tmp_path):
@@ -193,32 +338,6 @@ def test_missing_credentials_never_restore_legacy_password_or_public_research(tm
         assert client.get(path).status_code == 503
     assert client.post("/api/portfolio/session", json={"password": "legacy"}).status_code == 405
     assert client.get("/api/account/session").json() == {"configured": False, "unlocked": False}
-
-
-def test_optional_ai_receives_only_public_evidence_and_has_shared_quota(setup, monkeypatch):
-    from services.web import personal_research
-    accounts, a, b, public = setup
-    day = now().date().isoformat()
-    (public / "news.json").write_text(json.dumps({"documents": [
-        {"id": "n1", "kind": "news", "market": "KR", "title": "반도체 투자", "text": "공개 근거",
-         "date": day, "source": "뉴스"},
-    ]}), encoding="utf-8")
-    captured = []
-    monkeypatch.setattr(personal_research, "analyze_public_evidence",
-                        lambda rows: captured.append(rows) or "공개 근거에 대한 분석 [1]")
-    a.put("/api/research/profile", json={"topic": "반도체 관련 뉴스를 찾아줘"})
-    a.post("/api/portfolio/assets", json={"kind": "stock", "name": "secret holding", "value_krw": 987654321})
-    assert a.post("/api/research/reports").status_code == 201
-    assert captured == []
-    report = a.post("/api/research/reports", json={"public_evidence_ai": True}).json()
-    assert report["analysis_status"] == "ok"
-    sent = json.dumps(captured, ensure_ascii=False)
-    assert "공개 근거" in sent
-    assert all(secret not in sent for secret in ("secret holding", "987654321", "subject-a", "찾아줘"))
-    assert b.get("/api/research").json()["report"] is None
-    (accounts.root / ".research-ai-usage.json").write_text(json.dumps({"day": day, "count": 20}))
-    assert a.post("/api/research/reports", json={"public_evidence_ai": True}).json()["analysis_status"] == "daily_limit"
-    assert len(captured) == 1
 
 
 def test_personal_assets_cannot_be_opted_into_external_ai(setup):

@@ -1,6 +1,7 @@
 """브리핑·리서치 핸들러의 성공 및 외부 실패 경계 통합 테스트."""
 
 import asyncio
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -395,3 +396,50 @@ def test_research_notice_failure_propagates(_quiet_research):
 
     with pytest.raises(RuntimeError, match="telegram down"):
         asyncio.run(research_job.run_research(app))
+
+
+def test_web_research_inputs_are_built_without_any_watchlist_or_topic(monkeypatch, tmp_path):
+    """웹 개인 리서치의 입력 묶음: 같은 수집기·후보 구성을 관심종목 없이 돌려 굽는다.
+    운영자 주제·관심종목은 들어가지 않는다."""
+    from services.telegram_bot import publish as export
+    from services.telegram_bot.research import inputs
+
+    seen_watchlists = []
+    monkeypatch.setattr(research_job, "build_research_candidate_universe",
+                        lambda db, watchlist, news, **k: seen_watchlists.append(dict(watchlist))
+                        or [{"code": "KR:KOSPI:005930", "name": "삼성전자", "in_watchlist": False}])
+    monkeypatch.setattr(research_job, "collect_extra_candidates",
+                        lambda quotes, db, watchlist: seen_watchlists.append(dict(watchlist)) or [])
+    monkeypatch.setattr(export, "RESEARCH_INPUTS_JSON", tmp_path / "research_inputs.json")
+
+    async def collector():
+        return [{"title": "headline", "content": "body", "source": "wire", "market": "KR"}]
+
+    app, manager = _research_app(collector, analyzer=None)
+    manager.get_sight = lambda: "운영자 주제"
+    app.bot_data["watchlist_manager"].items = {"KR:KOSPI:000660": "SK하이닉스"}
+
+    outcome = asyncio.run(inputs.refresh_research_inputs(app))
+
+    assert outcome == {"news_count": 1, "candidate_count": 1}
+    assert seen_watchlists == [{}, {}]
+    written = json.loads((tmp_path / "research_inputs.json").read_text(encoding="utf-8"))
+    assert written["format"] == export.RESEARCH_INPUTS_FORMAT
+    assert written["news_items"][0]["title"] == "headline"
+    assert written["candidates"][0]["code"] == "KR:KOSPI:005930"
+    text = json.dumps(written, ensure_ascii=False)
+    assert "운영자 주제" not in text and "SK하이닉스" not in text
+
+
+def test_web_research_inputs_keep_the_previous_file_when_there_is_no_news(monkeypatch, tmp_path):
+    from services.telegram_bot import publish as export
+    from services.telegram_bot.research import inputs
+
+    monkeypatch.setattr(export, "RESEARCH_INPUTS_JSON", tmp_path / "research_inputs.json")
+
+    async def collector():
+        return []
+
+    app, _ = _research_app(collector, analyzer=None)
+    assert asyncio.run(inputs.refresh_research_inputs(app)) is None
+    assert not (tmp_path / "research_inputs.json").exists()

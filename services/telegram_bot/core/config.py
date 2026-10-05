@@ -482,6 +482,11 @@ BRIEFING_NEWS_MAX_ITEMS = 14
 # 한 번에 LLM 호출 한 번이지만 뉴스 수집·후보 구성까지 수 분이 걸린다.
 RESEARCH_SCHEDULE_HOUR = 8
 RESEARCH_SCHEDULE_MINUTE = 20
+# 웹 개인 리서치의 입력 묶음(`storage/public/research_inputs.json`)을 굽는 주기. 웹 계정은 버튼을 누를 때
+# 이 묶음으로 분석하므로, 뉴스 신선도(`NEWS_LIVE_MAX_AGE_HOURS`) 안에서 너무 오래되지 않게 4시간마다 굽는다.
+# 정각(보고서)·40분(시장 감성)·58분(뉴스 수집)을 피한다.
+RESEARCH_INPUTS_SCHEDULE_HOURS = "*/4"
+RESEARCH_INPUTS_SCHEDULE_MINUTE = 30
 # 시장 감성은 오늘 치만 다시 계산하고 지난 날은 저장값을 재사용한다(시장당 1회 호출).
 # 하루 세 번이면 아시아 장 전·장 마감 뒤·미장 전에 한 번씩 갱신된다.
 MARKET_SENTIMENT_SCHEDULE_HOURS = (7, 13, 19)

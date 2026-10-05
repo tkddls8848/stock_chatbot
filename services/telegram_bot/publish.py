@@ -26,6 +26,11 @@ MARKET_CHART = PUBLIC_DIR / "market_chart.png"
 # 운영자 봇의 리서치는 개인 기록이다. 공개 저장소에 새 복사본을 만들지 않는다.
 RESEARCH_JSON = DATA_DIR / "research" / "snapshot.json"
 NEWS_JSON = PUBLIC_DIR / "news.json"
+# 웹 개인 리서치의 입력 묶음. 운영자 리서치와 같은 수집기·후보 구성을 관심종목 없이 돌린 결과다.
+# 공개 라우트가 내보내지 않는다 — 웹은 로그인한 계정의 리서치 실행에서만 읽는다.
+RESEARCH_INPUTS_JSON = PUBLIC_DIR / "research_inputs.json"
+# 입력 묶음 형식. 바꾸면 웹의 읽는 쪽(`services/web/personal_research.py`)을 같은 커밋에서 고친다.
+RESEARCH_INPUTS_FORMAT = 1
 META_JSON = PUBLIC_DIR / "meta.json"
 _META_LOCK = threading.Lock()
 _NEWS_LOCK = threading.Lock()
@@ -96,6 +101,24 @@ def publish_market(
         indent=2,
     )
     _update_meta("market_generated_at", generated_at)
+
+
+def publish_research_inputs(
+    news_items: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    sector_summary_context: dict[str, Any] | None,
+) -> None:
+    """웹 개인 리서치가 읽을 입력 묶음. 관심종목·운영자 주제·개인 데이터는 담지 않는다."""
+    write_json_atomic(
+        RESEARCH_INPUTS_JSON,
+        {
+            "format": RESEARCH_INPUTS_FORMAT,
+            "generated_at": now().isoformat(timespec="seconds"),
+            "news_items": news_items,
+            "candidates": candidates,
+            "sector_summary_context": sector_summary_context,
+        },
+    )
 
 
 def publish_research(

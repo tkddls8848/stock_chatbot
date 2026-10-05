@@ -234,6 +234,28 @@ PORTFOLIO_ADVICE_PROMPT_FILE = PROMPT_DIR / "portfolio_advice_ko.txt"
 PORTFOLIO_ADVICE_TIMEOUT = 180
 PORTFOLIO_ADVICE_NUM_PREDICT = 2048
 
+# ── 개인 리서치(/research) ─────────────────────────────
+# 운영자 봇 리서치(`telegram_bot/research/job.py`)와 같은 프롬프트·분석이다. 값은 봇과 같게 두되 각자 소유다.
+# 입력 묶음(원문 뉴스·후보·섹터 요약)은 봇이 4시간마다 굽는다(`telegram_bot/research/inputs.py`).
+RESEARCH_INPUTS_FILE = PUBLIC_DIR / "research_inputs.json"
+RESEARCH_INPUTS_FORMAT = 1
+# 묶음이 이보다 오래되면(봇이 멈춤) 분석하지 않고 "자료 없음"을 밝힌다. 굽는 주기 4시간의 세 배.
+RESEARCH_INPUTS_MAX_AGE_HOURS = 12
+RESEARCH_PROMPT_FILE = PROMPT_DIR / "market_research_ko.txt"
+RESEARCH_TIMEOUT = 600
+RESEARCH_NUM_PREDICT = 8192
+RESEARCH_MAX_CANDIDATES = 24
+RESEARCH_MAX_NEW_ACTIONS = 6
+RESEARCH_REMOVE_RELEVANCE_THRESHOLD = 0.35
+RESEARCH_HISTORY_LIMIT = 5
+RESEARCH_TOPIC_MAX_CHARS = 500
+# 실행 상한. 계정당 하루(한국 시간 달력), 서버 전체 하루, 동시에 도는 분석 수.
+RESEARCH_MAX_DAILY = 10
+RESEARCH_SERVER_MAX_DAILY = 40
+RESEARCH_MAX_CONCURRENT = 1
+# 웹이 분석 도중 재시작되면 "실행 중"이 남는다. 이보다 오래된 실행 중 표시는 실패로 본다.
+RESEARCH_RUN_STALE_SECONDS = RESEARCH_TIMEOUT + 300
+
 # 외부 시장 자료. 키가 비면 그 항목만 "자료 없음"으로 두고 나머지로 진행한다.
 FSS_API_KEY = os.environ.get("FSS_API_KEY", "").strip()      # 금융감독원 금융상품통합비교공시
 ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "").strip()    # 한국은행 ECOS

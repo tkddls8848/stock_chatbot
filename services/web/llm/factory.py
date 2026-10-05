@@ -26,9 +26,15 @@ from services.web.core.config import (
     PORTFOLIO_ADVICE_NUM_PREDICT,
     PORTFOLIO_ADVICE_PROMPT_FILE,
     PORTFOLIO_ADVICE_TIMEOUT,
+    RESEARCH_MAX_NEW_ACTIONS,
+    RESEARCH_NUM_PREDICT,
+    RESEARCH_PROMPT_FILE,
+    RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
+    RESEARCH_TIMEOUT,
     require_cloudflare_credentials,
 )
 from services.web.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
+from services.web.llm.market_view import MarketViewAnalyzer
 from services.web.llm.polymarket_annotation import PolymarketAnnotator
 from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
 from services.web.llm.terminology import read_prompt
@@ -94,4 +100,17 @@ def build_portfolio_advisor():
         ),
         prompt=read_prompt(PORTFOLIO_ADVICE_PROMPT_FILE),
         num_predict=PORTFOLIO_ADVICE_NUM_PREDICT,
+    )
+
+
+def build_research_analyzer() -> MarketViewAnalyzer:
+    """개인 리서치 분석기. 운영자 봇 리서치(`telegram_bot/llm/factory.py`)와 같은 값이다."""
+    require_cloudflare_credentials()
+    return MarketViewAnalyzer(
+        backend=build_backend("personal_research", model=CLOUDFLARE_MODEL, timeout=RESEARCH_TIMEOUT),
+        timeout=RESEARCH_TIMEOUT,
+        num_predict=RESEARCH_NUM_PREDICT,
+        prompt_file=RESEARCH_PROMPT_FILE,
+        max_new_actions=RESEARCH_MAX_NEW_ACTIONS,
+        remove_relevance_threshold=RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
     )
