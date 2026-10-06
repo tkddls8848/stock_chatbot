@@ -209,6 +209,56 @@ def test_analyzable_articles_drop_flash_and_untitled():
     assert [a.article_id for a in analyzable_articles(articles)] == ["c", "f", "h", "l", "m", "n", "o"]
 
 
+# 2026-10-02~06 서버 KR 큐에서 그대로 옮긴 제목들이다.
+@pytest.mark.parametrize("title", [
+    "규칙 문구의 이상과 초과, 로얄 슬롯 조건 해석",
+    "게임 설명 속 변동성이라는 말, 구조대 토토 먹튀 용어 풀이",
+    "알림창을 닫기 전 읽어야 할 바카라 깡 디시 내용",
+    "게임별 화면 구성을 비교하는 강원랜드 카지노 관찰 포인트",
+    "현재 단계가 헷갈릴 때 보는 홀덤 올인 폴드 상태 안내",
+    "카지노 777 : 학습 전략과 자원 - 최신 트렌드",
+    "불법영화사이트 신고 의 비밀을 풀다: 전문가들이 공유하는 핵심 팁",
+    "브로드컴 (AVGO) 주식 움직였습니다 상승 3.26%에 10월2일: 변동 원인",
+    "Bitcoin(BTCUSD) 종목이 10월4일에 갑자기 1.01% 상승한 상황에서 무엇을 주목해야 할까요?",
+    "[MK시그널] 오오마 매도신호 포착, 수익률 78.5% 달성",
+    "▶▶이번주 마이크론 테크놀로지의 실적 공개, 투자자들이 먼저 찾는 종목 ▶▶【AI골든봇】 추천종목 공개",
+    "+225% 수익률과 계속되는 상승세: AI가 고른 이 기술주들이 시장을 압도하고 있습니다",
+    "[과매도 우량주 리포트] 🚨RSI 과매도 구간 진입한 우량주, 섹터별로 짚어봅니다",
+    "[게시판] 키움증권, 연금저축·중개형ISA 개설 이벤트",
+    "“ETF 사고 최대 27만원 받는다”…키움증권, ISA 이벤트 진행",
+    "iM뱅크, 창립 59주년 기념 '매주 200만원 현금 경품' 이벤트",
+])
+def test_korean_advertisements_are_not_analyzed(title):
+    from services.telegram_bot.news.utils import analyzable_articles
+    assert analyzable_articles([GlobalArticle("a", title, "", "")]) == []
+
+
+# 광고 낱말과 겹치지만 시장 기사다. 카지노주 두 줄과 금감원 줄은 같은 꼴로 지은 예이고, 나머지는
+# 같은 기간 같은 큐에 실제로 들어왔다.
+@pytest.mark.parametrize("title", [
+    "파라다이스, 회사채 수요예측에 3.4배 몰려…2·3년물 온도차(종합)",
+    "강원랜드, 카지노 매출 회복에 실적 개선 기대",
+    "카지노주 강세…중국 단체관광 재개 기대",
+    "외국인, SK스퀘어·SK이노·대한항공에 1.3조 베팅",
+    "[증시 레이더] 코스피, 美 국채금리 급등에 이틀째 하락⋯6,870선 마감",
+    "코스닥과 다른길! 게임주 약세…빅3 '동반 하락'",
+    "컴투스, 신작게임 '제우스' 흥행에 호실적 기대…목표가↑",
+    "코스피 0.48% 하락‥마이크론 실적 등 대형 이벤트 앞두고 경계감 증시에 부담",
+    "“프로야구팬에 치킨 준다”는 증권사 마케팅, 금감원이 과열 경고",
+    "골드만삭스가 실적 발표 앞두고 추천한 반도체 주식 3종목",
+])
+def test_market_articles_sharing_ad_words_are_kept(title):
+    from services.telegram_bot.news.utils import analyzable_articles
+    assert len(analyzable_articles([GlobalArticle("a", title, "", "")])) == 1
+
+
+def test_korean_gambling_seo_publisher_is_dropped_whatever_the_title():
+    from services.telegram_bot.news.utils import analyzable_articles
+    article = GlobalArticle("a", "기본 조작은 몇 단계로 이뤄질까? 카지노 여자배우", "", "",
+                            extra={"publisher": "Calgary Roughnecks"})
+    assert analyzable_articles([article]) == []
+
+
 @pytest.mark.parametrize(("title", "expected"), [
     ("코스피 7000선 회복 - 연합뉴스", "코스피 7000선 회복"),
     ("Fed holds rates - The Economic Times", "Fed holds rates"),

@@ -109,18 +109,63 @@ _PUBLISHER_TAIL = re.compile(r"\s+[-–—]\s+[^-–—]{1,60}$")
 # 기사가 아니라 종목 시세 화면인 제목. Google News 질의("株価 終値" 등)가 Yahoo 시세 페이지를
 # 기사처럼 돌려준다 — 2026-10-02 큐에서 일본 130건 중 32건, 미국 110건 중 11건이었다.
 # 분석할 사건이 없다. 실제로 본 두 형식만 정확히 잡는다(일반 "주가" 낱말은 거르지 않는다).
-_QUOTE_PAGE = re.compile(r"[：:]\s*株価・株式情報|\bStock Price, News, Quote & History\b")
+_QUOTE_PAGE = re.compile(r"[：:]\s*株価・株式情報|\bStock Price, News, Quote & History\b"
+                         # 같은 부류의 한국어 자동 생성 글(TradingKey). 등락률 하나로 찍어 낸 제목이다
+                         # — "브로드컴 (AVGO) 주식 움직였습니다 상승 3.26%에 10월2일: 변동 원인",
+                         # "Bitcoin(BTCUSD) 종목이 10월4일에 갑자기 1.01% 상승한 …".
+                         r"|주식 (?:움직였|시작했|마감했)습니다 (?:상승|하락)|\) 종목이 \d{1,2}월\s?\d{1,2}일에")
 # 도박 광고 상표가 기사 제목 **앞에** 붙어 오는 경우(2026-10-02 중국 표본: "必威买球泽连斯基…",
 # "ManBetx手机版武契奇…", "yabovip188登录武契奇…"). 앞머리만 본다 — 제목 중간의 상표명은 그 회사의
 # 기사일 수 있고, "博彩"는 마카오 카지노주 기사에 정상적으로 쓰여 넣지 않는다.
 _SPAM = re.compile(r"^\s*(?:必威|买球|manbetx(?:手机|app|官网|登录)|yabo(?:vip|\d)|亚博体育|开云体育|乐鱼体育|华体会)", re.IGNORECASE)
+# 한국어 도박 SEO 글. 2026-10-02부터 `gnews_kr` 질의에 쏟아졌다 — 10-06까지 KR 큐에 담긴 1,615건 중
+# 196건이었고 15건은 보고서 근거로 공개됐다("규칙 문구의 이상과 초과, 로얄 슬롯 조건 해석").
+# 기사 꼴을 흉내 낸 "게임 안내문"이라 도박 낱말과 안내문 낱말이 함께 나온다. 도박 쪽만 보면 정상
+# 기사를 버린다: 카지노주(강원랜드·파라다이스)·"외국인 1.3조 베팅"·포커스·게임주가 실제로 같이 들어온다.
+# 그래서 이 시장 기사에 안 쓰는 낱말(_GAMBLING)은 하나로, 정상 기사에도 쓰는 낱말(_GAMBLING_TERM)은
+# 안내문 낱말(_GAME_GUIDE)과 같이 나올 때만 거른다. 끝의 묶음은 같은 매체가 찍어 내는 상투 문구다.
+_GAMBLING = re.compile(
+    r"바카라|먹튀|토토|가입\s?코드|꽁\s?머니|프리\s?스핀|홀덤|슬롯\s?머신|블랙\s?잭|고스톱|무료\s?(?:슬롯|룰렛)"
+    r"|배팅\s?업체|온라인\s?카지노|카지노\s?(?:사이트|추천)"
+    r"|학습 전략과 자원|위험 피하기와 최적화|입문부터 마스터까지|브랜드 구축: 기초|의 모든 측면: 장점"
+    r"|기술과 비밀 풀기|의 비밀을 풀다: 전문가|궁금증을 해소하는 완벽한 가이드|위한 필수 정보 및 팁")
+_GAMBLING_TERM = re.compile(r"카지노(?!주)|슬롯|룰렛|도박|경마|포커(?!스)|마작")
+_GAME_GUIDE = re.compile(
+    r"심벌|배당표|버튼|안내|해설|규칙|기능|보너스|디시|용어|기초|입문|초보|플레이|문답|가이드|공략|연출"
+    r"|라운드|화면|설정|아이콘|팝업|알림창|로딩|도움말|접속|도메인|후기|표시|설명|메뉴|현금화|연습|분류"
+    r"|요소|최신판|대회 참가|게임(?![주사업株])")
+# 한국어 홍보 글. 셋 다 사건이 아니라 상품을 판다(2026-10-02~06 KR 큐 31건).
+# ① 종목 추천 서비스 광고 — 매경 `[MK시그널]`("매도신호 포착, 수익률 78.5% 달성"), "【AI골든봇】 추천종목
+#    공개", Investing.com의 "AI가 고른 이 기술주들". ② 연합뉴스 `[게시판]` — 기업이 보낸 보도자료를 모아
+#    싣는 난이다. ③ 금융사·유통사의 고객 이벤트("ISA 이벤트 진행", "현금 경품"). "대형 이벤트 앞두고"처럼
+#    시장 일정을 이벤트라 부르는 기사는 남는다 — 판촉 낱말이 앞뒤에 붙을 때만 거른다.
+_PROMOTION = re.compile(
+    r"\[MK시그널\]|(?:매수|매도)\s?신호 포착|추천\s?종목 공개|▶▶|AI가 고른|AI 종목 선정 전략|AI 추천주"
+    r"|^\s*\[게시판\]"
+    r"|(?:가입|개설|거래|고객|기념|환영|사은|증정|축하|감사)\s?이벤트|이벤트\s?(?:진행|실시|시작|전개)|경품|사은품")
+# 한국어 제목의 그림 문자("[과매도 우량주 리포트] 🚨RSI …"). 국내 매체 기사 제목은 그림 문자를 쓰지 않는다.
+# 다른 언어 제목에는 적용하지 않는다 — 그쪽 관측은 없다.
+_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]")
+_HANGUL = re.compile(r"[가-힣]")
 # 기사를 퍼 와 도박 광고를 끼워 넣는 매체. 같은 날 표본의 광고 제목이 전부 이 매체였다.
-_SPAM_PUBLISHERS = frozenset({"Pchome电脑之家"})
+# 뒤의 둘은 한국어 도박 SEO 글만 내는 해외 사이트다(제목 규칙을 빠져나가는 "카지노 여자배우" 같은 글도 낸다).
+_SPAM_PUBLISHERS = frozenset({"Pchome电脑之家", "Calgary Roughnecks", "Histoire pour tous"})
 
 
 def is_flash_title(title: str) -> bool:
     """속보 표시로 시작하는 제목인가."""
     return bool(_FLASH_PREFIX.match(str(title or "")))
+
+
+def is_advertisement(title: str, publisher: str = "") -> bool:
+    """광고·홍보 글인가: 도박 광고(중국어 상표·한국어 SEO 글), 종목 추천 광고, 보도자료 난, 판촉 이벤트."""
+    text = str(title or "")
+    if _SPAM.search(text) or str(publisher or "") in _SPAM_PUBLISHERS:
+        return True
+    if not _HANGUL.search(text):
+        return False
+    return bool(_GAMBLING.search(text) or (_GAMBLING_TERM.search(text) and _GAME_GUIDE.search(text))
+                or _PROMOTION.search(text) or _EMOJI.search(text))
 
 
 def analyzable_articles(articles: list) -> list:
@@ -131,8 +176,8 @@ def analyzable_articles(articles: list) -> list:
     """
     return [article for article in articles
             if str(article.title or "").strip() and not is_flash_title(article.title)
-            and not _QUOTE_PAGE.search(article.title) and not _SPAM.search(article.title)
-            and str((getattr(article, "extra", None) or {}).get("publisher") or "") not in _SPAM_PUBLISHERS]
+            and not _QUOTE_PAGE.search(article.title)
+            and not is_advertisement(article.title, (getattr(article, "extra", None) or {}).get("publisher"))]
 
 
 def strip_publisher_tail(title: str) -> str:
