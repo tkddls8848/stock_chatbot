@@ -255,24 +255,45 @@ def test_links_point_to_the_shorts_address():
     assert youtube.shorts_url("abc") == "https://www.youtube.com/shorts/abc"
 
 
-def test_auto_publish_marks_reviewed_uploads_once_per_day(prepared, monkeypatch):
+def test_new_production_queues_review_without_uploading(prepared):
     from polymarket_shorts import cli
-
     root, settings = prepared
     record = json.loads((root / "review.json").read_text(encoding="utf-8"))
     write_json(root / "review.json", {**record, "status": "pending"})
-    calls = []
-
-    def fake_upload(day, _settings):
-        calls.append(day)
-        assert json.loads((day / "review.json").read_text(encoding="utf-8"))["status"] == "reviewed"
-        write_json(day / "upload.json", {"revisions": {"r": {"video_id": "abc"}}})
-        return {"status": "uploaded", "video_id": "abc", "url": "u"}
-
-    monkeypatch.setattr(youtube, "upload", fake_upload)
     produced = {"status": "pending_review", "date": root.name}
-    assert cli._auto_publish(produced, settings)["status"] == "uploaded"
-    # 같은 날 재제작(force)이나 재실행은 두 번째 영상을 올리지 않는다.
-    assert cli._auto_publish(produced, settings) == {"status": "day_already_uploaded"}
-    assert cli._auto_publish({"status": "no_suitable_issues", "date": root.name}, settings) is None
-    assert calls == [root]
+    gate = cli._queue_review(produced, settings)
+    assert gate["state"] == "pending" and gate["deadline"] is None
+    assert json.loads((root / "review.json").read_text())["status"] == "pending"
+    assert cli._queue_review(produced, settings)["token"] == gate["token"]
+    assert cli._queue_review({**produced, "status": "already_produced"}, settings) is None
+    assert cli._queue_review({**produced, "status": "no_suitable_issues"}, settings) is None
+
+
+def test_direct_upload_cannot_bypass_scenario_gate(prepared):
+    from polymarket_shorts.approval import register
+    root, settings = prepared
+    register(root, settings)
+    # Even legacy complete_review() does not bypass the scenario approval.
+    complete_review(root)
+    assert youtube.upload(root, settings)["status"] == "not_reviewed"
+
+
+def test_gate_approval_holds_lock_through_real_upload(prepared, monkeypatch):
+    from polymarket_shorts.approval import approve, register
+    root, settings = prepared
+    gate = register(root, settings)
+    http(monkeypatch, response(payload={"access_token": "access"}), start(), response(201, {"id": "approved"}))
+    result = approve(settings, gate["token"])
+    assert result["status"] == "uploaded"
+    assert approve(settings, gate["token"])["status"] == "already_uploaded"
+
+
+def test_retry_after_new_production_registers_missing_gate_without_enrolling_legacy(prepared):
+    from polymarket_shorts import cli
+    root, settings = prepared
+    result = {"status": "already_produced", "date": root.name}
+    assert cli._queue_review(result, settings) is None
+    record = json.loads((root / "review.json").read_text())
+    write_json(root / "review.json", {**record, "status": "pending", "scenario_review_required": True})
+    gate = cli._queue_review(result, settings)
+    assert gate["state"] == "pending" and gate["deadline"] is None

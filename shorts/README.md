@@ -125,8 +125,8 @@ Jev는 연결하지 않습니다. 후보 축소는 로컬 수치 계산으로 �
 
 한국어판을 만든 뒤 같은 이슈로 영어판을 하나 더 만듭니다(`english.py`). 이슈 선별은 다시 하지 않고
 원고·화면 문구·음성(`SHORTS_EN_TTS_VOICE`, 기본 `en-US-AriaNeural`)·게시 문구만 영어입니다. 배경 그림은
-한국어판 것을 다시 씁니다. 산출물은 `storage/shorts/en/<날짜>/`이고 텔레그램 `/shorts` 패널은 한국어판만
-다룹니다. `SHORTS_AUTO_PUBLISH=true`면 영어판도 제작 직후 올라가며, 영어판 실패는 한국어판 게시를 막지 않습니다.
+한국어판 것을 다시 씁니다. 산출물은 `storage/shorts/en/<날짜>/`이며 영어판 시나리오도 텔레그램 검토를 거칩니다.
+알림에 붙은 검토번호로 영어판 승인·보류·수정을 지정할 수 있습니다.
 
 ### 텔레그램에서 운영 (기준 절차)
 
@@ -139,7 +139,9 @@ import하지 않고 이 venv의 파이썬으로 CLI를 하위 프로세스로 �
 | `/shorts run` · `run force` | 인자 없음 · `--force` |
 | `/shorts preview` | `--status`로 영상 경로를 받아 MP4를 채팅으로 보냄 |
 | `/shorts edit 수정할 내용` | `--edit "수정할 내용"` |
-| `/shorts done` | `--complete` 성공 뒤 `--upload <검수한 수정본>` |
+| `/shorts done [검토번호]` | `--review-approve TOKEN` (해당 원고 승인·업로드) |
+| `/shorts hold [검토번호]` | `--review-pause TOKEN` (자동 승인 중단) |
+| `/shorts review` | `--review-pending` (검토 중인 원고 보기) |
 | `/shorts upload` | `--upload` (검수 완료본만 재시도) |
 
 비대화형 명령은 stdout에 JSON 한 줄만 쓰고, 실패하면 stderr 마지막 줄에 이유를 남기고
@@ -237,14 +239,19 @@ $env:PYTHONPATH='shorts/src'
    테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
    검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
 
-`SHORTS_AUTO_PUBLISH=true`면 제작 직후 검수 없이 바로 업로드합니다(그날 이미 올린 영상이 있으면
-건너뜁니다). 끄면(기본값) 매일 18:00 제작은 업로드하지 않습니다. `/shorts preview`로 영상과 문구를 확인하고
-필요하면 `/shorts edit`로 수정한 다음 `/shorts done`을 누릅니다. 검수 완료 기록 뒤
-그 수정본만 업로드하고 링크를 채팅으로 알립니다. 기본 비공개이며 공개 전환은 운영자가
-YouTube Studio에서 합니다. 업로드 실패·자격 누락이어도 검수 완료는 유지됩니다.
-`/shorts upload`로 재시도할 수 있고 같은 수정본은 `already_uploaded`를 반환합니다.
+제작한 시나리오는 텔레그램에 먼저 전송합니다. `SHORTS_AUTO_PUBLISH=true`이면 원고 전체가 전달된 뒤
+`SHORTS_REVIEW_TIMEOUT_MINUTES=60` 동안 응답이 없을 때 승인·업로드합니다. 전송 실패에는 자동 승인 시간이
+시작되지 않습니다. 끄면 직접 승인할 때까지 기다립니다. 한국어판·영어판 모두 동일하게 적용됩니다.
 
-CLI의 `--complete`는 검수 완료만 기록합니다. 수동 업로드는 다음과 같습니다.
+`/shorts done [검토번호]` 또는 승인 버튼으로 즉시 올리고, `/shorts hold [검토번호]`로 보류합니다.
+`/shorts edit [검토번호] 수정할 내용`은 자동 승인을 멈춘 뒤 수정·재렌더합니다. 수정본을 보낸 뒤 다시
+1시간을 기다리며 수정 실패 시 보류가 유지됩니다. 번호를 생략하면 최근 한국어판이 대상입니다.
+텍스트뿐 아니라 사용자가 명시한 자료 내용·선택지·확률 수정도 지원하며 원자료와 변경 기록을 보존합니다.
+
+승인 상태는 날짜·언어·수정본에 묶여 재시작 후에도 유지됩니다. 과거 버튼으로 새 수정본을 승인할 수 없고,
+이미 업로드한 날에는 자동 중복 게시하지 않습니다. 업로드 재시도는 저장된 업로드 이력을 사용합니다.
+새 검토 대상은 CLI `--complete`로 우회할 수 없습니다. CLI 직접 승인은 `--review-approve TOKEN`입니다.
+기존 검수 완료본 수동 업로드는 다음과 같습니다.
 
 ```powershell
 python -m polymarket_shorts.cli --upload

@@ -27,3 +27,13 @@ def test_windows_winget_ffmpeg_is_found_when_path_is_stale(tmp_path, monkeypatch
     resolved = config._media_binary("FFPROBE_BIN", "ffprobe")
 
     assert Path(resolved) == binary
+
+
+def test_review_timeout_is_one_hour_and_bounded(monkeypatch):
+    import pytest
+    monkeypatch.delenv("SHORTS_REVIEW_TIMEOUT_MINUTES", raising=False)
+    assert config.Settings.from_env().review_timeout_minutes == 60
+    for value in ("0", "-1", "1441", "nan"):
+        monkeypatch.setenv("SHORTS_REVIEW_TIMEOUT_MINUTES", value)
+        with pytest.raises(ValueError):
+            config.Settings.from_env()

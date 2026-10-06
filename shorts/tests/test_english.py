@@ -90,3 +90,49 @@ def test_descriptions_lead_with_the_site_link():
     for metadata in (english.metadata_for(scenario), korean_metadata(scenario)):
         assert metadata["description"].splitlines()[0].endswith("https://nunchi.live")
         assert metadata["description"].splitlines()[1] == "Business inquiries: tkddls8848@gmail.com"
+
+
+@pytest.mark.parametrize("render_fails", [False, True])
+def test_english_force_reproduction_preserves_old_pointer_until_success(tmp_path, monkeypatch, render_fails):
+    from dataclasses import replace
+    from polymarket_shorts.config import Settings
+    from polymarket_shorts.core.storage import write_json
+    from polymarket_shorts.workflow import current_target
+
+    day = date(2026, 9, 28)
+    settings = replace(Settings.from_env(), output_dir=tmp_path, visuals_enabled=False)
+    root = english.english_root(settings, day.isoformat())
+    previous = root / "revisions" / "last-reviewed"
+    previous.mkdir(parents=True)
+    (previous / "review.md").write_text("previous English script", encoding="utf-8")
+    write_json(root / "review.json", {"status": "pending"})
+    write_json(root / "workflow.json", {"current": "revisions/last-reviewed"})
+    korean = tmp_path / day.isoformat()
+    write_json(korean / "scenario.json", {"scenes": [{"kind": "consensus", "event_id": "81557"}]})
+    write_json(korean / "source.json", {
+        "summary": {"generated_at": "2026-09-28T16:00:00+09:00", "generation_id": "fresh-generation"},
+        "issues": [_issue()],
+    })
+    monkeypatch.setattr(english, "write_scripts", lambda *args: [_script()])
+    monkeypatch.setattr(english, "synthesize", lambda *args, **kwargs: ())
+    monkeypatch.setattr(english, "probe_duration", lambda *args, **kwargs: 30)
+    monkeypatch.setattr(english, "find_font", lambda *args: None)
+
+    def render(*args, **kwargs):
+        assert current_target(root) == previous
+        if render_fails:
+            raise RuntimeError("mock English renderer failed")
+        kwargs["output_path"].write_bytes(b"new English video")
+        return 30
+
+    monkeypatch.setattr(english, "render_video", render)
+    if render_fails:
+        with pytest.raises(RuntimeError, match="mock English renderer failed"):
+            english.produce_english(settings, day, force=True)
+        assert current_target(root) == previous
+    else:
+        result = english.produce_english(settings, day, force=True)
+        assert result.status == "pending_review"
+        assert current_target(root) == root
+        assert "Israel's next prime minister" in (root / "review.md").read_text(encoding="utf-8")
+    assert (previous / "review.md").read_text(encoding="utf-8") == "previous English script"

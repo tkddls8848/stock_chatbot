@@ -186,10 +186,28 @@ def _shorts_problem(video: Path, settings: Settings) -> str | None:
     return None
 
 
-def upload(root: Path, settings: Settings) -> dict:
+def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> dict:
+    from contextlib import nullcontext
+
     empty = {"video_id": None, "url": None}
-    with operation_lock(root, ".workflow.lock"):
+    requested = root.resolve()
+    # 수정본 경로로 호출해도 날짜 폴더의 승인 게이트를 우회할 수 없다.
+    for parent in (requested, *requested.parents):
+        if not parent.is_relative_to(settings.output_dir.resolve()):
+            break
+        if (parent / "approval.json").is_file():
+            root = parent
+            break
+    with nullcontext() if workflow_locked else operation_lock(root, ".workflow.lock"):
         target = current_target(root)
+        if (root / "approval.json").is_file():
+            from .approval import _checked, _read as read_gate
+            gate = read_gate(root / "approval.json")
+            gate, _ = _checked(root, gate.get("token", ""))
+            if requested not in {root.resolve(), target.resolve()}:
+                raise ReviewError("이전 수정본은 업로드할 수 없습니다")
+            if gate["state"] not in {"approved", "uploaded"}:
+                return {**empty, "status": "not_reviewed"}
         with operation_lock(target):
             record = _read(target / "review.json")
             if record.get("status") != "reviewed":

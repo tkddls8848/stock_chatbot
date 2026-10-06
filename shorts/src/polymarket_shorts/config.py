@@ -99,13 +99,16 @@ class Settings:
     youtube_refresh_token: str = field(default="", repr=False)
     youtube_privacy: str = "private"
     youtube_category_id: str = "25"
-    # 켜면 예약·수동 제작이 끝나는 즉시 검수 완료로 기록하고 업로드한다(운영자 승인 없음).
+    # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
     auto_publish: bool = False
+    review_timeout_minutes: int = 60
     # 켜면 한국어판을 만든 뒤 같은 이슈로 영어판(원고·화면·음성·게시 문구)을 따로 만든다.
     english_edition: bool = False
     english_voice: str = "en-US-AriaNeural"
 
     def __post_init__(self) -> None:
+        if type(self.review_timeout_minutes) is not int or not 1 <= self.review_timeout_minutes <= 1440:
+            raise ValueError("SHORTS_REVIEW_TIMEOUT_MINUTES must be an integer from 1 to 1440")
         if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
             raise ValueError("SHORTS_CLIP_SECONDS must be an integer from 4 to 15")
 
@@ -122,6 +125,7 @@ class Settings:
             youtube_privacy=os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip(),
             youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
             auto_publish=_bool("SHORTS_AUTO_PUBLISH", False),
+            review_timeout_minutes=int(os.getenv("SHORTS_REVIEW_TIMEOUT_MINUTES", "60")),
             english_edition=_bool("SHORTS_ENGLISH_EDITION", False),
             english_voice=os.getenv("SHORTS_EN_TTS_VOICE", "en-US-AriaNeural").strip(),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),

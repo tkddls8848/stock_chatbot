@@ -4,13 +4,16 @@
 결과를 운영하는 창이다. 쇼츠 패키지를 import하지 않고 하위 프로세스로 부른다.
 """
 
-from services.telegram_bot.features.base import CommandSpec, FeatureSpec
-from services.telegram_bot.features.shorts.handlers import USAGE, cmd_shorts
+from services.telegram_bot.features.base import CallbackSpec, CommandSpec, FeatureSpec
+from services.telegram_bot.features.shorts.handlers import USAGE, cmd_shorts, review_callback
+from services.telegram_bot.features.shorts.review import install_jobs
 
 FEATURE = FeatureSpec(
     key="shorts",
     label="쇼츠 운영",
     # 웹 관리 허브(handlers/menus.py의 web_admin_menu)의 "🎬 쇼츠"로도 연다.
     commands=(CommandSpec("shorts", "쇼츠 상태·제작·수정·검수", cmd_shorts, usage=USAGE),),
+    callbacks=(CallbackSpec(("shr:",), review_callback),),
+    install_jobs=install_jobs,
     data_files=("storage/shorts/",),
 )

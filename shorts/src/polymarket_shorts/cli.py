@@ -12,7 +12,10 @@ from .pipeline import produce_daily, produce_editorial, prune_old_days
 from .review import ReviewError, read_script
 
 
-_GATES = ("plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth")
+_GATES = (
+    "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
+    "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
+)
 
 
 def main() -> None:
@@ -31,7 +34,15 @@ def main() -> None:
     parser.add_argument("--complete", action="store_true", help="최근 제작일의 현재 수정본을 검수 완료로 기록")
     parser.add_argument("--upload", nargs="?", const="latest", metavar="DIR", help="검수 완료된 현재 수정본 업로드")
     parser.add_argument("--youtube-auth", action="store_true", help="운영자 PC에서 최초 YouTube 승인")
+    parser.add_argument("--review-pending", action="store_true", help="시나리오 검토 목록 JSON")
+    parser.add_argument("--review-ack", metavar="TOKEN", help="원고 전달 성공 후 검토 시간 시작")
+    parser.add_argument("--review-pause", metavar="TOKEN", help="자동 승인 대기 중단")
+    parser.add_argument("--review-approve", metavar="TOKEN", help="해당 수정본 승인 및 업로드")
+    parser.add_argument("--review-tick", action="store_true", help="검토 시간이 지난 수정본 업로드")
+    parser.add_argument("--review-token", metavar="TOKEN", help="수정 대상 시나리오 식별자")
     args = parser.parse_args()
+    if args.review_token and args.edit is None:
+        parser.error("--review-token은 --edit와 함께 씁니다")
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
         parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth는 한 번에 하나만 씁니다")
@@ -46,6 +57,20 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = Settings.from_env()
     try:
+        if any((args.review_pending, args.review_ack, args.review_pause, args.review_approve, args.review_tick)):
+            from . import approval
+            if args.review_pending:
+                result = {"items": approval.pending(settings)}
+            elif args.review_tick:
+                result = {"items": approval.tick(settings)}
+            elif args.review_ack:
+                result = approval.acknowledge(settings, args.review_ack)
+            elif args.review_pause:
+                result = approval.pause(settings, args.review_pause)
+            else:
+                result = approval.approve(settings, args.review_approve)
+            print(json.dumps(result, ensure_ascii=False))
+            return
         if args.youtube_auth:
             from .youtube import authorize
             print("SHORTS_YOUTUBE_REFRESH_TOKEN=" + authorize(settings))
@@ -81,8 +106,8 @@ def main() -> None:
                 production_date=date.fromisoformat(args.date) if args.date else None,
                 force=args.force,
             ))
-            if settings.auto_publish and not args.interactive:
-                payload["upload"] = _auto_publish(payload, settings)
+            if not args.interactive:
+                payload["approval"] = _queue_review(payload, settings)
             if settings.english_edition and not args.interactive:
                 payload["english"] = _english(payload, settings, force=args.force)
         if args.interactive and payload.get("video_path"):
@@ -95,44 +120,30 @@ def main() -> None:
 
 
 def _english(payload: dict, settings: Settings, *, force: bool) -> dict | None:
-    """한국어판을 만든(또는 이미 있는) 날에 영어판을 만들고, 자동 업로드면 올린다.
-
-    한국어판 업로드가 끝난 뒤에 돈다 — 영어판 실패가 한국어판 게시를 막지 않는다.
-    """
+    """한국어판을 만든 날의 영어판도 별도 시나리오 검토에 등록한다."""
     from .english import english_root, produce_english
 
     if payload.get("status") not in {"pending_review", "already_produced"}:
         return None
     result = asdict(produce_english(settings, date.fromisoformat(payload["date"]), force=force))
-    if settings.auto_publish:
-        result["upload"] = _auto_publish(result, settings, root=english_root(settings, payload["date"]))
+    result["approval"] = _queue_review(result, settings, root=english_root(settings, payload["date"]))
     return result
 
 
-def _auto_publish(payload: dict, settings: Settings, *, root: Path | None = None) -> dict | None:
-    """제작 결과를 검수 없이 바로 올린다. 그날 이미 올린 영상이 있으면 건너뛴다.
+def _queue_review(payload: dict, settings: Settings, *, root: Path | None = None) -> dict | None:
+    """새 영상만 검토 큐에 넣는다. 기존 영상은 배포·재실행만으로 자동 승인하지 않는다."""
+    from .approval import register
 
-    업로드 오류는 ReviewError로 올라가 서비스가 실패하고, timer의 재시도는
-    already_produced를 거쳐 여기로 다시 온다(아직 안 올렸으므로 다시 시도한다).
-    """
-    from .review import complete_review, operation_lock
-    from .workflow import current_target
-    from .youtube import upload
-
-    if payload.get("status") not in {"pending_review", "already_produced"}:
-        return None
     root = root or settings.output_dir / payload["date"]
-    if not (root / "review.json").is_file() and not (root / "workflow.json").is_file():
+    if payload.get("status") == "already_produced":
+        from .workflow import current_target
+        record_path = current_target(root) / "review.json"
+        record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
+        if not record.get("scenario_review_required"):
+            return None
+    elif payload.get("status") != "pending_review":
         return None
-    for record in root.rglob("upload.json"):
-        revisions = json.loads(record.read_text(encoding="utf-8")).get("revisions", {})
-        if any(entry.get("video_id") for entry in revisions.values()):
-            return {"status": "day_already_uploaded"}
-    with operation_lock(root, ".workflow.lock"):
-        complete_review(current_target(root))
-    result = upload(root, settings)
-    logging.getLogger(__name__).info("자동 업로드: %s", result)
-    return result
+    return register(root, settings)
 
 
 def _panel(args, settings: Settings) -> dict:
@@ -142,15 +153,27 @@ def _panel(args, settings: Settings) -> dict:
 
     if args.status:
         return current_status(settings)
-    root = latest_root(settings)
+    from . import approval
+    token = getattr(args, "review_token", None)
+    root = approval.resolve_root(settings, token) if token else latest_root(settings)
     if root is None or not ((root / "review.json").is_file() or (root / "workflow.json").is_file()):
         raise ReviewError("검수할 영상이 없습니다. 먼저 제작하세요")
     if args.complete:
+        if (root / "approval.json").exists():
+            raise ReviewError("시나리오 검토 번호로 승인하세요: --review-approve TOKEN")
         with operation_lock(root, ".workflow.lock"):
             complete_review(current_target(root))
             return current_status(settings, root=root)
-    _, summary = revise(root, args.edit, settings)
-    return {**current_status(settings), "summary": summary}
+    # 요청을 접수하면 모델 호출·렌더 전에 영속적으로 타이머를 멈춘다.
+    # 실패 시 이전 원고가 자동 업로드되지 않도록 paused를 유지한다.
+    gate_path = root / "approval.json"
+    if gate_path.exists():
+        gate = json.loads(gate_path.read_text(encoding="utf-8"))
+        token = token or gate["token"]
+        approval.pause(settings, token)
+    _, summary = revise(root, args.edit, settings, expected_token=token)
+    gate = approval.register(root, settings)
+    return {**current_status(settings, root=root), "summary": summary, "approval": gate}
 
 
 if __name__ == "__main__":

@@ -73,5 +73,6 @@ def current_status(settings: Settings, *, root: Path | None = None) -> dict[str,
         "video_path": str(video) if video.is_file() else None,
         "video_bytes": video.stat().st_size if video.is_file() else None,
         "metadata": record.get("youtube") or {},
+        "approval": _read(root / "approval.json"),
     })
     return payload

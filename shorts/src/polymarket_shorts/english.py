@@ -342,4 +342,6 @@ def produce_english(settings: Settings, today: date, *, force: bool = False) -> 
         write_json(root / "scenario.json", payload)
         script = write_review(root, scenario=scenario, metadata=metadata, video=video, duration=duration,
                               timezone=settings.timezone, **review_details(backgrounds))
+        if (root / "workflow.json").exists():
+            write_json(root / "workflow.json", {"current": "."})
         return ProductionResult("pending_review", day, str(video), str(script))

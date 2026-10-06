@@ -153,6 +153,7 @@ def write_review(
         "produced_at": _clock(timezone),
         "script": script.name,
         "language": scenario.language,
+        "scenario_review_required": True,
         # 검수·업로드가 함께 읽는 게시 제목·설명·태그 원본.
         "youtube": metadata,
     })

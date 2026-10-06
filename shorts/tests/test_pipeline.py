@@ -1,6 +1,8 @@
 from dataclasses import replace
 from datetime import date
 
+import pytest
+
 from polymarket_shorts.config import Settings
 from polymarket_shorts.pipeline import produce_daily
 
@@ -132,3 +134,49 @@ def test_prune_old_days_never_drops_folders_repeat_avoidance_reads(tmp_path):
 
     assert removed == [output / "2026-09-08"]
     assert (output / "2026-09-10").is_dir()
+
+
+@pytest.mark.parametrize("render_fails", [False, True])
+def test_force_reproduction_selects_new_root_only_after_success(tmp_path, monkeypatch, render_fails):
+    from polymarket_shorts import pipeline
+    from polymarket_shorts.core.storage import write_json
+    from polymarket_shorts.scenario import Scenario, Scene
+    from polymarket_shorts.workflow import current_target
+
+    day = date(2026, 10, 6)
+    settings = replace(Settings.from_env(), output_dir=tmp_path, state_file=tmp_path / "state.json",
+                       visuals_enabled=False, generated_clips=False)
+    root = tmp_path / day.isoformat()
+    previous = root / "revisions" / "last-reviewed"
+    previous.mkdir(parents=True)
+    (previous / "review.md").write_text("previous reviewed scenario", encoding="utf-8")
+    write_json(root / "workflow.json", {"current": "revisions/last-reviewed"})
+    write_json(settings.state_file, {"days": {day.isoformat(): {"video_path": "old.mp4"}}})
+    scenario = Scenario(day.isoformat(), "fresh-generation", "2026-10-06T09:00:00+09:00", (
+        Scene(kind="intro", title="새 원고", kicker="도입", body="새 화면", narration="새로운 도입"),
+        Scene(kind="outro", title="마무리", kicker="마무리", body="안내", narration="마무리 안내"),
+    ))
+    monkeypatch.setattr(pipeline, "prepare_daily", lambda *args: scenario)
+    monkeypatch.setattr(pipeline, "clips_for", lambda scenes, backgrounds, settings: backgrounds)
+    monkeypatch.setattr(pipeline, "synthesize", lambda *args, **kwargs: ())
+    monkeypatch.setattr(pipeline, "probe_duration", lambda *args, **kwargs: 30)
+    monkeypatch.setattr(pipeline, "find_font", lambda *args: None)
+
+    def render(*args, **kwargs):
+        assert current_target(root) == previous
+        if render_fails:
+            raise RuntimeError("mock renderer failed")
+        kwargs["output_path"].write_bytes(b"new video")
+        return 30
+
+    monkeypatch.setattr(pipeline, "render_video", render)
+    if render_fails:
+        with pytest.raises(RuntimeError, match="mock renderer failed"):
+            pipeline.produce_daily(settings, production_date=day, force=True)
+        assert current_target(root) == previous
+    else:
+        result = pipeline.produce_daily(settings, production_date=day, force=True)
+        assert result.status == "pending_review"
+        assert current_target(root) == root
+        assert "새로운 도입" in (root / "review.md").read_text(encoding="utf-8")
+    assert (previous / "review.md").read_text(encoding="utf-8") == "previous reviewed scenario"

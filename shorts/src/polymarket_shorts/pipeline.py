@@ -384,6 +384,9 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
     # 상태 파일이 끝없이 커지지 않도록 최근 90일만 보존한다.
     state["days"] = dict(sorted(days.items())[-90:])
     write_json(settings.state_file, state)
+    # 강제 재제작이 성공하면 예전 수정본이 아닌 새 원본을 검토한다.
+    if (day_dir / "workflow.json").exists():
+        write_json(day_dir / "workflow.json", {"current": "."})
     # 생성 직후에는 review.md로 자연어 검수를 이어간다.
     return ProductionResult(
         status="pending_review",

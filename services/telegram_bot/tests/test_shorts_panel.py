@@ -127,7 +127,7 @@ def test_done_records_review_then_uploads_that_target_in_background():
     runner = FakeRunner({"--complete": {**STATUS, "target": "/day/revisions/approved"},
                          "--upload": {"status": "uploaded", "url": "https://www.youtube.com/watch?v=one"}})
     message, _ = _run(["done"], runner)
-    assert runner.calls == [["--complete"], ["--upload", "/day/revisions/approved"]]
+    assert runner.calls == [["--status"], ["--complete"], ["--upload", "/day/revisions/approved"]]
     assert "검수 완료로 기록" in message.texts[1]
     assert "https://www.youtube.com/watch?v=one" in message.texts[-1]
 
@@ -144,7 +144,7 @@ def test_upload_retry_reports_outcome(status, expected):
 def test_done_does_not_upload_after_failed_completion():
     runner = FakeRunner(error=ShortsError("완료 기록 실패"))
     message, _ = _run(["done"], runner)
-    assert runner.calls == [["--complete"]]
+    assert runner.calls == [["--status"]]
     assert "완료 기록 실패" in message.texts[-1]
 
 
