@@ -424,3 +424,8 @@ def test_a_caption_prefers_the_clause_ending_the_speaker_pauses_at():
     assert [phrase.text for phrase in phrases] == [
         "질문마다 조건이 다르니", "판정 규칙은 직접 확인하세요.",
     ]
+
+
+def test_captions_are_centered_on_the_screen():
+    """자막 상자의 가운데가 화면 가운데다 — 왼쪽 여백만 좁으면 자막이 왼쪽으로 쏠린다."""
+    assert render.CAPTION_MARGIN_L == render.CAPTION_MARGIN_R

@@ -283,8 +283,10 @@ def probe_duration(audio_path: Path, *, ffprobe_bin: str) -> float:
 
 # 자막은 하단 1/3에 두고 libass FontSize=56과 같은 글자 크기를 유지한다.
 CAPTION_FONT_SIZE = 56
-CAPTION_MARGIN_L = 72
+# 자막은 화면 가운데에 선다. 오른쪽 좋아요·댓글 버튼 줄을 피하는 여백을 왼쪽에도
+# 똑같이 둔다 — 왼쪽만 72로 두면 자막 상자의 가운데가 59px 왼쪽으로 쏠린다.
 CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
+CAPTION_MARGIN_L = CAPTION_MARGIN_R
 # 줄바꿈은 우리가 어절 경계에서 넣고 libass는 그대로 그린다(WrapStyle=2). libass는
 # 한글도 중국어·일본어처럼 아무 글자에서나 끊어서, "10월 금리 변동 없음과"가
 # "…없" / "음과 …"로 갈라졌다. 합성 볼드가 측정보다 넓어질 수 있어 여유를 둔다.
@@ -297,9 +299,10 @@ CAPTION_LEAD = 0.05
 # 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
 SCENE_LEAD = 0.55
 # 한 자막에 담는 글자 수. 커진 자막(CAPTION_FONT_SIZE)에서 두 줄에 들어가는 양이다.
-# 영문은 글자 폭이 한글의 절반쯤이라 같은 두 줄에 더 담는다.
-_PHRASE_CHARS = 26
-_PHRASE_CHARS_BY_LANGUAGE = {"ko": _PHRASE_CHARS, "en": 44}
+# 영문은 글자 폭이 한글의 절반쯤이라 같은 두 줄에 더 담는다. 자막을 가운데로 옮기며
+# 폭이 좁아져(752→644px) 26·44에서 24·40으로 줄였다 — 그대로 두면 세 줄이 네 배로 는다.
+_PHRASE_CHARS = 24
+_PHRASE_CHARS_BY_LANGUAGE = {"ko": _PHRASE_CHARS, "en": 40}
 _SENTENCE_END = (".", "?", "!")
 # 끊기 좋은 자리와 나쁜 자리. 쉼표는 말하는 사람이 이미 쉬는 자리이고 연결어미
 # ("…다르니")도 한 마디가 끝나는 자리다. 반대로 "…와·…과·…의"는 다음 말에 붙는

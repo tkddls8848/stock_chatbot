@@ -426,7 +426,7 @@ MP4 옆의 `.timeline.json`에서 장면과 숫자·해석 화면의 시각을 �
 음성 뒤 0.6초 여운과 마지막 프레임 1초 연장 범위를 기록합니다. 최종 길이는 음성+0.6초로
 제한하므로 프레임 연장이 영상 길이를 늘리지 않습니다. `phrases.srt`는 검수용으로 유지합니다.
 자막은 기본 Noto Sans CJK KR Bold 또는 `SHORTS_FONT_FILE`로 56px 상당, 외곽선·그림자를
-적용하고 아래 끝 y=1540, 좌 72·우 190px 안전 영역을 지킵니다.
+적용하고 아래 끝 y=1540, 좌우 190px 안전 영역 안에서 화면 가운데에 섭니다.
 
 **배경은 그날 이슈로 새로 그립니다**(`media.backgrounds_for`). 원고가 쓴 글자 없는 장면
 묘사(`image_scene`)를 Cloudflare `SHORTS_IMAGE_MODEL`(`flux-1-schnell`)로 그리고, 정사각형
