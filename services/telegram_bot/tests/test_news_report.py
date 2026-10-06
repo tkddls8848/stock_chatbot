@@ -1104,7 +1104,7 @@ def test_publishing_clears_the_hold_streak(tmp_path):
     assert memory.held_hours("US") < 1
 
 
-def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
+def test_jobs_collect_hourly_and_report_around_korean_and_us_sessions_utc_plus_9():
     scheduler = _RecordingScheduler()
 
     news_feature._install_jobs(scheduler, object())
@@ -1113,7 +1113,8 @@ def test_jobs_collect_hourly_and_report_every_three_hours_utc_plus_9():
     assert jobs["news_collection"]["trigger"] == "interval"
     assert jobs["news_collection"]["minutes"] == 60
     assert jobs["market_situation_report"]["trigger"] == "cron"
-    assert jobs["market_situation_report"]["hour"] == "*/4"
+    # 한국장·미국장 개장 전후(운영자 결정 2026-10-06).
+    assert jobs["market_situation_report"]["hour"] == "3,8,15,20"
     assert jobs["market_situation_report"]["minute"] == 0
     assert jobs["market_situation_report"]["timezone"] is JST
 
@@ -1844,14 +1845,15 @@ def test_hash_collision_keeps_only_the_first_article(tmp_path, monkeypatch):
     assert [row["title"] for row in analyzer._backend.calls[0]["articles"]] == ["Headline 0"]
 
 
-def test_article_outside_the_sent_144_is_not_accepted_even_if_in_server_list(tmp_path):
+def test_article_outside_the_sent_headlines_is_not_accepted_even_if_in_server_list(tmp_path):
+    limit = news_report.NEWS_REPORT_MAX_HEADLINES
     items = [{**_item(0), "article_id": f"gnews_us-{i}", "title": f"Headline {i}"}
-             for i in range(145)]
-    analyzer = _analyzer(tmp_path, _payload(indexes=(144, 0)))
+             for i in range(limit + 1)]
+    analyzer = _analyzer(tmp_path, _payload(indexes=(limit, 0)))
     result = asyncio.run(news_report._analyze_market(analyzer, "US", "창", items))
     assert [row["index"] for row in result["highlights"]] == [0]
     assert len(analyzer._backend.calls) == 1
-    assert len(analyzer._backend.calls[0]["articles"]) == 144
+    assert len(analyzer._backend.calls[0]["articles"]) == limit
 
 
 def test_korean_original_keeps_its_own_title_instead_of_the_model_rewrite(tmp_path):
@@ -1883,3 +1885,71 @@ def test_korean_original_keeps_its_own_title_instead_of_the_model_rewrite(tmp_pa
 def test_korean_title_detection(title, korean):
     from services.telegram_bot.llm.news_report import _is_korean_title
     assert _is_korean_title(title) is korean
+
+
+# ── 검토 시각(한국장·미국장 개장 전후) ─────────────────
+
+@pytest.mark.parametrize(("moment", "expected"), [
+    (datetime(2026, 10, 6, 8, 0, 5, tzinfo=JST), datetime(2026, 10, 6, 3, tzinfo=JST)),
+    (datetime(2026, 10, 6, 15, 0, 2, tzinfo=JST), datetime(2026, 10, 6, 8, tzinfo=JST)),
+    (datetime(2026, 10, 6, 20, 0, 1, tzinfo=JST), datetime(2026, 10, 6, 15, tzinfo=JST)),
+    # 자정을 넘는 7시간 구간이다.
+    (datetime(2026, 10, 7, 3, 0, 4, tzinfo=JST), datetime(2026, 10, 6, 20, tzinfo=JST)),
+    # 수동 실행은 바로 앞의 검토 시각에서 시작한다.
+    (datetime(2026, 10, 6, 12, 30, tzinfo=JST), datetime(2026, 10, 6, 8, tzinfo=JST)),
+])
+def test_previous_slot_follows_the_uneven_session_schedule(moment, expected):
+    assert news_report._previous_slot(moment) == expected
+
+
+@pytest.mark.parametrize(("moment", "expected"), [
+    (datetime(2026, 10, 6, 8, 0, 3, tzinfo=JST), "한국장 개장 전"),
+    (datetime(2026, 10, 6, 15, 0, 3, tzinfo=JST), "한국장 마감 전후"),
+    (datetime(2026, 10, 6, 20, 0, 3, tzinfo=JST), "미국장 개장 전"),
+    (datetime(2026, 10, 7, 3, 0, 3, tzinfo=JST), "미국장 개장 후"),
+    (datetime(2026, 10, 6, 12, 0, tzinfo=JST), ""),      # 수동 실행
+    (datetime(2026, 10, 6, 8, 40, tzinfo=JST), ""),      # 검토 시각의 수동 재실행
+])
+def test_session_label_names_only_scheduled_runs(moment, expected):
+    assert news_report._session_label(moment) == expected
+
+
+def test_report_header_and_model_input_carry_the_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(news_report, "now", lambda: datetime(2026, 10, 6, 8, 0, 4, tzinfo=JST))
+    analyzer = _analyzer(tmp_path, _payload())
+    app, _, _, _ = _send_app(tmp_path, analyzer=analyzer)
+
+    asyncio.run(send_news_report(app))
+
+    assert "10-06 08:00 UTC +9 · 한국장 개장 전 · 시장 1곳" in app.bot.messages[0]
+    assert analyzer._backend.calls[0]["session"] == "한국장 개장 전"
+
+
+def test_low_impact_highlights_are_logged_but_not_shown_or_published(tmp_path):
+    payload = _payload(indexes=(0, 1))
+    payload["highlights"][1]["impact"] = "low"
+    app, _, _, news_log = _send_app(tmp_path, analyzer=_analyzer(tmp_path, payload))
+
+    asyncio.run(send_news_report(app))
+
+    assert "한국어 제목 0" in app.bot.messages[0]
+    assert "한국어 제목 1" not in app.bot.messages[0]
+    # 근거에서 빠져도 라벨(NewsLog·사전선별)에는 남는다 — low도 학습의 음성이다.
+    assert len(news_log.records) == 2
+    result = {"analysis": "본문", "highlights": [
+        {"index": 0, "title": "한국어 제목 0", "impact": "high", "sentiment": 0.4},
+        {"index": 1, "title": "한국어 제목 1", "impact": "low", "sentiment": 0.1}]}
+    documents = news_report._public_news([("US", [_item(0), _item(1)], result, "창")], datetime.now(JST))
+    assert [d["title"] for d in documents if d["kind"] == "news"] == ["한국어 제목 0"]
+
+
+def test_analysis_keeps_paragraph_breaks_and_tidies_them(tmp_path):
+    analysis = "국면 문단이다.\n\n\n직전 대비  문단이다.\n관찰 포인트 문단이다. "
+    result = _analyzer(tmp_path, _payload(analysis=analysis)).analyze("KR", "창", [_headline(0)])
+
+    assert result["analysis"] == "국면 문단이다.\n\n직전 대비 문단이다.\n\n관찰 포인트 문단이다."
+
+
+def test_salvaged_analysis_keeps_paragraph_breaks():
+    raw = '{"publish":true,"analysis":"첫 문단 "따옴표" 이다.\\n\\n둘째 문단이다.","highlights":[]}'
+    assert news_report_llm._salvage_analysis(raw) == '첫 문단 "따옴표" 이다.\n\n둘째 문단이다.'

@@ -122,8 +122,18 @@ def _salvage_analysis(raw: str) -> str:
         if cut < 0:
             return ""
         body = rest[: cut + 1]
-    body = body.replace('\\"', '"').replace("\\n", " ").replace("\\t", " ")
-    return " ".join(body.split()).strip()
+    body = body.replace('\\"', '"').replace("\\n", "\n").replace("\\t", " ")
+    return _paragraphs(body)
+
+
+def _paragraphs(text: str) -> str:
+    """본문을 문단 단위로 고른다. 줄바꿈은 몇 번이든 문단 경계 하나(빈 줄)로, 문단 안의 공백은 한 칸으로.
+
+    본문이 900~1,300자로 길어져(2026-10-06) 서너 문단으로 나눠 쓰게 했다. 모델이 줄바꿈을
+    한 번만 쓰든 세 번 쓰든 화면(텔레그램·웹 `pre-wrap`·뉴스레터)에는 같은 모양으로 나간다.
+    """
+    lines = str(text or "").splitlines()
+    return "\n\n".join(" ".join(line.split()) for line in lines if line.strip())
 
 
 class NewsReportError(RuntimeError):
@@ -198,12 +208,15 @@ class NewsReportAnalyzer:
         headlines: list[dict[str, Any]],
         previous: dict[str, Any] | None = None,
         must_publish: bool = False,
+        session: str = "",
     ) -> dict[str, Any]:
         """헤드라인 목록에서 발행 판정·시장상황·근거 기사를 만든다(블로킹).
 
         `previous`는 이 시장에 마지막으로 **발행한** 보고서다. 사용자가 읽은
         마지막 글이라 비교 대상이 되고, 없으면 비교 없이 발행한다.
         `must_publish`는 보류 상한에 닿아 판정과 무관하게 발행하는 경우다.
+        `session`은 이 보고서가 나가는 장 시점("한국장 개장 전" 등)이다. 예약 시각이 아닌
+        수동 실행이면 빈 문자열이다.
         """
         if not headlines:
             raise NewsReportError("no headlines to analyze")
@@ -243,7 +256,7 @@ class NewsReportAnalyzer:
         articles = [{"article_id": identity,
                      **{key: item[key] for key in ("title", "source", "published_at") if key in item}}
                     for identity, item in known_articles.items()]
-        payload = {"market": market, "window": window, "articles": articles,
+        payload = {"market": market, "window": window, "session": session, "articles": articles,
                    "previous": previous or None, "must_publish": bool(must_publish),
                    "evaluation_article_ids": sample_ids}
         user_prompt = json.dumps(payload, ensure_ascii=False)
@@ -418,7 +431,7 @@ class NewsReportAnalyzer:
             # 구간이 그것을 발행한 글로 착각한다 — 평가만 남긴다.
             return {"publish": False, "hold_reason": hold_reason, "analysis": "",
                     "highlights": [], "evaluations": evaluations}
-        return {"publish": True, "hold_reason": "", "analysis": analysis.strip(),
+        return {"publish": True, "hold_reason": "", "analysis": _paragraphs(analysis),
                 "highlights": parsed, "evaluations": evaluations}
 
     @staticmethod

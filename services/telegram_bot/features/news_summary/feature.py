@@ -7,7 +7,7 @@ from services.telegram_bot.core.config import (
     NEWS_GLOBAL_SOURCE_KEYS,
     NEWS_LOG_FILE,
     NEWS_LOG_RETENTION_DAYS,
-    NEWS_REPORT_INTERVAL_HOURS,
+    NEWS_REPORT_HOURS,
     NEWS_REPORT_MEMORY_FILE,
     NEWS_REPORT_MEMORY_RETENTION_DAYS,
     NEWS_REPORT_QUEUE_FILE,
@@ -88,7 +88,7 @@ def _install_jobs(scheduler, app) -> None:
     scheduler.add_job(
         run_news_report_job,
         trigger="cron",
-        hour=f"*/{NEWS_REPORT_INTERVAL_HOURS}",
+        hour=",".join(str(hour) for hour in NEWS_REPORT_HOURS),
         minute=0,
         timezone=JST,
         args=[app],

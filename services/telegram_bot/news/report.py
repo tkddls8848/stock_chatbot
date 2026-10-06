@@ -1,9 +1,9 @@
 """매시간 원문 수집과 시장상황 보고서 생성.
 
-기사별 번역 대신 원문 제목을 큐에 모으고, UTC +9 기준 4시간마다 시장별로
-공통 테마·상충 신호·다음 관찰 포인트를 추론한다.
+기사별 번역 대신 원문 제목을 큐에 모으고, UTC +9 기준 03·08·15·20시(한국장·미국장 개장
+전후, `NEWS_REPORT_SESSIONS`)에 시장별로 공통 테마·상충 신호·다음 관찰 포인트를 추론한다.
 
-**4시간은 검토 주기이고 발행 주기가 아니다.** 시장마다 두 단계로 발행을
+**검토 시각은 발행 주기가 아니다.** 시장마다 두 단계로 발행을
 판정한다. ① 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`에 못 미치면
 LLM을 부르지 않고 보류한다. ② 모델이 직전 발행분 대비 새로 확인된 사실도
 방향 전환도 없다고 판정하면 보류한다. 보류한 시장의 기사는 큐에 남아 다음
@@ -22,7 +22,7 @@ import asyncio
 import difflib
 import html
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from telegram import Bot
 from telegram.ext import Application
@@ -32,11 +32,12 @@ from services.telegram_bot.core.config import (
     NEWS_DIGEST_MESSAGE_MAX_CHARS,
     NEWS_REPORT_ALWAYS_PUBLISH_MARKETS,
     NEWS_REPORT_DUPLICATE_RATIO,
-    NEWS_REPORT_INTERVAL_HOURS,
+    NEWS_REPORT_HOURS,
     NEWS_REPORT_MAX_HEADLINES,
     NEWS_REPORT_MAX_HELD_HOURS,
     NEWS_REPORT_MIN_ARTICLES,
     NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
+    NEWS_REPORT_SESSIONS,
     NEWS_REPORT_SHOWN_HIGHLIGHTS,
     NEWS_SOURCE_MARKETS,
     TELEGRAM_CHAT_ID,
@@ -211,6 +212,28 @@ def group_by_market(items: list[dict]) -> list[tuple[str, list[dict]]]:
     return [(key, _sorted_by_recency(grouped[key])) for key in ordered_keys]
 
 
+def _previous_slot(moment: datetime) -> datetime:
+    """`moment` 바로 앞의 예약 검토 시각. 간격이 5·7시간으로 고르지 않아 셈하지 않고 찾는다.
+
+    예약 실행은 정각보다 몇 초 늦게 돌므로, 1분 안의 검토 시각은 지금 실행 자신으로 보고 건너뛴다.
+    """
+    moment = ensure_jst(moment)
+    cutoff = moment - timedelta(minutes=1)
+    for days_back in range(2):
+        day = (moment - timedelta(days=days_back)).date()
+        for hour in sorted(NEWS_REPORT_HOURS, reverse=True):
+            slot = datetime.combine(day, time(hour), tzinfo=JST)
+            if slot < cutoff:
+                return slot
+    raise AssertionError("NEWS_REPORT_HOURS is empty")
+
+
+def _session_label(moment: datetime) -> str:
+    """이 실행이 예약 검토 시각(정시 10분 안)이면 그 장 시점 이름, 아니면 빈 문자열(수동 실행)."""
+    moment = ensure_jst(moment)
+    return NEWS_REPORT_SESSIONS.get(moment.hour, "") if moment.minute < 10 else ""
+
+
 def _market_window(
     memory: NewsReportMemory | None,
     market: str,
@@ -227,7 +250,7 @@ def _market_window(
         try:
             opened = ensure_jst(datetime.fromisoformat(opened_at))
         except (TypeError, ValueError):
-            opened = closed_at - timedelta(hours=NEWS_REPORT_INTERVAL_HOURS)
+            opened = _previous_slot(closed_at)
     span = closed_at - opened
     if span >= timedelta(hours=24):
         return f"{opened.strftime('%m-%d %H:%M')}~{closed_at.strftime('%m-%d %H:%M')} UTC +9"
@@ -297,6 +320,16 @@ def _headline_payload(items: list[dict]) -> list[dict]:
     return payload
 
 
+def _notable(highlights: list[dict]) -> list[dict]:
+    """화면·공개 검색에 내보낼 근거. 영향이 낮다고 판정한 기사는 뺀다.
+
+    검토 시각이 하루 네 번으로 줄며 구간이 5~7시간이 됐다(2026-10-06). 근거도 그만큼 엄격하게 고른다 —
+    모델이 low로 매긴 기사는 판단을 받치는 근거가 아니라 주변 소식이다. 뺀 기사도
+    `_log_highlights`가 NewsLog와 사전선별 라벨에 그대로 넣는다 — low도 학습에 필요한 음성이다.
+    """
+    return [highlight for highlight in highlights if highlight.get("impact") != "low"]
+
+
 def _highlight_text(highlight: dict) -> str:
     # 근거 기사는 제목과 감성만 적는다. 링크·발행 시각은 본문 판단의 각주로는
     # 과해서 목록을 뉴스 나열처럼 보이게 했다.
@@ -336,10 +369,11 @@ def format_market_section(
 
     if result["analysis"]:
         lines.append(html.escape(result["analysis"]))
-    shown = result["highlights"][:NEWS_REPORT_SHOWN_HIGHLIGHTS]
+    notable = _notable(result["highlights"])
+    shown = notable[:NEWS_REPORT_SHOWN_HIGHLIGHTS]
     for highlight in shown:
         lines.append(_highlight_text(highlight))
-    hidden = len(result["highlights"]) - len(shown)
+    hidden = len(notable) - len(shown)
     if hidden > 0:
         lines.append(f"<i>이 판단이 읽은 기사 {hidden}건 더</i>")
     return "\n\n".join(lines)
@@ -352,11 +386,12 @@ async def _analyze_market(
     items: list[dict],
     previous: dict | None = None,
     must_publish: bool = False,
+    session: str = "",
 ) -> dict | None:
     headlines = _headline_payload(items[:NEWS_REPORT_MAX_HEADLINES])
     try:
         return await run_non_urgent(
-            analyzer.analyze, market, window, headlines, previous, must_publish
+            analyzer.analyze, market, window, headlines, previous, must_publish, session
         )
     except NewsReportError as e:
         logger.error("[NEWS REPORT] %s 시장상황 분석 실패: %s", market, e)
@@ -506,7 +541,7 @@ def _public_news(published: list, closed_at: datetime) -> list[dict]:
                 "text": result["analysis"], "date": closed_at.date().isoformat(),
                 "published_at": stamp, "source": "눈치 시장상황 보고서", "url": "",
             })
-        highlights = result["highlights"] if result else [
+        highlights = _notable(result["highlights"]) if result else [
             {"index": index, "title": item["title"]}
             for index, item in enumerate(items[:_FALLBACK_HEADLINE_LIMIT])
         ]
@@ -548,6 +583,7 @@ async def _send_news_report(app: Application) -> None:
     prefilter = app.bot_data.get("news_prefilter")
     memory: NewsReportMemory | None = app.bot_data.get("news_report_memory")
     closed_at = now()
+    session = _session_label(closed_at)
 
     sections: list[str] = []
     published: list[tuple[str, list[dict], dict | None, str]] = []
@@ -596,6 +632,7 @@ async def _send_news_report(app: Application) -> None:
             # 매 구간 발행 시장은 모델에게도 보류하지 말라고 알린다. 실패했을 때 원문
             # 제목을 나열하는 마지막 수단은 상한에 닿았을 때만 쓴다(아래 must_publish).
             must_publish or market in NEWS_REPORT_ALWAYS_PUBLISH_MARKETS,
+            session,
         )
         if result is None:
             # 분석이 실패했다. 상한 전이면 다음 구간이 같은 기사로 다시 본다 —
@@ -636,10 +673,10 @@ async def _send_news_report(app: Application) -> None:
         )
         return
 
-    header = (
-        f"🧭 <b>시장상황 보고서</b>\n"
-        f"{closed_at.strftime('%m-%d %H:%M')} UTC +9 · 시장 {len(sections)}곳"
-    )
+    stamp = f"{closed_at.strftime('%m-%d %H:%M')} UTC +9"
+    if session:
+        stamp = f"{stamp} · {session}"
+    header = f"🧭 <b>시장상황 보고서</b>\n{stamp} · 시장 {len(sections)}곳"
     sent, failed = await _send_sections(app.bot, TELEGRAM_CHAT_ID, header, sections)
     if not sent:
         # 한 조각도 못 보냈다. 큐와 예약을 그대로 두고 다음 주기가 다시 시도한다.
