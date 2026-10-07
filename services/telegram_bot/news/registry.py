@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from services.telegram_bot.core.clock import now
+from services.telegram_bot.core.telegram_html import MARK_FAIL, MARK_OK, MARK_WARN
 from functools import partial
 from typing import Callable
 
@@ -206,17 +207,20 @@ class NewsSourceRegistry:
             health.cooldown_until.strftime("%H:%M:%S"),
         )
 
-    def status_lines(self) -> list[str]:
-        """/system 표시용 소스 상태 요약."""
+    def status_rows(self) -> list[tuple[str, str, str]]:
+        """/system 상태 표의 (기호, 소스 키, 상태) 줄. 쿨다운은 실패가 문턱을 넘은 뒤라 더 무겁게 보인다."""
         current = now()
-        lines = []
+        rows = []
         for spec in self._specs:
             health = self._health[spec.key]
             if health.cooldown_until and current < health.cooldown_until:
-                state = f"쿨다운(~{health.cooldown_until.strftime('%H:%M')})"
+                rows.append((MARK_FAIL, spec.key, f"쿨다운(~{health.cooldown_until.strftime('%H:%M')})"))
             elif health.consecutive_failures > 0:
-                state = f"실패 {health.consecutive_failures}회"
+                rows.append((MARK_WARN, spec.key, f"실패 {health.consecutive_failures}회"))
             else:
-                state = "정상"
-            lines.append(f"{spec.key}: {state}")
-        return lines
+                rows.append((MARK_OK, spec.key, "정상"))
+        return rows
+
+    def status_lines(self) -> list[str]:
+        """/system 표시용 소스 상태 요약."""
+        return [f"{key}: {state}" for _, key, state in self.status_rows()]

@@ -9,6 +9,7 @@
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import requests
 from apscheduler.triggers.cron import CronTrigger
 
 from services.telegram_bot import main as bot_main
@@ -80,16 +81,20 @@ def test_web_status_reads_the_public_api(monkeypatch):
         "/api/forecast/events?page_size=1": {"search_index": {"annotated": 1400, "total": 19070}},
     }
 
-    def fetch(url, timeout):
+    def fetch(url, timeout, **_):
+        if not url.startswith(web_status.WEB_STATUS_BASE_URL):
+            raise requests.ConnectionError("외부 자료는 이 시험에서 묻지 않는다")
         return _Response(payloads[url.removeprefix(web_status.WEB_STATUS_BASE_URL)])
 
     text = web_status.build_web_status(fetch)
 
-    assert "시장 감성: 2026-09-24 07:40" in text
-    assert "리서치: 2026-09-24 08:21" in text
+    # 표의 맞춤 칸(기호·시각·건수)은 ASCII만, 한글 항목은 맨 끝 칸이다(2026-10-08).
+    assert "🟢 09/24 07:40  시장 감성\n" in text
+    assert "🟢 09/24 08:21  리서치\n" in text
+    assert "자료 없음</pre>" in text   # 뉴스 검색 자료 시각이 없다
     # 정상 결과(success)는 "마지막 시도"를 덧붙이지 않는다.
-    assert "예측 컨센서스 수집: 2026-09-24 06:01 · 제때 갱신\n" in text
-    assert "예측 질문 한국어 검색 준비: 1,400/19,070건" in text
+    assert "🟢 09/24 06:01   수집 · 제때 갱신\n" in text and "마지막 시도" not in text
+    assert "🔵 1,400/19,070  질문 한국어 검색 준비</pre>" in text
 
 
 def test_web_status_shows_when_the_brief_fell_back(monkeypatch):
@@ -103,11 +108,14 @@ def test_web_status_shows_when_the_brief_fell_back(monkeypatch):
         "/api/forecast/events?page_size=1": {},
     }
 
-    def fetch(url, timeout):
+    def fetch(url, timeout, **_):
+        if not url.startswith(web_status.WEB_STATUS_BASE_URL):
+            raise requests.ConnectionError("외부 자료는 이 시험에서 묻지 않는다")
         return _Response(payloads[url.removeprefix(web_status.WEB_STATUS_BASE_URL)])
 
     text = web_status.build_web_status(fetch)
-    assert "예측 컨센서스 줄글: 2026-10-03 08:01 · 해설 1개 · 직전 단락 2 · 확률만 2" in text
+    assert "🟡 10/03 08:01  줄글 · 해설 1개" in text
+    assert "</pre>\n· 줄글 예외: 직전 단락 2 · 확률만 2" in text
 
 
 def test_web_status_says_when_the_web_is_down():
@@ -119,16 +127,41 @@ def test_web_status_says_when_the_web_is_down():
     assert "웹이 응답하지 않습니다" in web_status.build_web_status(fetch)
 
 
-def test_web_status_reads_portfolio_advice_from_the_shared_file(tmp_path):
-    import json
+def test_web_status_asks_the_asset_sources_now_instead_of_reading_an_old_record():
+    """상태 패널은 앱 기록이 아니라 지금 도는 시스템을 본다. 9월 24일 조언 기록의 "한국은행 키 없음"이
+    키를 넣은 뒤에도 계속 보였다(운영자 지적 2026-10-08)."""
+    class Reply:
+        def __init__(self, status_code=200, body=None, text=""):
+            self.status_code, self._body, self.text = status_code, body or {}, text
 
-    from services.telegram_bot.features.web_status import handlers as web_status
+        def json(self):
+            return self._body
 
-    assert web_status.portfolio_status_line(tmp_path) == "자산 조언: 아직 없음"
-    (tmp_path / "advice").mkdir()
-    (tmp_path / "advice" / "latest.json").write_text(json.dumps({
-        "created_at": "2026-09-24T15:23:00+09:00", "llm_status": "ok", "text": "비밀 조언 본문",
-        "sources": {"deposit_rates": "ok", "market_rates": "missing_key"}}), encoding="utf-8")
-    line = web_status.portfolio_status_line(tmp_path)
-    assert line == "자산 조언: 2026-09-24 15:23 · 본문 있음 · 금감원 정상 · 한국은행 키 없음"
-    assert "비밀" not in line
+    seen = []
+
+    def fetch(url, timeout, params=None):
+        seen.append((url, params))
+        if "finlife" in url:
+            return Reply(body={"result": {"err_cd": "000"}})
+        if "ecos" in url:
+            return Reply(body={"RESULT": {"CODE": "INFO-100"}})
+        raise requests.ConnectionError("https://apis.data.go.kr/...serviceKey=SECRET")
+
+    rows = web_status.source_status_rows(fetch, {"FSS_API_KEY": "f", "ECOS_API_KEY": "SECRET", "MOLIT_API_KEY": "m"})
+    assert rows == [("🟢", "OK", "금감원"), ("🔴", "INFO-100", "한국은행 · 응답 실패"), ("🔴", "-", "국토부 · 연결 실패")]
+    assert "SECRET" not in str(rows) and len(seen) == 3
+
+    seen.clear()
+    rows = web_status.source_status_rows(fetch, {"FSS_API_KEY": "f"})
+    assert [label for _, _, label in rows[1:]] == ["한국은행 · 키 없음", "국토부 · 키 없음"]
+    assert len(seen) == 1   # 키가 없으면 묻지 않는다
+
+
+def test_public_data_portal_key_rejection_shows_its_reason():
+    class Reply:
+        status_code = 403
+        text = ("<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</errMsg>"
+                "<returnAuthMsg>등록되지 않은 서비스키</returnAuthMsg></cmmMsgHeader></OpenAPI_ServiceResponse>")
+
+    rows = web_status.source_status_rows(lambda url, timeout, params=None: Reply(), {"MOLIT_API_KEY": "m"})
+    assert rows[-1] == ("🔴", "HTTP 403", "국토부 · 등록되지 않은 서비스키")

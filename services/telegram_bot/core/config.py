@@ -512,6 +512,11 @@ MARKET_SENTIMENT_SCHEDULE_MINUTE = 40
 # GET API를 HTTP로 읽는다(shorts와 같은 방식). 웹은 루프백 8788에만 떠 있다.
 WEB_STATUS_BASE_URL = "http://127.0.0.1:8788"
 WEB_STATUS_TIMEOUT_SECONDS = 5
+# 웹 자산 진단이 쓰는 외부 자료의 키. `/web`이 지금 이 키로 실제 응답이 오는지 직접 확인한다 — 마지막 조언 기록을
+# 읽으면 9월 24일 상태("한국은행 키 없음")가 키를 넣은 뒤에도 계속 보였다(운영자 지적 2026-10-08).
+# 웹과 같은 루트 `.env`를 읽는다. 값은 화면·로그에 내지 않는다.
+SOURCE_PROBE_KEYS = {name: os.environ.get(name, "").strip() for name in ("FSS_API_KEY", "ECOS_API_KEY", "MOLIT_API_KEY")}
+SOURCE_PROBE_TIMEOUT_SECONDS = 8
 BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP", "EU")
 BRIEFING_PROMPT_FILE = PROMPT_DIR / "briefing_ko.txt"
 BRIEFING_TIMEOUT = 180

@@ -84,10 +84,11 @@ def test_system_screen_uses_registered_llm_status_and_expiry(runtime):
     message = SimpleNamespace(reply_text=AsyncMock())
     update = SimpleNamespace(effective_message=message)
     asyncio.run(handlers.cmd_system(update, context))
-    assert "LLM 회로: 정상" in message.reply_text.call_args.args[0]
+    # 시스템 상태 화면은 표다(2026-10-08). `/system llm`의 한 줄에서 상태만 떼어 쓴다.
+    assert "🟢 LLM  회로 정상</pre>" in message.reply_text.call_args.args[0]
     backend = exhaust(stamp)
     asyncio.run(handlers.cmd_system(update, context))
-    assert "LLM 회로: 열림 · 할당량 소진 · 해제: 2026-09-26 09:00 한국 시간" in message.reply_text.call_args.args[0]
+    assert "🔴 LLM  회로 열림 · 할당량 소진 · 해제: 2026-09-26 09:00 한국 시간</pre>" in message.reply_text.call_args.args[0]
     context.args = ["llm"]
     asyncio.run(handlers.cmd_system(update, context))
     assert message.reply_text.call_args.args[0].startswith("LLM 회로: 열림")

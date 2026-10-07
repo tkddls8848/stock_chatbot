@@ -5,6 +5,8 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from services.telegram_bot.core.clock import now
+from services.telegram_bot.core.telegram_html import MARK_FAIL, MARK_NONE, MARK_OK, status_table
 from services.telegram_bot.handlers.menus import main_menu, persistent_menu, system_menu
 
 logger = logging.getLogger(__name__)
@@ -45,22 +47,20 @@ def _usage(registry) -> str:
 
 
 def _format_system_status(
-    registry, source_lines: list[str] | None = None, llm_line: str = "",
+    registry, source_rows: list[tuple[str, str, str]] | None = None, llm_line: str = "",
 ) -> str:
-    sources_part = ""
-    if source_lines:
-        sources_part = "\n\n<b>전역 뉴스 소스</b>\n" + "\n".join(
-            f"  {line}" for line in source_lines
-        )
-    return (
-        "<b>시스템 상태</b>\n\n"
-        "추론: <b>Cloudflare Workers AI</b> (원격)"
-        f"\n{llm_line}"
-        f"{sources_part}\n\n"
-        "제어:\n" + _control_lines(registry)
-    )
-
-
+    # `llm_line`은 `/system llm`의 한 줄("LLM 회로: …")이다. 표에서는 상태만 떼어 쓴다.
+    llm_state = llm_line.removeprefix("LLM 회로:").strip()
+    llm_mark = MARK_NONE if not llm_state else MARK_OK if llm_state == "정상" else MARK_FAIL
+    sections = [
+        f"<b>⚙️ 시스템 상태</b> · {now():%m/%d %H:%M} 확인(한국 시간)",
+        "<b>추론</b> · Cloudflare Workers AI(원격)\n"
+        + status_table([(llm_mark, "LLM", f"회로 {llm_state or '상태 미상'}")]),
+    ]
+    if source_rows:
+        sections.append("<b>전역 뉴스 소스</b>\n" + status_table(source_rows))
+    sections.append("제어:\n" + _control_lines(registry))
+    return "\n\n".join(sections)
 
 
 async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -106,11 +106,11 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     registry = context.bot_data.get("news_registry")
-    source_lines = registry.status_lines() if registry is not None else None
+    source_rows = registry.status_rows() if registry is not None else None
     llm_spec = feature_registry.status_report("llm") if feature_registry is not None else None
     llm_line = await llm_spec.render(context.bot_data) if llm_spec is not None else ""
     await message.reply_text(
-        _format_system_status(feature_registry, source_lines, llm_line or ""),
+        _format_system_status(feature_registry, source_rows, llm_line or ""),
         parse_mode="HTML",
         reply_markup=system_menu(feature_registry),
     )
