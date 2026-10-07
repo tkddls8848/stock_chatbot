@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import re
 from dataclasses import replace
 
@@ -117,7 +118,8 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert all(row[1][0] == "40%" for row in revealed[render.COUNTUP_STEPS + 1:])
     assert all("drift" not in row for row in manifest["images"])  # 이미지 위치는 고정
     assert "drift" not in manifest
-    assert manifest["caption"]["size"] == render.CAPTION_FONT_SIZE
+    # 자막은 렌더가 그린 투명 PNG로 넘어간다. 상자와 글자 위치가 그림 안에 있다.
+    assert manifest["subtitles"] and all(Path(row["path"]).is_file() for row in manifest["subtitles"])
 
 
 def test_scene_cuts_land_on_the_next_scene_first_spoken_word():
@@ -186,25 +188,27 @@ def test_written_captions_break_korean_lines_between_words(tmp_path, cjk_font):
 
 
 @requires_cjk_font
-def test_captions_sit_lowest_and_the_progress_bar_moved_off_the_bottom(tmp_path, cjk_font):
+def test_captions_sit_lowest_and_the_caption_band_stays_clear(tmp_path, cjk_font):
     target = tmp_path / "frame.png"
     render_frame(
-        Scene("consensus", "거시·통화", "EVENT 25", "본문", "내레이션", source_note="09.13 15:00"),
+        Scene("consensus", "거시·통화", "02 · 거시·통화", "본문", "내레이션", source_note="09.13 15:00",
+              bullets=("24시간 참여 규모 · 2.1M달러", "종료 예정 · 2026-10-09 세계 표준시")),
         target, font_path=cjk_font, index=2, total=5, transparent=True,
     )
 
-    # 자막 아래 끝이 안전 영역 바닥이다. 고지문은 그 위, 진행바는 헤더 옆으로 올라갔다.
+    # 자막 아래 끝이 안전 영역 바닥이다. 고지문은 두 줄 자막 상자(약 160px)보다 위에서 끝난다.
     assert HEIGHT - CAPTION_MARGIN_V == SAFE_BOTTOM
-    assert FOOTER_Y < SAFE_BOTTOM - 100 and PROGRESS_Y < FOOTER_Y
+    assert PROGRESS_Y < render.CARD_TOP < render.META_Y < FOOTER_Y
+    assert FOOTER_Y + 60 < SAFE_BOTTOM - 2 * round(render.CAPTION_FONT_SIZE * 1.25) - 20
 
     with Image.open(target) as image:
         pixels = image.convert("RGBA").load()
-        def accent(y):
-            return sum(pixels[x, y][:3] == (212, 168, 79) for x in range(72, 879))
+        drawn = {render._rgb(render._COLORS[name]) for name in ("ink", "muted", "gold")}
+        def marks(y):
+            return sum(pixels[x, y][:3] in drawn for x in range(0, WIDTH, 2))
 
-        assert accent(PROGRESS_Y + 2) > 200   # 진행바가 새 자리에 있다
-        assert accent(1582) == 0              # 예전 자리에는 없다
-        assert accent(SAFE_BOTTOM - 10) == 0  # 자막이 들어갈 띠는 비어 있다
+        assert marks(PROGRESS_Y + 7) > 0        # 질문 순서 점
+        assert all(marks(y) == 0 for y in range(SAFE_BOTTOM - 170, SAFE_BOTTOM, 5))  # 자막 띠는 비어 있다
 
 
 def test_a_long_sentence_splits_evenly_instead_of_leaving_a_scrap():
@@ -313,40 +317,41 @@ def test_a_choice_is_drawn_as_a_name_a_big_probability_and_a_gauge(tmp_path, cjk
 
     render_frame(scene, target, font_path=cjk_font, index=2, total=4, transparent=True)
 
+    left = render.SAFE_LEFT + render.CARD_PAD
+    gold = render._rgb(render._COLORS["gold"])
     with Image.open(target) as image:
         pixels = image.convert("RGBA").load()
         def filled(y):
-            return [x for x in range(render.SAFE_LEFT, render.BODY_RIGHT + 1)
-                    if pixels[x, y][:3] == (212, 168, 79)]
+            return [x for x in range(left, render.BODY_RIGHT + 1) if pixels[x, y][:3] == gold]
         height = (render.BODY_BOTTOM - render.BODY_TOP) / 2
         # 거의 확실한 쪽은 막대가 끝까지 차고, 다섯에 하나쯤인 쪽은 앞자락만 찬다.
-        first = filled(round(render.BODY_TOP + height * render.OPTION_BAR_TOP) + 8)
-        second = filled(round(render.BODY_TOP + height * (1 + render.OPTION_BAR_TOP)) + 8)
+        first = filled(round(render.BODY_TOP + height * render.OPTION_BAR_TOP) + 10)
+        second = filled(round(render.BODY_TOP + height * (1 + render.OPTION_BAR_TOP)) + 10)
         assert max(first) >= render.BODY_RIGHT - 4
-        assert .18 < (max(second) - render.SAFE_LEFT) / (render.BODY_RIGHT - render.SAFE_LEFT) < .26
+        assert .18 < (max(second) - left) / (render.BODY_RIGHT - left) < .26
 
 
 @requires_cjk_font
-def test_pending_choices_keep_an_empty_gauge_so_nothing_jumps(tmp_path, cjk_font):
-    scene = Scene("consensus", "제목", "기준", "본문", "멘트",
+def test_pending_choices_keep_a_dim_name_and_an_empty_gauge_so_nothing_jumps(tmp_path, cjk_font):
+    scene = Scene("consensus", "제목", "01 · 기준", "본문", "멘트",
                   options=(("첫 선택지", "40%", .4), ("둘째 선택지", "60%", .6)))
     one, two = tmp_path / "one.png", tmp_path / "two.png"
 
-    render_frame(scene, one, font_path=cjk_font, index=1, total=2, shown=1, transparent=True)
-    render_frame(scene, two, font_path=cjk_font, index=1, total=2, shown=2, transparent=True)
+    render_frame(scene, one, font_path=cjk_font, index=2, total=4, shown=1, transparent=True)
+    render_frame(scene, two, font_path=cjk_font, index=2, total=4, shown=2, transparent=True)
 
     def rows(path, colours):
         with Image.open(path) as image:
             pixels = image.convert("RGBA").load()
             return {y for y in range(render.BODY_TOP, render.BODY_BOTTOM)
                     if any(pixels[x, y][:3] in colours
-                           for x in range(render.SAFE_LEFT, render.BODY_RIGHT, 3))}
+                           for x in range(render.SAFE_LEFT + render.CARD_PAD, render.BODY_RIGHT, 3))}
 
-    ink, track = {(245, 241, 232)}, {(43, 58, 65)}
+    ink, muted, track = ({render._rgb(render._COLORS[name])} for name in ("ink", "muted", "track"))
     middle = render.BODY_TOP + (render.BODY_BOTTOM - render.BODY_TOP) / 2
-    # 뜨기 전에도 빈 게이지 홈이 아래 절반의 자리를 잡고 있다.
-    assert max(rows(one, track)) > middle
-    # 글자는 첫 줄에만 있고, 둘째 줄이 떠도 첫 줄은 같은 자리에 그대로다.
+    # 뜨기 전에도 둘째 줄은 흐린 이름과 빈 게이지 홈으로 자리를 잡고 있다.
+    assert max(rows(one, track)) > middle and max(rows(one, muted)) > middle
+    # 밝은 글자는 첫 줄에만 있고, 둘째 줄이 떠도 첫 줄은 같은 자리에 그대로다.
     assert max(rows(one, ink)) < middle
     assert rows(one, ink) <= rows(two, ink) and max(rows(two, ink)) > middle
 
@@ -362,7 +367,8 @@ def test_the_background_photograph_covers_the_whole_frame(tmp_path, cjk_font):
 
     with Image.open(target) as image:
         pixels = image.convert("RGB").load()
-        for y in (900, 1300, 1700, 1900):
+        # 사진은 흐리고 어둡게 깔지만 결은 남는다. 900은 카드가 덮는 높이라 카드 아래만 본다.
+        for y in (1300, 1500, 1700, 1900):
             band = {pixels[x, y] for x in range(0, WIDTH, 40)}
             assert len(band) > 6, f"y={y}에서 배경이 단색이다: {band}"
 
@@ -424,6 +430,23 @@ def test_a_caption_prefers_the_clause_ending_the_speaker_pauses_at():
     assert [phrase.text for phrase in phrases] == [
         "질문마다 조건이 다르니", "판정 규칙은 직접 확인하세요.",
     ]
+
+
+@requires_cjk_font
+def test_caption_text_sits_in_the_middle_of_its_box(tmp_path, cjk_font):
+    """Blender 상자는 한글 글꼴의 큰 윗여백까지 넣어 글자가 아래로 처졌다(위 57px·아래 6px)."""
+    target = tmp_path / "caption.png"
+    render._caption_frame(["한국 ETF(EWY)가", "10월 5일 주에"], target, font_path=cjk_font)
+
+    with Image.open(target) as image:
+        alpha = image.getchannel("A")
+        box = alpha.getbbox()
+        ink = image.convert("RGB").point(lambda value: 255 if value > 200 else 0).convert("L").getbbox()
+    assert box[3] == SAFE_BOTTOM
+    above, below = ink[1] - box[1], box[3] - ink[3]
+    assert abs(above - below) <= 4
+    # 화면 가운데에 선다.
+    assert abs((box[0] + box[2]) / 2 - WIDTH / 2) <= 1
 
 
 def test_captions_are_centered_on_the_screen():

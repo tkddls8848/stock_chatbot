@@ -1,6 +1,5 @@
 """Blender 5.2의 Python으로 실행하는 헤드리스 VSE 합성기 (외부 패키지 불필요)."""
 import json
-import math
 from pathlib import Path
 import sys
 
@@ -74,28 +73,14 @@ def render(manifest):
         if index == len(manifest["images"]) - 1:
             strip.frame_final_end += round(manifest["clone_padding_seconds"] * fps)
 
-    caption = manifest["caption"]
-    font = bpy.data.fonts.load(caption["font"])
+    # 자막은 렌더가 그린 화면 크기 투명 PNG다(상자·글자 위치가 그림 안에 있다).
     for index, row in enumerate(manifest["subtitles"]):
         start, end = frame(row["start"]), frame(row["end"])
         if end <= start:
             continue
-        text = strips.new_effect(f"caption-{index}", type="TEXT", channel=3,
-                                 frame_start=start, length=end - start)
-        text.text, text.font, text.font_size = row["text"], font, caption["em_size"]
-        text.anchor_y = "BOTTOM"
-        text.use_bold = caption["synthetic_bold"]
-        text.color = (245 / 255, 241 / 255, 232 / 255, 1)
-        text.location = ((caption["left"] + width - caption["right"]) / (2 * width),
-                         caption["bottom"] / height)
-        text.wrap_width = 0
-        text.use_outline = True
-        text.outline_color = (17 / 255, 13 / 255, 8 / 255, 1)
-        text.outline_width = 5 / caption["em_size"]
-        text.use_shadow = True
-        text.shadow_color = (0, 0, 0, .41)
-        text.shadow_offset = 2 / caption["em_size"]
-        text.shadow_angle = math.radians(135)
+        strip = strips.new_image(f"caption-{index}", row["path"], channel=3, frame_start=start)
+        strip.frame_final_end = end
+        strip.blend_type = "ALPHA_OVER"
     narration = strips.new_sound("narration", manifest["audio"], channel=4, frame_start=1)
     narration.volume = manifest.get("narration_gain", 1.0)
     bpy.ops.render.render(animation=True)

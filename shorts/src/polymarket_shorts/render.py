@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 import subprocess
 from typing import Sequence
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from .scenario import Scenario, Scene
 from .tts import Word, locate
@@ -15,16 +16,18 @@ from .tts import Word, locate
 
 WIDTH, HEIGHT = 1080, 1920
 _COLORS = {
-    "ink": "#F5F1E8",
-    "muted": "#BDB6A8",
-    "panel": "#24231F",
-    "line": "#444039",
-    "track": "#2B3A41",
-    "gold": "#D4A84F",
-    "red": "#E0645C",
-    "blue": "#5E8FC9",
+    "ink": "#F4F7FB",
+    "muted": "#8E99A8",
+    "panel": "#111821",
+    "panel_alt": "#0D131A",
+    "line": "#283444",
+    "track": "#1F2935",
+    "on_accent": "#06110B",
+    "gold": "#FFC83D",
+    "red": "#FF5C6C",
+    "blue": "#4CC9FF",
+    "green": "#3DDC84",
 }
-
 
 class RenderError(RuntimeError):
     pass
@@ -60,30 +63,42 @@ def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
 # 자막은 쇼츠 관례대로 하단 1/3을 크게 차지한다. 안전 영역 아래에는 아무 글자도
 # 두지 않지만 사진은 계속 흐르므로 빈 띠가 생기지 않는다.
 #
-# 세로 순서: 헤더 → 제목 → 진행바 → 본문(선택지·문구) → 잔글씨 → 자막.
+# 2026-10-07 운영자 요청으로 화면 문법을 참고 영상(Solostack "GitHub 트렌딩 Top 10")에 맞췄다 — 가운데
+# 정렬한 굵은 머리말, 어두운 바탕 위 네온 테두리 카드와 번호 탭, 수치 칩, 상자 자막. 예전 화면은 가는
+# 글씨가 왼쪽에 붙고 사진 위에 잔글씨가 흩어져 무엇을 봐야 할지 흐렸다.
+#
+# 세로 순서: 꼬리표 → 제목(도입·마무리는 두 줄 머리말) → 진행 점 → 카드 → 수치 칩 → 고지 → 자막.
 SAFE_TOP = 190                          # 이 위는 검색·내비게이션 구역
 SAFE_BOTTOM = HEIGHT - 380              # 1540. 이 아래는 Shorts UI 구역
 SAFE_LEFT = 72
-SAFE_RIGHT = WIDTH - 72                 # 1008. 상단은 오른쪽 버튼 줄이 닿지 않는다
-BODY_RIGHT = WIDTH - 202                # 878. 본문은 버튼 줄을 피해 좁게 쓴다
-TITLE_TOP, TITLE_BOTTOM = 318, 616
-PROGRESS_Y = 677                        # 헤더 밑줄 자리. 예전에는 1580이었다
-BODY_TOP = 744
-BODY_BOTTOM = 1160
-META_Y = 1198                           # 참여 규모·종료 예정 같은 잔글씨
-# 선택지 한 줄 안에서 게이지가 앉는 높이(줄 높이의 비율)와 그 두께. 줄의 나머지
-# 20%는 다음 줄과의 간격이다 — 막대와 다음 줄 이름이 붙으면 둘이 한 덩어리로 보인다.
-OPTION_BAR_TOP = .80
-OPTION_BAR = 16
-FOOTER_Y = 1288                         # 고지문과 자료 기준. 자막 바로 위다
+SAFE_RIGHT = WIDTH - 72                 # 1008. 카드 테두리까지는 버튼 줄과 겹쳐도 된다
+BODY_RIGHT = WIDTH - 202                # 878. 카드 안 내용과 칩은 버튼 줄을 피해 여기까지만 쓴다
+TAG_Y, TAG_HEIGHT = 196, 64
+TITLE_TOP, TITLE_BOTTOM = 290, 580
+PROGRESS_Y = 606                        # 질문 순서 점
+CARD_TOP, CARD_BOTTOM = 690, 1150       # 카드 테두리. 번호 탭은 위로 걸친다
+CARD_RADIUS = 32
+HEADLINE_CENTER = 800                   # 도입·마무리 머리말 묶음의 세로 가운데
+CARD_PAD = 44
+BODY_TOP, BODY_BOTTOM = CARD_TOP + 48, CARD_BOTTOM - 36  # 카드 안 내용 칸
+META_Y = 1176                           # 수치 칩
+CHIP_HEIGHT = 108
+# 선택지 한 줄 안에서 게이지가 앉는 높이(줄 높이의 비율)와 그 두께. 줄의 나머지는
+# 다음 줄과의 간격이다 — 막대와 다음 줄 이름이 붙으면 둘이 한 덩어리로 보인다.
+OPTION_BAR_TOP = .82
+OPTION_BAR = 20
+FOOTER_Y = 1302                         # 고지문과 자료 기준. 자막 바로 위다
 CAPTION_MARGIN_V = HEIGHT - SAFE_BOTTOM  # 380. 자막 아래 끝을 안전 영역 바닥에 붙인다
 
-# ── 배경 사진 위에 얹는 어둠 ─────────────────────────────
-# (y, 불투명도)이고 사이는 선형이다. 제목이 앉는 위쪽은 옅게 두어 사진이 보이고,
-# 본문과 자막이 앉는 아래쪽은 짙게 깔아 글자가 읽힌다. 맨 아래는 다시 옅어져
-# Shorts UI 구역에서도 사진이 이어진다.
-_SCRIM = ((0, .62), (210, .42), (600, .48), (800, .76), (1480, .78), (1740, .66), (HEIGHT, .58))
-_SCRIM_RGB = (10, 19, 25)
+# ── 배경 ─────────────────────────────────────────────
+# 사진은 흐리고 어둡게 깔아 결만 남기고(`_backdrop`), 그 위에 세로 어둠과 머리말 뒤의 빛 번짐을
+# 얹는다(`_atmosphere`). (y, 불투명도)이고 사이는 선형이다.
+# 2026-10-07 운영자 지적: 흐림(14px)과 어둠이 세서 매일 새로 그리는 배경이 보이지 않았다. 사진은 거의 그대로
+# 살리고(가는 흐림만 남겨 AI 그림의 잔결을 누른다), 글자가 앉는 자리 뒤에만 부드러운 그늘을 깐다(`_shade`).
+_SCRIM = ((0, .30), (420, .30), (900, .38), (1500, .46), (HEIGHT, .40))
+_SCRIM_RGB = (6, 9, 13)
+BACKDROP_BLUR = 1.2
+BACKDROP_BRIGHTNESS = .9
 
 # 장면마다 같은 사진을 다르게 본다. 확대 여유 안에서 크롭 위치를 옮기고, 짝수
 # 장면은 좌우를 뒤집고, 장면의 accent 색으로 색조를 입힌다 — 새 미디어 소스도
@@ -126,7 +141,7 @@ def _background(path: Path | None, *, index: int, total: int, accent: str) -> Im
     생성 호출도, 네트워크도 없이 장면이 바뀐 것이 눈에 보인다.
     """
     if path is None or not path.is_file():
-        return Image.new("RGB", (WIDTH, HEIGHT), "#101B20")
+        return Image.new("RGB", (WIDTH, HEIGHT), _SCRIM_RGB)
     with Image.open(path) as source:
         wide = ImageOps.fit(source.convert("RGB"), (round(WIDTH * _ZOOM), round(HEIGHT * _ZOOM)),
                             method=Image.Resampling.LANCZOS)
@@ -142,20 +157,111 @@ def _background(path: Path | None, *, index: int, total: int, accent: str) -> Im
     return ImageEnhance.Brightness(frame).enhance(_BRIGHTNESS[index % len(_BRIGHTNESS)])
 
 
-def _scrim(draw: ImageDraw.ImageDraw) -> None:
-    """배경 사진 위에 세로 그라데이션을 깔아 글자가 읽히게 한다."""
+# 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
+_CHROME = {
+    "ko": {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스",
+           "open_top": "오늘의 집단 예측", "open_low": "컨센서스 요약", "open_note": "지금 시작합니다",
+           "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
+           "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
+           "footer": "집단 예측 컨센서스 · 투자 조언 아님"},
+    "en": {"yes": "YES", "site": "nunchi.live", "brand_tag": "Crowd forecast consensus",
+           "open_top": "TODAY'S CROWD FORECASTS", "open_low": "CONSENSUS SUMMARY", "open_note": "Starting now",
+           "close_top": "Full details at", "close_note": "Check each question's conditions",
+           "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
+           "footer": "Crowd forecast consensus · not investment advice"},
+}
+_BRAND = "NUNCHI"
+_LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
+
+
+def _bold(font_path: Path) -> Path:
+    """같은 글꼴의 굵은 판. 머리말·숫자·칩은 굵게 쓴다(자막도 굵은 판이다, `blender_render.py`)."""
+    sibling = {"NotoSansCJK-Regular.ttc": "NotoSansCJK-Bold.ttc", "malgun.ttf": "malgunbd.ttf"}.get(font_path.name)
+    bold = font_path.with_name(sibling) if sibling else font_path
+    return bold if bold.is_file() else font_path
+
+
+def _rgb(color: str) -> tuple[int, int, int]:
+    return ImageColor.getrgb(color)[:3]
+
+
+def _accent(scene: Scene) -> str:
+    """도입·마무리는 채널 색(초록), 이슈 장면은 분야 색이다."""
+    return _COLORS["green"] if scene.kind in {"intro", "outro"} else _COLORS.get(scene.accent, _COLORS["gold"])
+
+
+@lru_cache(maxsize=16)
+def _backdrop(path: Path | None, index: int, total: int, accent: str) -> Image.Image:
+    """배경 사진은 흐리고 어둡게 깔아 결만 남긴다. 글자와 카드가 사진 앞에 선다."""
+    frame = _background(path, index=index, total=total, accent=accent)
+    if path is None or not path.is_file():
+        return frame
+    return ImageEnhance.Brightness(frame.filter(ImageFilter.GaussianBlur(BACKDROP_BLUR))).enhance(BACKDROP_BRIGHTNESS)
+
+
+@lru_cache(maxsize=16)
+def _atmosphere(accent: str, transparent: bool) -> Image.Image:
+    """글자 뒤의 어둠과 머리말 뒤에 고이는 빛. 움직이는 배경 위(`transparent`)에서는 조금 더 어둡게 깐다."""
+    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    lift = .12 if transparent else 0.0
     for (top, start), (bottom, stop) in zip(_SCRIM, _SCRIM[1:]):
         for y in range(top, min(bottom, HEIGHT)):
             share = (y - top) / max(1, bottom - top)
-            draw.line((0, y, WIDTH, y), fill=(*_SCRIM_RGB, round(255 * (start + (stop - start) * share))))
+            alpha = min(1.0, start + (stop - start) * share + lift)
+            draw.line((0, y, WIDTH, y), fill=(*_SCRIM_RGB, round(255 * alpha)))
+    glow = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((10, -110, WIDTH // 4 - 10, 120), fill=(*_rgb(accent), 120))
+    glow = glow.filter(ImageFilter.GaussianBlur(34)).resize((WIDTH, HEIGHT), Image.Resampling.BICUBIC)
+    return Image.alpha_composite(layer, glow)
 
 
-def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8", center=False):
-    """Fit all text inside a bounded box; never silently discard lines.
+def _glow(image: Image.Image, paint, *, radius: int = 14, strength: float = 1.0) -> None:
+    """`paint(draw)`로 그린 것을 빛 번짐과 함께 얹는다. 흐림은 그린 자리 둘레만 한다.
 
-    `center`면 남는 세로 여백을 위아래로 나눈다. 한 줄짜리 제목을 위에 붙여 두면
-    제목과 진행바 사이에 200px짜리 구멍이 생긴다 — 칸의 크기는 가장 긴 문구에
-    맞춰 잡아야 하고, 짧은 문구는 그 안에서 가운데 선다.
+    글씨에는 약하게만 쓴다(`strength`) — 번짐이 세면 글자 가장자리가 뭉개져 읽기 어렵다(운영자 지적, 2026-10-07).
+    """
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    paint(ImageDraw.Draw(layer))
+    box = layer.getbbox()
+    if box is None:
+        return
+    pad = radius * 3
+    left, top = max(0, box[0] - pad), max(0, box[1] - pad)
+    right, bottom = min(image.width, box[2] + pad), min(image.height, box[3] + pad)
+    piece = layer.crop((left, top, right, bottom))
+    halo = piece.filter(ImageFilter.GaussianBlur(radius))
+    if strength < 1:
+        halo.putalpha(halo.getchannel("A").point(lambda value: round(value * strength)))
+    image.alpha_composite(halo, (left, top))
+    image.alpha_composite(piece, (left, top))
+
+
+def _shade(image: Image.Image, box, *, alpha: int = 150, radius: int = 60) -> None:
+    """글자 묶음 뒤에 가장자리가 번진 그늘을 깐다. 배경 사진은 살리고 글자만 떠오르게 한다."""
+    layer = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
+    left, top, right, bottom = (round(value / 4) for value in box)
+    ImageDraw.Draw(layer).rounded_rectangle((left, top, right, bottom), radius=radius // 4,
+                                            fill=(*_SCRIM_RGB, alpha))
+    layer = layer.filter(ImageFilter.GaussianBlur(radius / 4)).resize(image.size, Image.Resampling.BICUBIC)
+    image.alpha_composite(layer)
+
+
+def _fit(draw, text: str, font_path: Path, width: int, sizes: Sequence[int], max_lines: int):
+    """가장 큰 글자로 `max_lines` 줄 안에 든다. 끝까지 안 들면 글자를 버리지 않고 실패한다."""
+    for size in sizes:
+        font = _font(font_path, size)
+        lines = _wrap(draw, text, font, width)
+        if len(lines) <= max_lines:
+            return font, lines
+    raise RenderError("화면 텍스트가 안전 영역을 넘습니다: " + text[:70])
+
+
+def _text_block(draw, text, font_path, box, *, size=48, color=None, center=False, align="left"):
+    """칸 안에 글을 모두 넣는다. 한 줄도 버리지 않는다.
+
+    `center`면 남는 세로 여백을 위아래로 나눈다 — 칸은 가장 긴 문구에 맞춰 잡고 짧은 문구는
+    그 안에서 가운데 선다. `align="center"`는 줄마다 가로 가운데다.
     """
     x, y, right, bottom = box
     if not text.strip():
@@ -163,24 +269,107 @@ def _text_block(draw, text, font_path, box, *, size=48, color="#F5F1E8", center=
     for candidate in range(size, 25, -2):
         font = _font(font_path, candidate)
         lines = _wrap(draw, text, font, right - x)
-        spacing = round(candidate * 1.4)
+        spacing = round(candidate * 1.38)
         if len(lines) * spacing <= bottom - y:
             if center:
                 y += (bottom - y - len(lines) * spacing) // 2
             for line in lines:
-                draw.text((x, y), line, font=font, fill=color)
+                left = x + (right - x - draw.textlength(line, font=font)) / 2 if align == "center" else x
+                draw.text((left, y), line, font=font, fill=color or _COLORS["ink"])
                 y += spacing
             return
     raise RenderError("화면 텍스트가 안전 영역을 넘습니다: " + text[:70])
 
 
-# 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
-_CHROME = {
-    "ko": {"yes": "예", "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
-           "footer": "집단 예측 컨센서스 · 투자 조언 아님"},
-    "en": {"yes": "YES", "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
-           "footer": "Crowd forecast consensus · not investment advice"},
-}
+def _tag(draw, text: str, font_path: Path, accent: str) -> None:
+    """맨 위 꼬리표. 어두운 반투명 띠에 왼쪽 색 막대, 채널 이름과 장면 분류를 한 줄로."""
+    font = _font(_bold(font_path), 30)
+    label = f"{_BRAND} · {text}" if text else _BRAND
+    while draw.textlength(label, font=font) > SAFE_RIGHT - SAFE_LEFT - 80 and len(label) > 8:
+        label = label[:-2] + "…"
+    width = draw.textlength(label, font=font) + 72
+    left = (WIDTH - width) / 2
+    draw.rounded_rectangle((left, TAG_Y, left + width, TAG_Y + TAG_HEIGHT), radius=12, fill=(255, 255, 255, 26))
+    draw.rounded_rectangle((left, TAG_Y, left + 10, TAG_Y + TAG_HEIGHT), radius=4, fill=accent)
+    _ink_text(draw, (left + 40, TAG_Y, left + width, TAG_Y + TAG_HEIGHT), label, font, _COLORS["ink"], center_x=False)
+
+
+def _headline(image, lines: Sequence[tuple[str, str]], font_path: Path, accent: str) -> None:
+    """도입·마무리의 고정 머리말. (문구, 역할)의 줄을 화면 가운데 세로로 세운다.
+
+    역할은 "ink"(흰 굵은 줄), "accent"(큰 accent 줄 + 밑줄), "plain"(보통 굵기 흰 줄)이다.
+    """
+    draw = ImageDraw.Draw(image)
+    bold = _bold(font_path)
+    width = SAFE_RIGHT - SAFE_LEFT
+    sizes = {"ink": range(92, 50, -4), "accent": range(124, 60, -4), "plain": range(58, 36, -2)}
+    fitted = [(role, *_fit(draw, text, bold if role != "plain" else font_path, width, sizes[role], 1))
+              for text, role in lines if text.strip()]
+    pitch = [round(font.size * (1.42 if role == "accent" else 1.3)) for role, font, _ in fitted]
+    y = HEADLINE_CENTER - sum(pitch) // 2
+    for (role, font, (line,)), step in zip(fitted, pitch):
+        left = (WIDTH - draw.textlength(line, font=font)) / 2
+        if role == "accent":
+            line_y = y + round(font.size * 1.2)
+            right = left + draw.textlength(line, font=font)
+            _glow(image, lambda layer: layer.rectangle((left, line_y, right, line_y + 10), fill=accent), radius=12)
+            _glow(image, lambda layer: layer.text((left, y), line, font=font, fill=accent, stroke_width=2,
+                                                  stroke_fill=accent), radius=10, strength=.3)
+        else:
+            stroke = 2 if role == "ink" else 0
+            draw.text((left, y), line, font=font, fill=_COLORS["ink"], stroke_width=stroke, stroke_fill=_COLORS["ink"])
+        y += step
+
+
+def _ink_text(draw, box, text: str, font, fill, *, center_x: bool = True, stroke: int = 0) -> None:
+    """글자의 실제 잉크 범위를 상자 세로 가운데에 놓는다.
+
+    글꼴의 줄 높이로 맞추면 한글 글꼴의 큰 윗여백 때문에 글자가 상자 아래로 처진다(운영자 지적,
+    2026-10-07 — 자막 상자는 위 57px·아래 6px였다).
+    """
+    left, top, right, bottom = box
+    x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
+    x = left + (right - left - (x1 - x0)) / 2 - x0 if center_x else left - x0
+    y = top + (bottom - top - (y1 - y0)) / 2 - y0
+    draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke, stroke_fill=fill)
+
+
+def _title(draw, title: str, font_path: Path) -> None:
+    """이슈 장면의 제목. 굵게 두 줄까지, 칸 안에서 가운데 선다."""
+    font, lines = _fit(draw, title, _bold(font_path), SAFE_RIGHT - SAFE_LEFT, range(84, 50, -4), 2)
+    spacing = round(font.size * 1.3)
+    y = TITLE_TOP + (TITLE_BOTTOM - TITLE_TOP - spacing * len(lines)) // 2
+    for line in lines:
+        draw.text(((WIDTH - draw.textlength(line, font=font)) / 2, y), line, font=font,
+                  fill=_COLORS["ink"], stroke_width=1, stroke_fill=_COLORS["ink"])
+        y += spacing
+
+
+def _progress(draw, current: int, count: int, accent: str) -> None:
+    """질문 몇 번째인지. 지금 질문은 길쭉한 accent 막대, 나머지는 점이다."""
+    if count < 2:
+        return
+    widths = [56 if slot == current else 14 for slot in range(1, count + 1)]
+    left = (WIDTH - sum(widths) - 14 * (count - 1)) / 2
+    for slot, width in enumerate(widths, start=1):
+        draw.rounded_rectangle((left, PROGRESS_Y, left + width, PROGRESS_Y + 14), radius=7,
+                               fill=accent if slot <= current else _COLORS["line"])
+        left += width + 14
+
+
+def _card(image, box, accent: str, font_path: Path, *, tab: str = "") -> None:
+    """네온 테두리 카드와 왼쪽 위에 걸친 번호 탭."""
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle(box, radius=CARD_RADIUS, fill=(*_rgb(_COLORS["panel"]), 240))
+    _glow(image, lambda layer: layer.rounded_rectangle(box, radius=CARD_RADIUS, outline=accent, width=4),
+          radius=16, strength=.7)
+    if not tab:
+        return
+    font = _font(_bold(font_path), 46)
+    width = draw.textlength(tab, font=font) + 56
+    left, top = box[0] + 34, box[1] - 44
+    draw.rounded_rectangle((left, top, left + width, top + 76), radius=16, fill=accent)
+    _ink_text(draw, (left, top, left + width, top + 76), tab, font, _COLORS["on_accent"], stroke=1)
 
 
 def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, shown: int,
@@ -188,31 +377,66 @@ def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, sho
     """선택지를 이름 + 큰 '예' 확률 + 게이지 한 줄로 그린다.
 
     예전 화면은 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%,
-    아니오 0.05%" 한 덩어리였다. 어색한 자리에서 줄이 바뀌고, 어느 숫자를
-    봐야 하는지도 알 수 없었다. 이지선다에서 아니오는 예의 나머지이므로 화면은
+    아니오 0.05%" 한 덩어리였다. 이지선다에서 아니오는 예의 나머지이므로 화면은
     '예' 확률 하나만 크게 세우고 막대로 그 크기를 보여 준다.
 
-    `shown`은 지금까지 등장한 줄 수다. 빈 게이지 홈은 처음부터 전부 그려 두어,
-    줄이 하나씩 차오르는 동안에도 자리가 잡혀 있고 이미 뜬 줄이 밀리지 않는다.
+    `shown`은 지금까지 등장한 줄 수다. 아직 말하지 않은 줄도 이름(흐린 색)과 빈 게이지를
+    처음부터 그려 두어, 질문을 듣는 동안 무엇을 고르는지 보이고 이미 뜬 줄이 밀리지 않는다.
     """
     x, top, right, bottom = box
+    bold = _bold(font_path)
     height = (bottom - top) / max(1, len(scene.options))
     for position, (label, percent, probability) in enumerate(scene.options):
         y = top + position * height
         bar_y = y + round(height * OPTION_BAR_TOP)
-        draw.rounded_rectangle((x, bar_y, right, bar_y + OPTION_BAR), radius=8, fill=_COLORS["track"])
-        if position >= shown:
+        draw.rounded_rectangle((x, bar_y, right, bar_y + OPTION_BAR), radius=OPTION_BAR // 2, fill=_COLORS["track"])
+        revealed = position < shown
+        label_font, (label_line,) = _fit(draw, label, bold, right - x, range(38, 24, -2), 1)
+        draw.text((x, y), label_line, font=label_font, fill=_COLORS["ink"] if revealed else _COLORS["muted"])
+        if not revealed:
             continue
-        _text_block(draw, label, font_path, (x, y, right, y + round(height * .29)),
-                    size=40, color=_COLORS["ink"])
-        number = _font(font_path, round(height * .38))
-        number_y = y + round(height * .30)
-        draw.text((x, number_y), percent, font=number, fill=accent)
-        draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(height * .26)),
-                  yes, font=_font(font_path, 34), fill=_COLORS["muted"])
+        number = _font(bold, min(120, round(height * .47)))
+        number_y = y + round(height * .19)
+        draw.text((x, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
+        draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(number.size * .52)),
+                  yes, font=_font(bold, 32), fill=_COLORS["muted"])
         filled = round((right - x) * min(1.0, max(0.0, probability)))
         if filled > OPTION_BAR:
-            draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=8, fill=accent)
+            draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=OPTION_BAR // 2, fill=accent)
+
+
+def _chips(draw, bullets: Sequence[str], font_path: Path) -> None:
+    """근거 수치를 칩으로 나눈다. "24시간 참여 규모 · 20.3K달러"는 작은 이름과 굵은 값이 된다."""
+    items = [tuple(bullet.split(" · ", 1)) if " · " in bullet else ("", bullet) for bullet in bullets][:3]
+    if not items:
+        return
+    bold = _bold(font_path)
+    gap = 16
+    width = (BODY_RIGHT - SAFE_LEFT - gap * (len(items) - 1)) / len(items)
+    for slot, (label, value) in enumerate(items):
+        left = SAFE_LEFT + slot * (width + gap)
+        draw.rounded_rectangle((left, META_Y, left + width, META_Y + CHIP_HEIGHT), radius=18,
+                               fill=(*_rgb(_COLORS["panel_alt"]), 235), outline=_COLORS["line"], width=2)
+        inner = round(width - 40)
+        if label:
+            small, (label_line,) = _fit(draw, label, font_path, inner, range(24, 15, -1), 1)
+            draw.text((left + 20, META_Y + 14), label_line, font=small, fill=_COLORS["muted"])
+        value = _compact(value)
+        try:
+            font, lines = _fit(draw, value, bold, inner, range(34, 21, -2), 1)
+        except RenderError:
+            font, lines = _fit(draw, value, bold, inner, range(26, 17, -2), 2)
+        y = META_Y + (50 if label else 24) - (12 if len(lines) == 2 else 0) - (14 if len(lines) == 2 and not label else 0)
+        for line in lines:
+            draw.text((left + 20, y), line, font=font, fill=_COLORS["ink"])
+            y += round(font.size * 1.15)
+
+
+def _compact(value: str) -> str:
+    """칩 한 칸에 들게 줄인다: "2027-01-01 세계 표준시" → "2027.01.01", "유효 13개 중 상위 2개" → "13개 중 2개"."""
+    value = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b", r"\1.\2.\3", value)
+    value = re.sub(r"(\d{4}\.\d{2}\.\d{2}) (?:세계 표준시|UTC)\b", r"\1", value)
+    return re.sub(r"유효 (\d+개) 중 상위 (\d+개)", r"\1 중 \2", value)
 
 
 def render_frame(
@@ -228,43 +452,49 @@ def render_frame(
     language: str = "ko",
 ) -> None:
     chrome = _CHROME[language]
+    accent = _accent(scene)
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    accent = _COLORS.get(scene.accent, _COLORS["gold"])
-    _scrim(draw)
-    draw.rounded_rectangle((SAFE_LEFT, SAFE_TOP, SAFE_LEFT + 123, SAFE_TOP + 36), radius=7, fill=accent)
-    draw.text((SAFE_LEFT + 15, SAFE_TOP + 3), "NUNCHI", font=_font(font_path, 22), fill="#101B20")
-    draw.text((216, SAFE_TOP + 3), "CONSENSUS NOTES", font=_font(font_path, 23), fill=_COLORS["ink"])
-    draw.text((SAFE_LEFT, 258), scene.kicker, font=_font(font_path, 26), fill=accent)
-    _text_block(draw, scene.title, font_path, (SAFE_LEFT, TITLE_TOP, SAFE_RIGHT, TITLE_BOTTOM),
-                size=86, center=True)
-    draw.text((SAFE_LEFT, 644), f"{index:02d} / {total:02d}", font=_font(font_path, 26), fill=_COLORS["ink"])
-    # 진행 상태바. 화면 아래 끝은 자막 자리라 페이지 번호 옆으로 올렸다.
-    span = SAFE_RIGHT - 210
-    for slot in range(total):
-        left = 210 + slot * (span / total)
-        draw.rectangle((left, PROGRESS_Y, left + span / total - 8, PROGRESS_Y + 5),
-                       fill=accent if slot < index else "#354348")
-
-    if scene.options:
-        _options_block(draw, scene, font_path, accent, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
-                       shown=len(scene.options) if shown is None else shown, yes=chrome["yes"])
+    number = _LEADING_NUMBER.match(scene.kicker)
+    category = scene.kicker[number.end():] if number else scene.kicker
+    # 배경 사진을 살린 만큼 글자가 앉는 자리 뒤에만 그늘을 깐다. 글자보다 먼저 깐다.
+    if scene.kind in {"intro", "outro"}:
+        _shade(image, (60, HEADLINE_CENTER - 240, WIDTH - 60, HEADLINE_CENTER + 240), alpha=170)
     else:
-        _text_block(draw, scene.body, font_path, (SAFE_LEFT, BODY_TOP, BODY_RIGHT, BODY_BOTTOM),
-                    size=66, center=True)
+        _shade(image, (40, TITLE_TOP - 24, WIDTH - 40, PROGRESS_Y + 40), alpha=165)
+        _shade(image, (40, META_Y - 16, WIDTH - 40, META_Y + CHIP_HEIGHT + 16), alpha=120)
+    _shade(image, (40, FOOTER_Y - 14, WIDTH - 40, FOOTER_Y + 74), alpha=150)
+    _tag(draw, chrome["brand_tag"] if scene.kind in {"intro", "outro"} else category, font_path, accent)
+    card = (SAFE_LEFT, CARD_TOP, SAFE_RIGHT, CARD_BOTTOM)
+    inner = (SAFE_LEFT + CARD_PAD, BODY_TOP, BODY_RIGHT, BODY_BOTTOM)
 
-    # 근거 잔글씨. 이벤트 참여 규모·종료 예정·표시한 선택지 수를 그대로 적는다.
-    _text_block(draw, " · ".join(b.replace(" · ", " ") for b in scene.bullets),
-                font_path, (SAFE_LEFT, META_Y, BODY_RIGHT, META_Y + 76), size=27, color=_COLORS["muted"])
-    draw.text((SAFE_LEFT, FOOTER_Y),
-              chrome["footer_options"] if scene.options else chrome["footer"],
+    if scene.kind == "intro":
+        # 도입과 마무리는 그날 내용과 무관하게 늘 같은 화면이다(운영자 결정 2026-10-07). 내용은 이슈 장면이 맡는다.
+        _headline(image, ((chrome["open_top"], "ink"), (chrome["open_low"], "accent"), (chrome["open_note"], "plain")),
+                  font_path, accent)
+    elif scene.kind == "outro":
+        _headline(image, ((chrome["close_top"], "ink"), (chrome["site"], "accent"), (chrome["close_note"], "plain")),
+                  font_path, accent)
+    else:
+        _title(draw, scene.title, font_path)
+        if number and total > 2:
+            _progress(draw, int(number[1]), total - 2, accent)
+        _card(image, card, accent, font_path, tab=f"Q{int(number[1])}" if number else "")
+        if scene.options:
+            _options_block(draw, scene, font_path, accent, inner,
+                           shown=len(scene.options) if shown is None else shown, yes=chrome["yes"])
+        else:
+            _text_block(draw, scene.body, font_path, inner, size=62, center=True)
+        _chips(draw, scene.bullets, font_path)
+
+    draw.text((SAFE_LEFT, FOOTER_Y), chrome["footer_options"] if scene.options else chrome["footer"],
               font=_font(font_path, 23), fill=_COLORS["muted"])
-    draw.text((SAFE_LEFT, FOOTER_Y + 36), scene.source_note,
-              font=_font(font_path, 22), fill=accent)
+    draw.text((SAFE_LEFT, FOOTER_Y + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
+    framed = Image.alpha_composite(_atmosphere(accent, transparent), image)
     if not transparent:
-        background = _background(background_path, index=index, total=total, accent=scene.accent)
-        image = Image.alpha_composite(background.convert("RGBA"), image).convert("RGB")
-    image.save(path, "PNG")
+        backdrop = _backdrop(background_path, index, total, scene.accent).convert("RGBA")
+        framed = Image.alpha_composite(backdrop, framed).convert("RGB")
+    framed.save(path, "PNG", compress_level=1)
 
 
 def probe_duration(audio_path: Path, *, ffprobe_bin: str) -> float:
@@ -287,6 +517,12 @@ CAPTION_FONT_SIZE = 56
 # 똑같이 둔다 — 왼쪽만 72로 두면 자막 상자의 가운데가 59px 왼쪽으로 쏠린다.
 CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
 CAPTION_MARGIN_L = CAPTION_MARGIN_R
+# 자막은 둥근 먹색 상자 위의 흰 굵은 글씨다(참고 영상의 자막 띠, 2026-10-07). Blender text 스트립의
+# 상자는 한글 글꼴의 큰 윗여백까지 상자에 넣어 글자가 아래로 처졌다(위 57px·아래 6px) — 그래서 자막도
+# Pillow로 그려 잉크 범위를 상자 가운데에 놓는다(`_caption_frame`). 줄바꿈 폭은 `CAPTION_FONT_SIZE`로 잰다.
+CAPTION_RENDER_SIZE = 46
+CAPTION_BOX_RGBA = (6, 9, 13, 210)
+CAPTION_PAD_X, CAPTION_PAD_Y = 30, 20
 # 줄바꿈은 우리가 어절 경계에서 넣고 libass는 그대로 그린다(WrapStyle=2). libass는
 # 한글도 중국어·일본어처럼 아무 글자에서나 끊어서, "10월 금리 변동 없음과"가
 # "…없" / "음과 …"로 갈라졌다. 합성 볼드가 측정보다 넓어질 수 있어 여유를 둔다.
@@ -318,8 +554,10 @@ _BINDING_END = ("와", "과", "의")
 # 2. 선택지의 순차 등장: 선택지 줄이 말의 순서대로 하나씩 쌓이고, 새로 뜬 줄의
 #    숫자가 차오른다. 자리는 처음부터 잡혀 있어 이미 뜬 줄이 밀리지 않는다.
 # 3. 프레임 전체의 느린 흐름: 가장자리를 조금 잘라 내고 그 안에서 천천히 움직인다.
-COUNTUP_SECONDS = .72
-COUNTUP_STEPS = 8
+COUNTUP_SECONDS = 1.0
+# 영상 한 프레임(30fps)마다 한 장이다 — 8장(0.09초 간격)이던 때는 막대가 계단처럼 튀었다(운영자 지적,
+# 2026-10-07). 처음에 빠르고 끝에서 느려지게(ease-out) 차오른다.
+COUNTUP_STEPS = 30
 # 카운트업이 끝난 뒤에도 제자리 숫자가 머물 시간이 남아야 한다.
 COUNTUP_MIN_BEAT = 1.4
 # 화면 이미지의 크기와 위치는 고정한다(운영자 결정 2026-09-27). 예전에는 정지 장면을
@@ -455,6 +693,30 @@ def _caption_lines(draw, text: str, font: ImageFont.FreeTypeFont) -> list[str]:
     return lines
 
 
+def _caption_frame(lines: Sequence[str], path: Path, *, font_path: Path) -> None:
+    """자막 한 덩어리를 화면 크기 투명 PNG로 그린다. 상자 아래 끝은 안전 영역 바닥이다."""
+    image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    font = _font(_bold(font_path), CAPTION_RENDER_SIZE)
+    pitch = round(CAPTION_RENDER_SIZE * 1.34)
+    # 줄마다 글자가 달라도 상자 높이가 흔들리지 않게 기준 글자로 잉크 높이를 잰다.
+    _, ink_top, _, ink_bottom = draw.textbbox((0, 0), "한Ag", font=font)
+    width = max(draw.textlength(line, font=font) for line in lines) + 2 * CAPTION_PAD_X
+    height = (len(lines) - 1) * pitch + (ink_bottom - ink_top) + 2 * CAPTION_PAD_Y
+    center = CAPTION_MARGIN_L + (WIDTH - CAPTION_MARGIN_L - CAPTION_MARGIN_R) / 2
+    # Pillow 사각형은 끝 좌표 픽셀까지 칠한다. 상자의 마지막 줄이 SAFE_BOTTOM 바로 위다.
+    box = (center - width / 2, SAFE_BOTTOM - height, center + width / 2, SAFE_BOTTOM - 1)
+    draw.rounded_rectangle(box, radius=22, fill=CAPTION_BOX_RGBA)
+    # 상자 높이는 줄 수로만 정하고(덩어리마다 상자가 출렁이지 않게), 글자는 실제 잉크 범위를 가운데에 둔다.
+    top = draw.textbbox((0, 0), lines[0], font=font)[1]
+    bottom = (len(lines) - 1) * pitch + draw.textbbox((0, 0), lines[-1], font=font)[3]
+    y = box[1] + (box[3] + 1 - box[1] - (bottom - top)) / 2 - top
+    for line in lines:
+        draw.text((center - draw.textlength(line, font=font) / 2, y), line, font=font, fill=_COLORS["ink"])
+        y += pitch
+    image.save(path, "PNG", compress_level=1)
+
+
 def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path, *, font_path: Path) -> None:
     """자막 파일. 줄바꿈은 여기서 어절 경계에 넣는다(`CAPTION_WIDTH` 참고)."""
     def stamp(seconds: float) -> str:
@@ -474,6 +736,11 @@ def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path, *, font_path
 Beat = tuple[str, float, Scene, "int | None"]
 
 
+def _ease(share: float) -> float:
+    """처음에 빠르고 끝에서 느려지는 진행률(cubic ease-out)."""
+    return 1 - (1 - share) ** 3
+
+
 def _countup(scene: Scene, seconds: float, *, shown: int) -> list[Beat]:
     """새로 뜬 선택지의 확률이 0에서 제자리까지 차오르는 정지 프레임들.
 
@@ -491,7 +758,7 @@ def _countup(scene: Scene, seconds: float, *, shown: int) -> list[Beat]:
     rising = [
         (beat, step, replace(scene, options=(
             scene.options[:shown - 1]
-            + ((label, f"{target * n / COUNTUP_STEPS:.0f}{unit}", probability * n / COUNTUP_STEPS),)
+            + ((label, f"{target * _ease(n / COUNTUP_STEPS):.0f}{unit}", probability * _ease(n / COUNTUP_STEPS)),)
             + scene.options[shown:]
         )), shown)
         for n in range(COUNTUP_STEPS)
@@ -576,12 +843,13 @@ def render_video(
 
     draw = ImageDraw.Draw(Image.new("L", (1, 1)))
     font = _font(font_path, CAPTION_FONT_SIZE)
-    subtitles = [{"start": phrase.start, "end": phrase.end,
-                  "text": "\n".join(_caption_lines(draw, phrase.text, font))}
-                 for group in scene_phrases for phrase in group]
+    subtitles = []
+    for number, phrase in enumerate((phrase for group in scene_phrases for phrase in group), start=1):
+        caption = work_dir / f"caption-{number:03d}.png"
+        _caption_frame(_caption_lines(draw, phrase.text, font), caption, font_path=font_path)
+        subtitles.append({"start": phrase.start, "end": phrase.end, "path": str(caption.resolve())})
     compose(images=images, movies=movies, subtitles=subtitles, audio_path=audio_path,
-            output_path=output_path, work_dir=work_dir, font_path=font_path,
-            duration=duration, blender_bin=blender_bin)
+            output_path=output_path, work_dir=work_dir, duration=duration, blender_bin=blender_bin)
     output_path.with_suffix(".timeline.json").write_text(
         json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
     )

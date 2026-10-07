@@ -197,8 +197,7 @@ def test_validation_rejects_dimensions_duration_and_codec(metadata, monkeypatch,
 def test_missing_blender_is_a_clear_render_error(tmp_path, cjk_font):
     with pytest.raises(render.RenderError, match="BLENDER_BIN"):
         blender_render.compose(images=[], movies=[], subtitles=[], audio_path=tmp_path / "a.wav",
-                               output_path=tmp_path / "out.mp4", work_dir=tmp_path,
-                               font_path=cjk_font, duration=3,
+                               output_path=tmp_path / "out.mp4", work_dir=tmp_path, duration=3,
                                blender_bin="definitely-not-blender")
 
 
