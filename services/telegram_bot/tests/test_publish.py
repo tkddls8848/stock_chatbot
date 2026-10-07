@@ -60,6 +60,21 @@ def test_news_keeps_only_public_fields_deduplicates_and_expires(public):
     assert "SECRET" not in json.dumps(payload)
 
 
+def test_news_drops_already_published_non_articles_on_the_next_publish(public):
+    """규칙이 늘면 그 전에 공개된 광고·시세 화면도 다음 발행 때 빠진다. 원문 제목을 남기지 않던
+    예전 근거(`text` 빈 문자열)와 보고서 본문은 판정하지 않는다."""
+    old = [article("ad", text="3 European Defense Stocks Investors Are Watching As NATO Risk Returns"),
+           article("quote", text="NVIDIA Corporation (NVDA) stock price, news, quote and history"),
+           article("legacy", text=""),
+           article("report", kind="report", text="3 Bank Stocks That Could Gain From Higher Long Term US Rates")]
+    (public / "news.json").write_text(json.dumps({"documents": old}), encoding="utf-8")
+
+    publish.publish_news([article()])
+
+    payload = json.loads((public / "news.json").read_text(encoding="utf-8"))
+    assert sorted(row["id"] for row in payload["documents"]) == ["jp", "legacy", "report"]
+
+
 def test_news_failure_preserves_existing_artifact(public, monkeypatch):
     publish.publish_news([article()])
     before = (public / "news.json").read_bytes()

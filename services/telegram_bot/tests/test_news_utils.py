@@ -252,6 +252,127 @@ def test_market_articles_sharing_ad_words_are_kept(title):
     assert len(analyzable_articles([GlobalArticle("a", title, "", "")])) == 1
 
 
+# 2026-09-30~10-07 사전선별 관측(현재 규칙을 통과한 7,086건)에서 그대로 옮긴 제목들이다.
+@pytest.mark.parametrize(("title", "reason"), [
+    ("Omnicom Group Inc. (OMC) stock price, news, quote and history", "시세·목록 화면"),
+    ("S&P 500 (^GSPC) Charts, Data & News", "시세·목록 화면"),
+    ("日経連続増配株指数 チャート・推移・終値:株価指数", "시세·목록 화면"),
+    ("本日のランキング【値上がり率】 (10月7日)", "시세·목록 화면"),
+    ("◎午前１０時現在の値上がり値下がり銘柄数", "시세·목록 화면"),
+    ("[PTS]ナイトタイムセッション17時30分時点 上昇137銘柄・下落134銘柄（東証終値比）", "시세·목록 화면"),
+    ("【注目トピックス 日本株】前日に動いた銘柄 part1メイコー、日東紡績、マネーフォワードなど", "시세·목록 화면"),
+    ("[오프로]26.10.06 상한가 및 상승종목", "시세·목록 화면"),
+    ("[연합뉴스 이 시각 헤드라인] - 07:30", "시세·목록 화면"),
+    ("외국환시세(10월7일·15:30 기준가)", "시세·목록 화면"),
+    ("META_TITLE_SECTORS", "시세·목록 화면"),
+    ("News & Analysis", "시세·목록 화면"),
+    ("EUR/USD (EURUSD) Is down 0.58% on Oct 7: Why It Happened", "자동 생성 글"),
+    ("Applied Materials stock gained 2.03 percent on October 2 in Nasdaq trading", "자동 생성 글"),
+    ("日本製鉄(株)【5401】：今の株価の理由は？値動きの背景をAIが解説", "자동 생성 글"),
+    ("AI주식상승확률분석 : LG전자 (066570) 주가 전망과 상승확률 분석", "자동 생성 글"),
+    ("[온체인 주식선물] 현대차, 정규장 종가보다 0.97% 웃돈", "자동 생성 글"),
+    ("[MK 골든크로스 돌파종목 : 코오롱생명과학(102940) & 이미지스(115610)]", "광고·홍보"),
+    ("브라질 증시 선거 후 8% 급등: AI 추천 유통주 50% 상승", "광고·홍보"),
+    ("【大化け】6月分割注目の超優良銘柄！ Josh Hart (iWWAt1RFVW)", "광고·홍보"),
+    ("3 European Defense Stocks Investors Are Watching As NATO Risk Returns", "종목 추천 글"),
+    ("5 Best Energy Stocks for 2026 and How to Invest", "종목 추천 글"),
+    ("FAE Technology And 2 Other European Penny Stocks With Promising Fundamentals", "종목 추천 글"),
+    ("AI Agents Are Creating a New Cybersecurity Boom: 3 Stocks to Watch", "종목 추천 글"),
+    ("Is It Too Late to Buy Micron Technology Stock After Its 12-Month Gain of 500%?", "종목 추천 글"),
+    ("Tesla Stock Forecast | Record Deliveries, Robotaxi Expansion", "종목 추천 글"),
+    ("円高メリット銘柄8選｜ニトリ・食品・航空の注目株を比較！", "종목 추천 글"),
+    ("元鼎证券观察：四季度行情明日启幕，A股从“假期交易”转向“产业筛选”", "종목 추천 글"),
+    ("[서치 e종목] 가온전선, LSCUS 5.2조 버스덕트 수주 모멘텀으로 주가 우상향?", "종목 추천 글"),
+    ("[인사] 한화투자증권", "시장 무관 난"),
+    ("[부고] 조성길(스트리미 이사)씨 모친상", "시장 무관 난"),
+    ("[동포의 창] 세계한상대회 폐막…3억달러 상담·940만달러 현장 계약 성과", "시장 무관 난"),
+    ("【2014（平成26）年10月7日】LEDで日本人3人にノーベル賞", "시장 무관 난"),
+])
+def test_titles_that_are_not_articles_are_not_analyzed(title, reason):
+    from services.telegram_bot.news.utils import analyzable_articles, exclusion_reason
+    assert exclusion_reason(title) == reason
+    assert analyzable_articles([GlobalArticle("a", title, "", "")]) == []
+
+
+# 위 규칙과 낱말이 겹치지만 기사다. 마지막 셋은 같은 꼴로 지은 예이고 나머지는 같은 관측에 있었다.
+@pytest.mark.parametrize("title", [
+    "[클릭 e종목]롯데칠성, 3분기 실적 기대치 하회 전망…목표가↓",
+    "[오늘의 주목주] 삼성전자우 주가 4%대 내려, 코스피 외국인·기관 매도세에 6830선 약보합 마감",
+    "[외환] 원/달러 환율 3.2원 내린 1,340.4원(15:30 기준가)",
+    "한은 국제 담당 부총재보에 최영주…경제연구원장에 윤경수",
+    "Jefferies Names Top Japan Semiconductor Equipment Stocks to Buy",
+    "Nvidia soars near US$6 tril market cap with stock back at high",
+    "日経平均終値648円安、インフレ懸念で息切れ 米株高に追随できず",
+    "Goldman raises oil price forecast to $100 as Hormuz standoff drags on",
+    "3 stocks dragged the Nikkei lower as chipmakers slid",
+    "[종목 포커스] 한스바이오메드, 휴젤 판매 개시로 흑자 전환",
+])
+def test_articles_sharing_words_with_the_non_article_rules_are_kept(title):
+    from services.telegram_bot.news.utils import exclusion_reason
+    assert exclusion_reason(title) == ""
+
+
+def test_partition_counts_what_was_dropped_and_why():
+    from services.telegram_bot.news.utils import partition_analyzable
+    articles = [GlobalArticle("a", "", "", ""), GlobalArticle("b", "[속보] 환율 급등", "", ""),
+                GlobalArticle("c", "3 UK Penny Stocks With Market Caps Up To £400M", "", ""),
+                GlobalArticle("d", "3 European Growth Stocks With Up To 33% Insider Ownership", "", ""),
+                GlobalArticle("e", "한은, 기준금리 동결", "", ""),
+                GlobalArticle("f", "南方财经全媒体集团", "", "", extra={"publisher": "南方财经全媒体集团"})]
+    kept, dropped = partition_analyzable(articles)
+    assert [article.article_id for article in kept] == ["e"]
+    assert dropped == {"제목 없음": 1, "속보": 1, "종목 추천 글": 2, "시세·목록 화면": 1}
+
+
+def test_junk_reason_leaves_flash_and_untitled_to_the_input_filter():
+    """`junk_reason`은 이미 공개한 근거를 지울 때도 쓴다. 속보는 기사이고, 원문 제목을 남기지 않던 근거는 판정할 수 없다."""
+    from services.telegram_bot.news.utils import junk_reason
+    assert junk_reason("[속보] 코스피 7000 돌파") == ""
+    assert junk_reason("", "") == ""
+    assert junk_reason("3 Defense Stocks Worth Watching As Europe Security Spending Rises") == "종목 추천 글"
+
+
+# ── 장 시황 판정 (사전선별이 구간마다 한 건으로 묶는다) ───────────────────
+@pytest.mark.parametrize(("market", "title", "expected"), [
+    ("KR", "코스피, 0.89% 하락한 6941.39 마감…코스닥 2.98%↑(2보)", "KR"),
+    ("KR", "[개장시황] 코스피, 뉴욕증시 강세에도 장 초반 6900선 등락", "KR"),
+    ("KR", "뉴욕증시 최고치에도 코스피 1.28% 하락", "KR"),   # 수집한 시장의 지수가 먼저다
+    ("KR", "미 국채금리·유가 하락 뉴욕증시 강세…S&P500·나스닥 사상 최고", "US"),
+    ("KR", "6일 VN지수 +0.34% “1750선 회복했지만, 저항 압력 여전”", "VN"),
+    ("US", "S&P 500 closes at record high as Nvidia nears $6 trillion milestone", "US"),
+    ("US", "Wall Street futures rise after softer-than-expected U.S. inflation data", "US"),
+    ("JP", "東証終値648円安", "JP"),
+    ("JP", "（朝）米国市場は主要3指数揃って上昇　大型ハイテク株が相場を牽引し買い優勢の展開", "US"),
+    ("EU", "European shares gain as Genmab jumps, bond yields retreat", "EU"),
+    ("HK", "恒指半日跌128點　科指跌近1%", "HK"),
+    ("HK", "日股半日跌近1%", "JP"),
+    ("CN", "美股收盘：三大股指收涨 埃森哲涨近16%", "US"),
+])
+def test_index_recaps_are_recognised_with_their_index(market, title, expected):
+    from services.telegram_bot.news.utils import market_recap_index
+    assert market_recap_index(title, market) == expected
+
+
+# 지수 이름과 등락 표지가 함께 있지만 장 시황이 아니다. 잘못 묶이면 같은 구간의 장 시황에 밀려 빠진다.
+@pytest.mark.parametrize(("market", "title"), [
+    ("KR", "[단독]작년 코스닥특례상장 95% 같은해 실적마저 부풀렸다[코스닥 뻥튀기 상장]①"),
+    ("KR", "美 증시는 사상 최고치인데 코스피는 왜 7000에서 번번이 미끄러지나"),
+    ("KR", "900선 뚫은 코스닥…이번 반등은 진짜일까 [박진우의 개미수다]"),
+    ("KR", "대만, 韓 제치고 올해 증시 수익률 1위…가권 72% vs 코스피 65%"),
+    ("KR", "외국인, 9월 한달 간 코스피서 20조 '셀 코리아'... '삼전닉스' 비중 40% 이상"),
+    ("KR", "다우기술, 3분기 영업이익 12% 증가"),
+    ("US", "Wall Street bonuses poised to hit record as annual profits forecast to top US$90 billion"),
+    ("US", "Dow Inc shares fall 5% after weak guidance"),
+    ("JP", "上限25億円の「自社株買い」発表で大幅反発…〈東証プライム・値上がり2位〉となった注目銘柄"),
+    ("CN", "耐克股价美股盘后跌幅扩大至8.4%"),
+    ("EU", "NOK Stock Gains After-Hours — Nokia Oyj Rejoins Europe's Benchmark Stoxx 50 Index"),
+    ("KR", "삼성전자, 3분기 영업이익 100조 돌파 전망에 외국인 순매수"),
+])
+def test_titles_that_only_mention_an_index_are_not_recaps(market, title):
+    from services.telegram_bot.news.utils import market_recap_index
+    assert market_recap_index(title, market) == ""
+
+
 def test_korean_gambling_seo_publisher_is_dropped_whatever_the_title():
     from services.telegram_bot.news.utils import analyzable_articles
     article = GlobalArticle("a", "기본 조작은 몇 단계로 이뤄질까? 카지노 여자배우", "", "",

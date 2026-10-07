@@ -1,7 +1,9 @@
 import asyncio
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
+from services.telegram_bot.core.clock import JST
+from services.telegram_bot.features.news_prefilter import service as prefilter_service
 from services.telegram_bot.features.news_prefilter.matcher import StockEntityMatcher
 from services.telegram_bot.features.news_prefilter.optimizer import (
     FEATURE_NAMES,
@@ -72,6 +74,8 @@ def _service(
         exploration_slots=exploration_slots,
         selection_limit=selection_limit,
         reported_event_cooldown_hours=reported_event_cooldown_hours,
+        recap_bucket_hours=3,
+        recap_max_age_hours=6,
     )
 
 
@@ -654,3 +658,65 @@ def test_event_text_keeps_the_pre_strip_form_so_event_memory_stays_continuous():
     stripped = sources._google_article(raw, "gnews-kr:1", "KR")
     assert stripped.title == "코스피 마감"
     assert _normalize_text(stripped) == _normalize_text(raw)
+
+
+# ── 장 시황 묶음 ────────────────────────────────────────
+# 2026-10-07 오후 KR 관측: 코스피 하락 마감 하나가 39가지 문장으로 들어왔다.
+_RECAP_NOW = datetime(2026, 10, 7, 16, 10, tzinfo=JST)
+
+
+def _recap(index, title, published_utc):
+    return GlobalArticle(article_id=f"recap-{index}", title=title, content="",
+                         published_at=f"Wed, 07 Oct 2026 {published_utc} GMT")
+
+
+def _rank_kr(service, articles, cycle_id, excluded=None):
+    return asyncio.run(service.rank_articles(
+        source="gnews_kr", market="KR", articles=articles, watchlist={}, cycle_id=cycle_id,
+        excluded_event_ids=excluded,
+    ))
+
+
+def test_index_recaps_collapse_to_the_newest_one_per_index_and_window(tmp_path, monkeypatch):
+    """문장만 다른 장 시황은 문자 n-gram으로는 다른 사건이다. 시장·지수·구간마다 가장 최근에
+    발행된 한 건만 후보로 남고, 나머지는 반복 차단과 따로 센다. 다른 지수(미국)와 일반 기사는 그대로다."""
+    monkeypatch.setattr(prefilter_service, "now", lambda: _RECAP_NOW)
+    service = _service(tmp_path, mode="active", selection_limit=12)
+    ranked = _rank_kr(service, [
+        _recap(0, "코스피, 외국인 2.6조원 매도에 6800선 후퇴…삼성전자 약세", "06:40:00"),
+        _recap(1, "[마감시황] 코스피 1.98% 내린 6803.90 마감", "06:55:00"),
+        _recap(2, "뉴욕증시 최고치에도 코스피 1.28% 하락", "05:00:00"),
+        _recap(3, "미 국채금리 하락에 뉴욕증시 강세…S&P500·나스닥 사상 최고", "06:00:00"),
+        _recap(4, "삼성전자, 3분기 영업이익 100조 돌파 전망에 외국인 순매수", "06:30:00"),
+    ], "cycle-0")
+
+    assert sorted(row.article.article_id for row in ranked) == ["recap-1", "recap-3", "recap-4"]
+    cycle = [row for row in _observations(tmp_path) if row["type"] == "cycle"][-1]
+    assert cycle["gated_recap"] == 2 and cycle["gated_source_duplicate"] == 0
+    assert asyncio.run(service.report())["gated"]["gated_recap"] == 2
+
+
+def test_a_queued_recap_holds_its_window_and_the_next_window_opens_a_new_one(tmp_path, monkeypatch):
+    clock = {"now": _RECAP_NOW}
+    monkeypatch.setattr(prefilter_service, "now", lambda: clock["now"])
+    service = _service(tmp_path, mode="active")
+    first = _rank_kr(service, [_recap(0, "[마감시황] 코스피 1.98% 내린 6803.90 마감", "06:55:00")], "c0")
+
+    clock["now"] = datetime(2026, 10, 7, 17, 5, tzinfo=JST)
+    same_window = _rank_kr(service, [_recap(1, "코스피, 외인 매도에 6800선 턱걸이 마감", "07:30:00")], "c1",
+                           excluded={first[0].event_id})
+    clock["now"] = datetime(2026, 10, 7, 18, 5, tzinfo=JST)
+    next_window = _rank_kr(service, [_recap(2, "[권성진의 퇴근길 증시] 코스피 6800선 마감", "08:50:00")], "c2",
+                           excluded={first[0].event_id})
+
+    assert same_window == []
+    # 이웃 구간의 열쇠는 글자가 거의 같다. 문자 유사도로 엮였다면 여기서 같은 사건이 됐다.
+    assert len(next_window) == 1 and next_window[0].event_id != first[0].event_id
+
+
+def test_a_recap_older_than_the_age_limit_does_not_represent_the_window(tmp_path, monkeypatch):
+    monkeypatch.setattr(prefilter_service, "now", lambda: _RECAP_NOW)
+    service = _service(tmp_path, mode="active")
+
+    assert _rank_kr(service, [_recap(0, "코스피, 0.58% 상승 출발…코스닥 900선 재진입", "00:05:00")], "c0") == []
+    assert [row for row in _observations(tmp_path) if row["type"] == "cycle"][-1]["gated_recap"] == 1

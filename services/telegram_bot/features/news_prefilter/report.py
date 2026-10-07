@@ -66,6 +66,7 @@ def format_prefilter_report(report: dict) -> str:
     gated = report.get("gated", {})
     lines.append(f"  반복 차단: 기보고 {gated.get('gated_translated_event', 0):,} · "
                  f"큐 대기 {gated.get('gated_queued_event', 0):,} · 소스 간 {gated.get('gated_cycle_duplicate', 0):,} · 소스 내 {gated.get('gated_source_duplicate', 0):,}건")
+    lines.append(f"  장 시황 묶음: {gated.get('gated_recap', 0):,}건 (시장·지수·구간마다 최근 한 건만 후보)")
     active = report.get("active_labels", {})
     lines.extend([
         "", "<b>active 후보의 후속 평가</b>",

@@ -287,6 +287,11 @@ NEWS_PREFILTER_SIMILARITY_THRESHOLD = 0.74
 NEWS_PREFILTER_EXPLORATION_SLOTS = 2
 # 저장된 사건의 translated_at은 지금은 보고서 근거로 사용된 마지막 시각이다.
 NEWS_PREFILTER_REPORTED_EVENT_COOLDOWN_HOURS = 24
+# 장 시황(지수 등락을 받아 적은 기사)은 시장·지수마다 이 시간 구간(수집 시각 기준)에 가장 최근 한 건만
+# 큐 후보로 둔다. 보고서 구간(5~7시간)마다 두세 건이라 지수가 어디서 어디로 갔는지는 남는다.
+# 이 시간보다 오래 전에 발행된 장 시황은 이미 지난 지수 위치라 대표로 고르지 않는다.
+NEWS_PREFILTER_RECAP_BUCKET_HOURS = 3
+NEWS_PREFILTER_RECAP_MAX_AGE_HOURS = 6
 
 # 새 라벨에 대한 학습을 단일 worker에서 수행한다. 고정 CPU 비율·일일 상한은 없다.
 # 한 번의 예약 실행은 최대 30 CPU초, 2초 조각 사이에 긴급 작업·호스트 부하를 확인한다.

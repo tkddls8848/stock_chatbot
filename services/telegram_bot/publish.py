@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from services.telegram_bot.core.clock import now
 from services.telegram_bot.core.config import DATA_DIR, PUBLIC_DIR
 from services.telegram_bot.core.storage import write_bytes_atomic, write_json_atomic
+from services.telegram_bot.news.utils import junk_reason
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ def publish_news(documents: list[dict[str, Any]]) -> None:
     """발행된 보고서·근거 제목만 공개한다. 최근 30일, 최대 3,000건을 보존한다.
 
     원문 전체·관심종목·리서치 상태는 받지 않는다. 검색 요청은 이 산출물만 읽는다.
+    근거 기사는 원문 제목(`text`)이 기사가 아닌 글(`news/utils.py`의 `junk_reason`)이면 이미 공개한
+    것까지 뺀다 — 규칙이 늘면 그 전에 공개된 광고·시세 화면이 다음 발행 때 함께 빠진다(2026-10-07 공개
+    근거 2,795건 중 96건이 그런 글이었고, 규칙이 생기기 전이라 30일 보존 기간 동안 검색에 남아 있었다).
+    원문 제목을 남기지 않던 2026-10-01 이전 근거(`text`가 빈 문자열)는 판정할 수 없어 그대로 둔다.
     """
     moment = now()
     cutoff = (moment.date() - timedelta(days=29)).isoformat()
@@ -60,7 +65,8 @@ def publish_news(documents: list[dict[str, Any]]) -> None:
             if cutoff <= day <= moment.date().isoformat():
                 rows[document["id"]] = {key: document[key] for key in fields if key in document}
         kept = sorted(
-            (row for row in rows.values() if cutoff <= row["date"] <= moment.date().isoformat()),
+            (row for row in rows.values() if cutoff <= row["date"] <= moment.date().isoformat()
+             and not (row.get("kind") == "news" and junk_reason(row.get("text", ""), row.get("source", "")))),
             key=lambda row: (row["date"], row.get("published_at", ""), row["id"]),
             reverse=True,
         )[:3000]

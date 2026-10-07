@@ -7,6 +7,7 @@
 import asyncio
 import html
 import re
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, TypeVar
@@ -108,12 +109,27 @@ _PUBLISHER_TAIL = re.compile(r"\s+[-–—]\s+[^-–—]{1,60}$")
 
 # 기사가 아니라 종목 시세 화면인 제목. Google News 질의("株価 終値" 등)가 Yahoo 시세 페이지를
 # 기사처럼 돌려준다 — 2026-10-02 큐에서 일본 130건 중 32건, 미국 110건 중 11건이었다.
-# 분석할 사건이 없다. 실제로 본 두 형식만 정확히 잡는다(일반 "주가" 낱말은 거르지 않는다).
-_QUOTE_PAGE = re.compile(r"[：:]\s*株価・株式情報|\bStock Price, News, Quote & History\b"
-                         # 같은 부류의 한국어 자동 생성 글(TradingKey). 등락률 하나로 찍어 낸 제목이다
-                         # — "브로드컴 (AVGO) 주식 움직였습니다 상승 3.26%에 10월2일: 변동 원인",
-                         # "Bitcoin(BTCUSD) 종목이 10월4일에 갑자기 1.01% 상승한 …".
-                         r"|주식 (?:움직였|시작했|마감했)습니다 (?:상승|하락)|\) 종목이 \d{1,2}월\s?\d{1,2}일에")
+# 분석할 사건이 없다. 실제로 본 형식만 정확히 잡는다(일반 "주가" 낱말은 거르지 않는다). 영어판은
+# 지역판마다 대소문자가 달라("… (MU) stock price, news, quote and history") 대소문자를 가리지 않는다.
+_QUOTE_PAGE = re.compile(r"[：:]\s*株価・株式情報|(?i:\bstock price, news, quote (?:&|and) history\b)"
+                         r"|\([A-Z0-9.=^-]{1,12}\) (?i:charts, data (?:&|and) news)|チャート・推移・終値")
+# 사건이 아니라 숫자 목록인 정례 집계표. 같은 꼴이 매일 시각만 바꿔 찍힌다 — 株探의 순위·종목 수
+# ("本日のランキング【値上がり率】", "◎午前１０時現在の値上がり値下がり銘柄数", "[PTS]…上昇1507銘柄"),
+# フィスコ의 "前日に動いた銘柄 part1", 상한가 종목 목록, 연합뉴스의 시간대별 헤드라인 모음과 외국환시세표다.
+_DATA_LIST = re.compile(
+    r"^\s*本日の(?:ランキング|【)|^\s*前場のランキング|現在の値上がり値下がり銘柄数|^\s*\[PTS\]|前日に動いた銘柄 ?part"
+    r"|^\s*【動画】Pickup NEWS|^\s*\[오프로\]|상한가 및 상승종목|^\s*\[연합뉴스 이 시각 헤드라인\]|^\s*외국환시세\(")
+# 내용 없는 틀 제목: 채워지지 않은 템플릿 키("META_TITLE_SECTORS")와 섹션 첫 화면("News & Analysis").
+_PAGE_SHELL = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$|^News & Analysis$|^Today's Crypto News:|\bIndustry News:")
+# 등락률 하나로 찍어 낸 자동 생성 글. TradingKey("브로드컴 (AVGO) 주식 움직였습니다 상승 3.26%에 10월2일:
+# 변동 원인", "EUR/USD (EURUSD) Is down 0.58% on Oct 7: Why It Happened"), 종목마다 같은 문장 틀
+# ("Applied Materials stock gained 2.03 percent on October 2"), AI 해설·확률 화면("値動きの背景をAIが解説",
+# "AI주식상승확률분석"), 토큰포스트의 종가 대비 괴리율("[온체인 주식선물] 현대차, 정규장 종가보다 0.97% 웃돈")이다.
+_GENERATED = re.compile(
+    r"주식 (?:움직였|시작했|마감했)습니다 (?:상승|하락)|\) 종목이 \d{1,2}월\s?\d{1,2}일에"
+    r"|\) Is (?:up|down) \d+(?:\.\d+)?% on [A-Z][a-z]{2} \d{1,2}: Why It Happened"
+    r"|\bstock (?:gained|lost|rose|fell|climbed|dropped|declined) \d+(?:\.\d+)? percent on [A-Z][a-z]+ \d{1,2}\b"
+    r"|値動きの背景をAIが解説|AI주식상승확률분석|상승확률 분석|^\s*\[온체인 주식선물\]")
 # 도박 광고 상표가 기사 제목 **앞에** 붙어 오는 경우(2026-10-02 중국 표본: "必威买球泽连斯基…",
 # "ManBetx手机版武契奇…", "yabovip188登录武契奇…"). 앞머리만 본다 — 제목 중간의 상표명은 그 회사의
 # 기사일 수 있고, "博彩"는 마카오 카지노주 기사에 정상적으로 쓰여 넣지 않는다.
@@ -139,8 +155,10 @@ _GAME_GUIDE = re.compile(
 #    공개", Investing.com의 "AI가 고른 이 기술주들". ② 연합뉴스 `[게시판]` — 기업이 보낸 보도자료를 모아
 #    싣는 난이다. ③ 금융사·유통사의 고객 이벤트("ISA 이벤트 진행", "현금 경품"). "대형 이벤트 앞두고"처럼
 #    시장 일정을 이벤트라 부르는 기사는 남는다 — 판촉 낱말이 앞뒤에 붙을 때만 거른다.
+#    같은 매경 신호 서비스의 `[MK 골든크로스 돌파종목 : …]`, Investing.com의 "AI 추천 유통주 50% 상승"도 ①이다.
 _PROMOTION = re.compile(
-    r"\[MK시그널\]|(?:매수|매도)\s?신호 포착|추천\s?종목 공개|▶▶|AI가 고른|AI 종목 선정 전략|AI 추천주"
+    r"\[MK시그널\]|\[MK 골든크로스|(?:매수|매도)\s?신호 포착|추천\s?종목 공개|▶▶|AI가 고른|AI 종목 선정 전략"
+    r"|AI 추천 ?\S*주"
     r"|^\s*\[게시판\]"
     r"|(?:가입|개설|거래|고객|기념|환영|사은|증정|축하|감사)\s?이벤트|이벤트\s?(?:진행|실시|시작|전개)|경품|사은품")
 # 한국어 제목의 그림 문자("[과매도 우량주 리포트] 🚨RSI …"). 국내 매체 기사 제목은 그림 문자를 쓰지 않는다.
@@ -150,6 +168,27 @@ _HANGUL = re.compile(r"[가-힣]")
 # 기사를 퍼 와 도박 광고를 끼워 넣는 매체. 같은 날 표본의 광고 제목이 전부 이 매체였다.
 # 뒤의 둘은 한국어 도박 SEO 글만 내는 해외 사이트다(제목 규칙을 빠져나가는 "카지노 여자배우" 같은 글도 낸다).
 _SPAM_PUBLISHERS = frozenset({"Pchome电脑之家", "Calgary Roughnecks", "Histoire pour tous"})
+# 영상 재업로드 스팸. 제목 끝에 영상 ID 같은 무작위 10~11자가 괄호로 붙는다
+# ("【大化け】6月分割注目の超優良銘柄！ Josh Hart (iWWAt1RFVW)"). 대문자·소문자·숫자가 다 섞여야 한다.
+_VIDEO_SPAM = re.compile(r"\((?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{10,11}\)\s*$")
+# 종목 추천 목록과 투자 안내 SEO 글. 사건이 아니라 "살 만한 종목 N개"를 판다 — simplywall.st·Motley Fool이
+# 같은 틀로 매일 찍는다("3 European Defense Stocks Investors Are Watching As …", "5 Best Energy Stocks for 2026
+# and How to Invest"). Capital.com의 종목 전망 화면("Tesla Stock Forecast | …"), 元鼎证券의 홍보 연재
+# ("元鼎证券观察：…"), 데일리인베스트가 물음표로 끝내는 종목 띄우기("[서치 e종목] … 주가 우상향?")도 같다.
+# 영어 틀은 대문자 제목 꼴일 때만 잡는다 — "Goldman raises oil price forecast"는 남는다.
+_STOCK_PICKS = re.compile(
+    r"^(?:Top )?\d{1,2} (?:[A-Z][\w&'’.-]* ){0,5}(?:Penny )?(?:Stocks?|Picks|ETFs|Shares)\b"
+    r"|\b[Aa]nd \d{1,2} Others?\b.*\bStocks\b|\bTop \d{1,2} Penny Stock|\b\d{1,2} (?:[\w&'’.-]+ ){0,4}Stocks? to (?:Buy|Watch)\b"
+    r"|\bBest\b[^:|]*\bStocks? to Buy\b|\bHow to Invest\s*$"
+    r"|^(?:How to Buy|Is It Too Late to Buy|Is It Time to Buy|Should You Buy|Should You Sell)\b|^What Is the Stock Market\?"
+    r"|(?i:\b(?:stock|price) (?:forecast|prediction)\s*[:|])|\bForecast as of \d|StoxEurope estimate"
+    r"|銘柄\d{1,2}選|\d{1,2}選[｜|！!]|〉\d{1,2}銘柄|^\s*元鼎证券观察[：:]"
+    r"|^\s*\[(?:서치 e종목|종목 포커스|코스닥 현미경 분석)\].*(?:\?|？|할까|갈까|될까|있을까)(?:\s+-\s+\S+)?\s*$")
+# 시장과 무관한 정례 난. 연합뉴스 경제 RSS가 인사·부고·동포 소식·반려동물·아프리카 칼럼을 같은 피드로
+# 보낸다. 일본의 "오늘은 무슨 날"(【1961（昭和36）年10月2日】東証二部市場が誕生)도 같은 부류다.
+_OFF_MARKET = re.compile(
+    r"^\s*\[(?:인사|부고|부음|동정|동포의 창|반려동물|우분투칼럼)\]"
+    r"|^\s*【\d{4}（(?:明治|大正|昭和|平成|令和)\d+）年\d{1,2}月\d{1,2}日】")
 
 
 def is_flash_title(title: str) -> bool:
@@ -168,16 +207,122 @@ def is_advertisement(title: str, publisher: str = "") -> bool:
                 or _PROMOTION.search(text) or _EMOJI.search(text))
 
 
-def analyzable_articles(articles: list) -> list:
-    """분석 재료가 되는 기사만 남긴다: 제목이 있고, 속보 표시로 시작하지 않고, 시세 화면·광고가 아닌 기사.
+def exclusion_reason(title: str, publisher: str = "") -> str:
+    """분석 재료가 아닌 제목이면 그 까닭(로그에 세는 짧은 이름), 재료면 빈 문자열.
 
-    보고서 수집(사전선별 전)과 리서치 수집이 같은 규칙을 쓴다. 제목 없는 항목은
-    보고서가 근거로 고를 수도, 원문과 대조할 수도 없다.
+    제목 없는 항목은 보고서가 근거로 고를 수도, 원문과 대조할 수도 없다. 속보는 운영자 결정으로
+    쓰지 않는다. 나머지는 기사 꼴이 아닌 글이다(`junk_reason`).
     """
-    return [article for article in articles
-            if str(article.title or "").strip() and not is_flash_title(article.title)
-            and not _QUOTE_PAGE.search(article.title)
-            and not is_advertisement(article.title, (getattr(article, "extra", None) or {}).get("publisher"))]
+    text = str(title or "")
+    if not text.strip():
+        return "제목 없음"
+    if is_flash_title(text):
+        return "속보"
+    return junk_reason(text, publisher)
+
+
+def junk_reason(title: str, publisher: str = "") -> str:
+    """기사가 아닌 글(시세·목록 화면·자동 생성 글·광고·종목 추천 글·시장 무관 난)이면 그 까닭.
+
+    속보와 제목 없음은 여기 없다 — 둘은 분석 입력에서만 빼는 기사이고, 이 판정은 이미 공개한
+    근거를 지울 때도 쓴다(`publish.py`). 제목이 매체명과 같으면 매체 첫 화면이다("南方财经全媒体集团").
+    """
+    text = str(title or "").strip()
+    if not text:
+        return ""
+    if (_QUOTE_PAGE.search(text) or _DATA_LIST.search(text) or _PAGE_SHELL.search(text)
+            or text == str(publisher or "").strip()):
+        return "시세·목록 화면"
+    if _GENERATED.search(text):
+        return "자동 생성 글"
+    if is_advertisement(text, publisher) or _VIDEO_SPAM.search(text):
+        return "광고·홍보"
+    if _STOCK_PICKS.search(text):
+        return "종목 추천 글"
+    if _OFF_MARKET.search(text):
+        return "시장 무관 난"
+    return ""
+
+
+def partition_analyzable(articles: list) -> tuple[list, Counter[str]]:
+    """분석 재료인 기사와, 뺀 기사의 까닭별 건수. 수집 로그가 무엇을 왜 뺐는지 센다."""
+    kept: list = []
+    dropped: Counter[str] = Counter()
+    for article in articles:
+        reason = exclusion_reason(article.title, (getattr(article, "extra", None) or {}).get("publisher"))
+        if reason:
+            dropped[reason] += 1
+        else:
+            kept.append(article)
+    return kept, dropped
+
+
+def analyzable_articles(articles: list) -> list:
+    """분석 재료가 되는 기사만 남긴다(`exclusion_reason`). 보고서 수집(사전선별 전)과 리서치 수집이 같은 규칙을 쓴다."""
+    return partition_analyzable(articles)[0]
+
+
+# ── 장 시황: 지수 등락을 받아 적은 기사 ────────────────────
+# 거르지 않는다 — 지수가 지금 어디 있는지는 보고서가 알아야 한다. 다만 같은 등락을 수십 매체가 저마다
+# 다른 문장으로 옮겨 적어 사전선별의 같은 사건 판정(문자 n-gram)이 하나로 묶지 못한다. 2026-10-06 22시~
+# 10-07 19시 사전선별이 큐로 보낸 후보의 미국 59%·일본 56%·한국 30%가 이 꼴이었다(질의 하나가 "코스피 증시
+# 마감"·"日経平均 株価 終値"이기도 하다). 사전선별이 시장·지수·몇 시간마다 가장 최근 한 건으로 묶는다
+# (`features/news_prefilter/service.py`). 지수 이름과 장 시점·등락 표지가 함께 있어야 하고, 전망·분석·물음은
+# 장 시황이 아니다("[단독] … 코스닥 뻥튀기 상장", "코스피는 왜 7000에서 번번이 미끄러지나"). 잘못 묶이면
+# 그 기사가 같은 구간의 다른 장 시황에 밀려 빠지므로 표지를 좁게 둔다 — 놓친 장 시황은 지금처럼 들어올 뿐이다.
+# 지수 이름 뒤 한글 두 자는 다른 낱말이다("코스닥특례상장", "다우기술"). 조사 한 자("코스피는")는 받는다.
+_RECAP_INDEXES = {
+    "KR": r"(?:코스피|코스닥)(?:200|150)?(?:지수)?(?![가-힣]{2})|\bKOSPI\b|\bKOSDAQ\b|\bKospi\b|韓股",
+    "US": r"S&P ?500|\bNasdaq\b|\bDow(?: Jones)?\b(?! Inc| Chemical)|\bU\.?S\.? stocks\b|\bU\.?S\.? stock (?:market|futures)\b"
+          r"|\bstock futures\b|\bWall Street (?:futures|stocks|indexes|indices|ends|closes|opens|rallies|rises|falls|slides"
+          r"|dips|edges|gains|hits|marches|notches|shares|points|slips|climbs|jumps|tumbles|retreats|advances|surges)\b"
+          r"|뉴욕\s?증시|美\s?증시|미\s?증시|미국\s?증시|나스닥(?:지수|100)?(?![가-힣]{2})|다우(?:존스)?(?:지수)?(?![가-힣]{2})"
+          r"|米国市場|米国株式市場|NYダウ|ダウ平均|ナスダック|道指|纳指|納指|标普|標普|美股(?:三大|收盘|收市|开盘|開市|开市)",
+    "JP": r"日経平均|日経225|日経先物|東証|TOPIX|ＴＯＰＩＸ|東京株式|東京株|平均株価|読売(?:333|３３３)|닛케이|\bNikkei\b|日股",
+    "EU": r"\bSTOXX\b|\bStoxx\b|\bDAX\b|\bFTSE\b|\bCAC(?: 40)?\b|\bEuropean (?:stocks|shares|markets|bourses|equities)\b"
+          r"|\bEurope(?:an)? stocks\b|\bLondon stocks\b|歐股|欧股|유럽\s?증시",
+    "HK": r"恒指|恒生指[數数]|恒生科技指[數数]|科指|\bHang Seng\b|항셍|홍콩\s?증시"
+          r"|港股(?=收|半日|全日|低收|高收|下午|早段|初段|午|ADR|升|跌|三大)",
+    "CN": r"沪指|滬指|上证指数|上證指數|深成指|深证成指|创业板指|創業板指|科创50|\bShanghai Composite\b|상하이\s?종합"
+          r"|A股(?=收|午|早盘|三大|集体|全线|高开|低开|大涨|大跌|震荡)",
+    "TW": r"台股|加權指數|가권|\bTaiex\b",
+    "VN": r"VN\s?지수|베트남\s?증시|\bVN-?Index\b",
+}
+_RECAP_INDEX_PATTERNS = {code: re.compile(pattern) for code, pattern in _RECAP_INDEXES.items()}
+_RECAP_MOVE = re.compile(
+    r"마감|출발|개장|장중|장\s?초반|장\s?후반|보합|턱걸이|반납|후퇴|하회|상회|탈환|돌파|붕괴|공방|밑으로|최고치|사상\s?최고|신고가"
+    r"|\d[\d,]*(?:\.\d+)?\s?(?:선|P\b|포인트)"
+    r"|終値|午前|前引け|大引け|後場|前場|寄り付き|寄付|続伸|続落|反落|反発|急伸|急落|[0-9０-９,，]+円(?:[0-9０-９]+銭)?(?:高|安)"
+    r"|上昇|下落|下げ幅|上げ幅|もみ合い|最高値|高値|安値|横ばい|値上がり|値下がり"
+    r"|(?i:\brecord\b|all-time high|\b(?:rise[sn]?|rose|gain(?:s|ed)?|climb(?:s|ed)?|jump(?:s|ed)?|fall(?:s|en)?|fell"
+    r"|slip(?:s|ped)?|drop(?:s|ped)?|sinks?|sank|edges?|edged|tumbles?|tumbled|rall(?:y|ies|ied)|advances?|advanced"
+    r"|retreats?|retreated|close[sd]?|opens?|opened|finish(?:es|ed)?|ends?|ended|higher|lower|points|premarket|futures"
+    r"|surges?|surged|slides?|slid|dips?|dipped|mixed|flat|steady|inch(?:es|ed)?|plunges?|plunged|soars?|soared)\b)"
+    r"|收涨|收跌|收市|收盘|收報|收报|收漲|高开|低开|高開|低開|午评|午盘|半日|初段|低收|高收|全日|[升跌涨漲](?:\d|[逾近約约超])"
+    r"|\d+\s?[點点]|\d+(?:\.\d+)?\s?[%％]|[↑↓]")
+_RECAP_NOT = re.compile(
+    r"\?|？|[가-힣]까(?![가-힣])|(?:하|삼|되)나(?![가-힣])|\[단독|분석|전망|이유|왜|경고|버블|위험|향방|착시|진단|해설|칼럼"
+    r"|올해|연고점|연저점|연중|주간|분기|한\s?달|월간|반기|연간|최악|성적|수익률|온도차|서학개미|보유액|ETF|레버리지|상장"
+    r"|展望|見通し|今後|予想|アノマリー|特集|戦略|考察|分析|解釈|注目銘柄|年間|長期"
+    r"|怎么走|研判|策略|观点|观察|有望|或将|预计|机会|前瞻|解读"
+    r"|(?i:\b(?:should|why|how|what|will|bubble|crash|bonus(?:es)?|profits?|expects?|forecasts?|outlook|strategists?"
+    r"|warns?|predicts?|sees|eyes|upgrades?|downgrades?|history|this year|season|decade|ipo|rejoins|joins|preview"
+    r"|week ahead)\b)")
+
+
+def market_recap_index(title: str, market: str = "") -> str:
+    """지수 등락만 받아 적은 장 시황이면 그 지수의 시장 코드(KR·US·JP …), 아니면 빈 문자열.
+
+    제목에 지수가 여럿이면 그 기사를 수집한 시장(`market`)의 지수가 먼저다 — 한국 피드의
+    "뉴욕증시 최고치에도 코스피 1.28% 하락"은 한국 장 시황이고 "S&P500·나스닥 사상 최고"는 미국 장 시황이다.
+    """
+    text = str(title or "")
+    if _RECAP_NOT.search(text) or not _RECAP_MOVE.search(text):
+        return ""
+    for code in sorted(_RECAP_INDEX_PATTERNS, key=lambda code: code != market):
+        if _RECAP_INDEX_PATTERNS[code].search(text):
+            return code
+    return ""
 
 
 def strip_publisher_tail(title: str) -> str:

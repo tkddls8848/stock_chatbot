@@ -34,10 +34,14 @@ from services.telegram_bot.features.news_prefilter.optimizer import (
     predict_probability,
 )
 from services.telegram_bot.news.sources import GlobalArticle
+from services.telegram_bot.news.utils import market_recap_index, parse_news_datetime
 
 logger = logging.getLogger(__name__)
 _SPACE_RE = re.compile(r"\s+")
 _TAG_RE = re.compile(r"<[^>]+>")
+# 장 시황 묶음의 사건 텍스트 머리. 기사 문장이 아니라 "시장·지수·구간" 열쇠라 문자 n-gram
+# 유사도로 다른 사건과 엮이지 않게 band 색인에 넣지 않는다(이웃 구간의 열쇠끼리는 거의 같다).
+_RECAP_EVENT_PREFIX = "recap|"
 # 섀도 비교가 답하지 못하는 것. 지운 채로 active에 올리지 않는다.
 SHADOW_CAVEATS = (
     "라벨은 보고서 근거와 무작위 평가 표본에 붙는다. shadow의 입력은 최신순 상위뿐이라"
@@ -191,6 +195,8 @@ class NewsPrefilter:
         exploration_slots: int,
         selection_limit: int,
         reported_event_cooldown_hours: int,
+        recap_bucket_hours: int,
+        recap_max_age_hours: int,
     ):
         self.mode = mode
         self._event_file = event_file
@@ -205,6 +211,8 @@ class NewsPrefilter:
         self._reported_cooldown = timedelta(
             hours=max(0, reported_event_cooldown_hours)
         )
+        self._recap_bucket_hours = min(24, max(1, recap_bucket_hours))
+        self._recap_max_age = timedelta(hours=max(1, recap_max_age_hours))
         self._training_state: dict[str, Any] = {}
         self._maintenance: dict[str, Any] = {}
         self._lock = asyncio.Lock()
@@ -289,6 +297,8 @@ class NewsPrefilter:
         exact: dict[str, str] = {}
         for event in self._events.values():
             exact[event.text] = event.event_id
+            if event.text.startswith(_RECAP_EVENT_PREFIX):
+                continue
             for band in _bands(event.signature):
                 buckets[band].add(event.event_id)
         return buckets, exact
@@ -401,12 +411,28 @@ class NewsPrefilter:
         rows: list[RankedCandidate] = []
         scored_rows: list[tuple[GlobalArticle, str, str, dict[str, float], float]] = []
         count = max(1, len(articles) - 1)
+        # 장 시황(`market_recap_index`)은 시장·지수·구간마다 한 사건으로 묶는다. 같은 지수 등락을
+        # 문장만 바꿔 옮긴 기사들이라 문자 n-gram으로는 서로 다른 사건이 된다. 구간은 수집 시각 기준이다.
+        recap_bucket = observed_at.replace(
+            hour=observed_at.hour - observed_at.hour % self._recap_bucket_hours,
+            minute=0, second=0, microsecond=0,
+        ).isoformat(timespec="hours")
+        recap_published: dict[str, datetime | None] = {}
 
         for feed_rank, article in enumerate(articles):
             candidate_id = self._candidate_id(source, article.article_id)
-            text = _normalize_text(article)
-            signature = _simhash(text)
-            event, similarity = self._match_event(text, signature, buckets, exact)
+            article_market = str(article.extra.get("market") or market or "OTHER")
+            recap_index = market_recap_index(article.title, article_market)
+            if recap_index:
+                text = f"{_RECAP_EVENT_PREFIX}{article_market}|{recap_index}|{recap_bucket}"
+                signature = _simhash(text)
+                exact_id = exact.get(text)
+                event, similarity = (self._events.get(exact_id), 1.0) if exact_id else (None, 0.0)
+                recap_published[candidate_id] = parse_news_datetime(article.published_at, article.published_date)
+            else:
+                text = _normalize_text(article)
+                signature = _simhash(text)
+                event, similarity = self._match_event(text, signature, buckets, exact)
             is_new_event = event is None
             if event is None:
                 event_id = hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()
@@ -419,8 +445,9 @@ class NewsPrefilter:
                 )
                 self._events[event_id] = event
                 exact[text] = event_id
-                for band in _bands(signature):
-                    buckets[band].add(event_id)
+                if not recap_index:
+                    for band in _bands(signature):
+                        buckets[band].add(event_id)
             already_seen = candidate_id in event.article_ids
             if not already_seen:
                 event.article_ids.append(candidate_id)
@@ -461,22 +488,43 @@ class NewsPrefilter:
         # 점수 순서를 바꾸는 일(shadow/active의 쟁점)과 달리, 여기서 거르는 것은
         # "같은 사건을 다시 보고하는 것"뿐이다. 두 정책 모두 걸러진 뒤의 같은
         # 풀에서 고르므로 섀도 비교의 baseline은 그대로 유지된다.
-        gate_counts = {"translated": 0, "cycle": 0, "source": 0, "queued": 0}
+        # 장 시황 묶음은 구간마다 가장 최근에 발행된 한 건만 후보로 둔다. 피드 순서는 발행순이 아니고
+        # (Google News는 관련도순이다), `NEWS_PREFILTER_RECAP_MAX_AGE_HOURS`보다 오래된 장 시황은
+        # 이미 지난 지수 위치라 묶음의 대표가 되지 못한다.
+        newest_recap: dict[str, tuple[datetime, str]] = {}
+        floor = observed_at - self._recap_max_age
+        for _, candidate_id, event_id, _, _ in scored_rows:
+            if candidate_id not in recap_published:
+                continue
+            published = recap_published[candidate_id]
+            if published is not None and published < floor:
+                continue
+            moment = published or floor
+            if event_id not in newest_recap or moment > newest_recap[event_id][0]:
+                newest_recap[event_id] = (moment, candidate_id)
+        gate_counts = {"translated": 0, "cycle": 0, "source": 0, "queued": 0, "recap": 0}
         raw_rows: list[tuple[GlobalArticle, str, str, dict[str, float], float]] = []
         source_events: set[str] = set()
         for row in scored_rows:
-            event_id = row[2]
+            candidate_id, event_id = row[1], row[2]
             if self._recently_reported(event_id, observed_at):
-                gate_counts["translated"] += 1
-                continue
-            if event_id in (excluded_event_ids or set()):
-                gate_counts["queued"] += 1
-                continue
-            if event_id in self._cycle_claimed:
-                gate_counts["cycle"] += 1
-                continue
-            if event_id in source_events:
-                gate_counts["source"] += 1
+                gate = "translated"
+            elif event_id in (excluded_event_ids or set()):
+                gate = "queued"
+            elif event_id in self._cycle_claimed:
+                gate = "cycle"
+            elif event_id in source_events:
+                gate = "source"
+            else:
+                gate = ""
+            # 장 시황은 막힌 까닭과 무관하게 따로 센다. 위 넷은 같은 기사를 다시 담는 반복이고,
+            # 이것은 서로 다른 기사를 한 구간으로 묶은 것이다 — 섞으면 반복 차단 추이가 부푼다.
+            if candidate_id in recap_published and (
+                gate or newest_recap.get(event_id, (None, ""))[1] != candidate_id
+            ):
+                gate = "recap"
+            if gate:
+                gate_counts[gate] += 1
                 continue
             source_events.add(event_id)
             raw_rows.append(row)
@@ -557,6 +605,7 @@ class NewsPrefilter:
                 "gated_queued_event": gate_counts["queued"],
                 "gated_cycle_duplicate": gate_counts["cycle"],
                 "gated_source_duplicate": gate_counts["source"],
+                "gated_recap": gate_counts["recap"],
                 "new_events": new_events,
                 "logged": len(observation_lines),
                 "mode": self.mode,
@@ -575,13 +624,14 @@ class NewsPrefilter:
         self._persist_events_if_due()
         if any(gate_counts.values()):
             logger.info(
-                "[PREFILTER] %s 재탕 차단 %d건(기보고 %d · 큐 대기 %d · 주기중복 %d · 소스중복 %d)",
+                "[PREFILTER] %s 재탕 차단 %d건(기보고 %d · 큐 대기 %d · 주기중복 %d · 소스중복 %d) · 장 시황 묶음 %d건",
                 source,
-                sum(gate_counts.values()),
+                sum(gate_counts.values()) - gate_counts["recap"],
                 gate_counts["translated"],
                 gate_counts["queued"],
                 gate_counts["cycle"],
                 gate_counts["source"],
+                gate_counts["recap"],
             )
         return selected
 
@@ -667,7 +717,8 @@ class NewsPrefilter:
                     observed_days.add(observed.astimezone(cutoff.tzinfo).date().isoformat())
                     kind = item.get("type")
                     if kind == "cycle":
-                        for key in ("gated_translated_event", "gated_cycle_duplicate", "gated_source_duplicate", "gated_queued_event"):
+                        for key in ("gated_translated_event", "gated_cycle_duplicate", "gated_source_duplicate",
+                                    "gated_queued_event", "gated_recap"):
                             gated[key] += int(item.get(key) or 0)
                         cycles += 1
                         candidates_seen += int(item.get("candidates") or 0)
