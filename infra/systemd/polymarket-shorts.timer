@@ -2,7 +2,7 @@
 Description=Produce one Polymarket Short every day
 
 [Timer]
-OnCalendar=*-*-* 18:00:00 Asia/Seoul
+OnCalendar=*-*-* 20:00:00 Asia/Seoul
 RandomizedDelaySec=5min
 Persistent=true
 Unit=polymarket-shorts.service

@@ -108,7 +108,7 @@ if [ "$FIRST_INSTALL" = 1 ]; then
     stock-chatbot-polymarket-refresh.timer >/dev/null 2>&1 || true
 fi
 
-# 쇼츠는 하루 한 편이다(timer 18:00 한국 시간, 같은 날 두 번째 실행은 already_produced로
+# 쇼츠는 하루 한 편이다(timer 20:00 한국 시간, 같은 날 두 번째 실행은 already_produced로
 # 끝난다). 쇼츠 자기 venv와 루트 .env가 갖춰졌을 때만 켠다 — 없으면 매일 실패만 쌓인다.
 if [ -x "$APP_DIR/shorts/.venv/bin/python" ] && [ -f "$APP_DIR/.env" ]; then
   sudo -u "$APP_USER" "$APP_DIR/shorts/.venv/bin/pip" install -q -e "$APP_DIR/shorts"
