@@ -8,6 +8,7 @@
 둔다. 보류한 기사는 버려지지 않고 다음 구간이 더 두꺼운 재료로 다시 본다.
 """
 
+import difflib
 import hashlib
 import json
 import logging
@@ -126,14 +127,50 @@ def _salvage_analysis(raw: str) -> str:
     return _paragraphs(body)
 
 
+# 프롬프트가 쓰는 차례로 적은 문단 이름. 모델이 이것을 문단 제목으로 옮겨 적었다 — 2026-10-07
+# 03·08·15시 보고서 열한 편 가운데 열 편의 문단마다 "국면 문단", "직전 대비 문단"이 한 줄씩 붙어
+# 나갔다(응답 형식 예시의 자리표시를 그대로 베꼈다).
+_SECTION_NAME = (r"(?:\d\s?문단\s*[—–:.-]?\s*)?(?:국면|직전\s?대비|경로와\s?상충|(?:이\s?시점의\s?)?관찰\s?포인트)"
+                 r"(?:\s?문단)?")
+_LABEL_LINE = re.compile(rf"^[\[(]?{_SECTION_NAME}[\])]?\s*[:：]?(?:\s*\(.*\))?$")
+_LABEL_PREFIX = re.compile(rf"^[\[(]?{_SECTION_NAME}[\])]?\s*[:：—–]\s*")
+_SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+# 이만큼 닮은 문장은 앞 문장의 되풀이로 본다. 분량을 채우려고 첫 문단을 마지막 문단에 거의 그대로
+# 다시 쓴 적이 있다(2026-10-07 08시 미국: 관찰 포인트 문단이 국면 문단의 다섯 문장을 거의 그대로 되풀이했다).
+_REPEATED_SENTENCE_RATIO = 0.9
+
+
 def _paragraphs(text: str) -> str:
     """본문을 문단 단위로 고른다. 줄바꿈은 몇 번이든 문단 경계 하나(빈 줄)로, 문단 안의 공백은 한 칸으로.
 
     본문이 900~1,300자로 길어져(2026-10-06) 서너 문단으로 나눠 쓰게 했다. 모델이 줄바꿈을
     한 번만 쓰든 세 번 쓰든 화면(텔레그램·웹 `pre-wrap`·뉴스레터)에는 같은 모양으로 나간다.
+    문단 이름만 있는 줄과 문단 앞의 이름표("국면: …")는 지우고, 앞에서 이미 쓴 문장을 되풀이한
+    문장은 뺀다 — 그렇게 비는 문단은 통째로 빠진다.
     """
-    lines = str(text or "").splitlines()
-    return "\n\n".join(" ".join(line.split()) for line in lines if line.strip())
+    seen: list[str] = []
+    paragraphs = []
+    for line in str(text or "").splitlines():
+        line = " ".join(line.split())
+        if not line or _LABEL_LINE.match(line):
+            continue
+        kept = []
+        for sentence in _SENTENCE_END.split(_LABEL_PREFIX.sub("", line)):
+            if _repeats_sentence(sentence, seen):
+                continue
+            seen.append(sentence)
+            kept.append(sentence)
+        if kept:
+            paragraphs.append(" ".join(kept))
+    return "\n\n".join(paragraphs)
+
+
+def _repeats_sentence(sentence: str, seen: list[str]) -> bool:
+    """앞 문장과 (거의) 같은가. 짧은 문장은 우연히 같을 수 있어 보지 않는다."""
+    if len(sentence) < 20:
+        return False
+    return any(sentence == earlier or difflib.SequenceMatcher(None, sentence, earlier).ratio()
+               >= _REPEATED_SENTENCE_RATIO for earlier in seen)
 
 
 class NewsReportError(RuntimeError):

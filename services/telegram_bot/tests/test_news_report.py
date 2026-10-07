@@ -1950,6 +1950,24 @@ def test_analysis_keeps_paragraph_breaks_and_tidies_them(tmp_path):
     assert result["analysis"] == "국면 문단이다.\n\n직전 대비 문단이다.\n\n관찰 포인트 문단이다."
 
 
+def test_analysis_drops_paragraph_labels_the_model_copied_from_the_prompt(tmp_path):
+    """2026-10-07 보고서 열한 편 중 열 편이 문단마다 "국면 문단" 같은 이름 줄을 달고 나갔다."""
+    analysis = ("국면 문단\n\n코스피가 외국인 매도에 6800선으로 밀렸다.\n\n직전 대비 문단\n\n"
+                "직전 판단이 유지됐다.\n\n관찰 포인트: 내일은 삼성전자 실적이 쟁점이다.\n\n4문단 — 관찰 포인트")
+    result = _analyzer(tmp_path, _payload(analysis=analysis)).analyze("KR", "창", [_headline(0)])
+
+    assert result["analysis"] == ("코스피가 외국인 매도에 6800선으로 밀렸다.\n\n직전 판단이 유지됐다.\n\n"
+                                  "내일은 삼성전자 실적이 쟁점이다.")
+
+
+def test_analysis_drops_sentences_repeated_from_an_earlier_paragraph():
+    """분량을 채우려 첫 문단을 마지막 문단에 다시 쓴 적이 있다(2026-10-07 08시 미국). 빈 문단은 빠진다."""
+    first = "나스닥과 S&P 500이 사상 최고치를 경신하며 기술주 강세가 이어졌다. 10년물 금리는 5.3%에서 멈췄다."
+    text = f"{first}\n\n금리 경로가 반도체주를 받쳤다. 나스닥과 S&P 500이 사상 최고치를 경신하며 기술주 강세가 이어졌다!\n\n{first}"
+
+    assert news_report_llm._paragraphs(text) == f"{first}\n\n금리 경로가 반도체주를 받쳤다."
+
+
 def test_salvaged_analysis_keeps_paragraph_breaks():
     raw = '{"publish":true,"analysis":"첫 문단 "따옴표" 이다.\\n\\n둘째 문단이다.","highlights":[]}'
     assert news_report_llm._salvage_analysis(raw) == '첫 문단 "따옴표" 이다.\n\n둘째 문단이다.'
