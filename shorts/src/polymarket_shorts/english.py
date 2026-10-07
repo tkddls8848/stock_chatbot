@@ -30,6 +30,9 @@ from .tts import synthesize
 logger = logging.getLogger(__name__)
 
 PROMPT = """You write the English script of a short finance video about crowd-forecast consensus questions. Use only the input.
+[Audience] Viewers follow economic and political news and have a working background in both. Use precise terms
+(policy rate, 10-year Treasury yield, futures, ETF, earnings, ceasefire talks) without explaining the basics, and skip
+beginner analogies and phrases like "simply put". Instead, point out how the event reaches asset prices or economic variables.
 [Naming rule] Never name the source service. Never write "Polymarket", "bet", "betting", "wager", "gamble" or "prediction market".
 Call the data "crowd forecast consensus" (or "consensus"), a question's probability the "consensus probability", and money "participation".
 Use "market" only for real financial markets (stocks, bonds, currencies, commodities).
@@ -63,24 +66,31 @@ SECTORS = {
 }
 
 
+_TRANSITIONS = ("Now let's turn to {theme}.", "{theme} has a question worth a look, too.")
+
+
 def _transition(index: int, theme: str) -> str:
-    """Links scenes by naming the next theme (operator decision 2026-09-28)."""
+    """Links scenes by naming the next theme (operator decision 2026-09-28), with wording that varies
+    from scene to scene — one fixed sentence every time sounded like pasted paragraphs (2026-10-07)."""
     if index <= 0:
         return ""
-    return f"Next, let's look at the key consensus on {theme}." if theme else "Next, let's look at the key consensus."
+    if not theme:
+        return "Let's look at another question."
+    return _TRANSITIONS[(index - 1) % len(_TRANSITIONS)].format(theme=theme)
 
 
+# 마무리 화면은 고정이다("Full details at nunchi.live"). 멘트도 같은 말로 끝낸다.
 CLOSING_LINE = (
-    "These numbers are only what people expect, not settled outcomes or investment advice. "
-    "Each question has its own conditions, so visit nunchi dot live for the details."
+    "These numbers are only what participants expect, not settled outcomes or investment advice. "
+    "Each question has its own conditions, so you can find the full details at nunchi dot live."
 )
 CLOSING_SCREEN = "Each question has its own conditions.\nSee nunchi.live for the details."
 
 
 def opening_line(count: int, as_of: date) -> str:
     subject = "one question" if count == 1 else f"{count} questions"
-    return (f"Here are the market consensus issues selected for {as_of:%B} {as_of.day}, {as_of.year}. "
-            f"Today we will walk through {subject} with the numbers.")
+    return (f"Here's the crowd forecast consensus summary for {as_of:%B} {as_of.day}. "
+            f"Today we'll walk through {subject} tied to financial markets, one at a time.")
 
 
 def speak_markets(event_type: str, topic: str, rows: Sequence[tuple[str, str, str]]) -> str:

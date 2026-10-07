@@ -42,5 +42,5 @@ def test_older_days_without_source_fall_back_to_scenario_event_ids(tmp_path):
 
 def test_the_intro_states_the_date_first():
     line = speech.opening_line(2, date(2026, 9, 27))
-    assert line == ("2026년 9월 27일 시장 컨센서스 이슈를 선정하였습니다. "
-                    "오늘은 질문 2개를 숫자와 함께 짚어 보겠습니다.")
+    assert line == ("9월 27일 집단 예측 컨센서스 요약입니다. "
+                    "오늘은 금융시장과 맞닿은 질문 2개를 차례로 짚어 보겠습니다.")

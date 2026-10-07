@@ -70,16 +70,18 @@ def test_the_same_closing_line_is_not_repeated_every_scene(issue_source):
     """장면마다 "…확인하세요"를 붙이면 같은 당부를 다섯 번 듣는다."""
     scenario = _five_issues(issue_source)
 
-    assert scenario.narration.count("확인해 보세요") == 1
-    assert scenario.scenes[-1].narration.endswith("눈치 닷 라이브에 방문하여 확인해 보세요.")
+    assert scenario.narration.count("확인하세요") == 1
+    assert scenario.scenes[-1].narration.endswith("눈치 닷 라이브에서 확인하세요.")
     # 장면별 확인점은 검수 기록(review.md)에만 남는다 — 말하지 않는 당부를
     # 화면에만 띄우면 보는 것과 듣는 것이 어긋난다.
     assert scenario.scenes[1].takeaway == "연준의 공식 결정문을 확인하세요."
-    endings = [scene.narration[-12:] for scene in scenario.scenes[1:-1]]
-    assert len(set(endings)) == 1  # 같은 해설 문장이면 끝도 같다(입력 탓)
-    # 둘째 이슈부터는 다음 테마를 알리며 연다(운영자 결정 2026-09-28).
-    for scene in scenario.scenes[2:-1]:
-        assert scene.narration.startswith("다음은 ") and "테마의 주요 컨센서스 현황을 살펴봅니다." in scene.narration
+    # 확률 풀이 문장은 같은 말이면 처음 한 번만 한다(다섯 이슈가 같은 입력이라 풀이도 같다).
+    mood = "뚜렷하게 앞서는 답 없이 의견이 나뉩니다."
+    assert scenario.narration.count(mood) == 1 and scenario.scenes[1].narration.endswith(mood)
+    # 원고에 장면 여는 말이 없으면 둘째 이슈부터 다음 테마를 알리는 대체 문장으로 연다(2026-09-28).
+    # 같은 틀이 매번 반복되지 않게 문장이 번갈아 바뀐다(2026-10-07).
+    openers = [scene.narration.split(". ")[0] for scene in scenario.scenes[2:-1]]
+    assert all("쪽" in opener for opener in openers) and len(set(openers)) > 1
 
 
 def test_screen_text_never_says_betting_in_any_language(issue_source):
@@ -112,10 +114,10 @@ def test_the_closing_scene_is_a_short_notice_that_matches_what_is_spoken(issue_s
 
     outro = scenario.scenes[-1]
     assert outro.metric == "" and outro.options == () and outro.takeaway == ""
-    assert outro.body == "질문마다 조건이 다릅니다.\n자세한 내용은 nunchi.live에서 확인해 보세요."
+    assert outro.body == "자세한 내용은 nunchi.live에서 확인하세요."
     # 짧은 고지 두 줄이고, 마무리 멘트가 같은 말을 한다(주소는 소리로 "눈치 닷 라이브").
     assert len(outro.body) < 50
-    assert "눈치 닷 라이브" in outro.narration and "질문마다 조건이" in outro.narration
+    assert "눈치 닷 라이브" in outro.narration and "질문마다 판정 조건이" in outro.narration
 
 
 def test_the_screen_never_shows_a_line_the_voice_does_not_say(issue_source):
@@ -128,3 +130,15 @@ def test_the_screen_never_shows_a_line_the_voice_does_not_say(issue_source):
     # 마무리 한 번만 남고, 그 문장은 멘트에도 그대로 있다.
     closing = scenario.scenes[-1]
     assert "nunchi.live" in closing.body and "눈치 닷 라이브" in closing.narration
+
+
+def test_the_writer_opens_each_scene_and_the_numbers_close_it(issue_source):
+    """원고의 장면 여는 말로 시작하고, 확률 뒤에 기울기를 한 문장으로 풀어 장면을 닫는다(2026-10-07)."""
+    snapshot, _, _, issue, script = issue_source
+    scenario = build_scenario(snapshot, [issue], [{**script, "lead_in": "먼저 연준의 금리 결정부터 보겠습니다."}],
+                              production_date=date(2026, 9, 23))
+
+    scene = scenario.scenes[1]
+    assert scene.narration.startswith("먼저 연준의 금리 결정부터 보겠습니다. ")
+    assert scene.narration.endswith(("있습니다.", "우세합니다.", "갈립니다.", "많습니다.", "대부분입니다.",
+                                     "않습니다.", "엇갈립니다.", "나뉩니다."))

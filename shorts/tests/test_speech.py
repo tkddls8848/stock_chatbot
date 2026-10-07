@@ -13,8 +13,10 @@ from polymarket_shorts import speech
 def test_scene_links_name_the_next_theme():
     """장면 사이는 다음 이슈의 테마를 알린다(운영자 결정 2026-09-28)."""
     assert speech.transition(0, "지정학") == ""        # 첫 이슈는 도입에 바로 이어진다
-    assert speech.transition(1, "주식·시장") == "다음은 주식·시장 테마의 주요 컨센서스 현황을 살펴봅니다."
-    assert speech.transition(7, "") == "다음은 주요 컨센서스 현황을 살펴봅니다."
+    # 원고에 장면 여는 말(`lead_in`)이 없을 때의 대체 문장이다. 같은 틀이 매번 반복되지 않게 번갈아 쓴다.
+    assert speech.transition(1, "주식·시장") == "이번에는 주식·시장 쪽 질문으로 넘어가 보겠습니다."
+    assert speech.transition(2, "거시·통화") == "거시·통화 쪽에서도 눈여겨볼 질문이 있습니다."
+    assert speech.transition(7, "") == "이어서 다른 질문을 보겠습니다."
 
 
 @pytest.mark.parametrize(
@@ -34,7 +36,8 @@ def test_the_opening_names_the_issue_and_the_size_of_the_day():
     one = speech.opening_line(1)
     many = speech.opening_line(3)
 
-    assert one.startswith("오늘의 시장 컨센서스 이슈를 선정하였습니다.") and "질문 하나를" in one
+    # 고정 시작 화면("오늘의 집단 예측 컨센서스 요약")과 같은 말로 연다.
+    assert one.startswith("오늘의 집단 예측 컨센서스 요약입니다.") and "질문 하나를" in one
     assert "질문 3개를" in many
     # 한 글자 관형사(이·그·저)는 TTS가 한 음절로 스쳐 지나가 들리지 않는다.
     for line in (one, many, speech.CLOSING_LINE):
@@ -42,7 +45,7 @@ def test_the_opening_names_the_issue_and_the_size_of_the_day():
 
 
 def test_the_closing_is_the_fixed_line_with_the_site():
-    assert speech.CLOSING_LINE.count("확인해 보세요") == 1
+    assert speech.CLOSING_LINE.count("확인하세요") == 1
     assert "투자 조언" in speech.CLOSING_LINE and "눈치 닷 라이브" in speech.CLOSING_LINE
     assert "nunchi.live" in speech.CLOSING_SCREEN
 
@@ -59,8 +62,9 @@ def test_several_choices_each_say_their_own_outlook():
         ("10월 31일까지", "79.5%", "20.5%", "휴전이 10월 31일까지 이어질"),
         ("11월 30일까지", "70.5%", "29.5%", "휴전이 11월 30일까지 이어질"),
     ])
+    # 같은 주어("휴전이")는 첫 전망에서만 읽는다.
     assert spoken == ("참여자의 79.5%는 휴전이 10월 31일까지 이어질 것으로, "
-                      "70.5%는 휴전이 11월 30일까지 이어질 것으로 봅니다.")
+                      "70.5%는 11월 30일까지 이어질 것으로 봅니다.")
 
 
 def test_one_of_several_names_the_topic_first():
@@ -88,3 +92,24 @@ def test_a_yes_no_without_an_outlook_keeps_both_sides():
 
 def test_no_choices_say_nothing():
     assert speech.speak_markets("binary", "", []) == ""
+
+
+@pytest.mark.parametrize(("event_type", "yes", "mood"), [
+    ("binary", ["91.5%"], "참여자 대부분이 그렇게 보고 있습니다."),
+    ("binary", ["68%"], "그렇게 보는 쪽이 우세합니다."),
+    ("binary", ["50.95%"], "의견이 팽팽하게 갈립니다."),
+    ("binary", ["18%"], "그렇지 않다고 보는 쪽이 더 많습니다."),
+    ("binary", ["6.5%"], "가능성을 낮게 보는 시각이 대부분입니다."),
+    ("independent_multi", ["91.5%", "89%"], "어느 기준에서도 그렇게 보는 쪽이 대부분입니다."),
+    ("independent_multi", ["68%", "50.95%"], "기준에 따라 전망이 엇갈립니다."),
+    ("independent_multi", ["18%", "6.5%"], "어느 기준에서도 그렇지 않다고 보는 쪽이 더 많습니다."),
+    ("independent_multi", ["55%", "48%"], "기준을 바꿔도 전망은 크게 달라지지 않습니다."),
+    ("independent_multi", ["78%", "70%"], "어느 기준에서도 그렇게 보는 쪽이 우세합니다."),
+    ("exclusive_multi", ["60.5%", "18.6%"], "한쪽으로 무게가 뚜렷하게 실려 있습니다."),
+    ("exclusive_multi", ["35%", "30%"], "뚜렷하게 앞서는 답 없이 의견이 나뉩니다."),
+])
+def test_the_scene_closes_with_where_the_numbers_lean(event_type, yes, mood):
+    """숫자만 읽고 넘어가면 장면이 뚝 끊겼다(2026-10-07). 숫자는 다시 말하지 않는다."""
+    rows = [(f"선택지{n}", value, "") for n, value in enumerate(yes)]
+    assert speech.consensus_mood(event_type, rows) == mood
+    assert not re.search(r"\d", mood)

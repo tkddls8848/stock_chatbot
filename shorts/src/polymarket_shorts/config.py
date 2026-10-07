@@ -137,7 +137,7 @@ class Settings:
             output_dir=_storage_dir() / "shorts",
             state_file=_storage_dir() / "shorts" / "state" / "published.json",
             max_duration_seconds=maximum,
-            target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "760"))),
+            target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "1000"))),
             max_groups=min(5, max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5")))),
             tts_voice=os.getenv("SHORTS_TTS_VOICE", "ko-KR-SunHiNeural"),
             tts_rate=os.getenv("SHORTS_TTS_RATE", "+0%"),

@@ -48,7 +48,7 @@ def test_scenario_is_english_with_the_fixed_opening_and_closing():
                                       visual_queries={"81557": "geopolitics; topic: a globe"})
     intro, issue, outro = scenario.scenes
     assert scenario.language == "en"
-    assert intro.narration.startswith("Here are the market consensus issues selected for September 28, 2026.")
+    assert intro.narration.startswith("Here's the crowd forecast consensus summary for September 28.")
     assert "one question" in intro.narration
     assert "the consensus puts Gadi Eizenkot at 51.4%, Naftali Bennett at 20.1%." in issue.narration
     assert issue.visual_query == "geopolitics; topic: a globe"

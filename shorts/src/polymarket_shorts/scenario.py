@@ -6,7 +6,7 @@ from typing import Any
 
 from .client import Snapshot
 from .speech import (
-    CLOSING_LINE, CLOSING_SCREEN, end_sentence, opening_line, speak_markets, to_polite_text,
+    CLOSING_LINE, CLOSING_SCREEN, consensus_mood, end_sentence, opening_line, speak_markets, to_polite_text,
     to_spoken_question, transition,
 )
 
@@ -132,6 +132,8 @@ def build_scenario(
         source_note=f"자료 기준 {shown_stamp}",
         evidence=(issues[0]["title"],),
     )]
+    moods: set[str] = set()
+    opener_word = ""
     for index, (issue, script) in enumerate(zip(issues, scripts, strict=True)):
         if issue["id"] != script["id"]:
             raise ValueError("원고와 이벤트가 일치하지 않습니다")
@@ -155,12 +157,28 @@ def build_scenario(
         # 띄우면 보는 것과 듣는 것이 어긋난다. 고지문은 마무리에서 한 번이다.
         # 선정 이유(왜 이 이슈인가)를 먼저 말하고, 질문을 던진 뒤 확률로 답한다
         # (운영자 결정 2026-09-27: 예전 순서는 확률 → 이유였다).
+        # 장면을 여는 말은 원고가 이슈마다 다르게 쓴다(`lead_in`). 확률 뒤에는 그 숫자가 어느 쪽으로
+        # 기울었는지 한 문장으로 풀어 장면을 닫는다 — 숫자만 읽고 넘어가면 대사가 뚝 끊겼다(2026-10-07).
+        opener = script.get("lead_in")
+        if opener:
+            # 원고가 장면마다 같은 이음말로 열면("이번에는 …", "이번에는 …") 둘째부터 그 말을 뗀다.
+            words = opener.split()
+            if words[0] == opener_word and len(words) > 3:
+                opener = " ".join(words[1:])
+            opener_word = words[0]
+        mood = consensus_mood(issue.get("event_type", ""), spoken)
+        # 같은 풀이를 두 장면에서 되풀이하지 않는다.
+        mood = "" if mood in moods else mood
+        moods.add(mood)
         lead = " ".join(part for part in (
-            transition(index, issue["sector_label"]),
+            end_sentence(to_polite_text(opener)) if opener else transition(index, issue["sector_label"]),
             end_sentence(to_polite_text(script["context"])),
             to_spoken_question(script["question"]),
         ) if part)
-        markets_line = speak_markets(issue.get("event_type", ""), script["headline"], spoken)
+        markets_line = " ".join(part for part in (
+            speak_markets(issue.get("event_type", ""), script["headline"], spoken),
+            mood,
+        ) if part)
         narration = f"{lead} {markets_line}".strip()
         # 선택지가 화면에 뜨는 때를 확률을 말하기 시작하는 자리에 맞춘다(글자 비율).
         options_at = len(lead) / len(narration) if markets_line else 0.0

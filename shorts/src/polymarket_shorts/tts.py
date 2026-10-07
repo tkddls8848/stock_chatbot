@@ -30,11 +30,14 @@ logger = logging.getLogger(__name__)
 # 무음이었고, 배경음이 없어 쉼마다 "볼륨이 0으로 떨어졌다 돌아오는" 소리로 들렸다.
 # 문장 사이의 원래 호흡(0.86초)도 쇼츠에는 길어 줄인다 — 늘리기만 하던 것을
 # 늘리고 줄이는 쪽으로 바꿨다.
-OPENING_PAUSE_SECONDS = 0.6
-TOPIC_PAUSE_SECONDS = 0.75
-CLOSING_PAUSE_SECONDS = 0.9
+#
+# 2026-10-07 운영자 요청으로 다시 조금 넓혔다 — 길이 여유(쇼츠 한도 3분)가 있는데 문장이 숨 쉴 틈 없이
+# 붙어 대사가 문단을 이어 붙인 것처럼 들렸다. 09-26의 무음 문제를 피해 예전 값(1.15~1.8초)보다는 짧게 둔다.
+OPENING_PAUSE_SECONDS = 0.9
+TOPIC_PAUSE_SECONDS = 1.2
+CLOSING_PAUSE_SECONDS = 1.3
 # 장면 안 문장 끝의 쉼.
-SENTENCE_PAUSE_SECONDS = 0.45
+SENTENCE_PAUSE_SECONDS = 0.7
 _SENTENCE_END = (".", "!", "?")
 # 쉼을 줄일 때 말소리 양 끝에 남겨 두는 여유. 단어 시각은 수십 ms 어긋날 수 있어
 # 이 안쪽만 덜어 내야 말꼬리·첫소리가 잘리지 않는다.

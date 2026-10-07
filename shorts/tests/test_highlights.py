@@ -138,3 +138,14 @@ def test_a_bad_outlook_is_dropped_without_failing_the_script(issue_source):
     labels = [{**label, "outlook": "틀린 것"} for label in script["market_labels"]]
     (clean,) = validate_scripts({"scripts": [{**script, "market_labels": labels}]}, [issue])
     assert all("outlook" not in label for label in clean["market_labels"])
+
+
+def test_scene_opener_is_kept_when_clean_and_dropped_without_failing_the_script(issue_source):
+    """장면 여는 말(`lead_in`)은 틀려도 원고를 다시 묻지 않는다 — 대체 문장(`speech.transition`)이 있다."""
+    _, _, _, issue, script = issue_source
+    good = "먼저 연준의 금리 결정부터 보겠습니다."
+    (clean,) = validate_scripts({"scripts": [{**script, "lead_in": good}]}, [issue])
+    assert clean["lead_in"] == good
+    for bad in ("확률이 80%인 질문입니다.", "짧음", 123):
+        (clean,) = validate_scripts({"scripts": [{**script, "lead_in": bad}]}, [issue])
+        assert "lead_in" not in clean
