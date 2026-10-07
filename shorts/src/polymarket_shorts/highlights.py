@@ -44,8 +44,8 @@ label은 화면에 선택지 이름으로 뜹니다. 선택지끼리 서로 다�
 "Will South Korea ETF (EWY) hit (LOW) $186 Week of September 28 2026?" → "186달러까지 하락",
 "Fed rate cut in October?"·"… in December?" → "10월 인하"·"12월 인하". 선택지가 하나뿐이면 조건 전체를 짧게 옮기세요.
 market_labels의 각 항목에는 outlook(6~60자)도 넣으세요. 그 선택지가 맞는다고 보는 전망을 주어까지 갖춘
-구절로 쓰되, 뒤에 "것으로 봅니다"가 붙도록 '~할'·'~될'·'~일' 같은 관형형으로 끝냅니다. "것"은 쓰지 않습니다.
-프로그램이 "참여자의 79.5%는 ⟨outlook⟩ 것으로 봅니다"로 읽습니다. 주제에 맞는 동사를 고르세요.
+구절로 쓰되, 뒤에 "것을 기대하고 있습니다"가 붙도록 '~할'·'~될'·'~일' 같은 관형형으로 끝냅니다. "것"은 쓰지 않습니다.
+프로그램이 "참여자의 79.5%는 ⟨outlook⟩ 것을 기대하고 있습니다"로 읽습니다. 주제에 맞는 동사를 고르세요.
 예: "Israel x Iran ceasefire continues through October 31?" → "휴전이 10월 31일까지 이어질",
 "Will 2 Fed rate hikes happen in 2026?" → "연준이 2026년에 금리를 2회 인상할"(숫자는 원문대로),
 "Will Alphabet Inc. (GOOGL) hit (HIGH) $355 …?" → "알파벳 주가가 355달러 이상으로 오를",
@@ -271,7 +271,7 @@ def _translation(text: str, source: str, field: str, shared: set[str] = frozense
 
 
 def _outlook(value, question: str, shared: set[str]) -> str | None:
-    """"참여자의 N%는 ⟨outlook⟩ 것으로 봅니다"에 들어갈 관형형 구절. 틀리면 None.
+    """"참여자의 N%는 ⟨outlook⟩ 것을 기대하고 있습니다"에 들어갈 관형형 구절. 틀리면 None.
 
     원고 전체를 다시 묻지 않는다 — 이 구절이 없어도 음성은 라벨로 같은 틀의 문장을
     만든다(`speech.speak_markets`). 숫자·상승/하락 방향은 라벨과 같은 검사를 거친다.
@@ -282,7 +282,7 @@ def _outlook(value, question: str, shared: set[str]) -> str | None:
     except HighlightError:
         return None
     last = text[-1]
-    # 관형형 어미 ㄹ(할·될·오를·이끌·일)로 끝나야 뒤에 "것으로 봅니다"가 붙는다.
+    # 관형형 어미 ㄹ(할·될·오를·이끌·일)로 끝나야 뒤에 "것을 기대하고 있습니다"가 붙는다.
     if text.endswith("것") or not ("가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 == 8):
         return None
     return text

@@ -1,6 +1,6 @@
 """화면이 아니라 귀를 위한 한국어. 모델 없이 규칙만으로 동작한다.
 
-**확률은 화면과 같은 퍼센트로 짧게 말한다**("참여자의 64.5%는 …것으로 봅니다"). 운영자
+**확률은 화면과 같은 퍼센트로 짧게 말한다**("참여자의 64.5%는 …것을 기대하고 있습니다"). 운영자
 결정(2026-09-27): "셋 중 둘꼴"·"다섯에 둘쯤" 같은 비유는 오히려 낯설고 길었다.
 다만 예·아니오 쌍은 읽지 않는다 — '예' 확률 하나만 말한다(2026-09-23 산출물이
 "예 99.95%, 아니오 0.05%"를 통째로 낭독해 표를 읽는 소리가 났다).
@@ -105,16 +105,31 @@ def _with_direction(word: str) -> str:
     return f"{word}로" if jong in (0, 8) else f"{word}으로"
 
 
-def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
-    """선택지 확률을 "참여자의 N%는 ⟨전망⟩ 것으로 봅니다"로 말한다(운영자 결정 2026-10-02).
+# 숫자로 끝나는 말의 받침(읽는 소리 기준). 0 영·1 일·3 삼·6 육·7 칠·8 팔은 받침이 있다.
+_DIGIT_HAS_JONG = {"0": True, "1": True, "2": False, "3": True, "4": False, "5": False,
+                   "6": True, "7": True, "8": True, "9": False, "%": False}
 
-    예전 "…를 선택한 사람은 전체의 N%"는 무엇을 보는지가 아니라 무엇을 눌렀는지만
-    말했다. 운영자 지시로 주제에 맞는 동사로 전망을 말한다.
+
+def _with_object(word: str) -> str:
+    """목적격 조사 '을/를'. 숫자·% 로 끝나면 읽는 소리로 받침을 정한다("5.4%를", "2027년을")."""
+    last = word.strip()[-1:]
+    if last in _DIGIT_HAS_JONG:
+        return f"{word}{'을' if _DIGIT_HAS_JONG[last] else '를'}"
+    if not last or not _is_hangul(last):
+        return f"{word}를"
+    return f"{word}을" if (ord(last) - _HANGUL_BASE) % _JONGSEONG else f"{word}를"
+
+
+def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
+    """선택지 확률을 "참여자의 N%는 ⟨전망⟩ 것을 기대하고 있습니다"로 말한다(운영자 결정 2026-10-08).
+
+    예전 "…를 선택한 사람은 전체의 N%"(2026-10-02 전)는 무엇을 눌렀는지만 말했고, "…것으로 봅니다"·"…쪽으로
+    봅니다"는 운영자가 "기대하고 있습니다"로 바꾸라고 했다.
     `rows`는 (선택지 이름, '예' 퍼센트, '아니오' 퍼센트[, 전망 구절])이고 숫자는 화면과 같다.
-    전망 구절은 모델이 쓴 관형형("휴전이 10월 31일까지 이어질")이다. 없으면 라벨로
-    "…쪽으로 봅니다"를 만든다 — 음성이 모델에 묶이지 않게.
-    - 양자택일: "참여자의 X%는 ⟨전망⟩ 것으로, Y%는 그렇지 않을 것으로 봅니다."
-    - 여러 선택지: "참여자의 X%는 ⟨A⟩ 것으로, Y%는 ⟨B⟩ 것으로 봅니다."
+    전망 구절은 모델이 쓴 관형형("휴전이 10월 31일까지 이어질")이다. 없으면 라벨로 "…을 기대하고 있습니다"를
+    만든다 — 음성이 모델에 묶이지 않게.
+    - 양자택일: "참여자의 X%는 ⟨전망⟩ 것을 기대하고 있고, Y%는 그 반대를 기대하고 있습니다."
+    - 여러 선택지: "참여자의 X%는 ⟨A⟩ 것을, Y%는 ⟨B⟩ 것을 기대하고 있습니다."
       한 가지만 고르는 질문(exclusive)은 앞에 "주제에 대해"를 붙인다.
     """
     if not rows:
@@ -124,24 +139,18 @@ def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
     def clause(row) -> str:
         label, yes = row[0], row[1]
         outlook = row[3] if len(row) > 3 else None
-        return f"{yes}는 {outlook} 것으로" if outlook else f"{yes}는 {_with_direction(label + ' 쪽')}"
+        return f"{yes}는 {outlook} 것을" if outlook else f"{yes}는 {_with_object(label)}"
 
     if event_type == "binary" or len(rows) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
         row = rows[0]
         no = row[2]
         if len(row) > 3 and row[3]:
-            return f"참여자의 {clause(row)}, {no}는 그렇지 않을 것으로 봅니다."
-        return f"{row[0]}에 대해 참여자의 {row[1]}는 그렇다고, {no}는 그렇지 않다고 봅니다."
-    spoken = "참여자의 " + ", ".join(clause(row) for row in rows) + " 봅니다."
+            return f"참여자의 {clause(row)} 기대하고 있고, {no}는 그 반대를 기대하고 있습니다."
+        return f"{row[0]}에 대해 참여자의 {row[1]}는 그렇게 될 것을, {no}는 그렇지 않을 것을 기대하고 있습니다."
+    spoken = "참여자의 " + ", ".join(clause(row) for row in rows) + " 기대하고 있습니다."
     if event_type == "exclusive_multi" and topic:
         return f"{topic}에 대해 {spoken}"
     return spoken
-
-
-# 장면을 여는 말은 원고(`lead_in`)가 이슈마다 다르게 쓴다. 이것은 원고에 없을 때 쓰는 대체 문장이다.
-# 예전 고정문 "다음은 ⟨분야⟩ 테마의 주요 컨센서스 현황을 살펴봅니다"는 장면마다 같은 틀로 반복되고
-# 분류명("기타 경제·금융")을 그대로 읽어, 대사가 문단을 이어 붙인 것처럼 들렸다(운영자 지적 2026-10-07).
-_TRANSITIONS = ("이번에는 {theme} 쪽 질문으로 넘어가 보겠습니다.", "{theme} 쪽에서도 눈여겨볼 질문이 있습니다.")
 
 
 def _without_repeated_subject(rows: Sequence[Sequence]) -> list[Sequence]:
@@ -170,7 +179,8 @@ def consensus_mood(event_type: str, rows: Sequence[Sequence]) -> str:
     """확률을 말한 뒤 그 숫자가 어느 쪽으로 기울었는지 한 문장으로 푼다. 숫자는 다시 말하지 않는다.
 
     숫자만 읽고 다음 이슈로 넘어가면 장면이 뚝 끊겼다(운영자 지적 2026-10-07). 구간은 넓게 잡아
-    과장하지 않는다 — 85% 이상만 "대부분", 35~65%는 "팽팽".
+    과장하지 않는다 — 85% 이상만 "대부분", 35~65%는 "팽팽". 바로 앞 문장이 "…기대하고 있습니다"로 끝나므로 "기대"도 "보다"도 되풀이하지 않고
+    쏠림으로만 말한다(2026-10-08).
     """
     values = []
     for row in rows:
@@ -183,30 +193,36 @@ def consensus_mood(event_type: str, rows: Sequence[Sequence]) -> str:
     if event_type == "binary" or len(values) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
         value = values[0]
         if value >= 85:
-            return "참여자 대부분이 그렇게 보고 있습니다."
+            return "참여자 대부분이 한쪽으로 쏠려 있습니다."
         if value >= 65:
-            return "그렇게 보는 쪽이 우세합니다."
+            return "그쪽이 우세합니다."
         if value > 35:
-            return "의견이 팽팽하게 갈립니다."
+            return "팽팽하게 갈립니다."
         if value > 15:
-            return "그렇지 않다고 보는 쪽이 더 많습니다."
-        return "가능성을 낮게 보는 시각이 대부분입니다."
+            return "반대쪽이 더 많습니다."
+        return "그쪽은 소수에 그칩니다."
     if event_type == "exclusive_multi":
         top = max(values)
-        return "한쪽으로 무게가 뚜렷하게 실려 있습니다." if top >= 60 else "뚜렷하게 앞서는 답 없이 의견이 나뉩니다."
+        return "한쪽으로 뚜렷하게 모여 있습니다." if top >= 60 else "뚜렷하게 앞서는 답 없이 나뉩니다."
     # 기준(문턱)이 여럿인 질문은 모든 기준이 같은 쪽에 있는지부터 본다. 18%·6.5%를 "크게 엇갈린다"고 하면
-    # 틀린 말이다 — 둘 다 그렇지 않다고 보는 쪽이다(2026-10-07 시험 원고).
+    # 틀린 말이다 — 둘 다 반대 결과를 기대하는 쪽이 많다(2026-10-07 시험 원고).
     if min(values) >= 85:
-        return "어느 기준에서도 그렇게 보는 쪽이 대부분입니다."
+        return "어느 기준에서도 같은 쪽으로 크게 쏠려 있습니다."
     if min(values) >= 65:
-        return "어느 기준에서도 그렇게 보는 쪽이 우세합니다."
+        return "어느 기준에서도 그쪽이 우세합니다."
     if max(values) <= 15:
-        return "어느 기준도 가능성을 높게 보지 않습니다."
+        return "어느 기준에서도 그쪽은 소수에 그칩니다."
     if max(values) <= 35:
-        return "어느 기준에서도 그렇지 않다고 보는 쪽이 더 많습니다."
+        return "어느 기준에서도 반대쪽이 더 많습니다."
     if max(values) - min(values) < 10:
-        return "기준을 바꿔도 전망은 크게 달라지지 않습니다."
-    return "기준에 따라 전망이 엇갈립니다."
+        return "기준을 바꿔도 크게 달라지지 않습니다."
+    return "기준에 따라 엇갈립니다."
+
+
+# 장면을 여는 말은 원고(`lead_in`)가 이슈마다 다르게 쓴다. 이것은 원고에 없을 때 쓰는 대체 문장이다.
+# 예전 고정문 "다음은 ⟨분야⟩ 테마의 주요 컨센서스 현황을 살펴봅니다"는 장면마다 같은 틀로 반복되고
+# 분류명("기타 경제·금융")을 그대로 읽어, 대사가 문단을 이어 붙인 것처럼 들렸다(운영자 지적 2026-10-07).
+_TRANSITIONS = ("이번에는 {theme} 쪽 질문으로 넘어가 보겠습니다.", "{theme} 쪽에서도 눈여겨볼 질문이 있습니다.")
 
 
 def transition(index: int, theme: str = "") -> str:

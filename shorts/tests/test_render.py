@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from polymarket_shorts import render
 from polymarket_shorts.media import ASSET_DIR
 from polymarket_shorts.render import (
-    CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, PROGRESS_Y, SAFE_BOTTOM, WIDTH, render_frame,
+    CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, SAFE_BOTTOM, WIDTH, render_frame,
 )
 from polymarket_shorts.scenario import Scenario, Scene
 from polymarket_shorts.tts import TTSError, Word
@@ -78,6 +78,9 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
         revealed.append((kwargs["shown"], tuple(row[1] for row in scene.options)))
         path.touch()
     monkeypatch.setattr(render, "render_frame", fake_frame)
+    # 이슈 장면은 본론 목록 한 장에 그려진다(지금 말하는 줄만 펼친다).
+    monkeypatch.setattr(render, "render_list_frame",
+                        lambda scenes, path, **kwargs: fake_frame(scenes[kwargs["active"]], path, **kwargs))
 
     def fake_run(command, **kwargs):
         captured["command"] = command
@@ -110,12 +113,14 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert manifest["clone_padding_seconds"] == 1
     assert captured["command"][0] == "blender"
     # 선택지는 한 줄씩 쌓여 뜬다: 질문만 선 화면 → 첫 줄(차오름) → 두 줄(차오름).
+    # 줄이 펼쳐지는 동안(DROP_STEPS장)과 질문만 선 화면 → 첫 줄(차오름) → 두 줄(차오름).
+    opening = render.DROP_STEPS + 1
     assert [shown for shown, _ in revealed] == (
-        [0] + [1] * (render.COUNTUP_STEPS + 1) + [2] * (render.COUNTUP_STEPS + 1)
+        [0] * opening + [1] * (render.COUNTUP_STEPS + 1) + [2] * (render.COUNTUP_STEPS + 1)
     )
     # 새로 뜬 줄의 숫자만 차오르고, 이미 선 줄의 값은 흔들리지 않는다.
-    assert revealed[1][1][0] == "0%" and revealed[render.COUNTUP_STEPS + 1][1] == ("40%", "60%")
-    assert all(row[1][0] == "40%" for row in revealed[render.COUNTUP_STEPS + 1:])
+    assert revealed[opening][1][0] == "0%" and revealed[opening + render.COUNTUP_STEPS][1] == ("40%", "60%")
+    assert all(row[1][0] == "40%" for row in revealed[opening + render.COUNTUP_STEPS:])
     assert all("drift" not in row for row in manifest["images"])  # 이미지 위치는 고정
     assert "drift" not in manifest
     # 자막은 렌더가 그린 투명 PNG로 넘어간다. 상자와 글자 위치가 그림 안에 있다.
@@ -190,24 +195,23 @@ def test_written_captions_break_korean_lines_between_words(tmp_path, cjk_font):
 @requires_cjk_font
 def test_captions_sit_lowest_and_the_caption_band_stays_clear(tmp_path, cjk_font):
     target = tmp_path / "frame.png"
-    render_frame(
-        Scene("consensus", "거시·통화", "02 · 거시·통화", "본문", "내레이션", source_note="09.13 15:00",
-              bullets=("24시간 참여 규모 · 2.1M달러", "종료 예정 · 2026-10-09 세계 표준시")),
-        target, font_path=cjk_font, index=2, total=5, transparent=True,
-    )
+    scenes = [Scene("consensus", title, "", "본문", "내레이션", source_note="09.13 15:00",
+                    options=(("선택지", "60%", .6),), bullets=("24시간 참여 규모 · 2.1M달러",))
+              for title in ("첫 질문", "둘째 질문", "셋째 질문")]
+    render.render_list_frame(scenes, target, font_path=cjk_font, active=1, previous=0, progress=1.0, shown=None)
 
-    # 자막 아래 끝이 안전 영역 바닥이다. 고지문은 두 줄 자막 상자(약 160px)보다 위에서 끝난다.
+    # 자막 아래 끝이 안전 영역 바닥이다. 목록과 고지문은 두 줄 자막(약 160px)보다 위에서 끝난다.
     assert HEIGHT - CAPTION_MARGIN_V == SAFE_BOTTOM
-    assert PROGRESS_Y < render.CARD_TOP < render.META_Y < FOOTER_Y
+    assert render.TAG_Y < render.LIST_TOP < render.LIST_BOTTOM < FOOTER_Y
     assert FOOTER_Y + 60 < SAFE_BOTTOM - 2 * round(render.CAPTION_FONT_SIZE * 1.25) - 20
 
     with Image.open(target) as image:
-        pixels = image.convert("RGBA").load()
-        drawn = {render._rgb(render._COLORS[name]) for name in ("ink", "muted", "gold")}
+        pixels = image.convert("RGB").load()
+        drawn = {render._rgb(render._COLORS[name]) for name in ("ink", "muted", "brand")}
         def marks(y):
-            return sum(pixels[x, y][:3] in drawn for x in range(0, WIDTH, 2))
+            return sum(pixels[x, y] in drawn for x in range(0, WIDTH, 2))
 
-        assert marks(PROGRESS_Y + 7) > 0        # 질문 순서 점
+        assert marks(render.TAG_Y + 14 + 19) > 0        # 왼쪽 위 머리의 진행 점
         assert all(marks(y) == 0 for y in range(SAFE_BOTTOM - 170, SAFE_BOTTOM, 5))  # 자막 띠는 비어 있다
 
 
@@ -318,11 +322,11 @@ def test_a_choice_is_drawn_as_a_name_a_big_probability_and_a_gauge(tmp_path, cjk
     render_frame(scene, target, font_path=cjk_font, index=2, total=4, transparent=True)
 
     left = render.SAFE_LEFT + render.CARD_PAD
-    gold = render._rgb(render._COLORS["gold"])
+    fill = render._rgb(render._COLORS["cyan"])
     with Image.open(target) as image:
         pixels = image.convert("RGBA").load()
         def filled(y):
-            return [x for x in range(left, render.BODY_RIGHT + 1) if pixels[x, y][:3] == gold]
+            return [x for x in range(left, render.BODY_RIGHT + 1) if pixels[x, y][:3] == fill]
         height = (render.BODY_BOTTOM - render.BODY_TOP) / 2
         # 거의 확실한 쪽은 막대가 끝까지 차고, 다섯에 하나쯤인 쪽은 앞자락만 찬다.
         first = filled(round(render.BODY_TOP + height * render.OPTION_BAR_TOP) + 10)
@@ -357,20 +361,20 @@ def test_pending_choices_keep_a_dim_name_and_an_empty_gauge_so_nothing_jumps(tmp
 
 
 @requires_cjk_font
-def test_the_background_photograph_covers_the_whole_frame(tmp_path, cjk_font):
-    """2026-09-23 산출물은 아래 1070px이 #101B20 한 색이었다."""
+def test_the_backdrop_is_one_plain_navy_sheet_even_when_a_photograph_is_given(tmp_path, cjk_font):
+    """사진 배경은 흐리게 깔아도 장면마다 화면이 갈렸다. 바탕은 짙은 남색 한 장이다(참고: 조코딩 쇼츠, 2026-10-08)."""
     target = tmp_path / "frame.png"
     scene = Scene("outro", "확률은 예측입니다", "마무리", "판정 규칙은 직접 확인하세요.", "멘트")
 
     render_frame(scene, target, font_path=cjk_font, index=4, total=4,
                  background_path=ASSET_DIR / "global-trade.png")
 
+    plain = render._plain_backdrop()
     with Image.open(target) as image:
-        pixels = image.convert("RGB").load()
-        # 사진은 흐리고 어둡게 깔지만 결은 남는다. 900은 카드가 덮는 높이라 카드 아래만 본다.
-        for y in (1300, 1500, 1700, 1900):
-            band = {pixels[x, y] for x in range(0, WIDTH, 40)}
-            assert len(band) > 6, f"y={y}에서 배경이 단색이다: {band}"
+        frame = image.convert("RGB")
+        # 머리말·고지문이 없는 높이만 본다.
+        for y in (1450, 1700, 1900):
+            assert all(frame.getpixel((x, y)) == plain.getpixel((x, y)) for x in range(0, WIDTH, 40)), y
 
 
 @requires_cjk_font
@@ -433,20 +437,22 @@ def test_a_caption_prefers_the_clause_ending_the_speaker_pauses_at():
 
 
 @requires_cjk_font
-def test_caption_text_sits_in_the_middle_of_its_box(tmp_path, cjk_font):
-    """Blender 상자는 한글 글꼴의 큰 윗여백까지 넣어 글자가 아래로 처졌다(위 57px·아래 6px)."""
+def test_captions_have_no_box_and_light_up_only_the_numbers(tmp_path, cjk_font):
+    """상자 없이 굵은 흰 글씨, 숫자만 강조색이다(참고: 조코딩 쇼츠, 2026-10-08). 아래 끝은 안전 영역 바닥이다."""
     target = tmp_path / "caption.png"
-    render._caption_frame(["한국 ETF(EWY)가", "10월 5일 주에"], target, font_path=cjk_font)
+    render._caption_frame(["참여자의 18%는 금 선물이", "오를 것을 기대합니다"], target, font_path=cjk_font)
 
     with Image.open(target) as image:
-        alpha = image.getchannel("A")
-        box = alpha.getbbox()
-        ink = image.convert("RGB").point(lambda value: 255 if value > 200 else 0).convert("L").getbbox()
-    assert box[3] == SAFE_BOTTOM
-    above, below = ink[1] - box[1], box[3] - ink[3]
-    assert abs(above - below) <= 4
+        rgba = image.convert("RGBA")
+        colours = [pixel[:3] for pixel in rgba.getdata() if pixel[3] == 255]
+        ink = rgba.convert("RGB").point(lambda value: 255 if value > 200 else 0).convert("L").getbbox()
+    brand, white = render._rgb(render._COLORS["brand"]), render._rgb(render._COLORS["ink"])
+    assert colours.count(brand) > 50 and colours.count(white) > colours.count(brand)
+    # 상자가 없다 — 짙은 바탕을 깐 칸이 따로 없다.
+    assert not any(max(colour) < 40 for colour in colours)
+    assert abs(ink[3] - SAFE_BOTTOM) <= 2
     # 화면 가운데에 선다.
-    assert abs((box[0] + box[2]) / 2 - WIDTH / 2) <= 1
+    assert abs((ink[0] + ink[2]) / 2 - WIDTH / 2) <= 3
 
 
 def test_captions_are_centered_on_the_screen():

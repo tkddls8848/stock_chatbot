@@ -46,6 +46,7 @@ def test_still_fallback_uses_blender(tmp_path, monkeypatch, cjk_font, mode):
     assert selected == (png, None)
     monkeypatch.setattr(render, "probe_duration", lambda *a, **k: 2)
     monkeypatch.setattr(render, "render_frame", lambda scene, path, **k: path.touch())
+    monkeypatch.setattr(render, "render_list_frame", lambda scenes, path, **k: path.touch())
     commands = []
     def run(command, **kwargs):
         commands.append(command)
@@ -70,6 +71,7 @@ def test_movie_scene_and_timeline_match_still(tmp_path, monkeypatch, cjk_font):
     words = ((Word(.1, 1, "멘트"),), (Word(6.5, 7, "마무리"),))
     monkeypatch.setattr(render, "probe_duration", lambda *a, **k: 10)
     monkeypatch.setattr(render, "render_frame", lambda scene, path, **k: path.touch())
+    monkeypatch.setattr(render, "render_list_frame", lambda scenes, path, **k: path.touch())
     commands = []
     def run(command, **kwargs):
         commands.append(command)
@@ -170,12 +172,12 @@ def test_real_mixed_clip_still_render_duration_resolution_and_audio(
         sum(a * a for a, _ in pairs) * sum(b * b for _, b in pairs))
     assert correlation > .99
     assert max(abs(value) for value in samples[1][int(2.5 * 24000):]) < 5
-    # 반복 경계 뒤에도 배경이 나오고, 투명 카드와 자막이 올바르게 합성된다.
+    # 바탕은 렌더가 그린 짙은 남색 한 장이라 움직이는 배경이 비치지 않고(2026-10-08), 자막은 그 위에 합성된다.
     raw = subprocess.run([media_binaries.ffmpeg_bin, "-v", "error", "-ss", "0.8", "-i", str(output),
                           "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                          check=True, capture_output=True).stdout
     frame = Image.frombytes("RGB", (1080, 1920), raw)
-    assert frame.crop((0, 0, 1080, 150)).getextrema()[0][1] > 30
+    assert all(high < 40 for _, high in frame.crop((0, 0, 1080, 150)).getextrema())
     caption = frame.crop((0, 1400, 1080, 1600))
     lit = [(x, y + 1400) for y in range(caption.height) for x in range(caption.width)
            if min(caption.getpixel((x, y))) > 180]

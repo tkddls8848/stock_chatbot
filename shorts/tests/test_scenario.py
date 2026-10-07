@@ -76,7 +76,7 @@ def test_the_same_closing_line_is_not_repeated_every_scene(issue_source):
     # 화면에만 띄우면 보는 것과 듣는 것이 어긋난다.
     assert scenario.scenes[1].takeaway == "연준의 공식 결정문을 확인하세요."
     # 확률 풀이 문장은 같은 말이면 처음 한 번만 한다(다섯 이슈가 같은 입력이라 풀이도 같다).
-    mood = "뚜렷하게 앞서는 답 없이 의견이 나뉩니다."
+    mood = "뚜렷하게 앞서는 답 없이 나뉩니다."
     assert scenario.narration.count(mood) == 1 and scenario.scenes[1].narration.endswith(mood)
     # 원고에 장면 여는 말이 없으면 둘째 이슈부터 다음 테마를 알리는 대체 문장으로 연다(2026-09-28).
     # 같은 틀이 매번 반복되지 않게 문장이 번갈아 바뀐다(2026-10-07).
@@ -140,5 +140,5 @@ def test_the_writer_opens_each_scene_and_the_numbers_close_it(issue_source):
 
     scene = scenario.scenes[1]
     assert scene.narration.startswith("먼저 연준의 금리 결정부터 보겠습니다. ")
-    assert scene.narration.endswith(("있습니다.", "우세합니다.", "갈립니다.", "많습니다.", "대부분입니다.",
+    assert scene.narration.endswith(("있습니다.", "우세합니다.", "갈립니다.", "많습니다.", "그칩니다.",
                                      "않습니다.", "엇갈립니다.", "나뉩니다."))

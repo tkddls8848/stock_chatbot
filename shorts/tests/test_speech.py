@@ -51,10 +51,12 @@ def test_the_closing_is_the_fixed_line_with_the_site():
 
 
 def test_a_yes_no_question_says_what_participants_expect():
-    """"…선택한 사람은 전체의 N%" 대신 주제에 맞는 동사로 전망을 말한다(운영자 결정 2026-10-02)."""
+    """"…선택한 사람은 전체의 N%" 대신 주제에 맞는 동사로 전망을 말하고(2026-10-02), "…것을 기대하고 있습니다"로
+    끝낸다(운영자 결정 2026-10-08 — "…것으로 봅니다"·"…쪽으로 봅니다"를 쓰지 않는다)."""
     spoken = speech.speak_markets("binary", "호르무즈 해협 통행",
                                   [("9월 30일까지 정상화", "0.4%", "99.6%", "9월 30일까지 호르무즈 해협 통행이 정상화될")])
-    assert spoken == "참여자의 0.4%는 9월 30일까지 호르무즈 해협 통행이 정상화될 것으로, 99.6%는 그렇지 않을 것으로 봅니다."
+    assert spoken == ("참여자의 0.4%는 9월 30일까지 호르무즈 해협 통행이 정상화될 것을 기대하고 있고, "
+                      "99.6%는 그 반대를 기대하고 있습니다.")
 
 
 def test_several_choices_each_say_their_own_outlook():
@@ -63,8 +65,8 @@ def test_several_choices_each_say_their_own_outlook():
         ("11월 30일까지", "70.5%", "29.5%", "휴전이 11월 30일까지 이어질"),
     ])
     # 같은 주어("휴전이")는 첫 전망에서만 읽는다.
-    assert spoken == ("참여자의 79.5%는 휴전이 10월 31일까지 이어질 것으로, "
-                      "70.5%는 11월 30일까지 이어질 것으로 봅니다.")
+    assert spoken == ("참여자의 79.5%는 휴전이 10월 31일까지 이어질 것을, "
+                      "70.5%는 11월 30일까지 이어질 것을 기대하고 있습니다.")
 
 
 def test_one_of_several_names_the_topic_first():
@@ -72,12 +74,13 @@ def test_one_of_several_names_the_topic_first():
         ("2회 인상", "60.5%", "39.5%", "연준이 2026년에 금리를 2회 인상할"),
         ("3회 인상", "18.6%", "81.4%", "연준이 2026년에 금리를 3회 인상할"),
     ])
-    assert spoken.startswith("2026년 연준 금리 인상 횟수에 대해 참여자의 60.5%는 연준이 2026년에 금리를 2회 인상할 것으로")
+    assert spoken.startswith("2026년 연준 금리 인상 횟수에 대해 참여자의 60.5%는 연준이 2026년에 금리를 2회 인상할 것을")
 
 
 @pytest.mark.parametrize(("label", "expected"), [
-    ("355달러 이상", "참여자의 85%는 355달러 이상 쪽으로 봅니다."),
-    ("10월 인하", "참여자의 85%는 10월 인하 쪽으로 봅니다."),
+    ("355달러 이상", "참여자의 85%는 355달러 이상을 기대하고 있습니다."),
+    ("10월 인하", "참여자의 85%는 10월 인하를 기대하고 있습니다."),
+    ("5.4%", "참여자의 85%는 5.4%를 기대하고 있습니다."),   # 숫자·%는 읽는 소리로 조사를 고른다
 ])
 def test_without_an_outlook_the_label_still_says_an_outlook_not_a_choice(label, expected):
     """모델이 전망 구절을 못 써도 음성은 같은 틀이다. "선택한 사람"으로 되돌아가지 않는다."""
@@ -87,7 +90,7 @@ def test_without_an_outlook_the_label_still_says_an_outlook_not_a_choice(label, 
 
 def test_a_yes_no_without_an_outlook_keeps_both_sides():
     spoken = speech.speak_markets("binary", "", [("연내 경기 침체", "9.5%", "90.5%")])
-    assert spoken == "연내 경기 침체에 대해 참여자의 9.5%는 그렇다고, 90.5%는 그렇지 않다고 봅니다."
+    assert spoken == "연내 경기 침체에 대해 참여자의 9.5%는 그렇게 될 것을, 90.5%는 그렇지 않을 것을 기대하고 있습니다."
 
 
 def test_no_choices_say_nothing():
@@ -95,18 +98,18 @@ def test_no_choices_say_nothing():
 
 
 @pytest.mark.parametrize(("event_type", "yes", "mood"), [
-    ("binary", ["91.5%"], "참여자 대부분이 그렇게 보고 있습니다."),
-    ("binary", ["68%"], "그렇게 보는 쪽이 우세합니다."),
-    ("binary", ["50.95%"], "의견이 팽팽하게 갈립니다."),
-    ("binary", ["18%"], "그렇지 않다고 보는 쪽이 더 많습니다."),
-    ("binary", ["6.5%"], "가능성을 낮게 보는 시각이 대부분입니다."),
-    ("independent_multi", ["91.5%", "89%"], "어느 기준에서도 그렇게 보는 쪽이 대부분입니다."),
-    ("independent_multi", ["68%", "50.95%"], "기준에 따라 전망이 엇갈립니다."),
-    ("independent_multi", ["18%", "6.5%"], "어느 기준에서도 그렇지 않다고 보는 쪽이 더 많습니다."),
-    ("independent_multi", ["55%", "48%"], "기준을 바꿔도 전망은 크게 달라지지 않습니다."),
-    ("independent_multi", ["78%", "70%"], "어느 기준에서도 그렇게 보는 쪽이 우세합니다."),
-    ("exclusive_multi", ["60.5%", "18.6%"], "한쪽으로 무게가 뚜렷하게 실려 있습니다."),
-    ("exclusive_multi", ["35%", "30%"], "뚜렷하게 앞서는 답 없이 의견이 나뉩니다."),
+    ("binary", ["91.5%"], "참여자 대부분이 한쪽으로 쏠려 있습니다."),
+    ("binary", ["68%"], "그쪽이 우세합니다."),
+    ("binary", ["50.95%"], "팽팽하게 갈립니다."),
+    ("binary", ["18%"], "반대쪽이 더 많습니다."),
+    ("binary", ["6.5%"], "그쪽은 소수에 그칩니다."),
+    ("independent_multi", ["91.5%", "89%"], "어느 기준에서도 같은 쪽으로 크게 쏠려 있습니다."),
+    ("independent_multi", ["68%", "50.95%"], "기준에 따라 엇갈립니다."),
+    ("independent_multi", ["18%", "6.5%"], "어느 기준에서도 반대쪽이 더 많습니다."),
+    ("independent_multi", ["55%", "48%"], "기준을 바꿔도 크게 달라지지 않습니다."),
+    ("independent_multi", ["78%", "70%"], "어느 기준에서도 그쪽이 우세합니다."),
+    ("exclusive_multi", ["60.5%", "18.6%"], "한쪽으로 뚜렷하게 모여 있습니다."),
+    ("exclusive_multi", ["35%", "30%"], "뚜렷하게 앞서는 답 없이 나뉩니다."),
 ])
 def test_the_scene_closes_with_where_the_numbers_lean(event_type, yes, mood):
     """숫자만 읽고 넘어가면 장면이 뚝 끊겼다(2026-10-07). 숫자는 다시 말하지 않는다."""

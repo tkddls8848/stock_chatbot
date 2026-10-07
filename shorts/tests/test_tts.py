@@ -192,3 +192,14 @@ def test_scene_pauses_differ_by_where_the_break_falls():
     # 도입에서 첫 이슈로는 가장 짧게, 마무리 고지문 앞에서 가장 길게 쉰다.
     assert gaps[0] < gaps[1] < gaps[-1]
     assert tts.scene_pauses(1) == ()
+
+
+def test_english_in_parentheses_is_shown_but_not_spoken():
+    """괄호 속 영문은 화면·자막에만 둔다(2026-10-08). 음성은 "한국 ETF가"를 읽고, 자막 위치는 원고 기준이다."""
+    narration = "한국 ETF(EWY)가 186달러까지 내려갈까요? 금 선물 (GC) 가격입니다."
+    assert tts.spoken_text(narration) == "한국 ETF가 186달러까지 내려갈까요? 금 선물 가격입니다."
+    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["한국", "ETF가", "186달러까지", "금", "선물", "가격입니다"])]
+    starts = tts.locate(narration, words)
+    assert [narration[at:at + 3] for at in starts] == ["한국 ", "ETF", "186", "금 선", "선물 ", "가격입"]
+    # 자막은 원고를 다음 단어 위치까지 잘라 쓰므로 괄호가 그대로 남는다.
+    assert narration[starts[1]:starts[2]].strip() == "ETF(EWY)가"

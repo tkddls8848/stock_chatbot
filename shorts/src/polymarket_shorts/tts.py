@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Sequence
 import asyncio
 import json
+import re
 import logging
 import subprocess
 
@@ -85,7 +86,7 @@ def synthesize(
     try:
         asyncio.run(
             edge_tts.Communicate(
-                script, voice, rate=rate, boundary="WordBoundary",
+                spoken_text(script), voice, rate=rate, boundary="WordBoundary",
             ).save(str(audio_path), str(words_path))
         )
         words = _read_words(words_path)
@@ -100,17 +101,40 @@ def synthesize(
     return scenes
 
 
+# 괄호 속 영문(티커·원어 표기)은 화면·자막에만 두고 읽지 않는다(운영자 결정 2026-10-08) —
+# "한국 ETF(EWY)가"는 "한국 ETF가"로 읽는다. 원고(자막)는 그대로 두고 음성 합성에 보내는 글에서만 뺀다.
+_UNSPOKEN = re.compile(r" ?\([A-Za-z0-9][A-Za-z0-9 .,&/+:'-]*\)")
+
+
+def spoken_text(text: str) -> str:
+    """음성 합성에 보낼 글. 괄호 속 영문을 뺀다."""
+    return _UNSPOKEN.sub("", text)
+
+
+def _spoken_map(text: str) -> tuple[str, list[int]]:
+    """읽는 글과, 그 글자마다 원고에서의 위치."""
+    keep: list[int] = []
+    last = 0
+    for match in _UNSPOKEN.finditer(text):
+        keep.extend(range(last, match.start()))
+        last = match.end()
+    keep.extend(range(last, len(text)))
+    return "".join(text[index] for index in keep), keep
+
+
 def locate(text: str, words: Sequence[Word]) -> list[int]:
     """원고에서 각 단어가 시작하는 글자 위치.
 
-    앞에서부터 순서대로 훑으므로 같은 말이 여러 번 나와도 어긋나지 않는다.
+    앞에서부터 순서대로 훑으므로 같은 말이 여러 번 나와도 어긋나지 않는다. 음성은 괄호 속 영문을 뺀 글을
+    읽었으므로("ETF가") 그 글에서 찾고 원고 위치로 되돌린다 — 자막은 원고를 잘라 쓰므로 "(EWY)"가 남는다.
     """
+    spoken, mapping = _spoken_map(text)
     positions, cursor = [], 0
     for word in words:
-        position = text.find(word.text, cursor)
+        position = spoken.find(word.text, cursor)
         if position < 0:
             raise TTSError(f"합성된 단어를 원고에서 찾지 못했습니다: {word.text}")
-        positions.append(position)
+        positions.append(mapping[position])
         cursor = position + len(word.text)
     return positions
 

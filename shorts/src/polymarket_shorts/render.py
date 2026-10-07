@@ -27,7 +27,13 @@ _COLORS = {
     "red": "#FF5C6C",
     "blue": "#4CC9FF",
     "green": "#3DDC84",
+    "cyan": "#5BC8F5",
+    # 강조색. 노란색(금색)은 운영자가 바꾸라고 했다(2026-10-08) — 초록 계열 하나로 숫자·번호 탭·머리를 짚는다.
+    "brand": "#3DDC84",
 }
+# 바탕은 사진 없이 짙은 남색 한 장이다(참고: 조코딩 쇼츠, 2026-10-08). 가운데가 아주 조금 밝다.
+_BACKDROP_TOP, _BACKDROP_BOTTOM, _BACKDROP_CENTER = (13, 20, 30), (9, 14, 21), (20, 31, 45)
+_MONO_FONTS = (Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"), Path("C:/Windows/Fonts/consola.ttf"))
 
 class RenderError(RuntimeError):
     pass
@@ -159,12 +165,13 @@ def _background(path: Path | None, *, index: int, total: int, accent: str) -> Im
 
 # 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
 _CHROME = {
-    "ko": {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스",
+    "ko": {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문", "list_title": "오늘의 질문 {n}",
            "open_top": "오늘의 집단 예측", "open_low": "컨센서스 요약", "open_note": "지금 시작합니다",
            "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
            "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
            "footer": "집단 예측 컨센서스 · 투자 조언 아님"},
-    "en": {"yes": "YES", "site": "nunchi.live", "brand_tag": "Crowd forecast consensus",
+    "en": {"yes": "YES", "site": "nunchi.live", "brand_tag": "Crowd forecast consensus", "list_tag": "Today's questions",
+           "list_title": "{n} questions today",
            "open_top": "TODAY'S CROWD FORECASTS", "open_low": "CONSENSUS SUMMARY", "open_note": "Starting now",
            "close_top": "Full details at", "close_note": "Check each question's conditions",
            "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
@@ -186,8 +193,43 @@ def _rgb(color: str) -> tuple[int, int, int]:
 
 
 def _accent(scene: Scene) -> str:
-    """도입·마무리는 채널 색(초록), 이슈 장면은 분야 색이다."""
-    return _COLORS["green"] if scene.kind in {"intro", "outro"} else _COLORS.get(scene.accent, _COLORS["gold"])
+    """강조색은 하나(초록)다. 장면마다 색이 바뀌면 화면이 갈리는 것처럼 보인다(2026-10-08)."""
+    return _COLORS["brand"]
+
+
+@lru_cache(maxsize=1)
+def _plain_backdrop() -> Image.Image:
+    """짙은 남색 세로 그라데이션에 가운데가 조금 밝은 바탕."""
+    base = Image.new("RGB", (WIDTH, HEIGHT))
+    draw = ImageDraw.Draw(base)
+    for y in range(HEIGHT):
+        share = y / (HEIGHT - 1)
+        draw.line((0, y, WIDTH, y), fill=tuple(round(a + (b - a) * share) for a, b in zip(_BACKDROP_TOP, _BACKDROP_BOTTOM)))
+    glow = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((-40, 60, WIDTH // 4 + 40, HEIGHT // 4 - 60), fill=(*_BACKDROP_CENTER, 150))
+    glow = glow.filter(ImageFilter.GaussianBlur(40)).resize((WIDTH, HEIGHT), Image.Resampling.BICUBIC)
+    return Image.alpha_composite(base.convert("RGBA"), glow).convert("RGB")
+
+
+def _mono(size: int, fallback: Path) -> ImageFont.FreeTypeFont:
+    path = next((candidate for candidate in _MONO_FONTS if candidate.is_file()), fallback)
+    return _font(path, size)
+
+
+def _header(draw, font_path: Path, current: int, count: int) -> None:
+    """왼쪽 위 터미널 꼴 머리("~/nunchi consensus")와 진행 점. 지금 장면은 길쭉한 점이다."""
+    font = _mono(30, font_path)
+    x, y = SAFE_LEFT, TAG_Y + 14
+    draw.text((x, y), "~/nunchi ", font=font, fill=_COLORS["muted"])
+    x += draw.textlength("~/nunchi ", font=font)
+    draw.text((x, y), "consensus", font=font, fill=_COLORS["brand"])
+    x += draw.textlength("consensus", font=font) + 28
+    top = y + 13
+    for slot in range(1, count + 1):
+        width = 34 if slot == current else 12
+        color = _COLORS["brand"] if slot == current else (_COLORS["muted"] if slot < current else _COLORS["line"])
+        draw.rounded_rectangle((x, top, x + width, top + 12), radius=6, fill=color)
+        x += width + 12
 
 
 @lru_cache(maxsize=16)
@@ -297,7 +339,7 @@ def _tag(draw, text: str, font_path: Path, accent: str) -> None:
 def _headline(image, lines: Sequence[tuple[str, str]], font_path: Path, accent: str) -> None:
     """도입·마무리의 고정 머리말. (문구, 역할)의 줄을 화면 가운데 세로로 세운다.
 
-    역할은 "ink"(흰 굵은 줄), "accent"(큰 accent 줄 + 밑줄), "plain"(보통 굵기 흰 줄)이다.
+    역할은 "ink"(흰 굵은 줄), "accent"(큰 accent 줄), "plain"(보통 굵기 흰 줄)이다.
     """
     draw = ImageDraw.Draw(image)
     bold = _bold(font_path)
@@ -310,9 +352,7 @@ def _headline(image, lines: Sequence[tuple[str, str]], font_path: Path, accent: 
     for (role, font, (line,)), step in zip(fitted, pitch):
         left = (WIDTH - draw.textlength(line, font=font)) / 2
         if role == "accent":
-            line_y = y + round(font.size * 1.2)
-            right = left + draw.textlength(line, font=font)
-            _glow(image, lambda layer: layer.rectangle((left, line_y, right, line_y + 10), fill=accent), radius=12)
+            # 밑줄은 긋지 않는다(운영자 결정 2026-10-08). 색과 크기로만 짚는다.
             _glow(image, lambda layer: layer.text((left, y), line, font=font, fill=accent, stroke_width=2,
                                                   stroke_fill=accent), radius=10, strength=.3)
         else:
@@ -396,37 +436,41 @@ def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, sho
         if not revealed:
             continue
         number = _font(bold, min(120, round(height * .47)))
-        number_y = y + round(height * .19)
+        number_y = y + round(height * .24)
         draw.text((x, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
         draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(number.size * .52)),
                   yes, font=_font(bold, 32), fill=_COLORS["muted"])
         filled = round((right - x) * min(1.0, max(0.0, probability)))
         if filled > OPTION_BAR:
-            draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=OPTION_BAR // 2, fill=accent)
+            draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=OPTION_BAR // 2,
+                                   fill=_COLORS["cyan"])
 
 
-def _chips(draw, bullets: Sequence[str], font_path: Path) -> None:
+def _chips(draw, bullets: Sequence[str], font_path: Path, *, top: int = META_Y, left_edge: int = SAFE_LEFT,
+           right_edge: int = BODY_RIGHT, height: int = CHIP_HEIGHT) -> None:
     """근거 수치를 칩으로 나눈다. "24시간 참여 규모 · 20.3K달러"는 작은 이름과 굵은 값이 된다."""
     items = [tuple(bullet.split(" · ", 1)) if " · " in bullet else ("", bullet) for bullet in bullets][:3]
     if not items:
         return
     bold = _bold(font_path)
     gap = 16
-    width = (BODY_RIGHT - SAFE_LEFT - gap * (len(items) - 1)) / len(items)
+    width = (right_edge - left_edge - gap * (len(items) - 1)) / len(items)
+    scale = height / CHIP_HEIGHT
     for slot, (label, value) in enumerate(items):
-        left = SAFE_LEFT + slot * (width + gap)
-        draw.rounded_rectangle((left, META_Y, left + width, META_Y + CHIP_HEIGHT), radius=18,
+        left = left_edge + slot * (width + gap)
+        draw.rounded_rectangle((left, top, left + width, top + height), radius=18,
                                fill=(*_rgb(_COLORS["panel_alt"]), 235), outline=_COLORS["line"], width=2)
         inner = round(width - 40)
         if label:
             small, (label_line,) = _fit(draw, label, font_path, inner, range(24, 15, -1), 1)
-            draw.text((left + 20, META_Y + 14), label_line, font=small, fill=_COLORS["muted"])
+            draw.text((left + 20, top + round(14 * scale)), label_line, font=small, fill=_COLORS["muted"])
         value = _compact(value)
         try:
-            font, lines = _fit(draw, value, bold, inner, range(34, 21, -2), 1)
+            font, lines = _fit(draw, value, bold, inner, range(round(34 * min(1, scale)), 19, -2), 1)
         except RenderError:
-            font, lines = _fit(draw, value, bold, inner, range(26, 17, -2), 2)
-        y = META_Y + (50 if label else 24) - (12 if len(lines) == 2 else 0) - (14 if len(lines) == 2 and not label else 0)
+            font, lines = _fit(draw, value, bold, inner, range(26, 15, -2), 2)
+        y = top + round(((50 if label else 24) - (12 if len(lines) == 2 else 0)
+                         - (14 if len(lines) == 2 and not label else 0)) * scale)
         for line in lines:
             draw.text((left + 20, y), line, font=font, fill=_COLORS["ink"])
             y += round(font.size * 1.15)
@@ -437,6 +481,128 @@ def _compact(value: str) -> str:
     value = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b", r"\1.\2.\3", value)
     value = re.sub(r"(\d{4}\.\d{2}\.\d{2}) (?:세계 표준시|UTC)\b", r"\1", value)
     return re.sub(r"유효 (\d+개) 중 상위 (\d+개)", r"\1 중 \2", value)
+
+
+# ── 본론 목록 화면 ─────────────────────────────────────
+# 질문마다 화면을 통째로 갈아 끼우면 2분 남짓한 영상에서 화면이 네다섯 번 바뀌어 집중이 끊겼다(운영자 지적
+# 2026-10-08). 본론은 질문 전체가 놓인 목록 한 장이고, 지금 말하는 질문만 드롭다운처럼 아래로 펼쳐져 선택지·
+# 확률을 보인다. 앞 질문은 접히며 대표 확률 배지만 남는다. 화면 전환은 시작 → 목록 → 마무리 두 번뿐이다.
+LIST_TOP = 330                          # 목록 첫 줄 위
+LIST_BOTTOM = FOOTER_Y - 18             # 목록 마지막 줄 아래 한계
+ROW_HEIGHT = 108                        # 접힌 줄
+ROW_GAP = 16
+OPTION_ROW = 176                        # 펼친 줄 안 선택지 한 줄
+LIST_CHIPS = 96
+DROP_SECONDS = .4                       # 펼침·접힘에 쓰는 시간(12프레임)
+DROP_STEPS = 12
+
+
+def _expanded_height(scene: Scene, option_row: int = OPTION_ROW, chips: bool = True) -> int:
+    return ROW_HEIGHT + len(scene.options) * option_row + (LIST_CHIPS + 20 if chips and scene.bullets else 0) + 16
+
+
+def _list_layout(scenes: Sequence[Scene], heights_open: Sequence[float]) -> tuple[int, bool]:
+    """펼친 줄의 선택지 줄 높이와 칩을 둘지. 질문이 많아 넘치면 선택지 줄을 줄이고, 그래도 넘치면 칩을 뺀다."""
+    budget = LIST_BOTTOM - LIST_TOP - ROW_GAP * (len(scenes) - 1) - ROW_HEIGHT * (len(scenes) - 1)
+    widest = max(scenes, key=lambda scene: len(scene.options))
+    for chips in (True, False):
+        for option_row in range(OPTION_ROW, 119, -4):
+            if _expanded_height(widest, option_row, chips) <= budget:
+                return option_row, chips
+    return 120, False
+
+
+def _row_content(scene: Scene, *, font_path: Path, accent: str, shown: int, yes: str, option_row: int,
+                 chips: bool) -> Image.Image:
+    """펼친 줄의 속(선택지·칩)을 따로 그린다. 펼치는 동안 위에서부터 잘라 보인다."""
+    width = SAFE_RIGHT - SAFE_LEFT
+    height = _expanded_height(scene, option_row, chips) - ROW_HEIGHT
+    layer = Image.new("RGBA", (width, max(1, height)), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    if scene.options:
+        _options_block(draw, scene, font_path, accent,
+                       (CARD_PAD, 0, BODY_RIGHT - SAFE_LEFT, len(scene.options) * option_row), shown=shown, yes=yes)
+    if chips and scene.bullets:
+        _chips(draw, scene.bullets, font_path, top=len(scene.options) * option_row + 10, left_edge=CARD_PAD,
+               right_edge=BODY_RIGHT - SAFE_LEFT, height=LIST_CHIPS)
+    return layer
+
+
+def render_list_frame(
+    scenes: Sequence[Scene],
+    path: Path,
+    *,
+    font_path: Path,
+    active: int,
+    previous: int | None,
+    progress: float,
+    shown: int | None,
+    background_path: Path | None = None,
+    transparent: bool = False,
+    language: str = "ko",
+    index: int = 2,
+    total: int = 5,
+) -> None:
+    """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다."""
+    chrome = _CHROME[language]
+    scene = scenes[active]
+    accent = _accent(scene)
+    image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    _header(draw, font_path, active + 2, len(scenes) + 2)
+    option_row, chips = _list_layout(scenes, ())
+    eased = _ease(progress)
+    y = LIST_TOP
+    for number, row in enumerate(scenes):
+        row_accent = _accent(row)
+        full = _expanded_height(row, option_row, chips)
+        if number == active:
+            height = ROW_HEIGHT + (full - ROW_HEIGHT) * eased
+        elif number == previous:
+            height = ROW_HEIGHT + (full - ROW_HEIGHT) * (1 - eased)
+        else:
+            height = ROW_HEIGHT
+        box = (SAFE_LEFT, round(y), SAFE_RIGHT, round(y + height))
+        is_active = number == active
+        draw.rounded_rectangle(box, radius=26, fill=(*_rgb(_COLORS["panel"]), 238 if is_active else 214))
+        if is_active:
+            _glow(image, lambda layer: layer.rounded_rectangle(box, radius=26, outline=row_accent, width=4),
+                  radius=14, strength=.6)
+        else:
+            draw.rounded_rectangle(box, radius=26, outline=_COLORS["line"], width=2)
+        # 줄 머리: 번호 탭 · 제목 · (설명을 마친 질문은) 대표 확률
+        tab_font = _font(_bold(font_path), 34)
+        tab = f"Q{number + 1}"
+        tab_width = draw.textlength(tab, font=tab_font) + 34
+        tab_box = (SAFE_LEFT + 24, box[1] + 26, SAFE_LEFT + 24 + tab_width, box[1] + ROW_HEIGHT - 26)
+        draw.rounded_rectangle(tab_box, radius=12, fill=row_accent if is_active or number < active else _COLORS["line"])
+        _ink_text(draw, tab_box, tab, tab_font, _COLORS["on_accent"] if is_active or number < active else _COLORS["muted"])
+        badge = row.metric if number < active and row.metric else ""
+        badge_font = _font(_bold(font_path), 40)
+        badge_width = draw.textlength(badge, font=badge_font) if badge else 0
+        title_left = tab_box[2] + 22
+        title_right = (BODY_RIGHT if box[1] > 1000 else SAFE_RIGHT - 32) - (badge_width + 24 if badge else 0)
+        title_font, (title_line,) = _fit(draw, row.title, _bold(font_path), title_right - title_left,
+                                         range(42, 24, -2), 1)
+        _ink_text(draw, (title_left, box[1], title_right, box[1] + ROW_HEIGHT), title_line, title_font,
+                  _COLORS["ink"] if is_active or number < active else _COLORS["muted"], center_x=False)
+        if badge:
+            _ink_text(draw, (title_right + 24, box[1], title_right + 24 + badge_width, box[1] + ROW_HEIGHT),
+                      badge, badge_font, row_accent, center_x=False)
+        # 펼친 속
+        inner = round(height - ROW_HEIGHT)
+        if inner > 2 and (is_active or number == previous):
+            content = _row_content(scene if is_active else row, font_path=font_path, accent=row_accent,
+                                   shown=(len(row.options) if shown is None else shown) if is_active else len(row.options),
+                                   yes=chrome["yes"], option_row=option_row, chips=chips)
+            image.alpha_composite(content.crop((0, 0, content.width, min(inner, content.height))),
+                                  (SAFE_LEFT, box[1] + ROW_HEIGHT))
+        y += height + ROW_GAP
+
+    draw.text((SAFE_LEFT, FOOTER_Y), chrome["footer_options"], font=_font(font_path, 23), fill=_COLORS["muted"])
+    draw.text((SAFE_LEFT, FOOTER_Y + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
+    framed = Image.alpha_composite(_plain_backdrop().convert("RGBA"), image).convert("RGB")
+    framed.save(path, "PNG", compress_level=1)
 
 
 def render_frame(
@@ -456,15 +622,7 @@ def render_frame(
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     number = _LEADING_NUMBER.match(scene.kicker)
-    category = scene.kicker[number.end():] if number else scene.kicker
-    # 배경 사진을 살린 만큼 글자가 앉는 자리 뒤에만 그늘을 깐다. 글자보다 먼저 깐다.
-    if scene.kind in {"intro", "outro"}:
-        _shade(image, (60, HEADLINE_CENTER - 240, WIDTH - 60, HEADLINE_CENTER + 240), alpha=170)
-    else:
-        _shade(image, (40, TITLE_TOP - 24, WIDTH - 40, PROGRESS_Y + 40), alpha=165)
-        _shade(image, (40, META_Y - 16, WIDTH - 40, META_Y + CHIP_HEIGHT + 16), alpha=120)
-    _shade(image, (40, FOOTER_Y - 14, WIDTH - 40, FOOTER_Y + 74), alpha=150)
-    _tag(draw, chrome["brand_tag"] if scene.kind in {"intro", "outro"} else category, font_path, accent)
+    _header(draw, font_path, index, total)
     card = (SAFE_LEFT, CARD_TOP, SAFE_RIGHT, CARD_BOTTOM)
     inner = (SAFE_LEFT + CARD_PAD, BODY_TOP, BODY_RIGHT, BODY_BOTTOM)
 
@@ -490,10 +648,7 @@ def render_frame(
     draw.text((SAFE_LEFT, FOOTER_Y), chrome["footer_options"] if scene.options else chrome["footer"],
               font=_font(font_path, 23), fill=_COLORS["muted"])
     draw.text((SAFE_LEFT, FOOTER_Y + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
-    framed = Image.alpha_composite(_atmosphere(accent, transparent), image)
-    if not transparent:
-        backdrop = _backdrop(background_path, index, total, scene.accent).convert("RGBA")
-        framed = Image.alpha_composite(backdrop, framed).convert("RGB")
+    framed = Image.alpha_composite(_plain_backdrop().convert("RGBA"), image).convert("RGB")
     framed.save(path, "PNG", compress_level=1)
 
 
@@ -517,12 +672,9 @@ CAPTION_FONT_SIZE = 56
 # 똑같이 둔다 — 왼쪽만 72로 두면 자막 상자의 가운데가 59px 왼쪽으로 쏠린다.
 CAPTION_MARGIN_R = 190                  # 오른쪽 좋아요·댓글 버튼 줄
 CAPTION_MARGIN_L = CAPTION_MARGIN_R
-# 자막은 둥근 먹색 상자 위의 흰 굵은 글씨다(참고 영상의 자막 띠, 2026-10-07). Blender text 스트립의
-# 상자는 한글 글꼴의 큰 윗여백까지 상자에 넣어 글자가 아래로 처졌다(위 57px·아래 6px) — 그래서 자막도
-# Pillow로 그려 잉크 범위를 상자 가운데에 놓는다(`_caption_frame`). 줄바꿈 폭은 `CAPTION_FONT_SIZE`로 잰다.
-CAPTION_RENDER_SIZE = 46
-CAPTION_BOX_RGBA = (6, 9, 13, 210)
-CAPTION_PAD_X, CAPTION_PAD_Y = 30, 20
+# 자막은 렌더가 Pillow로 그린다(`_caption_frame`). Blender text 스트립은 한글 글꼴의 큰 윗여백 때문에 글자 위치를
+# 맞추기 어려웠다(상자를 쓰던 때 위 57px·아래 6px). 줄바꿈 폭은 `CAPTION_FONT_SIZE`로 잰다.
+CAPTION_RENDER_SIZE = 50
 # 줄바꿈은 우리가 어절 경계에서 넣고 libass는 그대로 그린다(WrapStyle=2). libass는
 # 한글도 중국어·일본어처럼 아무 글자에서나 끊어서, "10월 금리 변동 없음과"가
 # "…없" / "음과 …"로 갈라졌다. 합성 볼드가 측정보다 넓어질 수 있어 여유를 둔다.
@@ -693,28 +845,38 @@ def _caption_lines(draw, text: str, font: ImageFont.FreeTypeFont) -> list[str]:
     return lines
 
 
+# 단위가 붙은 수치만 짚는다. 날짜("10월 7일")·연도("2027년")까지 칠하면 강조가 흩어진다.
+_HIGHLIGHT = re.compile(r"[0-9][0-9,.]*\s?(?:%|포인트|달러|원|엔|위안|유로|bp|bps|배|회)")
+
+
 def _caption_frame(lines: Sequence[str], path: Path, *, font_path: Path) -> None:
-    """자막 한 덩어리를 화면 크기 투명 PNG로 그린다. 상자 아래 끝은 안전 영역 바닥이다."""
+    """자막 한 덩어리를 화면 크기 투명 PNG로 그린다. 아래 끝은 안전 영역 바닥이다.
+
+    상자 없이 굵은 흰 글씨에 숫자만 강조색(초록)으로 짚는다(참고: 조코딩 쇼츠, 2026-10-08). 바탕이 짙은 남색 한 장이라
+    상자가 없어도 읽히고, 옅은 그림자로 가장자리만 세운다.
+    """
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     font = _font(_bold(font_path), CAPTION_RENDER_SIZE)
-    pitch = round(CAPTION_RENDER_SIZE * 1.34)
-    # 줄마다 글자가 달라도 상자 높이가 흔들리지 않게 기준 글자로 잉크 높이를 잰다.
-    _, ink_top, _, ink_bottom = draw.textbbox((0, 0), "한Ag", font=font)
-    width = max(draw.textlength(line, font=font) for line in lines) + 2 * CAPTION_PAD_X
-    height = (len(lines) - 1) * pitch + (ink_bottom - ink_top) + 2 * CAPTION_PAD_Y
-    center = CAPTION_MARGIN_L + (WIDTH - CAPTION_MARGIN_L - CAPTION_MARGIN_R) / 2
-    # Pillow 사각형은 끝 좌표 픽셀까지 칠한다. 상자의 마지막 줄이 SAFE_BOTTOM 바로 위다.
-    box = (center - width / 2, SAFE_BOTTOM - height, center + width / 2, SAFE_BOTTOM - 1)
-    draw.rounded_rectangle(box, radius=22, fill=CAPTION_BOX_RGBA)
-    # 상자 높이는 줄 수로만 정하고(덩어리마다 상자가 출렁이지 않게), 글자는 실제 잉크 범위를 가운데에 둔다.
-    top = draw.textbbox((0, 0), lines[0], font=font)[1]
+    pitch = round(CAPTION_RENDER_SIZE * 1.42)
     bottom = (len(lines) - 1) * pitch + draw.textbbox((0, 0), lines[-1], font=font)[3]
-    y = box[1] + (box[3] + 1 - box[1] - (bottom - top)) / 2 - top
+    y = SAFE_BOTTOM - bottom
+    center = CAPTION_MARGIN_L + (WIDTH - CAPTION_MARGIN_L - CAPTION_MARGIN_R) / 2
+    shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
     for line in lines:
-        draw.text((center - draw.textlength(line, font=font) / 2, y), line, font=font, fill=_COLORS["ink"])
+        x = center - draw.textlength(line, font=font) / 2
+        shadow_draw.text((x + 2, y + 3), line, font=font, fill=(0, 0, 0, 170))
+        cursor = 0
+        for match in _HIGHLIGHT.finditer(line):
+            for text, color in ((line[cursor:match.start()], _COLORS["ink"]), (match.group(), _COLORS["brand"])):
+                draw.text((x, y), text, font=font, fill=color)
+                x += draw.textlength(text, font=font)
+            cursor = match.end()
+        draw.text((x, y), line[cursor:], font=font, fill=_COLORS["ink"])
         y += pitch
-    image.save(path, "PNG", compress_level=1)
+    framed = Image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(3)), image)
+    framed.save(path, "PNG", compress_level=1)
 
 
 def _write_captions(scenes: Sequence[Sequence[Phrase]], path: Path, *, font_path: Path) -> None:
@@ -814,30 +976,58 @@ def render_video(
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
     cursor, merging = 0.0, None
+    body = [scene for scene in scenario.scenes if scene.kind == "consensus"]
+    body_start = next((n for n, scene in enumerate(scenario.scenes) if scene.kind == "consensus"), None)
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
-        background = selected[index - 1]
+        listed = scene.kind == "consensus"
+        # 본론은 목록 한 장이다. 배경도 첫 질문의 것 하나로 둬 질문이 바뀔 때 화면이 갈리지 않는다.
+        background = selected[body_start] if listed else selected[index - 1]
         is_clip = background is not None and background.suffix.lower() == ".mp4"
         if is_clip:
             tone = _COLORS.get(scene.accent, _COLORS["gold"]).lstrip("#")
-            movies.append({"path": str(background.resolve()), "start": cursor, "duration": seconds,
-                           "multiply": [1 - _TONE_STRENGTH + _TONE_STRENGTH * int(tone[n:n + 2], 16) / 255
-                                        for n in (0, 2, 4)],
-                           "brightness": (_BRIGHTNESS[index % len(_BRIGHTNESS)] - 1) * .2})
-        for position, (beat, hold, display_scene, shown) in enumerate(_beats(scene, seconds), start=1):
-            frame = work_dir / f"frame-{index:02d}-{position:02d}-{beat}.png"
-            render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                         background_path=background, shown=shown, transparent=is_clip,
-                         language=scenario.language)
+            previous_movie = movies[-1] if movies else None
+            if listed and previous_movie and previous_movie["path"] == str(background.resolve()) \
+                    and abs(previous_movie["start"] + previous_movie["duration"] - cursor) < 1e-6:
+                previous_movie["duration"] += seconds
+            else:
+                movies.append({"path": str(background.resolve()), "start": cursor, "duration": seconds,
+                               "multiply": [1 - _TONE_STRENGTH + _TONE_STRENGTH * int(tone[n:n + 2], 16) / 255
+                                            for n in (0, 2, 4)],
+                               "brightness": (_BRIGHTNESS[index % len(_BRIGHTNESS)] - 1) * .2})
+        beats = _beats(scene, seconds)
+        if listed:
+            active = index - 1 - body_start
+            # 질문이 바뀌면 먼저 새 줄이 펼쳐지고 앞 줄이 접힌다(첫 박자의 앞부분).
+            name, hold, display, shown = beats[0]
+            drop = min(DROP_SECONDS, hold * .5)
+            step = drop / DROP_STEPS
+            opening = [(f"drop-{n}", step, display, shown, (n + 1) / DROP_STEPS) for n in range(DROP_STEPS)]
+            beats = opening + [(name, hold - drop, display, shown, 1.0)] + [(*beat, 1.0) for beat in beats[1:]]
+        else:
+            beats = [(*beat, 1.0) for beat in beats]
+        for position, (beat, hold, display_scene, shown, progress) in enumerate(beats, start=1):
+            frame = work_dir / f"frame-{index:02d}-{position:03d}-{beat}.png"
+            if listed:
+                rows = list(body)
+                rows[active] = display_scene
+                render_list_frame(rows, frame, font_path=font_path, active=active,
+                                  previous=active - 1 if active > 0 else None, progress=progress, shown=shown,
+                                  background_path=background, transparent=is_clip, language=scenario.language,
+                                  index=body_start + 1, total=len(scenario.scenes))
+            else:
+                render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
+                             background_path=background, shown=shown, transparent=is_clip,
+                             language=scenario.language)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
-            # 카운트업은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가
-            # 머무는 구간이지 그 안의 정지 화면 여덟 장이 아니다. 앞 장면과 제목이
-            # 같을 수 있으므로(도입 제목 = 첫 이슈 제목) 장면 번호로 구분한다.
-            if merging == (index, beat):
+            # 카운트업·펼침은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가 머무는 구간이다.
+            # 앞 장면과 제목이 같을 수 있으므로 장면 번호로 구분한다.
+            kind = "drop" if beat.startswith("drop-") else beat
+            if merging == (index, kind):
                 timeline[-1]["duration"] = round(timeline[-1]["duration"] + hold, 3)
             else:
                 timeline.append({"start": round(cursor, 3), "duration": round(hold, 3),
-                                 "scene": scene.title, "beat": beat})
-            merging = (index, beat)
+                                 "scene": scene.title, "beat": kind})
+            merging = (index, kind)
             cursor += hold
     from .blender_render import compose
 
