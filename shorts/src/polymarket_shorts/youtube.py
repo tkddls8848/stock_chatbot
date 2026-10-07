@@ -52,10 +52,25 @@ def _json(response) -> dict:
 
 
 def _token(settings: Settings, **grant) -> dict:
-    return _json(_request("POST", TOKEN_URL, data={
+    response = _request("POST", TOKEN_URL, data={
         "client_id": settings.youtube_client_id,
         "client_secret": settings.youtube_client_secret, **grant,
-    }))
+    })
+    # 갱신 토큰이 끊기면 HTTP 400만으로는 무엇을 할지 모른다 — 2026-10-04부터 나흘 동안 "요청 거부(HTTP 400)"만
+    # 남기고 업로드가 멈췄다. 오류 본문의 `error` 코드만 읽는다(자격값은 성공 응답에만 있다).
+    if grant.get("grant_type") == "refresh_token" and response.status_code == 400 and _oauth_error(response) == "invalid_grant":
+        raise ReviewError(
+            "YouTube 승인이 만료되었거나 취소되었습니다(invalid_grant). 운영자 PC에서 --youtube-auth로 새 refresh token을"
+            " 받아 서버 .env의 SHORTS_YOUTUBE_REFRESH_TOKEN을 바꾸세요. OAuth 앱이 테스트 상태면 7일마다 만료됩니다")
+    return _json(response)
+
+
+def _oauth_error(response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    return str(body.get("error") or "") if isinstance(body, dict) else ""
 
 
 def _read(path: Path) -> dict:

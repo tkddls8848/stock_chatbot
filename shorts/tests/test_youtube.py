@@ -152,6 +152,22 @@ def test_token_failures_are_sanitized_and_bounded(prepared, monkeypatch):
     assert mock.call_count == 4
 
 
+def test_expired_refresh_token_says_how_to_recover(prepared, monkeypatch):
+    """Google은 테스트 상태 OAuth 앱의 refresh token을 7일 뒤 끊는다(2026-10-04 실측: invalid_grant)."""
+    root, settings = prepared
+    http(monkeypatch, response(400, {"error": "invalid_grant", "error_description": "Token has been expired or revoked."}))
+    with pytest.raises(ReviewError) as caught:
+        youtube.upload(root, settings)
+    assert "invalid_grant" in str(caught.value) and "SHORTS_YOUTUBE_REFRESH_TOKEN" in str(caught.value)
+
+
+def test_other_token_rejections_stay_generic(prepared, monkeypatch):
+    root, settings = prepared
+    http(monkeypatch, response(400, {"error": "invalid_client"}))
+    with pytest.raises(ReviewError, match=r"YouTube 요청 거부\(HTTP 400\)"):
+        youtube.upload(root, settings)
+
+
 def test_upload_and_production_share_the_lock(prepared):
     from polymarket_shorts.pipeline import produce_daily
     from datetime import date

@@ -236,8 +236,13 @@ $env:PYTHONPATH='shorts/src'
    파일로 저장하지 않습니다. 터미널 출력도 외부에 공유하지 마세요.
 5. 서버의 `/srv/stock-chatbot/.env`에 같은 ID·secret과 refresh token을 넣습니다.
    `SHORTS_YOUTUBE_PRIVACY=private`, `SHORTS_YOUTUBE_CATEGORY_ID=25`가 기본값입니다.
-   테스트 모드의 refresh token은 만료될 수 있으므로 지속 운영 전 Google의 게시 상태와
-   검증 요구를 확인합니다. YouTube API 미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
+   **테스트 상태 앱의 refresh token은 발급 7일 뒤 끊깁니다** — 2026-09-27에 받은 토큰이 10-04에 끊겨
+   나흘 동안 영상만 만들고 올리지 못했습니다. 지속 운영하려면 Google Auth Platform → 대상에서 앱을
+   프로덕션으로 게시합니다(미검증 앱 경고는 채널 소유자 본인 승인에는 지장이 없습니다). YouTube API
+   미검증 프로젝트는 공개 전환이 제한될 수 있습니다.
+   토큰이 끊기면 업로드가 `invalid_grant`로 거부되고 텔레그램에 그 문구가 옵니다. 4단계를 다시 실행해
+   서버 `.env`의 `SHORTS_YOUTUBE_REFRESH_TOKEN` 한 줄만 바꿉니다. 쇼츠 CLI는 실행마다 `.env`를 읽으므로
+   봇을 재시작하지 않아도 되고, 승인된 원고는 다음 확인 주기(1분)에 다시 올라갑니다.
 
 제작한 시나리오는 텔레그램에 먼저 전송합니다. `SHORTS_AUTO_PUBLISH=true`이면 원고 전체가 전달된 뒤
 `SHORTS_REVIEW_TIMEOUT_MINUTES=60` 동안 응답이 없을 때 승인·업로드합니다. 전송 실패에는 자동 승인 시간이
