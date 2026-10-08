@@ -101,7 +101,7 @@ def _probe_molit(key: str, fetch) -> tuple[str, str]:
 
 
 _SOURCE_PROBES = (("금감원", "FSS_API_KEY", _probe_fss), ("한국은행", "ECOS_API_KEY", _probe_ecos),
-                  ("국토부", "MOLIT_API_KEY", _probe_molit))
+                  ("국토부", "DATA_GO_KR_SERVICE_KEY", _probe_molit))
 
 
 def source_status_rows(fetch: Callable[..., Any] = requests.get,

@@ -4,7 +4,7 @@
 |---|---|---|
 | 예적금 금리 | 금융감독원 금융상품통합비교공시(`FSS_API_KEY`) | 보유 예적금 금리와 시중 최고 금리의 차이 |
 | 시장 금리 | 한국은행 ECOS 100대 통계지표(`ECOS_API_KEY`) | 기준금리·국고채·회사채로 채권·예금의 금리 국면 |
-| 아파트 실거래가 | 국토교통부 실거래가(`MOLIT_API_KEY`) | 보유 부동산 지역의 ㎡당 중앙값으로 평가액 추정 |
+| 아파트 실거래가 | 국토교통부 실거래가(공공데이터포털 `DATA_GO_KR_SERVICE_KEY`) | 보유 부동산 지역의 ㎡당 중앙값으로 평가액 추정 |
 
 **하나가 실패해도 나머지로 진행한다.** 각 결과는 `{"status": "ok"|"missing_key"|"error", ...}`
 이고, 실패한 항목은 진단·화면에 "자료 없음"으로 드러난다. 추측으로 메우지 않는다.
@@ -22,12 +22,12 @@ from typing import Any
 import requests
 
 from services.web.core.config import (
+    DATA_GO_KR_SERVICE_KEY,
     ECOS_API_KEY,
     ECOS_BASE_URL,
     FSS_API_KEY,
     FSS_BASE_URL,
     MARKET_DATA_TIMEOUT,
-    MOLIT_API_KEY,
     MOLIT_APT_TRADE_URL,
     MOLIT_LOOKBACK_MONTHS,
 )
@@ -170,7 +170,7 @@ def estimate_property(
     complex_name: str = "",
     today: date,
     session: requests.Session | None = None,
-    key: str = MOLIT_API_KEY,
+    key: str = DATA_GO_KR_SERVICE_KEY,
 ) -> dict[str, Any]:
     """시군구(법정동 앞 5자리) 최근 몇 달 아파트 거래의 ㎡당 중앙값 × 전용면적.
 

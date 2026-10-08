@@ -147,7 +147,7 @@ def test_web_status_asks_the_asset_sources_now_instead_of_reading_an_old_record(
             return Reply(body={"RESULT": {"CODE": "INFO-100"}})
         raise requests.ConnectionError("https://apis.data.go.kr/...serviceKey=SECRET")
 
-    rows = web_status.source_status_rows(fetch, {"FSS_API_KEY": "f", "ECOS_API_KEY": "SECRET", "MOLIT_API_KEY": "m"})
+    rows = web_status.source_status_rows(fetch, {"FSS_API_KEY": "f", "ECOS_API_KEY": "SECRET", "DATA_GO_KR_SERVICE_KEY": "m"})
     assert rows == [("🟢", "OK", "금감원"), ("🔴", "INFO-100", "한국은행 · 응답 실패"), ("🔴", "-", "국토부 · 연결 실패")]
     assert "SECRET" not in str(rows) and len(seen) == 3
 
@@ -163,5 +163,5 @@ def test_public_data_portal_key_rejection_shows_its_reason():
         text = ("<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</errMsg>"
                 "<returnAuthMsg>등록되지 않은 서비스키</returnAuthMsg></cmmMsgHeader></OpenAPI_ServiceResponse>")
 
-    rows = web_status.source_status_rows(lambda url, timeout, params=None: Reply(), {"MOLIT_API_KEY": "m"})
+    rows = web_status.source_status_rows(lambda url, timeout, params=None: Reply(), {"DATA_GO_KR_SERVICE_KEY": "m"})
     assert rows[-1] == ("🔴", "HTTP 403", "국토부 · 등록되지 않은 서비스키")

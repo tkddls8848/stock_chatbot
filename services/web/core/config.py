@@ -259,7 +259,7 @@ RESEARCH_RUN_STALE_SECONDS = RESEARCH_TIMEOUT + 300
 # 외부 시장 자료. 키가 비면 그 항목만 "자료 없음"으로 두고 나머지로 진행한다.
 FSS_API_KEY = os.environ.get("FSS_API_KEY", "").strip()      # 금융감독원 금융상품통합비교공시
 ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "").strip()    # 한국은행 ECOS
-MOLIT_API_KEY = os.environ.get("MOLIT_API_KEY", "").strip()  # 국토교통부 실거래가(공공데이터포털)
+DATA_GO_KR_SERVICE_KEY = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()  # 공공데이터포털 인증키(Decoding)
 FSS_BASE_URL = "https://finlife.fss.or.kr/finlifeapi"
 ECOS_BASE_URL = "https://ecos.bok.or.kr/api"
 MOLIT_APT_TRADE_URL = (
