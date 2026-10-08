@@ -39,6 +39,9 @@ TOPIC_PAUSE_SECONDS = 1.2
 CLOSING_PAUSE_SECONDS = 1.3
 # 장면 안 문장 끝의 쉼.
 SENTENCE_PAUSE_SECONDS = 0.7
+# 장면의 첫 문장(여는 말 "먼저 국제유가부터 보겠습니다.") 뒤의 쉼. 주제를 알린 뒤 바로 사실·숫자를 이어 붙이면
+# 정보를 급하게 쏟아내는 느낌이 들었다(운영자 지적 2026-10-08). 장면 경계(1.2초)보다는 짧다.
+OPENER_PAUSE_SECONDS = 1.0
 _SENTENCE_END = (".", "!", "?")
 # 쉼을 줄일 때 말소리 양 끝에 남겨 두는 여유. 단어 시각은 수십 ms 어긋날 수 있어
 # 이 안쪽만 덜어 내야 말꼬리·첫소리가 잘리지 않는다.
@@ -104,22 +107,41 @@ def synthesize(
 # 괄호 속 영문(티커·원어 표기)은 화면·자막에만 두고 읽지 않는다(운영자 결정 2026-10-08) —
 # "한국 ETF(EWY)가"는 "한국 ETF가"로 읽는다. 원고(자막)는 그대로 두고 음성 합성에 보내는 글에서만 뺀다.
 _UNSPOKEN = re.compile(r" ?\([A-Za-z0-9][A-Za-z0-9 .,&/+:'-]*\)")
+# 한국 경제 매체·방송이 읽는 소리. 음성 엔진은 "S&P"를 "에스앤드피"로 읽는데 경제 분야의 관용은 "에스앤피"다
+# (운영자 지적 2026-10-08). 화면·자막은 원래 표기를 둔다. 새 표기는 방송에서 실제로 그렇게 읽는 것만 더한다.
+# 영문으로 남은 지수·거래소 이름도 매체가 읽는 대로 읽는다("NASDAQ"을 철자대로 읽으면 "나스다크"가 된다). 원고 프롬프트도
+# 한국어 표기(나스닥·다우·코스피)를 쓰게 하므로 이것은 남은 영문에 대한 안전장치다.
+SPOKEN_FORMS = {
+    "S&P": "에스앤피", "M&A": "엠앤에이", "AT&T": "에이티앤티",
+    "NASDAQ": "나스닥", "Nasdaq": "나스닥", "KOSPI": "코스피", "KOSDAQ": "코스닥", "Nikkei": "닛케이",
+    "NIKKEI": "닛케이", "Dow Jones": "다우존스", "DAX": "닥스", "FTSE": "풋시", "Hang Seng": "항셍",
+    "NYSE": "뉴욕증권거래소",
+}
+# 영문 낱말 중간("DAXX", "Nasdaqs")에서는 바꾸지 않는다.
+_SPOKEN = re.compile(_UNSPOKEN.pattern + "|" + "|".join(
+    rf"(?<![A-Za-z]){re.escape(form)}(?![A-Za-z])" for form in sorted(SPOKEN_FORMS, key=len, reverse=True)))
 
 
 def spoken_text(text: str) -> str:
-    """음성 합성에 보낼 글. 괄호 속 영문을 뺀다."""
-    return _UNSPOKEN.sub("", text)
+    """음성 합성에 보낼 글. 괄호 속 영문을 빼고 관용 발음 표기를 바꿔 넣는다."""
+    return _spoken_map(text)[0]
 
 
 def _spoken_map(text: str) -> tuple[str, list[int]]:
-    """읽는 글과, 그 글자마다 원고에서의 위치."""
+    """읽는 글과, 그 글자마다 원고에서의 위치. 바꿔 읽는 말의 글자는 모두 원래 표기의 첫 글자를 가리킨다."""
+    out: list[str] = []
     keep: list[int] = []
     last = 0
-    for match in _UNSPOKEN.finditer(text):
+    for match in _SPOKEN.finditer(text):
+        out.extend(text[last:match.start()])
         keep.extend(range(last, match.start()))
+        replacement = SPOKEN_FORMS.get(match.group(), "")
+        out.extend(replacement)
+        keep.extend([match.start()] * len(replacement))
         last = match.end()
+    out.extend(text[last:])
     keep.extend(range(last, len(text)))
-    return "".join(text[index] for index in keep), keep
+    return "".join(out), keep
 
 
 def locate(text: str, words: Sequence[Word]) -> list[int]:
@@ -201,7 +223,8 @@ def _sentence_breaths(narration: str, words: Sequence[Word]) -> dict[int, float]
     for index, (word, start) in enumerate(zip(words[:-1], starts)):
         between = narration[start + len(word.text):starts[index + 1]]
         if any(mark in between for mark in _SENTENCE_END):
-            breaths[index] = SENTENCE_PAUSE_SECONDS
+            # 첫 문장 끝은 여는 말이 끝나는 자리다 — 조금 더 쉰다.
+            breaths[index] = SENTENCE_PAUSE_SECONDS if breaths else OPENER_PAUSE_SECONDS
     return breaths
 
 

@@ -57,8 +57,9 @@ def test_watch_point_may_cite_a_number_from_the_description():
            "context": "해협 교통량은 국제 통상에 영향을 줍니다.", "watch_point": "포트워치의 7일 이동 평균을 확인하세요.",
            "market_labels": [], "news_ids": []}
     assert highlights.validate_scripts({"scripts": [row]}, [issue])[0]["watch_point"].startswith("포트워치")
-    with pytest.raises(HighlightError):
-        highlights.validate_scripts({"scripts": [{**row, "watch_point": "포트워치의 30일 평균을 확인하세요."}]}, [issue])
+    # 확인점은 검수 기록에만 남는다. 원문에 없는 숫자를 쓰면 확인점만 비우고 이슈는 살린다(2026-10-08).
+    (clean,) = highlights.validate_scripts({"scripts": [{**row, "watch_point": "포트워치의 30일 평균을 확인하세요."}]}, [issue])
+    assert clean["watch_point"] == "" and clean["context"]
 
 
 def test_all_content_errors_are_reported_together():

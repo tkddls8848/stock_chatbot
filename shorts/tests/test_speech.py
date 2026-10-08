@@ -55,8 +55,8 @@ def test_a_yes_no_question_says_what_participants_expect():
     끝낸다(운영자 결정 2026-10-08 — "…것으로 봅니다"·"…쪽으로 봅니다"를 쓰지 않는다)."""
     spoken = speech.speak_markets("binary", "호르무즈 해협 통행",
                                   [("9월 30일까지 정상화", "0.4%", "99.6%", "9월 30일까지 호르무즈 해협 통행이 정상화될")])
-    assert spoken == ("참여자의 0.4%는 9월 30일까지 호르무즈 해협 통행이 정상화될 것을 기대하고 있고, "
-                      "99.6%는 그 반대를 기대하고 있습니다.")
+    # '아니오' 쪽을 "그 반대를"로 퉁쳐 읽지 않는다(운영자 지시 2026-10-08).
+    assert spoken == "컨센서스 참여자의 0.4%는 9월 30일까지 호르무즈 해협 통행이 정상화될 것을 기대하고 있습니다."
 
 
 def test_several_choices_each_say_their_own_outlook():
@@ -65,8 +65,9 @@ def test_several_choices_each_say_their_own_outlook():
         ("11월 30일까지", "70.5%", "29.5%", "휴전이 11월 30일까지 이어질"),
     ])
     # 같은 주어("휴전이")는 첫 전망에서만 읽는다.
-    assert spoken == ("참여자의 79.5%는 휴전이 10월 31일까지 이어질 것을, "
-                      "70.5%는 11월 30일까지 이어질 것을 기대하고 있습니다.")
+    # 비율마다 "컨센서스 참여자의"를 다시 댄다 — 둘째 비율의 주어가 흐려졌다(운영자 지시 2026-10-08).
+    assert spoken == ("컨센서스 참여자의 79.5%는 휴전이 10월 31일까지 이어질 것을, "
+                      "컨센서스 참여자의 70.5%는 11월 30일까지 이어질 것을 기대하고 있습니다.")
 
 
 def test_one_of_several_names_the_topic_first():
@@ -74,13 +75,13 @@ def test_one_of_several_names_the_topic_first():
         ("2회 인상", "60.5%", "39.5%", "연준이 2026년에 금리를 2회 인상할"),
         ("3회 인상", "18.6%", "81.4%", "연준이 2026년에 금리를 3회 인상할"),
     ])
-    assert spoken.startswith("2026년 연준 금리 인상 횟수에 대해 참여자의 60.5%는 연준이 2026년에 금리를 2회 인상할 것을")
+    assert spoken.startswith("2026년 연준 금리 인상 횟수에 대해 컨센서스 참여자의 60.5%는 연준이 2026년에 금리를 2회 인상할 것을")
 
 
 @pytest.mark.parametrize(("label", "expected"), [
-    ("355달러 이상", "참여자의 85%는 355달러 이상을 기대하고 있습니다."),
-    ("10월 인하", "참여자의 85%는 10월 인하를 기대하고 있습니다."),
-    ("5.4%", "참여자의 85%는 5.4%를 기대하고 있습니다."),   # 숫자·%는 읽는 소리로 조사를 고른다
+    ("355달러 이상", "컨센서스 참여자의 85%는 355달러 이상을 기대하고 있습니다."),
+    ("10월 인하", "컨센서스 참여자의 85%는 10월 인하를 기대하고 있습니다."),
+    ("5.4%", "컨센서스 참여자의 85%는 5.4%를 기대하고 있습니다."),   # 숫자·%는 읽는 소리로 조사를 고른다
 ])
 def test_without_an_outlook_the_label_still_says_an_outlook_not_a_choice(label, expected):
     """모델이 전망 구절을 못 써도 음성은 같은 틀이다. "선택한 사람"으로 되돌아가지 않는다."""
@@ -88,9 +89,9 @@ def test_without_an_outlook_the_label_still_says_an_outlook_not_a_choice(label, 
     assert spoken == expected and "선택" not in spoken
 
 
-def test_a_yes_no_without_an_outlook_keeps_both_sides():
+def test_a_yes_no_without_an_outlook_names_the_label_instead_of_a_pronoun():
     spoken = speech.speak_markets("binary", "", [("연내 경기 침체", "9.5%", "90.5%")])
-    assert spoken == "연내 경기 침체에 대해 참여자의 9.5%는 그렇게 될 것을, 90.5%는 그렇지 않을 것을 기대하고 있습니다."
+    assert spoken == "컨센서스 참여자의 9.5%는 연내 경기 침체를 기대하고 있습니다."
 
 
 def test_no_choices_say_nothing():
@@ -98,21 +99,36 @@ def test_no_choices_say_nothing():
 
 
 @pytest.mark.parametrize(("event_type", "yes", "mood"), [
-    ("binary", ["91.5%"], "참여자 대부분이 한쪽으로 쏠려 있습니다."),
-    ("binary", ["68%"], "그쪽이 우세합니다."),
+    ("binary", ["91.5%"], ""),
+    ("binary", ["68%"], ""),
     ("binary", ["50.95%"], "팽팽하게 갈립니다."),
-    ("binary", ["18%"], "반대쪽이 더 많습니다."),
-    ("binary", ["6.5%"], "그쪽은 소수에 그칩니다."),
-    ("independent_multi", ["91.5%", "89%"], "어느 기준에서도 같은 쪽으로 크게 쏠려 있습니다."),
+    ("binary", ["18%"], ""),
+    ("binary", ["6.5%"], ""),
+    ("independent_multi", ["91.5%", "89%"], ""),
     ("independent_multi", ["68%", "50.95%"], "기준에 따라 엇갈립니다."),
-    ("independent_multi", ["18%", "6.5%"], "어느 기준에서도 반대쪽이 더 많습니다."),
+    ("independent_multi", ["18%", "6.5%"], ""),
     ("independent_multi", ["55%", "48%"], "기준을 바꿔도 크게 달라지지 않습니다."),
-    ("independent_multi", ["78%", "70%"], "어느 기준에서도 그쪽이 우세합니다."),
-    ("exclusive_multi", ["60.5%", "18.6%"], "한쪽으로 뚜렷하게 모여 있습니다."),
+    ("independent_multi", ["78%", "70%"], ""),
+    ("exclusive_multi", ["60.5%", "18.6%"], ""),
     ("exclusive_multi", ["35%", "30%"], "뚜렷하게 앞서는 답 없이 나뉩니다."),
+    ("exclusive_multi", ["59%", "21%", "20%"], ""),   # 1위가 크게 앞서면 "앞서는 답이 없다"는 틀린 말(Codex 검토)
 ])
 def test_the_scene_closes_with_where_the_numbers_lean(event_type, yes, mood):
-    """숫자만 읽고 넘어가면 장면이 뚝 끊겼다(2026-10-07). 숫자는 다시 말하지 않는다."""
+    """숫자만 읽고 넘어가면 장면이 뚝 끊겼다(2026-10-07). 숫자는 다시 말하지 않는다.
+    대상을 대명사로 퉁치는 풀이("그쪽이 우세합니다")는 쓰지 않고 차라리 비운다(운영자 지시 2026-10-08)."""
     rows = [(f"선택지{n}", value, "") for n, value in enumerate(yes)]
     assert speech.consensus_mood(event_type, rows) == mood
     assert not re.search(r"\d", mood)
+
+
+_PRONOUN = re.compile(r"그쪽|저쪽|반대쪽|한쪽|같은 쪽|그 반대|그렇게 될|그렇지 않을")
+
+
+@pytest.mark.parametrize("event_type", ["binary", "independent_multi", "exclusive_multi"])
+def test_rule_based_lines_never_point_with_a_pronoun(event_type):
+    """규칙이 만드는 대사는 대상을 이름으로 말한다. "그쪽"·"그 반대" 같은 말로 퉁치지 않는다(운영자 지시 2026-10-08)."""
+    for yes in range(0, 101, 5):
+        rows = [("10월 인하", f"{yes}%", f"{100 - yes}%"), ("12월 인하", f"{max(0, yes - 7)}%", "")]
+        rows = rows[:1] if event_type == "binary" else rows
+        for text in (speech.consensus_mood(event_type, rows), speech.speak_markets(event_type, "연준 금리", rows)):
+            assert not _PRONOUN.search(text), text

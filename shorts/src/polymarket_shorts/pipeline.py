@@ -19,6 +19,7 @@ from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
 from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
+from .timely import related_news
 from .tts import synthesize
 
 
@@ -147,6 +148,9 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         audit["selected"] = selected
         save()
         issues = []
+        # 우리가 모은 시장 뉴스는 선정이 끝난 뒤 한 번만 읽는다 — 고를 이슈가 없으면 읽을 이유가 없다.
+        pool = client.market_news() if selected else []
+        reference = datetime.fromisoformat(snapshot.summary["generated_at"])
         for candidate in selected:
             detail = client.detail(candidate["id"], snapshot.generation_id)
             # 잘못된 개별 가격은 해당 이슈만 제외한다. 세대 불일치는 위 detail에서 중단한다.
@@ -156,7 +160,10 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
                 audit["rejected"].append({"id": candidate["id"], "reason": str(exc)})
                 continue
             issue["news"] = client.news(candidate["title"], reference=snapshot.summary["generated_at"])
+            issue["market_news"] = related_news(issue, pool, reference)
             issues.append(issue)
+        audit["market_news"] = {"pool": len(pool),
+                                "matched": {issue["id"]: len(issue["market_news"]) for issue in issues}}
         client.confirm(snapshot.generation_id)
         write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": issues})
         if not issues:
@@ -165,11 +172,13 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
             return None
         audit["llm_calls"] += 1
         save()
-        scripts = write_issues(issues, settings)
+        failures: dict[str, list[str]] = {}
+        scripts = write_issues(issues, settings, failures=failures)
         written = {script["id"] for script in scripts}
         for issue in issues:
             if issue["id"] not in written:
-                audit["rejected"].append({"id": issue["id"], "reason": "원고 검증 실패(교정 후)"})
+                audit["rejected"].append({"id": issue["id"], "reason": "원고 검증 실패(교정 후)",
+                                          "errors": failures.get(str(issue["id"]), [])})
         issues = [issue for issue in issues if issue["id"] in written]
         scenario = build_scenario(snapshot, issues, scripts, production_date=today)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})

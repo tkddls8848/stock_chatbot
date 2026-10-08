@@ -76,8 +76,10 @@ def test_the_same_closing_line_is_not_repeated_every_scene(issue_source):
     # 화면에만 띄우면 보는 것과 듣는 것이 어긋난다.
     assert scenario.scenes[1].takeaway == "연준의 공식 결정문을 확인하세요."
     # 확률 풀이 문장은 같은 말이면 처음 한 번만 한다(다섯 이슈가 같은 입력이라 풀이도 같다).
-    mood = "뚜렷하게 앞서는 답 없이 나뉩니다."
-    assert scenario.narration.count(mood) == 1 and scenario.scenes[1].narration.endswith(mood)
+    # 이 입력(55%·40%)은 1위가 15%p 앞서 "앞서는 답 없이"가 틀린 말이라 풀이 자체가 없다(2026-10-08).
+    from polymarket_shorts.speech import consensus_mood
+    mood = consensus_mood("exclusive_multi", [("a", "55%", ""), ("b", "40%", "")])
+    assert mood == "" and "나뉩니다" not in scenario.narration
     # 원고에 장면 여는 말이 없으면 둘째 이슈부터 다음 테마를 알리는 대체 문장으로 연다(2026-09-28).
     # 같은 틀이 매번 반복되지 않게 문장이 번갈아 바뀐다(2026-10-07).
     openers = [scene.narration.split(". ")[0] for scene in scenario.scenes[2:-1]]
@@ -140,5 +142,21 @@ def test_the_writer_opens_each_scene_and_the_numbers_close_it(issue_source):
 
     scene = scenario.scenes[1]
     assert scene.narration.startswith("먼저 연준의 금리 결정부터 보겠습니다. ")
-    assert scene.narration.endswith(("있습니다.", "우세합니다.", "갈립니다.", "많습니다.", "그칩니다.",
-                                     "않습니다.", "엇갈립니다.", "나뉩니다."))
+    assert scene.narration.endswith(("있습니다.", "갈립니다.", "않습니다.", "엇갈립니다.", "나뉩니다."))
+
+
+def test_an_opener_ending_with_a_comma_flows_into_the_next_sentence(issue_source):
+    """짧은 평서문이 마침표로 끊기면 기계가 읽는 것처럼 들렸다(운영자 지적 2026-10-08)."""
+    snapshot, _, _, issue, script = issue_source
+    scenario = build_scenario(snapshot, [issue], [{**script, "lead_in": "먼저 연준의 금리 결정부터 보면,"}],
+                              production_date=date(2026, 9, 23))
+    assert scenario.scenes[1].narration.startswith(f"먼저 연준의 금리 결정부터 보면, {script['context']}")
+
+
+def test_an_opener_written_for_another_position_is_fixed(issue_source):
+    """원고 뒤에 이슈가 빠지면 "이번에는 …"이 첫 장면을 열었다(2026-10-08 시험)."""
+    snapshot, _, _, issue, script = issue_source
+    scenario = build_scenario(snapshot, [issue], [{**script, "lead_in": "이번에는 연준으로 넘어가 보겠습니다."}],
+                              production_date=date(2026, 9, 23))
+    assert scenario.scenes[1].narration.startswith(script["context"])
+    assert "질문 하나를 짚어 보겠습니다" in scenario.scenes[0].narration

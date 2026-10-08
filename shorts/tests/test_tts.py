@@ -130,7 +130,7 @@ def test_speech_edges_are_guarded_when_the_gap_is_tight(tmp_path, monkeypatch):
     gap = 2 * tts._GUARD_SECONDS + 0.01
     audio, store = _pcm(monkeypatch, tmp_path, [(1, True), (gap, False), (1, True)])
     words = (Word(0.0, 1.0, "짧다"), Word(1.0 + gap, 2.0 + gap, "다음"))
-    monkeypatch.setattr(tts, "SENTENCE_PAUSE_SECONDS", 0.05)
+    monkeypatch.setattr(tts, "OPENER_PAUSE_SECONDS", 0.05)
 
     (paced,) = tts._pace_breaths(audio, (words,), ["짧다. 다음"])
 
@@ -139,13 +139,19 @@ def test_speech_edges_are_guarded_when_the_gap_is_tight(tmp_path, monkeypatch):
 
 
 def test_every_sentence_end_inside_a_scene_is_paced(tmp_path, monkeypatch):
-    """edge-tts의 0.86초 호흡은 쇼츠에 길다. 장면 안 문장 끝도 목표로 맞춘다."""
-    audio, _ = _pcm(monkeypatch, tmp_path, [(0.6, True), (0.86, False), (0.6, True)])
-    words = (Word(0.0, 0.6, "짧다"), Word(1.46, 2.06, "다음"))
+    """edge-tts의 0.86초 호흡은 쇼츠에 길다. 장면 안 문장 끝도 목표로 맞춘다.
 
-    (paced,) = tts._pace_breaths(audio, (words,), ["짧다. 다음"])
+    첫 문장(여는 말) 뒤는 조금 더 쉰다 — 주제를 알리자마자 사실·숫자를 쏟아내는 느낌이 들었다(2026-10-08).
+    """
+    audio, _ = _pcm(monkeypatch, tmp_path, [(0.6, True), (0.86, False), (0.6, True), (0.86, False), (0.6, True)])
+    words = (Word(0.0, 0.6, "보겠습니다"), Word(1.46, 2.06, "다음"), Word(2.92, 3.52, "끝"))
 
-    assert paced[1].start == pytest.approx(1.46 - (0.86 - tts.SENTENCE_PAUSE_SECONDS), abs=0.001)
+    (paced,) = tts._pace_breaths(audio, (words,), ["보겠습니다. 다음. 끝"])
+
+    opener = tts.OPENER_PAUSE_SECONDS - 0.86
+    assert tts.OPENER_PAUSE_SECONDS > tts.SENTENCE_PAUSE_SECONDS
+    assert paced[1].start == pytest.approx(1.46 + opener, abs=0.001)
+    assert paced[2].start == pytest.approx(2.92 + opener - (0.86 - tts.SENTENCE_PAUSE_SECONDS), abs=0.001)
 
 
 def test_splices_are_faded_so_the_wave_does_not_jump(tmp_path, monkeypatch):
@@ -203,3 +209,21 @@ def test_english_in_parentheses_is_shown_but_not_spoken():
     assert [narration[at:at + 3] for at in starts] == ["한국 ", "ETF", "186", "금 선", "선물 ", "가격입"]
     # 자막은 원고를 다음 단어 위치까지 잘라 쓰므로 괄호가 그대로 남는다.
     assert narration[starts[1]:starts[2]].strip() == "ETF(EWY)가"
+
+
+def test_market_terms_are_spoken_the_way_korean_finance_media_say_them():
+    """"S&P"는 "에스앤피"다 — 음성 엔진이 "에스앤드피"로 읽었다(운영자 지적 2026-10-08). 자막은 원래 표기를 둔다."""
+    narration = "S&P 500 ETF(SPY)가 750달러 위로 마감할까요?"
+    assert tts.spoken_text(narration) == "에스앤피 500 ETF가 750달러 위로 마감할까요?"
+    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["에스앤피", "500", "ETF가", "750달러"])]
+    starts = tts.locate(narration, words)
+    assert starts[0] == 0 and narration[starts[0]:starts[1]].strip() == "S&P"
+    assert narration[starts[2]:starts[3]].strip() == "ETF(SPY)가"
+
+
+@pytest.mark.parametrize(("written", "spoken"), [
+    ("NASDAQ 100", "나스닥 100"), ("Nasdaq 지수", "나스닥 지수"), ("KOSPI 2600", "코스피 2600"),
+    ("Dow Jones 지수", "다우존스 지수"), ("DAXX 종목", "DAXX 종목"),   # 영문 낱말 중간은 그대로
+])
+def test_index_names_left_in_english_are_spoken_in_korean(written, spoken):
+    assert tts.spoken_text(written) == spoken

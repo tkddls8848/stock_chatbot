@@ -56,14 +56,19 @@ def test_daily_selection_audits_sources_and_bounds_model_calls(tmp_path, monkeyp
         def news(self, title, **kwargs):
             self.requests["news"] += 1
             return []
+        def market_news(self):
+            return [{"kind": "news", "title": "연준 위원, 10월 금리 동결 지지 발언", "text": "Fed official backs October hold",
+                     "published_at": "2026-09-22T21:00:00+09:00", "market": "US", "source": "Wire", "url": ""},
+                    {"kind": "news", "title": "코스피 상승 마감", "text": "", "published_at": "2026-09-23T08:00:00+09:00"}]
         def confirm(self, generation):
             assert generation == "g1"
     calls = []
+    hook = "어제 연준 위원이 10월 금리 동결을 지지했다는 보도가 나왔습니다."
     def chat(settings, **kwargs):
         calls.append(kwargs)
-        return ({"selected": [{"id": "e1", "relevance": 3, "timeliness": 2,
+        return ({"selected": [{"id": "e1", "relevance": 3, "timeliness": 2, "keywords": ["연준", "금리"],
                                "source_title": candidate["title"], "topic": "Fed Decision", "reason": candidate["selection"]["reason"]}]}
-                if len(calls) == 1 else {"scripts": [script]})
+                if len(calls) == 1 else {"scripts": [{**script, "news_hook": hook, "hook_news_id": "market:1"}]})
     monkeypatch.setattr(pipeline, "PolymarketWebClient", Client)
     monkeypatch.setattr(highlights, "chat_json", chat)
     scenario = pipeline.prepare_daily(Settings.from_env(), date(2026, 9, 23), tmp_path)
@@ -73,6 +78,15 @@ def test_daily_selection_audits_sources_and_bounds_model_calls(tmp_path, monkeyp
     assert audit["produced_issues"] == 1
     assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))["issues"][0]["markets"][0]["id"] == "m1"
     assert len(scenario.scenes) == 3
+    # 일반어 "금리"는 주체어에서 빠지고, 연준 기사만 원고 모델에 후보로 간다.
+    sent = json.loads(calls[1]["user"])[0]["market_news"]
+    assert [row["title"] for row in sent] == ["연준 위원, 10월 금리 동결 지지 발언"] and sent[0]["when"] == "어제"
+    assert audit["market_news"] == {"pool": 2, "matched": {"e1": 1}}
+    narration = scenario.scenes[1].narration
+    assert narration.index(hook) < narration.index(script["context"]) < narration.index("참여자의")
+    assert any(line.startswith("시의 뉴스(어제") for line in scenario.scenes[1].evidence)
+    # 화면 칩 셋째 칸은 주제어다(일반어 "금리"는 선정 때 빠졌다).
+    assert scenario.scenes[1].bullets[2] == "주제어 · 연준"
 
 
 def test_no_suitable_issues_does_not_synthesize_or_mark_day_complete(tmp_path, monkeypatch):

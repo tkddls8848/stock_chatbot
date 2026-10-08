@@ -63,3 +63,15 @@ def test_inactive_or_invalid_prices_are_not_used(issue_source):
 @pytest.mark.parametrize("value, expected", [(0.5, "50%"), (.175, "17.5%"), (.01, "1%"), (.0045, "0.45%")])
 def test_percent_keeps_original_precision(value, expected):
     assert percent(value) == expected
+
+
+@pytest.mark.parametrize(("changes", "reason"), [
+    ({"end_date": "2026-09-24T03:59:00Z"}, "closes_within_two_days"),
+    ({"leader_probability": .985}, "near_certain"),
+])
+def test_questions_already_settled_for_viewers_are_not_candidates(event_factory, changes, reason):
+    """당일 마감·98% 이상 질문은 영상이 올라갈 때 이미 끝났거나 아무것도 알려 주지 않는다(독립 검토 2026-10-08)."""
+    from polymarket_shorts.client import Snapshot
+    summary = {"generation_id": "g1", "generated_at": "2026-09-23T09:00:00+09:00", "freshness": {"state": "normal"}}
+    candidates, audit = shortlist(Snapshot(summary, (event_factory(**changes),), {}))
+    assert candidates == [] and audit["excluded"] == {reason: 1}

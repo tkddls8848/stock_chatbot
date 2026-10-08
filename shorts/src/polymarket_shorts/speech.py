@@ -1,6 +1,6 @@
 """화면이 아니라 귀를 위한 한국어. 모델 없이 규칙만으로 동작한다.
 
-**확률은 화면과 같은 퍼센트로 짧게 말한다**("참여자의 64.5%는 …것을 기대하고 있습니다"). 운영자
+**확률은 화면과 같은 퍼센트로 짧게 말한다**("컨센서스 참여자의 64.5%는 …것을 기대하고 있습니다"). 운영자
 결정(2026-09-27): "셋 중 둘꼴"·"다섯에 둘쯤" 같은 비유는 오히려 낯설고 길었다.
 다만 예·아니오 쌍은 읽지 않는다 — '예' 확률 하나만 말한다(2026-09-23 산출물이
 "예 99.95%, 아니오 0.05%"를 통째로 낭독해 표를 읽는 소리가 났다).
@@ -30,10 +30,13 @@ _JONG_B = 17  # ㅂ
 # 말한다 — "nunchi.live"를 그대로 두면 TTS가 영문 철자로 읽는다. 화면에는 주소를 적는다.
 # 마무리 화면은 고정이다(2026-10-07: "자세한 내용은 nunchi.live에서 확인하세요"). 멘트도 같은 말로 끝낸다.
 CLOSING_LINE = (
-    "오늘 숫자는 참여자들의 전망일 뿐, 정해진 결과도 투자 조언도 아닙니다. "
+    "오늘 숫자는 컨센서스 참여자들의 전망일 뿐, 정해진 결과도 투자 조언도 아닙니다. "
     "질문마다 판정 조건이 다르니, 자세한 내용은 눈치 닷 라이브에서 확인하세요."
 )
 CLOSING_SCREEN = "자세한 내용은 nunchi.live에서 확인하세요."
+
+# 확률 문장의 주어. 비율마다 붙인다(`speak_markets`).
+SUBJECT = "컨센서스 참여자의"
 
 # "얼마에 도달할 것인가?"는 글로 읽는 문장이다. 말로는 "…도달할까요?"로 묻는다.
 _STIFF_QUESTIONS = (("것인가", "까요"), ("인가", "일까요"))
@@ -121,15 +124,19 @@ def _with_object(word: str) -> str:
 
 
 def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
-    """선택지 확률을 "참여자의 N%는 ⟨전망⟩ 것을 기대하고 있습니다"로 말한다(운영자 결정 2026-10-08).
+    """선택지 확률을 "컨센서스 참여자의 N%는 ⟨전망⟩ 것을 기대하고 있습니다"로 말한다(운영자 결정 2026-10-08).
+
+    주어는 "참여자"가 아니라 "컨센서스 참여자"이고, 선택지가 여럿이면 비율마다 주어를 다시 댄다 — "…것을, 70.5%는
+    …"처럼 둘째 비율의 주어를 생략하면 누구의 70.5%인지가 흐려졌다(운영자 지시 2026-10-08).
 
     예전 "…를 선택한 사람은 전체의 N%"(2026-10-02 전)는 무엇을 눌렀는지만 말했고, "…것으로 봅니다"·"…쪽으로
     봅니다"는 운영자가 "기대하고 있습니다"로 바꾸라고 했다.
     `rows`는 (선택지 이름, '예' 퍼센트, '아니오' 퍼센트[, 전망 구절])이고 숫자는 화면과 같다.
     전망 구절은 모델이 쓴 관형형("휴전이 10월 31일까지 이어질")이다. 없으면 라벨로 "…을 기대하고 있습니다"를
     만든다 — 음성이 모델에 묶이지 않게.
-    - 양자택일: "참여자의 X%는 ⟨전망⟩ 것을 기대하고 있고, Y%는 그 반대를 기대하고 있습니다."
-    - 여러 선택지: "참여자의 X%는 ⟨A⟩ 것을, Y%는 ⟨B⟩ 것을 기대하고 있습니다."
+    - 양자택일: "컨센서스 참여자의 X%는 ⟨전망⟩ 것을 기대하고 있습니다." '아니오' 쪽은 읽지 않는다 — "Y%는 그 반대를"·
+      "그렇지 않을 것을"은 무엇의 반대인지 이름을 대지 않고 대명사로 퉁치는 말이다(운영자 지시 2026-10-08).
+    - 여러 선택지: "컨센서스 참여자의 X%는 ⟨A⟩ 것을, 컨센서스 참여자의 Y%는 ⟨B⟩ 것을 기대하고 있습니다."
       한 가지만 고르는 질문(exclusive)은 앞에 "주제에 대해"를 붙인다.
     """
     if not rows:
@@ -142,12 +149,8 @@ def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
         return f"{yes}는 {outlook} 것을" if outlook else f"{yes}는 {_with_object(label)}"
 
     if event_type == "binary" or len(rows) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
-        row = rows[0]
-        no = row[2]
-        if len(row) > 3 and row[3]:
-            return f"참여자의 {clause(row)} 기대하고 있고, {no}는 그 반대를 기대하고 있습니다."
-        return f"{row[0]}에 대해 참여자의 {row[1]}는 그렇게 될 것을, {no}는 그렇지 않을 것을 기대하고 있습니다."
-    spoken = "참여자의 " + ", ".join(clause(row) for row in rows) + " 기대하고 있습니다."
+        return f"{SUBJECT} {clause(rows[0])} 기대하고 있습니다."
+    spoken = ", ".join(f"{SUBJECT} {clause(row)}" for row in rows) + " 기대하고 있습니다."
     if event_type == "exclusive_multi" and topic:
         return f"{topic}에 대해 {spoken}"
     return spoken
@@ -176,11 +179,13 @@ def _without_repeated_subject(rows: Sequence[Sequence]) -> list[Sequence]:
 
 
 def consensus_mood(event_type: str, rows: Sequence[Sequence]) -> str:
-    """확률을 말한 뒤 그 숫자가 어느 쪽으로 기울었는지 한 문장으로 푼다. 숫자는 다시 말하지 않는다.
+    """확률을 말한 뒤 숫자가 어떻게 갈렸는지 한 문장으로 푼다. 숫자는 다시 말하지 않는다.
 
-    숫자만 읽고 다음 이슈로 넘어가면 장면이 뚝 끊겼다(운영자 지적 2026-10-07). 구간은 넓게 잡아
-    과장하지 않는다 — 85% 이상만 "대부분", 35~65%는 "팽팽". 바로 앞 문장이 "…기대하고 있습니다"로 끝나므로 "기대"도 "보다"도 되풀이하지 않고
-    쏠림으로만 말한다(2026-10-08).
+    숫자만 읽고 다음 이슈로 넘어가면 장면이 뚝 끊겼다(운영자 지적 2026-10-07). **다만 대상을 이름으로 대지
+    않고 "그쪽이 우세합니다"·"반대쪽이 더 많습니다"·"한쪽으로 쏠려 있습니다"처럼 대명사로 퉁치는 풀이는 쓰지
+    않는다 — 그럴 바에는 아무 말도 하지 않는다**(운영자 지시 2026-10-08). 그래서 대상을 가리키지 않고도 뜻이
+    서는 경우만 말한다: 이지선다가 35~65%로 팽팽할 때, 여러 선택지 중 앞서는 답이 없을 때, 기준이 여럿인
+    질문이 기준마다 엇갈리거나 기준을 바꿔도 같을 때. 나머지는 빈 문자열이다.
     """
     values = []
     for row in rows:
@@ -191,29 +196,15 @@ def consensus_mood(event_type: str, rows: Sequence[Sequence]) -> str:
     if not values:
         return ""
     if event_type == "binary" or len(values) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
-        value = values[0]
-        if value >= 85:
-            return "참여자 대부분이 한쪽으로 쏠려 있습니다."
-        if value >= 65:
-            return "그쪽이 우세합니다."
-        if value > 35:
-            return "팽팽하게 갈립니다."
-        if value > 15:
-            return "반대쪽이 더 많습니다."
-        return "그쪽은 소수에 그칩니다."
+        return "팽팽하게 갈립니다." if 35 < values[0] < 65 else ""
     if event_type == "exclusive_multi":
-        top = max(values)
-        return "한쪽으로 뚜렷하게 모여 있습니다." if top >= 60 else "뚜렷하게 앞서는 답 없이 나뉩니다."
-    # 기준(문턱)이 여럿인 질문은 모든 기준이 같은 쪽에 있는지부터 본다. 18%·6.5%를 "크게 엇갈린다"고 하면
-    # 틀린 말이다 — 둘 다 반대 결과를 기대하는 쪽이 많다(2026-10-07 시험 원고).
-    if min(values) >= 85:
-        return "어느 기준에서도 같은 쪽으로 크게 쏠려 있습니다."
-    if min(values) >= 65:
-        return "어느 기준에서도 그쪽이 우세합니다."
-    if max(values) <= 15:
-        return "어느 기준에서도 그쪽은 소수에 그칩니다."
-    if max(values) <= 35:
-        return "어느 기준에서도 반대쪽이 더 많습니다."
+        # 1위가 60% 아래여도 2위와 크게 벌어져 있으면(59·21·20) "앞서는 답이 없다"는 틀린 말이다(Codex 검토 2026-10-08).
+        top, second = (sorted(values, reverse=True) + [0.0])[:2]
+        return "뚜렷하게 앞서는 답 없이 나뉩니다." if top < 60 and top - second < 15 else ""
+    # 기준(문턱)이 여럿인 질문은 모든 기준이 같은 쪽에 있으면 말하지 않는다. 18%·6.5%를 "크게 엇갈린다"고 하면
+    # 틀린 말이다(2026-10-07 시험 원고).
+    if min(values) >= 65 or max(values) <= 35:
+        return ""
     if max(values) - min(values) < 10:
         return "기준을 바꿔도 크게 달라지지 않습니다."
     return "기준에 따라 엇갈립니다."
@@ -249,7 +240,8 @@ def opening_line(count: int, as_of=None) -> str:
     날짜를 말해야 며칠 뒤 본 사람도 숫자가 언제 것인지 안다(운영자 결정 2026-09-27).
     예전 "…이슈를 선정하였습니다"는 만드는 과정을 말해 첫마디부터 딱딱했다(2026-10-07).
     """
-    subject = "질문 하나를" if count == 1 else f"질문 {count}개를"
+    # 하나뿐이면 "차례로"가 틀린 말이다(2026-10-08 시험: "질문 하나를 차례로 짚어 보겠습니다").
+    subject = "질문 하나를" if count == 1 else f"질문 {count}개를 차례로"
     day = f"{as_of.month}월 {as_of.day}일" if as_of else "오늘의"
     return (f"{day} 집단 예측 컨센서스 요약입니다. "
-            f"오늘은 금융시장과 맞닿은 {subject} 차례로 짚어 보겠습니다.")
+            f"오늘은 금융시장과 맞닿은 {subject} 짚어 보겠습니다.")

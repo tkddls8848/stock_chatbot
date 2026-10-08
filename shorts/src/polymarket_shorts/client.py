@@ -16,6 +16,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE, MAX_PAGES, MAX_DETAILS, MAX_NEWS_ITEMS = 100, 100, 5, 3
+# 우리가 모은 시장 뉴스(공개 웹 `/api/search`)를 읽는 기간과 쪽수 상한. 검색은 한 쪽 20건이고
+# 사흘치가 실측 200건 안팎이다(2026-10-08: 이틀 152건). 상한을 넘으면 최신 쪽만 쓴다.
+MARKET_NEWS_DAYS, MAX_MARKET_NEWS_PAGES = 3, 20
 
 
 class SourceError(RuntimeError):
@@ -38,7 +41,7 @@ class PolymarketWebClient:
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
         self.session = session or requests.Session()
-        self.requests = {"summary": 0, "pages": 0, "trending": 0, "details": 0, "news": 0}
+        self.requests = {"summary": 0, "pages": 0, "trending": 0, "details": 0, "news": 0, "market_news": 0}
 
     def _get(self, path: str) -> dict[str, Any]:
         url = urljoin(self.base_url, path.lstrip("/"))
@@ -121,6 +124,28 @@ class PolymarketWebClient:
     def confirm(self, generation_id: str) -> None:
         if str(self._summary()["generation_id"]) != generation_id:
             raise SourceError("원고 생성 전에 generation이 바뀌었습니다")
+
+    def market_news(self) -> list[dict[str, Any]]:
+        """봇이 모아 공개 웹에 구운 시장 뉴스(보고서가 근거로 고른 기사)를 최근 며칠치 읽는다.
+
+        보고서·일일 요약은 빼고 기사만 남긴다. 이 자료는 원고를 시의에 맞추는 보조 재료라
+        읽지 못하면 빈 목록으로 제작을 잇는다 — 대시보드 자료처럼 제작을 멈출 이유가 아니다.
+        """
+        result: list[dict[str, Any]] = []
+        try:
+            for page in range(1, MAX_MARKET_NEWS_PAGES + 1):
+                self.requests["market_news"] += 1
+                payload = self._get("api/search?" + urlencode({"days": MARKET_NEWS_DAYS, "page": page}))
+                rows = payload.get("results")
+                if not isinstance(rows, list):
+                    raise SourceError("뉴스 검색 응답에 results가 없습니다")
+                result.extend(row for row in rows if isinstance(row, dict) and row.get("kind") == "news"
+                              and isinstance(row.get("title"), str) and row["title"].strip())
+                if page >= int(payload.get("page_count") or 0):
+                    break
+        except (SourceError, TypeError, ValueError) as exc:
+            logger.warning("수집 시장 뉴스 읽기 미완료(%d건까지): %s", len(result), exc)
+        return result
 
     def news(self, title: str, *, reference: str) -> list[dict[str, str]]:
         """RSS 제목만 확인한다. 본문을 읽었다고 주장하지 않는다."""

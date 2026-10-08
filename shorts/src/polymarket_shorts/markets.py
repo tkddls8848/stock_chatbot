@@ -87,6 +87,15 @@ def shortlist(snapshot: Snapshot) -> tuple[list[dict[str, Any]], dict[str, Any]]
         except (KeyError, TypeError, ValueError):
             excluded["expired_or_unknown_deadline"] += 1
             continue
+        # 영상은 제작 뒤 검수를 거쳐 올라가고 며칠 동안 보인다. 이틀 안에 판정되는 질문("S&P 500이 오늘 750달러
+        # 위로 마감할까")은 보는 사람에게 이미 끝난 일이고, 98% 이상으로 거의 정해진 질문은 숫자가 아무것도
+        # 알려 주지 않는다(독립 검토 2026-10-08: 당일 마감 99.95%·99.9% 질문이 한 장면을 차지했다).
+        if (deadline - reference).total_seconds() < 2 * 86400:
+            excluded["closes_within_two_days"] += 1
+            continue
+        if (number(event.get("leader_probability")) or 0) >= .98:
+            excluded["near_certain"] += 1
+            continue
         move = moves.get(str(event["id"]), {})
         change = number(move.get("basis_change")) if not move.get("leader_changed") else None
         groups[key].append({

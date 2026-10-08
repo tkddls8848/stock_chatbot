@@ -81,3 +81,18 @@ def test_news_keeps_only_recent_non_future_unique_titles():
     api = PolymarketWebClient("https://example.test", session=Session([rss.encode()]))
     news = api.news("Fed Decision?", reference="2026-09-23T00:00:00+00:00")
     assert len(news) == 1 and news[0]["title"] == "Current"
+
+
+def test_market_news_reads_every_search_page_and_keeps_only_articles():
+    pages = [{"page_count": 2, "results": [{"kind": "report", "title": "보고서"}, {"kind": "news", "title": "유가 상승"}]},
+             {"page_count": 2, "results": [{"kind": "market", "title": "요약"}, {"kind": "news", "title": " "},
+                                           {"kind": "news", "title": "연준 동결"}]}]
+    api = PolymarketWebClient("https://example.test", session=Session(pages))
+    assert [row["title"] for row in api.market_news()] == ["유가 상승", "연준 동결"]
+    assert api.requests["market_news"] == 2
+
+
+def test_market_news_failure_keeps_what_was_read_and_does_not_stop_production():
+    pages = [{"page_count": 3, "results": [{"kind": "news", "title": "유가 상승"}]}, {"error": "boom"}]
+    api = PolymarketWebClient("https://example.test", session=Session(pages))
+    assert [row["title"] for row in api.market_news()] == ["유가 상승"]
