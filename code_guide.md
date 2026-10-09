@@ -160,6 +160,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
+| `public/shorts/ko.json`·`en.json` | 쇼츠(게시 직후 언어별 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
 
 옛 `data/`는 없다. 서버 이전은 코드가 아니라 절차다 — `data/webpub`→`storage/public`,
 `data/<feature>`→`storage/bot/<feature>`로 한 번 옮긴다(`infra/server-ops.md`).
@@ -460,6 +461,11 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   기계적으로 들렸다). 쇼츠가 공개 웹 `/api/search`로 최근 사흘치 기사를 읽고(봇 코드·`storage/public/news.json`을
   직접 읽지 않는다), 선정 모델이 낸 한국어 주체어로 후보를 거른 뒤 원고 모델이 `news_hook` 한 문장을 쓴다. 문장은
   그 기사 제목·원문의 사실과 숫자만 쓰고 기사와 전망 사이의 인과를 쓰지 않는다. 맞는 기사가 없으면 넣지 않는다.
+  **웹 첫 화면은 "오늘의 영상"으로 언어별 최신 게시본 하나씩을 붙인다**(운영자 요청 2026-10-09). 웹은
+  `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/<ko|en>.json`(날짜·영상 ID·제목)을
+  쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 언어마다 파일이 따로라 두 판의 게시가 겹쳐도
+  서로 덮지 않는다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
+  `/`의 CSP만 그 출처의 `frame-src`를 연다.
   `SHORTS_ENGLISH_EDITION=true`면 영어판을 `storage/shorts/en/<날짜>/`에 따로 만들며,
   영어판도 같은 검토 절차를 거친다. 알림에 붙은 검토번호로 언어·날짜·수정본을 지정한다.
   **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정

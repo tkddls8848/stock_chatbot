@@ -5,6 +5,9 @@
 SVG를 그린다 — 선은 봇 차트(`market_sentiment/chart.py`)와 같은 누적 논조선(날마다 (논조 − 전 시장
 공통 평균)을 그 시장의 하루 변동폭 σ로 나누고, 이어지는 움직임을 증폭해 쌓는다, 2026-10-04)이다. 예전 커널 회귀는 선이 평균에
 붙어 경향이 보이지 않았다. 도메인끼리 import하지 않으므로 같은 계산을 여기 JS로 한 번 더 적는다.
+
+"오늘의 영상"(운영자 요청 2026-10-09)은 쇼츠가 게시 뒤 `storage/public/shorts/`에 쓴 언어별 최신 영상을
+`/api/shorts`로 읽어 YouTube 플레이어(youtube-nocookie)로 붙인다. 이 화면의 CSP만 그 프레임을 허용한다.
 """
 
 from services.web.pages.shell import (
@@ -38,8 +41,16 @@ border-top:1px solid var(--rule);border-bottom:1px solid var(--line2)}
 .mk-notes h3 small{font-family:var(--font-sans);font-size:12.5px;color:var(--mut);font-weight:500;margin-left:8px}
 .mk-notes .k{margin:2px 0 6px;font-size:13px;color:var(--mut)}.mk-notes .k b{font-weight:700}
 .mk-notes p{margin:0;color:var(--ink-soft)}
+.mk-shorts{margin-top:44px}
+.mk-shorts h2{font-size:13.5px;font-weight:700;margin:0;padding:10px 0 6px;border-top:1px solid var(--rule);border-bottom:1px solid var(--line2)}
+.mk-shorts .d{margin:12px 0 16px;font-size:13.5px;color:var(--ink-soft)}
+.mk-vids{display:grid;grid-template-columns:repeat(2,minmax(0,260px));gap:24px}
+.mk-vids figure{margin:0}
+.mk-vids iframe{display:block;width:100%;aspect-ratio:9/16;border:0;background:#111}
+.mk-vids figcaption{margin-top:8px;font-size:13px;color:var(--mut)}
+.mk-vids figcaption b{color:var(--ink);font-weight:700;margin-right:6px}
 @media(max-width:900px){.mk-grid{grid-template-columns:1fr;gap:28px}.mk-small{grid-template-columns:repeat(2,minmax(0,1fr))}.mk-notes{columns:1}}
-@media(max-width:520px){.mk-small{gap:16px 14px}.mk-small figcaption{font-size:14px}}
+@media(max-width:520px){.mk-vids{gap:12px}.mk-small{gap:16px 14px}.mk-small figcaption{font-size:14px}}
 </style>"""
 
 _MARKET_MAIN = (
@@ -72,6 +83,12 @@ _MARKET_MAIN = (
   가중한 최근 일주일 평균 논조, '7일 경향'은 그 기간 선이 오르내린 폭입니다.</p>
  </aside>
 </div>
+<section class='mk-shorts' id='shorts' aria-labelledby='mk-shorts-title' hidden>
+ <h2 id='mk-shorts-title'>오늘의 영상</h2>
+ <p class='d'>집단 예측 컨센서스에서 그날 눈여겨볼 질문을 짧은 세로 영상으로 정리해 매일 저녁 한국어판과 영어판으로 올립니다.
+ 재생하면 YouTube 플레이어가 열립니다.</p>
+ <div class='mk-vids' id='vids'></div>
+</section>
 <div class='mk-notes' id='notes' aria-label='시장별 최신 요약'></div>
 """
 )
@@ -114,6 +131,19 @@ function svg(tr,color,t0,t1,lim){
   for(const [t,v] of tr.curve)s+="<circle cx='"+X(t).toFixed(1)+"' cy='"+Y(v).toFixed(1)+"' r='1.5' fill='"+color+"'/>";
   return s+"</svg>";
 }
+// 쇼츠가 게시한 언어별 최신 영상. 아직 오늘 영상이 없으면(매일 저녁 게시) 가장 최근 영상을 날짜와 함께 보인다.
+fetch('/api/shorts').then(r=>r.json()).then(d=>{
+  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const day=v=>v===today?'오늘':Number(v.slice(5,7))+'월 '+Number(v.slice(8,10))+'일';
+  const vids=[['ko','한국어'],['en','English']].filter(([k])=>d[k]&&d[k].video_id).map(([k,name])=>{const v=d[k];
+    return "<figure><iframe src='https://www.youtube-nocookie.com/embed/"+encodeURIComponent(v.video_id)+"?rel=0&amp;playsinline=1'"
+      +" title='"+esc(name+' 영상 · '+(v.title||v.date))+"' loading='lazy' referrerpolicy='strict-origin-when-cross-origin'"
+      +" allow='encrypted-media; picture-in-picture; fullscreen' allowfullscreen></iframe>"
+      +"<figcaption><b>"+esc(name)+"</b>"+esc(day(v.date))+"</figcaption></figure>";});
+  if(!vids.length)return;
+  document.getElementById('vids').innerHTML=vids.join('');
+  document.getElementById('shorts').hidden=false;
+}).catch(()=>{});
 fetch('/api/market').then(r=>r.json()).then(d=>{
   const markets=d.markets||{},base=baseline(markets);
   const rows=[...new Set([...MARKETS,...Object.keys(markets)])].map(code=>{

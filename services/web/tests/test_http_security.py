@@ -15,7 +15,7 @@ from services.web import server
 
 SCREENS = ("/", "/forecast", "/research", "/about", "/terms", "/search", "/portfolio", "/privacy")
 PUBLIC_API = (
-    "/api/market", "/api/meta", "/api/search",
+    "/api/market", "/api/meta", "/api/search", "/api/shorts",
     "/api/forecast/summary", "/api/forecast/categories", "/api/forecast/sector-brief",
     "/api/forecast/trending", "/api/forecast/health", "/api/forecast/events",
     "/api/forecast/events/one",
@@ -190,3 +190,19 @@ def test_fonts_are_served_from_a_fixed_list_with_a_long_cache(client):
     for name in ("../server.py", "OFL-Pretendard.txt", "missing.woff2"):
         assert client.get("/fonts/" + name).status_code == 404, name
     assert "font-src 'self'" in client.get("/").headers["content-security-policy"]
+
+
+def test_only_the_front_page_may_frame_the_youtube_player(client):
+    # 첫 화면 "오늘의 영상"만 youtube-nocookie 프레임을 들이고, 나머지 화면은 프레임을 전혀 허용하지 않는다.
+    assert "frame-src https://www.youtube-nocookie.com;" in client.get("/").headers["content-security-policy"]
+    for path in SCREENS[1:]:
+        assert "frame-src 'none';" in client.get(path).headers["content-security-policy"]
+
+
+def test_shorts_api_exposes_only_well_formed_latest_videos(client, tmp_path):
+    (tmp_path / "shorts").mkdir()
+    (tmp_path / "shorts" / "ko.json").write_text(
+        '{"date":"2026-10-08","video_id":"q5Vqf1hBOrQ","title":"시장 컨센서스","uploaded_at":"x"}', encoding="utf-8")
+    (tmp_path / "shorts" / "en.json").write_text('{"video_id":"x\' onload=\'"}', encoding="utf-8")
+    assert client.get("/api/shorts").json() == {
+        "ko": {"date": "2026-10-08", "video_id": "q5Vqf1hBOrQ", "title": "시장 컨센서스"}, "en": None}

@@ -106,6 +106,11 @@ class Settings:
     english_edition: bool = False
     english_voice: str = "en-US-AriaNeural"
 
+    @property
+    def public_dir(self) -> Path:
+        """공개 웹이 내보내는 `storage/public/`. 쇼츠 산출물(`storage/shorts/`)과 같은 공유 저장소에 있다."""
+        return self.output_dir.parent / "public"
+
     def __post_init__(self) -> None:
         if type(self.review_timeout_minutes) is not int or not 1 <= self.review_timeout_minutes <= 1440:
             raise ValueError("SHORTS_REVIEW_TIMEOUT_MINUTES must be an integer from 1 to 1440")

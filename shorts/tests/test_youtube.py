@@ -313,3 +313,28 @@ def test_retry_after_new_production_registers_missing_gate_without_enrolling_leg
     write_json(root / "review.json", {**record, "status": "pending", "scenario_review_required": True})
     gate = cli._queue_review(result, settings)
     assert gate["state"] == "pending" and gate["deadline"] is None
+
+
+def test_upload_publishes_the_latest_video_for_the_web_front_page(prepared, monkeypatch):
+    # 웹은 storage/shorts/를 읽지 않는다 — 첫 화면 "오늘의 영상"은 쇼츠가 storage/public/에 쓴 파일만 본다.
+    root, settings = prepared
+    http(monkeypatch, response(payload={"access_token": "access"}), start(), response(201, {"id": "video_1"}))
+    youtube.upload(root, settings)
+    saved = json.loads((settings.public_dir / "shorts" / "ko.json").read_text(encoding="utf-8"))
+    assert settings.public_dir == settings.output_dir.parent / "public"
+    assert {key: saved[key] for key in ("language", "date", "video_id", "url", "title")} == {
+        "language": "ko", "date": "2026-09-27", "video_id": "video_1",
+        "url": "https://www.youtube.com/shorts/video_1", "title": "오늘의 전망"}
+    assert not (settings.public_dir / "shorts" / "en.json").exists()
+
+
+def test_latest_published_day_wins_and_unuploaded_days_are_skipped(tmp_path):
+    settings = replace(Settings.from_env(), output_dir=tmp_path / "shorts")
+    base = settings.output_dir / "en"
+    for day, video in (("2026-10-07", "older"), ("2026-10-08", "newer")):
+        write_json(base / day / "upload.json", {"revisions": {"r": {"video_id": video, "uploaded_at": day}}})
+    write_json(base / "2026-10-09" / "upload.json", {"revisions": {"r": {"revision_id": "r"}}})
+    assert youtube.publish_latest(base, "en", settings)["video_id"] == "newer"
+    saved = json.loads((tmp_path / "public" / "shorts" / "en.json").read_text(encoding="utf-8"))
+    assert saved["date"] == "2026-10-08" and saved["title"] == ""
+    assert youtube.publish_latest(base, "../x", settings) is None

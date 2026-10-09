@@ -46,7 +46,11 @@ FONTS = {"pretendard-sub.woff2", "noto-serif-kr-bold-sub.woff2"}
 logger = logging.getLogger(__name__)
 
 
-def _content_security_policy(html: str = "") -> str:
+# 첫 화면 "오늘의 영상"의 YouTube 플레이어만 들인다. 다른 화면은 프레임을 하나도 허용하지 않는다.
+_YOUTUBE_FRAME = "https://www.youtube-nocookie.com"
+
+
+def _content_security_policy(html: str = "", *, frame_src: str = "'none'") -> str:
     """정적 화면과 함께 기동 시 한 번만 계산한다. 공백도 해시 입력의 일부다."""
     def hashes(tag: str) -> str:
         blocks = re.findall(rf"<{tag}\b[^>]*>(.*?)</{tag}>", html, re.DOTALL | re.IGNORECASE)
@@ -58,7 +62,7 @@ def _content_security_policy(html: str = "") -> str:
     # 차트는 같은 출처, 배경 질감은 data: SVG다. API 요청은 같은 출처만 허용한다.
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
-        "frame-ancestors 'none'; form-action 'self'; "
+        "frame-ancestors 'none'; frame-src " + frame_src + "; form-action 'self'; "
         "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
         "script-src " + hashes("script") + "; script-src-attr 'none'; "
         "style-src " + hashes("style") + "; style-src-attr 'none'"
@@ -66,12 +70,12 @@ def _content_security_policy(html: str = "") -> str:
 
 
 _PAGE_CSP = {path: _content_security_policy(html) for path, html in {
-    "/": INDEX_HTML, "/forecast": POLYMARKET_HTML, "/research": RESEARCH_HTML,
+    "/forecast": POLYMARKET_HTML, "/research": RESEARCH_HTML,
     "/about": ABOUT_HTML, "/terms": TERMS_HTML, "/search": SEARCH_HTML,
     "/portfolio": PORTFOLIO_HTML, "/privacy": PRIVACY_HTML,
     # 확인·완료·오류 세 화면이 같은 셸이라 스크립트·스타일 해시가 같다.
     "/newsletter/unsubscribe": UNSUBSCRIBE_CONFIRM_HTML,
-}.items()}
+}.items()} | {"/": _content_security_policy(INDEX_HTML, frame_src=_YOUTUBE_FRAME)}
 _ERROR_CSP = {status: _content_security_policy(html) for status, html in ERROR_HTML.items()}
 _DEFAULT_CSP = _content_security_policy()
 _SECURITY_HEADERS = {
@@ -223,6 +227,18 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
     def meta() -> dict[str, Any]:
         return {key: value for key, value in _read_json("meta.json").items()
                 if key != "research_generated_at"}
+
+    @app.api_route("/api/shorts", methods=["GET", "HEAD"])
+    def shorts() -> dict[str, Any]:
+        # 쇼츠가 게시 뒤 쓰는 언어별 최신 영상(storage/public/shorts/). 영상 ID 형식이 아니면 내보내지 않는다 —
+        # 화면이 이 값으로 플레이어 주소를 만든다.
+        latest = {}
+        for language in ("ko", "en"):
+            row = _read_json(f"shorts/{language}.json")
+            video = str(row.get("video_id") or "")
+            latest[language] = {key: str(row.get(key) or "") for key in ("date", "video_id", "title")} \
+                if re.fullmatch(r"[\w-]{6,20}", video) else None
+        return latest
 
     def polymarket_json(
         request: Request,

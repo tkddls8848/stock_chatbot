@@ -284,6 +284,10 @@ python -m polymarket_shorts.cli --status
 세션 만료(404)나 손상된 기록은 자동으로 새 영상을 만들지 않습니다. YouTube Studio에서
 실제 게시 여부를 먼저 확인하고 복구해야 합니다. 이 파일은 비공개 저장소 안에 둡니다.
 
+게시가 끝나면 웹 첫 화면의 "오늘의 영상"이 읽는 `storage/public/shorts/<ko|en>.json`에 그 언어의
+가장 최근 게시본(날짜·영상 ID·제목)을 씁니다(`youtube.publish_latest`). 웹은 `storage/shorts/`를 읽지 않으므로
+공개할 것만 이 파일로 넘깁니다. 이 파일을 쓰지 못해도 게시 결과는 그대로이며 다음 게시 때 따라잡습니다.
+
 구현 기준: [재개 업로드 프로토콜](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol),
 [데스크톱 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app),
 [영상 status 필드](https://developers.google.com/youtube/v3/docs/videos#status).

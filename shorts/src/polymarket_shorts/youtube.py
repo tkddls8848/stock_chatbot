@@ -5,6 +5,7 @@ import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -23,6 +24,8 @@ from .workflow import current_target
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
 SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+logger = logging.getLogger(__name__)
 
 
 def _request(method: str, url: str, **kwargs):
@@ -264,7 +267,43 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
                          uploaded_at=now().isoformat())
             entry.pop("session_url", None)
             write_json(target / "upload.json", history)
-            return {"status": "uploaded", "video_id": video_id, "url": entry["url"]}
+        try:
+            publish_latest(root.parent, record.get("language") or "ko", settings)
+        except OSError:
+            # 게시는 이미 끝났다. 웹 첫 화면은 다음 게시 때 따라잡는다.
+            logger.warning("오늘의 영상 공개 파일을 쓰지 못했습니다", exc_info=True)
+        return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id)}
+
+
+def publish_latest(base: Path, language: str, settings: Settings) -> dict | None:
+    """공개 웹 첫 화면의 "오늘의 영상"이 읽는 언어별 최신 게시본을 `storage/public/shorts/<언어>.json`에 쓴다.
+
+    웹은 `storage/shorts/`를 읽지 않으므로(공개 라우트는 `storage/public/`만) 쇼츠가 공개할 것만 따로 쓴다.
+    언어마다 파일이 따로라 한국어판·영어판 게시가 겹쳐도 서로 덮지 않는다. `base`는 그 언어의 제작일 폴더들이
+    있는 곳(`storage/shorts/` 또는 `storage/shorts/en/`)이고, 가장 최근 날짜의 마지막 게시본을 고른다.
+    """
+    if language not in {"ko", "en"} or not base.is_dir():
+        return None
+    for day in sorted((p for p in base.iterdir() if p.is_dir() and _DAY.fullmatch(p.name)), reverse=True):
+        try:
+            revisions = _read(day / "upload.json").get("revisions", {})
+        except ReviewError:
+            continue
+        uploaded = [entry for entry in revisions.values()
+                    if isinstance(entry, dict) and re.fullmatch(r"[\w-]+", str(entry.get("video_id") or ""))]
+        if not uploaded:
+            continue
+        entry = max(uploaded, key=lambda row: str(row.get("uploaded_at") or ""))
+        try:
+            title = (_read(current_target(day) / "review.json").get("youtube") or {}).get("title")
+        except ReviewError:
+            title = None
+        payload = {"language": language, "date": day.name, "video_id": entry["video_id"],
+                   "url": shorts_url(entry["video_id"]), "title": title if isinstance(title, str) else "",
+                   "uploaded_at": entry.get("uploaded_at") or ""}
+        write_json(settings.public_dir / "shorts" / f"{language}.json", payload)
+        return payload
+    return None
 
 
 def authorize(settings: Settings) -> str:
