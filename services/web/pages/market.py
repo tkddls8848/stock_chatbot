@@ -7,7 +7,7 @@ SVG를 그린다 — 선은 봇 차트(`market_sentiment/chart.py`)와 같은 �
 붙어 경향이 보이지 않았다. 도메인끼리 import하지 않으므로 같은 계산을 여기 JS로 한 번 더 적는다.
 
 "오늘의 영상"(운영자 요청 2026-10-09)은 쇼츠가 게시 뒤 `storage/public/shorts/`에 쓴 언어별 최신 영상을
-`/api/shorts`로 읽어 YouTube 플레이어(youtube-nocookie)로 붙인다. 이 화면의 CSP만 그 프레임을 허용한다.
+`/api/shorts`로 읽어 YouTube 플레이어(youtube-nocookie)로 시장별 최신 요약 아래(운영자 지시 2026-10-09)에 붙인다. 이 화면의 CSP만 그 프레임을 허용한다.
 """
 
 from services.web.pages.shell import (
@@ -83,13 +83,13 @@ _MARKET_MAIN = (
   가중한 최근 일주일 평균 논조, '7일 경향'은 그 기간 선이 오르내린 폭입니다.</p>
  </aside>
 </div>
+<div class='mk-notes' id='notes' aria-label='시장별 최신 요약'></div>
 <section class='mk-shorts' id='shorts' aria-labelledby='mk-shorts-title' hidden>
  <h2 id='mk-shorts-title'>오늘의 영상</h2>
  <p class='d'>집단 예측 컨센서스에서 그날 눈여겨볼 질문을 짧은 세로 영상으로 정리해 매일 저녁 한국어판과 영어판으로 올립니다.
  재생하면 YouTube 플레이어가 열립니다.</p>
  <div class='mk-vids' id='vids'></div>
 </section>
-<div class='mk-notes' id='notes' aria-label='시장별 최신 요약'></div>
 """
 )
 
