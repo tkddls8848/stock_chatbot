@@ -25,7 +25,7 @@ class TruncatedError(LLMError):
 
 def chat_json(settings: Settings, *, system: str, user: str, max_tokens: int) -> dict[str, Any]:
     if not settings.editor_account_id or not settings.editor_api_token:
-        raise LLMError(".env에 CLOUDFLARE_ACCOUNT_ID와 CLOUDFLARE_API_TOKEN을 설정하세요")
+        raise LLMError(".env에 CLOUDFLARE_ACCOUNT_ID와 CLOUDFLARE_WORKER_AI_API_TOKEN을 설정하세요")
     # Qwen3는 추론 모델이라 thinking이 max_tokens를 먹고 finish_reason=length로 끊긴다
     # (서버 실측 2026-09-25: 이슈 선별이 max_tokens=2000에서 잘렸다). 봇과 같은
     # 방법으로 `/no_think` 지시어를 붙여 끈다 — 이 엔드포인트엔 끄는 옵션이 없다.

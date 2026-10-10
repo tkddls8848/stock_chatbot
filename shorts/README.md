@@ -94,7 +94,7 @@ Workers AI API 토큰입니다. 저장소 루트 `.env.example`을 참고해 루
 
 ```dotenv
 CLOUDFLARE_ACCOUNT_ID=계정_ID
-CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
+CLOUDFLARE_WORKER_AI_API_TOKEN=Workers_AI_API_토큰
 ```
 
 `.env`에는 비밀값과 `STORAGE_DIR`만 둡니다. 모델·음성·공개 범위·자동 승인 같은 조정값은

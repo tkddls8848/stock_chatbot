@@ -38,7 +38,7 @@ class ConfigurationError(RuntimeError):
 # 한쪽이 모델이나 타임아웃을 바꿔도 다른 쪽 프로세스는 흔들리지 않는다.
 # API 토큰은 .env에만 두고 커밋하지 않는다. 로그·예외에도 남기지 않는다.
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+CLOUDFLARE_WORKER_AI_API_TOKEN = os.environ.get("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip()
 CLOUDFLARE_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
 CLOUDFLARE_MODEL = os.environ.get(
     "CLOUDFLARE_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8"
@@ -60,7 +60,7 @@ def require_cloudflare_credentials() -> None:
         name
         for name, value in (
             ("CLOUDFLARE_ACCOUNT_ID", CLOUDFLARE_ACCOUNT_ID),
-            ("CLOUDFLARE_API_TOKEN", CLOUDFLARE_API_TOKEN),
+            ("CLOUDFLARE_WORKER_AI_API_TOKEN", CLOUDFLARE_WORKER_AI_API_TOKEN),
         )
         if not value
     ]

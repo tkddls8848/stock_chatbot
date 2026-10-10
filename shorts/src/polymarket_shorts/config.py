@@ -119,7 +119,7 @@ class Settings:
             ffprobe_bin=_media_binary("ffprobe"),
             blender_bin=_media_binary("blender"),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
-            editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
+            editor_api_token=os.getenv("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip(),
             video_api_key=os.getenv("SHORTS_VIDEO_API_KEY", "").strip(),
             youtube_client_id=os.getenv("SHORTS_YOUTUBE_CLIENT_ID", "").strip(),
             youtube_client_secret=os.getenv("SHORTS_YOUTUBE_CLIENT_SECRET", "").strip(),

@@ -18,7 +18,7 @@ python -m services.telegram_bot.main
 TELEGRAM_BOT_TOKEN=<BotFather 토큰>
 TELEGRAM_CHAT_ID=<알림을 받을 채팅 또는 채널 ID>
 CLOUDFLARE_ACCOUNT_ID=<Cloudflare 계정 ID>
-CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
+CLOUDFLARE_WORKER_AI_API_TOKEN=<Workers AI 실행 권한 토큰>
 ```
 
 환경 변수로 조정하는 설정과 기본값은 [`.env.example`](.env.example)에서 확인할 수 있습니다.

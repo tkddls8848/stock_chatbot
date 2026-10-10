@@ -12,7 +12,7 @@ import logging
 from services.web.core.config import (
     CLOUDFLARE_ACCOUNT_ID,
     CLOUDFLARE_AI_BASE_URL,
-    CLOUDFLARE_API_TOKEN,
+    CLOUDFLARE_WORKER_AI_API_TOKEN,
     CLOUDFLARE_FAILURE_COOLDOWN_SECONDS,
     CLOUDFLARE_FAILURE_THRESHOLD,
     CLOUDFLARE_MAX_ATTEMPTS,
@@ -46,7 +46,7 @@ def build_backend(purpose: str, *, model: str, timeout: int) -> LLMBackend:
     """Cloudflare 백엔드를 만들고 재시도·회로 차단으로 감싼다."""
     backend = CloudflareWorkersAIBackend(
         account_id=CLOUDFLARE_ACCOUNT_ID,
-        api_token=CLOUDFLARE_API_TOKEN,
+        api_token=CLOUDFLARE_WORKER_AI_API_TOKEN,
         model=model,
         base_url=CLOUDFLARE_AI_BASE_URL,
         timeout=timeout,

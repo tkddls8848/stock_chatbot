@@ -150,7 +150,7 @@ getUpdates request`를 돌려주고 **양쪽이 번갈아 죽는다.** 로컬 �
 
 지금 서버 `.env`에 남아 있어야 하는 키는 `.env.example`에 적힌 것뿐이다:
 `TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`·`ALLOWED_CHAT_IDS`·
-`CLOUDFLARE_ACCOUNT_ID`·`CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_MODEL`(모델
+`CLOUDFLARE_ACCOUNT_ID`·`CLOUDFLARE_WORKER_AI_API_TOKEN`·`CLOUDFLARE_MODEL`(모델
 폐기·개명에 코드 배포 없이 대응하는 유일한 예외)·`POLYMARKET_PROXY_URL`.
 이 목록 밖의 키가 `.env`에 남아 있다면(예: 옛 `NEWS_GLOBAL_LIMIT=4`, 관리 웹을 없앤 뒤의
 `WEB_ADMIN_USER`·`WEB_ADMIN_PASSWORD`) 지운다 — `load_dotenv`가 이걸

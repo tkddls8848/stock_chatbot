@@ -123,7 +123,7 @@ TRANSLATION_NUM_PREDICT = 768
 # ── Cloudflare Workers AI ─────────────────────────────
 # API 토큰은 .env에만 두고 커밋하지 않는다. 로그·예외에도 남기지 않는다.
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+CLOUDFLARE_WORKER_AI_API_TOKEN = os.environ.get("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip()
 CLOUDFLARE_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
 # 번역과 분석은 같은 모델을 쓴다. 나눌 실익이 없다 — `qwen3-30b-a3b`는 이름과
 # 달리 MoE(활성 3B)라 단가가 3B 모델과 같다(입력 $0.0509/M, 출력 $0.335/M).
@@ -159,7 +159,7 @@ def _validate_cloudflare_credentials() -> None:
         name
         for name, value in (
             ("CLOUDFLARE_ACCOUNT_ID", CLOUDFLARE_ACCOUNT_ID),
-            ("CLOUDFLARE_API_TOKEN", CLOUDFLARE_API_TOKEN),
+            ("CLOUDFLARE_WORKER_AI_API_TOKEN", CLOUDFLARE_WORKER_AI_API_TOKEN),
         )
         if not value
     ]

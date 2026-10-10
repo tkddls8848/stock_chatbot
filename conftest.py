@@ -19,7 +19,7 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "1")
 # 실제 스모크를 켤 때는 .env 값을 가리지 않도록 가짜 값을 넣지 않는다.
 if os.environ.get("RUN_CLOUDFLARE_SMOKE") != "1":
     os.environ.setdefault("CLOUDFLARE_ACCOUNT_ID", "test-account")
-    os.environ.setdefault("CLOUDFLARE_API_TOKEN", "test-token")
+    os.environ.setdefault("CLOUDFLARE_WORKER_AI_API_TOKEN", "test-token")
 
 TEST_TEMP_ROOT.mkdir(exist_ok=True)
 for variable in ("TMPDIR", "TEMP", "TMP", "PYTEST_DEBUG_TEMPROOT"):

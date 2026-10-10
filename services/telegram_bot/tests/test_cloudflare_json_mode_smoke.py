@@ -39,7 +39,7 @@ import pytest
 from services.telegram_bot.core.config import (
     CLOUDFLARE_ACCOUNT_ID,
     CLOUDFLARE_AI_BASE_URL,
-    CLOUDFLARE_API_TOKEN,
+    CLOUDFLARE_WORKER_AI_API_TOKEN,
     CLOUDFLARE_MODEL,
     NEWS_REPORT_MAX_HEADLINES,
     NEWS_REPORT_NUM_PREDICT,
@@ -56,8 +56,8 @@ pytestmark = [
         reason="RUN_CLOUDFLARE_SMOKE=1 이 아닐 때는 실제 API를 호출하지 않는다",
     ),
     pytest.mark.skipif(
-        not (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN),
-        reason="CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN 미설정",
+        not (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WORKER_AI_API_TOKEN),
+        reason="CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_WORKER_AI_API_TOKEN 미설정",
     ),
 ]
 
@@ -114,7 +114,7 @@ def _int(value: str | None) -> int | None:
 def _backend() -> CloudflareWorkersAIBackend:
     return CloudflareWorkersAIBackend(
         account_id=CLOUDFLARE_ACCOUNT_ID,
-        api_token=CLOUDFLARE_API_TOKEN,
+        api_token=CLOUDFLARE_WORKER_AI_API_TOKEN,
         model=CLOUDFLARE_MODEL,
         base_url=CLOUDFLARE_AI_BASE_URL,
         timeout=NEWS_REPORT_TIMEOUT,

@@ -153,7 +153,7 @@ class CloudflareWorkersAIBackend:
     ):
         if not account_id or not api_token:
             raise ValueError(
-                "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required"
+                "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_WORKER_AI_API_TOKEN are required"
             )
         self._api_token = api_token
         self.model = model
