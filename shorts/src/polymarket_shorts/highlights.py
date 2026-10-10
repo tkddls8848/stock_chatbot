@@ -227,10 +227,12 @@ def _ask_checked(settings: Settings, *, system: str, user: str, max_tokens: int,
             return salvage(second, final)
 
 
-def select_issues(candidates: list[dict], settings: Settings, *, rejected: list | None = None) -> list[dict]:
+def select_issues(candidates: list[dict], settings: Settings, *, rejected: list | None = None,
+                  maximum: int | None = None) -> list[dict]:
+    """`maximum`은 빈자리 채우기(`pipeline._backfill`)가 빠진 수만큼만 고르게 할 때 준다."""
     if not candidates:
         return []
-    maximum = min(5, settings.max_groups)
+    maximum = min(5, settings.max_groups, maximum or 5)
     compact = [{key: row[key] for key in ("id", "title", "sector", "volume24hr", "liquidity", "end_date", "change", "score")}
                for row in candidates]
     return _ask_checked(
@@ -563,8 +565,12 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
     return result
 
 
-def write_issues(issues: list[dict], settings: Settings, *, failures: dict | None = None) -> list[dict]:
-    """원고를 쓰고 검증한다. 교정 뒤에도 틀려 뺀 이슈는 `failures`에 이슈 id → 검증 오류로 남긴다."""
+def write_issues(issues: list[dict], settings: Settings, *, failures: dict | None = None,
+                 total: int | None = None) -> list[dict]:
+    """원고를 쓰고 검증한다. 교정 뒤에도 틀려 뺀 이슈는 `failures`에 이슈 id → 검증 오류로 남긴다.
+
+    분량은 영상 전체 이슈 수 `total`(기본은 이번에 쓰는 이슈 수)로 나눈다 — 빈자리를 채우는 원고만 길어지지 않게.
+    """
     source = [{
         "id": issue["id"], "title": issue["title"], "description": issue["description"],
         "markets": [{"id": m["id"], "question": m["question"]} for m in issue["markets"]],
@@ -572,7 +578,7 @@ def write_issues(issues: list[dict], settings: Settings, *, failures: dict | Non
         "market_news": [{k: n[k] for k in ("id", "title", "original", "when", "coverage")}
                         for n in issue.get("market_news", [])],
     } for issue in issues]
-    budget = max(60, (settings.target_script_chars - 100) // len(issues))
+    budget = max(60, (settings.target_script_chars - 100) // (total or len(issues)))
     prompt = PROMPT + f"\n각 이슈의 질문·선택지·해설을 합쳐 약 {budget}자로 간결하게 쓰세요. 조건 보존이 길이보다 우선입니다."
     def salvage(payload: dict, error: HighlightError) -> list[dict]:
         # 교정 뒤에도 틀린 이슈만 빼고 나머지로 만든다(실측 2026-09-27: 이슈 하나의 라벨이

@@ -205,3 +205,47 @@ def test_force_reproduction_selects_new_root_only_after_success(tmp_path, monkey
         assert current_target(root) == root
         assert "새로운 도입" in (root / "review.md").read_text(encoding="utf-8")
     assert (previous / "review.md").read_text(encoding="utf-8") == "previous reviewed scenario"
+
+
+def _backfill_case(monkeypatch, select):
+    from polymarket_shorts import pipeline
+
+    kept = [{"id": "a", "sector": "macro", "topic_key": "fed"}]
+    candidates = [*kept, {"id": "b", "sector": "equities", "topic_key": "coin"},
+                  {"id": "c", "sector": "macro", "topic_key": "ecb"}, {"id": "d", "sector": "geopolitics", "topic_key": "fed"},
+                  {"id": "e", "sector": "geopolitics", "topic_key": "iran"}, {"id": "f", "sector": "general", "topic_key": "ai"}]
+    audit = {"selected": [kept[0], candidates[1]], "rejected": [{"id": "b", "reason": "원고 검증 실패(교정 후)"}],
+             "llm_calls": 2}
+    asked, written = [], []
+    monkeypatch.setattr(pipeline, "select_issues", lambda rows, settings, **kw: asked.append((rows, kw)) or select(rows))
+
+    def write(issues, total):
+        written.append(total)
+        return [issue for issue in issues if issue["id"] != "f"], [{"id": issue["id"]} for issue in issues
+                                                                  if issue["id"] != "f"]
+    result = pipeline._backfill(kept, [{"id": "a"}], 1, candidates, Settings.from_env(), audit,
+                                lambda: None, lambda rows: list(rows), write)
+    return result, audit, asked, written
+
+
+def test_backfill_picks_from_unused_sectors_and_topics_and_splits_length_over_the_whole_video(monkeypatch):
+    (issues, scripts), audit, asked, written = _backfill_case(monkeypatch, lambda rows: [rows[0]])
+    rows, kwargs = asked[0]
+    # 이미 고른 b·같은 분야 c·같은 주제 d는 빠지고, 빠진 수(1)만큼만 고른다.
+    assert [row["id"] for row in rows] == ["e", "f"] and kwargs["maximum"] == 1
+    assert [issue["id"] for issue in issues] == ["a", "e"] and [s["id"] for s in scripts] == ["a", "e"]
+    assert written == [2] and audit["llm_calls"] == 3
+    assert audit["backfill"] == {"missing": 1, "reserve": 2, "selected": ["e"], "produced": 1}
+
+
+def test_failed_backfill_keeps_the_issues_that_passed(monkeypatch):
+    from polymarket_shorts.highlights import HighlightError
+
+    def fail(rows):
+        raise HighlightError("선정 개수 또는 형식이 잘못됐습니다")
+    (issues, scripts), audit, _, written = _backfill_case(monkeypatch, fail)
+    assert [issue["id"] for issue in issues] == ["a"] and written == []
+    assert audit["backfill"]["error"] == "선정 개수 또는 형식이 잘못됐습니다"
+    # 채운 이슈가 다시 검증에서 빠지면 그대로 통과한 것만 남는다.
+    (issues, _), audit, _, _ = _backfill_case(monkeypatch, lambda rows: [rows[1]])
+    assert [issue["id"] for issue in issues] == ["a"] and audit["backfill"]["produced"] == 0

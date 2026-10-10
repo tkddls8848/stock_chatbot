@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 
 from .client import PolymarketWebClient, SourceError
 from .config import Settings
-from .highlights import select_issues, write_issues
+from .highlights import HighlightError, select_issues, write_issues
+from .llm import LLMError
 from .markets import _topic, shortlist, prepare_issue
 from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
@@ -118,7 +119,10 @@ def prune_old_days(settings: Settings, today: date) -> list[Path]:
 
 
 def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:
-    """최대 두 번의 모델 호출만 쓰고, 제작 판단의 원자료를 렌더 전에 보존한다."""
+    """선정·원고 단계마다 모델을 한 번씩 부르고, 원고 검증에서 빠진 이슈가 있으면 한 번 더 골라 채운다.
+
+    제작 판단의 원자료는 렌더 전에 보존한다.
+    """
     client = PolymarketWebClient(settings.web_url)
     snapshot = client.snapshot()
     candidates, audit = shortlist(snapshot)
@@ -138,20 +142,15 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         audit["requests"] = dict(client.requests)
         write_json(day_dir / "selection.json", audit)
     save()
-    try:
-        if candidates:
-            audit["llm_calls"] += 1
-            save()
-        selected = select_issues(candidates, settings, rejected=audit["rejected"])
-        audit["selected"] = selected
-        save()
+    gathered: list[dict] = []
+    pool: list[dict] = []
+    reference = datetime.fromisoformat(snapshot.summary["generated_at"])
+
+    def gather(selected: list[dict]) -> list[dict]:
+        """선정 이슈의 개별 질문·관련 기사를 읽는다. 잘못된 개별 가격은 그 이슈만 뺀다."""
         issues = []
-        # 우리가 모은 시장 뉴스는 선정이 끝난 뒤 한 번만 읽는다 — 고를 이슈가 없으면 읽을 이유가 없다.
-        pool = client.market_news() if selected else []
-        reference = datetime.fromisoformat(snapshot.summary["generated_at"])
         for candidate in selected:
             detail = client.detail(candidate["id"], snapshot.generation_id)
-            # 잘못된 개별 가격은 해당 이슈만 제외한다. 세대 불일치는 위 detail에서 중단한다.
             try:
                 issue = prepare_issue(candidate, detail, [])
             except SourceError as exc:
@@ -160,24 +159,46 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
             issue["news"] = client.news(candidate["title"], reference=snapshot.summary["generated_at"])
             issue["market_news"] = related_news(issue, pool, reference)
             issues.append(issue)
+        gathered.extend(issues)
         audit["market_news"] = {"pool": len(pool),
-                                "matched": {issue["id"]: len(issue["market_news"]) for issue in issues}}
+                                "matched": {issue["id"]: len(issue["market_news"]) for issue in gathered}}
+        # 세대가 바뀌었으면 원고를 쓰기 전에 멈춘다.
         client.confirm(snapshot.generation_id)
-        write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": issues})
-        if not issues:
-            audit["status"] = "no_suitable_issues"
-            save()
-            return None
+        write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": gathered})
+        return issues
+
+    def write(issues: list[dict], total: int) -> tuple[list[dict], list[dict]]:
+        """원고를 쓰고 검증을 통과한 이슈와 원고만 돌려준다. 분량은 영상 전체 이슈 수(`total`)로 나눈다."""
         audit["llm_calls"] += 1
         save()
         failures: dict[str, list[str]] = {}
-        scripts = write_issues(issues, settings, failures=failures)
+        scripts = write_issues(issues, settings, failures=failures, total=total)
         written = {script["id"] for script in scripts}
         for issue in issues:
             if issue["id"] not in written:
                 audit["rejected"].append({"id": issue["id"], "reason": "원고 검증 실패(교정 후)",
                                           "errors": failures.get(str(issue["id"]), [])})
-        issues = [issue for issue in issues if issue["id"] in written]
+        return [issue for issue in issues if issue["id"] in written], scripts
+
+    try:
+        if candidates:
+            audit["llm_calls"] += 1
+            save()
+        selected = select_issues(candidates, settings, rejected=audit["rejected"])
+        audit["selected"] = selected
+        save()
+        # 우리가 모은 시장 뉴스는 선정이 끝난 뒤 한 번만 읽는다 — 고를 이슈가 없으면 읽을 이유가 없다.
+        pool = client.market_news() if selected else []
+        issues = gather(selected)
+        if not issues:
+            audit["status"] = "no_suitable_issues"
+            save()
+            return None
+        planned = len(issues)
+        issues, scripts = write(issues, planned)
+        if len(issues) < planned:
+            issues, scripts = _backfill(issues, scripts, planned - len(issues), candidates, settings, audit,
+                                        save, gather, write)
         scenario = build_scenario(snapshot, issues, scripts, production_date=today)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
         save()
@@ -190,6 +211,40 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
     finally:
         save()
 
+
+
+def _backfill(issues: list[dict], scripts: list[dict], missing: int, candidates: list[dict], settings: Settings,
+              audit: dict, save, gather, write) -> tuple[list[dict], list[dict]]:
+    """원고 검증에서 빠진 수만큼 남은 후보에서 다시 골라 원고를 쓴다(한 번만, 운영자 지시 2026-10-10).
+
+    빠진 이슈를 채우지 않아 10/9·10/10 영상이 이슈 하나로 끝났다. 이미 고른·뺀 이슈와 남은 이슈의 분야·주제는
+    후보에서 뺀다. 채우기가 실패해도 이미 통과한 이슈로 영상을 만든다.
+    """
+    tried = {str(row["id"]) for row in (*audit["selected"], *audit["rejected"])}
+    sectors = {issue["sector"] for issue in issues}
+    topics = {issue.get("topic_key") for issue in issues}
+    reserve = [row for row in candidates if str(row["id"]) not in tried
+               and row["sector"] not in sectors and row.get("topic_key") not in topics]
+    record = audit["backfill"] = {"missing": missing, "reserve": len(reserve), "selected": [], "produced": 0}
+    if not reserve:
+        return issues, scripts
+    try:
+        audit["llm_calls"] += 1
+        save()
+        extra = select_issues(reserve, settings, rejected=audit["rejected"], maximum=missing)
+        record["selected"] = [row["id"] for row in extra]
+        audit["selected"] = audit["selected"] + extra
+        save()
+        added = gather(extra)
+        if not added:
+            return issues, scripts
+        added, more = write(added, len(issues) + len(added))
+    except (HighlightError, LLMError, SourceError) as exc:
+        record["error"] = str(exc)
+        logger.warning("빈자리 채우기 실패, 통과한 이슈로 만든다: %s", exc)
+        return issues, scripts
+    record["produced"] = len(added)
+    return issues + added, scripts + more
 
 
 def produce_revision(
