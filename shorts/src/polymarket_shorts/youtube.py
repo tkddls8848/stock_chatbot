@@ -6,9 +6,11 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import secrets
+import sys
 import time
 from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
@@ -311,23 +313,34 @@ AUTH_PORT = 8765
 AUTH_REDIRECT = f"http://127.0.0.1:{AUTH_PORT}/"
 
 
+def _headless() -> bool:
+    """화면이 없는 리눅스(운영 서버 SSH 등)인가. Windows·macOS는 늘 브라우저를 연다."""
+    return sys.platform.startswith("linux") and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY"))
+
+
 def authorize(settings: Settings) -> str:
-    """고정 루프백 + state + PKCE. 토큰은 호출자가 화면에만 출력한다."""
+    """고정 루프백 + state + PKCE. 브라우저가 없으면 승인 뒤 주소를 붙여 넣는다. 토큰은 호출자가 화면에만 출력한다."""
     if not settings.google_client_id or not settings.google_client_secret:
         raise ReviewError(".env에 GOOGLE_CLIENT_ID와 GOOGLE_CLIENT_SECRET을 설정하세요")
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     result = {}
 
+    def _accept(address: str) -> bool:
+        """루프백으로 받은 경로든 붙여 넣은 전체 주소든, state가 맞을 때만 승인 코드를 받는다."""
+        parts = urlsplit(address)
+        query = parse_qs(parts.query)
+        valid = parts.path == "/" and secrets.compare_digest(query.get("state", [""])[0], state)
+        if valid:
+            result.update(code=query.get("code", [""])[0], error=bool(query.get("error")))
+        return valid
+
     class Callback(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_GET(self):
-            query = parse_qs(urlsplit(self.path).query)
-            valid = urlsplit(self.path).path == "/" and secrets.compare_digest(query.get("state", [""])[0], state)
-            if valid:
-                result.update(code=query.get("code", [""])[0], error=bool(query.get("error")))
+            valid = _accept(self.path)
             self.send_response(200 if valid else 400)
             self.end_headers()
             self.wfile.write(b"Return to your terminal." if valid else b"Invalid callback.")
@@ -343,11 +356,17 @@ def authorize(settings: Settings) -> str:
             "response_type": "code", "scope": SCOPE, "access_type": "offline", "prompt": "consent",
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
         })
-        if not webbrowser.open(url):
-            raise ReviewError("승인 브라우저를 열 수 없습니다. 운영자 PC에서 실행하세요")
-        deadline = time.monotonic() + 300
-        while not result and time.monotonic() < deadline:
-            server.handle_request()
+        if _headless() or not webbrowser.open(url):
+            # 서버처럼 브라우저가 없는 곳: 다른 기기의 브라우저에서 승인하면 127.0.0.1:8765로 돌아가며
+            # "연결할 수 없음"이 뜬다. 그 주소창의 전체 주소에 승인 코드가 있으므로 붙여 넣게 한다.
+            print("아래 주소를 브라우저에서 열어 채널 소유자 계정으로 승인하세요:\n" + url, file=sys.stderr)
+            print("승인 뒤 열리지 않는 127.0.0.1:8765 페이지의 주소창 전체를 붙여 넣으세요:", file=sys.stderr)
+            if not _accept(input().strip()):
+                raise ReviewError("붙여 넣은 주소가 이번 승인 요청과 맞지 않습니다. 다시 실행하세요")
+        else:
+            deadline = time.monotonic() + 300
+            while not result and time.monotonic() < deadline:
+                server.handle_request()
     if not result.get("code") or result.get("error"):
         raise ReviewError("YouTube 승인이 거부되었거나 5분 안에 완료되지 않았습니다")
     token = _token(settings, grant_type="authorization_code", code=result["code"],

@@ -237,6 +237,7 @@ def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
         return True
 
     monkeypatch.setattr(youtube, "HTTPServer", Server)
+    monkeypatch.setattr(youtube, "_headless", lambda: False)
     monkeypatch.setattr(youtube.webbrowser, "open", browser)
     mock = http(monkeypatch, response(payload={"refresh_token": "refresh-result"}))
     assert youtube.authorize(settings) == "refresh-result"
@@ -337,3 +338,37 @@ def test_latest_published_day_wins_and_unuploaded_days_are_skipped(tmp_path):
     saved = json.loads((tmp_path / "public" / "shorts" / "ko.json").read_text(encoding="utf-8"))
     assert saved["date"] == "2026-10-08" and saved["title"] == ""
     assert youtube.publish_latest(tmp_path / "missing", settings) is None
+
+
+def test_headless_server_takes_the_pasted_redirect_address(prepared, monkeypatch):
+    """서버(브라우저 없음)에서는 승인 주소를 출력하고, 승인 뒤 주소창의 전체 주소를 붙여 넣어 받는다."""
+    _, settings = prepared
+    printed = []
+
+    class Server:
+        def __init__(self, address, handler):
+            assert address == ("127.0.0.1", youtube.AUTH_PORT)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def handle_request(self):
+            raise AssertionError("붙여 넣기 경로는 루프백을 기다리지 않는다")
+
+    def paste():
+        state = parse_qs(urlsplit(printed[0].splitlines()[-1]).query)["state"][0]
+        return f"http://127.0.0.1:8765/?state={state}&code=pasted&scope=x"
+
+    monkeypatch.setattr(youtube, "HTTPServer", Server)
+    monkeypatch.setattr(youtube, "_headless", lambda: True)
+    monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+    monkeypatch.setattr("builtins.input", paste)
+    mock = http(monkeypatch, response(payload={"refresh_token": "refresh-result"}))
+    assert youtube.authorize(settings) == "refresh-result"
+    assert mock.call_args.kwargs["data"]["code"] == "pasted"
+    monkeypatch.setattr("builtins.input", lambda: "http://127.0.0.1:8765/?state=wrong&code=bad")
+    with pytest.raises(youtube.ReviewError, match="맞지 않습니다"):
+        youtube.authorize(settings)
