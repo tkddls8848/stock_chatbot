@@ -236,13 +236,15 @@ $env:PYTHONPATH='shorts/src'
 
 ## YouTube 업로드 설정 (최초 한 번)
 
-1. [Google Cloud Console](https://console.cloud.google.com/)에서 프로젝트를 만들고
+웹 로그인과 **같은 Google OAuth 클라이언트(웹 애플리케이션)**를 씁니다(운영자 결정 2026-10-10 — 따로 두던
+데스크톱 앱 클라이언트를 없앴다). 업로드 권한은 클라이언트 유형이 아니라 승인 때 요청하는 범위(`youtube.upload`)로 받습니다.
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 웹 로그인 클라이언트가 있는 프로젝트를 고르고
    API 및 서비스 → 라이브러리에서 **YouTube Data API v3**를 사용 설정합니다.
-2. Google Auth Platform의 브랜딩·대상(또는 OAuth 동의 화면)을 설정합니다.
-   외부 앱을 테스트 상태로 만들고 테스트 사용자에 업로드할 채널 소유자의 Google 계정을 추가합니다.
-3. 클라이언트(또는 사용자 인증 정보 → OAuth 클라이언트 ID 만들기)에서
-   **데스크톱 앱**을 선택합니다. 발급된 ID와 secret을 운영자 PC의 저장소 루트 `.env`에
-   `SHORTS_YOUTUBE_CLIENT_ID`, `SHORTS_YOUTUBE_CLIENT_SECRET`으로 넣습니다.
+2. Google Auth Platform → 대상에서 앱을 **프로덕션으로 게시**합니다(테스트 상태면 아래 7일 만료).
+3. 그 웹 애플리케이션 클라이언트의 승인된 리디렉션 URI에 `http://127.0.0.1:8765/`를 추가합니다
+   (`https://nunchi.live/auth/google/callback`은 웹 로그인용으로 이미 있습니다). 운영자 PC의 저장소 루트
+   `.env`에 서버와 같은 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`을 넣습니다.
 4. 저장소 루트에서 쇼츠 패키지가 설치된 Python으로 아래 명령을 실행하고 브라우저에서
    해당 YouTube 채널 계정으로 승인합니다. 서버에서 실행하지 않습니다.
 
@@ -251,10 +253,11 @@ $env:PYTHONPATH='shorts/src'
    python -m polymarket_shorts.cli --youtube-auth
    ```
 
-   127.0.0.1 임의 포트로 승인 결과를 받으며 PKCE와 state를 검사합니다.
+   고정 주소 `http://127.0.0.1:8765/`로 승인 결과를 받으며 PKCE와 state를 검사합니다. 웹 애플리케이션
+   클라이언트는 등록한 주소만 받으므로 포트를 바꾸면 `redirect_uri_mismatch`가 납니다.
    화면에 출력된 `SHORTS_YOUTUBE_REFRESH_TOKEN=...`을 복사합니다. 도구는 토큰을
    파일로 저장하지 않습니다. 터미널 출력도 외부에 공유하지 마세요.
-5. 서버의 `/srv/stock-chatbot/.env`에 같은 ID·secret과 refresh token을 넣습니다.
+5. 서버의 `/srv/stock-chatbot/.env`에 refresh token을 넣습니다(ID·secret은 웹 로그인 값 그대로).
    공개 범위(`youtube_privacy=public`)와 카테고리(`youtube_category_id=25`)는 `config.py` 상수입니다.
    **테스트 상태 앱의 refresh token은 발급 7일 뒤 끊깁니다** — 2026-09-27에 받은 토큰이 10-04에 끊겨
    나흘 동안 영상만 만들고 올리지 못했습니다. 지속 운영하려면 Google Auth Platform → 대상에서 앱을
@@ -495,36 +498,6 @@ Noto Sans CJK KR Bold 50px(`render.CAPTION_RENDER_SIZE`) 흰 글씨를 **상자 
 손상됐을 때도 경고를 기록하고 단색 배경으로 진행합니다.
 HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합니다.
 
-### 선택 기능: Seedance 모션 배경
-
-`config.py`의 `generated_clips=True`와 `.env`의 `SHORTS_VIDEO_API_KEY`(fal 키)가 있으면 이미 만든
-flux 이슈 PNG를 무음 영상으로 확장합니다. 기본값은 꺼짐이며 키가 비어 있거나 성공한
-클립이 없으면 정지 PNG를 같은 Blender VSE 경로로 합성합니다.
-`visuals_enabled`와 `generated_backgrounds`도 켜져 있어야 새 이슈 PNG를
-만들 수 있습니다. 저장된 기본 배경은 영상 생성에 보내지 않습니다.
-
-- 모델: `video_model=bytedance/seedance-2.0/fast/image-to-video`.
-- 길이: `clip_seconds=8`(정수 4~15), 720p·9:16·무음.
-- 최대 `max_groups`개(5개)를 동시에 제출하고 전체 10분까지만 기다립니다.
-  다운로드·길이·해상도·디코딩 검증 실패와 시간 초과는 경고를 남기고 PNG를 사용합니다.
-- `backgrounds/<이슈 해시>.mp4`를 캐시합니다. 도입은 따로 그린 정지 그림을 쓰고(클립 없음) 마무리는
-  정지 배경입니다. 자연어 수정본은 원본 폴더의 캐시를 재사용합니다.
-- 클립은 VSE movie 스트립으로 장면 끝까지 반복하고, 비트 PNG와 자막을 위에 얹어 한 번 인코딩합니다.
-  정지 구간만 전체 영상 시각의 드리프트를 적용합니다. 음악은 추가하지 않습니다.
-  업로드는 위 검수 완료 절차를 따릅니다.
-
-8초 × 5개는 새 이슈 PNG 5장에 대해 최대 40초 분량의 유료 생성입니다. 계획서의
-fast 720p 추정 기준은 하루 약 $9.7, 30일 약 $290이며 고정 요금 상한이 아닙니다.
-길이를 늘리거나 이슈 묘사를 바꾸어 새 해시를 만들면 비용도 늘어납니다. 시간 초과는
-원격 작업의 취소·환불을 보장하지 않습니다. 활성화 전에
-[fal 모델 문서와 현재 요금](https://fal.ai/models/bytedance/seedance-2.0/fast/image-to-video)을 확인하세요.
-입력 형식과 Queue API 근거는 `clips.py` 주석에 있습니다.
-
-클립을 사용한 검수 원고에는 합성 배경 개수와 YouTube 변경·합성 콘텐츠 표시 안내가
-추가됩니다. 글자·인물·급격한 밝기 변화를 직접 확인하고 문제가 있는 장면은
-`--edit "2번 장면 배경을 정지로"`로 해당 장면만 기존 PNG로 돌릴 수 있습니다.
-systemd 실행 상한은 40분이며 메모리 제한은 768M 그대로입니다. 실제 API 생성 품질,
-운영 서버의 최대 메모리와 40분 내 완료 여부는 키 설정 후 별도로 실측해야 합니다.
 
 - 1분을 넘는 쇼츠는 활성 저작권 클레임이 있으면 전 세계 차단될 수 있으므로 기본 영상에는 배경음악을 넣지 않습니다.
 - `storage/`(산출물·`storage/shorts/state/`), API 비밀값은 커밋하지 않습니다.

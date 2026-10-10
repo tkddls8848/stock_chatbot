@@ -443,7 +443,9 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   알린다(수동 브리핑과 같은 방식). 로컬 브라우저 검수 패널(`--browser`)과 대화형
   검수(`--interactive`)는 개발용으로 남기되 운영 절차의 기준은 텔레그램이다.
   기본은 검수하지 않은 영상을 업로드하지 않는다. `/shorts done` 뒤에 검수 완료본을 업로드하며
-  공개 범위는 `config.Settings.youtube_privacy`(현재 `public`)다. 같은 날짜·수정본의
+  공개 범위는 `config.Settings.youtube_privacy`(현재 `public`)다.
+  업로드 OAuth는 웹 로그인과 같은 클라이언트(`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`, 웹 애플리케이션 유형)를 쓰고,
+  운영자 PC의 `--youtube-auth`는 고정 루프백 `http://127.0.0.1:8765/`로 승인을 받는다(운영자 결정 2026-10-10). 같은 날짜·수정본의
   업로드 이력을 원자적으로 보존해 중복을 막고, 실패하면 `/shorts upload`로 재시도한다.
   **제작 직후 업로드하지 않고 시나리오를 먼저 텔레그램으로 보낸다**(운영자 결정 2026-10-06).
   `auto_publish`(현재 켜짐)이면 원고 전체를 성공적으로 전달한 뒤

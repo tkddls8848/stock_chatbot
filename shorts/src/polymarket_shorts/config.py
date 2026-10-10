@@ -13,7 +13,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_DIR.parent / ".env")
 
 # 설정 저장 방침은 봇·웹과 같다(`services/telegram_bot/core/config.py` 머리말). 루트 `.env`에는
-# 비밀값(Cloudflare·fal·YouTube 자격증명)과 저장 경로(`STORAGE_DIR`)만 두고, 운영자가 조정하는
+# 비밀값(Cloudflare·Google 자격증명, YouTube 갱신 토큰)과 저장 경로(`STORAGE_DIR`)만 두고, 운영자가 조정하는
 # 값(모델·음성·공개 범위·자동 승인 등)은 아래 `Settings`의 기본값으로 둔다 — 바꾸면 git에 남는다.
 
 
@@ -83,13 +83,10 @@ class Settings:
     vision_model: str = "@cf/llava-hf/llava-1.5-7b-hf"
     # 최근 며칠 안에 다룬 이벤트·주제는 후보에서 뺀다(매일 같은 이슈 반복 방지).
     repeat_days: int = 7
-    # 만든 이슈 PNG를 fal Seedance 무음 클립으로 확장한다. 키(`SHORTS_VIDEO_API_KEY`)가 비면 정지 유지.
-    generated_clips: bool = False
-    video_model: str = "bytedance/seedance-2.0/fast/image-to-video"
-    video_api_key: str = field(default="", repr=False)
-    clip_seconds: int = 8
-    youtube_client_id: str = field(default="", repr=False)
-    youtube_client_secret: str = field(default="", repr=False)
+    # 웹 로그인과 같은 Google OAuth 클라이언트(웹 애플리케이션)다. YouTube 업로드 권한은 클라이언트가 아니라
+    # 승인 때 요청하는 범위로 받는다 — 프로젝트에 YouTube Data API v3만 켜져 있으면 된다.
+    google_client_id: str = field(default="", repr=False)
+    google_client_secret: str = field(default="", repr=False)
     youtube_refresh_token: str = field(default="", repr=False)
     youtube_privacy: str = "public"
     youtube_category_id: str = "25"
@@ -105,8 +102,6 @@ class Settings:
     def __post_init__(self) -> None:
         if type(self.review_timeout_minutes) is not int or not 1 <= self.review_timeout_minutes <= 1440:
             raise ValueError("review_timeout_minutes must be an integer from 1 to 1440")
-        if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
-            raise ValueError("clip_seconds must be an integer from 4 to 15")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -120,8 +115,7 @@ class Settings:
             blender_bin=_media_binary("blender"),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip(),
-            video_api_key=os.getenv("SHORTS_VIDEO_API_KEY", "").strip(),
-            youtube_client_id=os.getenv("SHORTS_YOUTUBE_CLIENT_ID", "").strip(),
-            youtube_client_secret=os.getenv("SHORTS_YOUTUBE_CLIENT_SECRET", "").strip(),
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
+            google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
             youtube_refresh_token=os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "").strip(),
         )

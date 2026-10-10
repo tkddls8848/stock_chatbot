@@ -355,7 +355,7 @@ def test_a_choice_is_drawn_as_a_name_a_big_probability_and_a_gauge(tmp_path, cjk
                   options=(("9월 WTI 90달러 이하", "99.95%", .9995),
                            ("9월 WTI 100달러 이상", "22%", .22)))
 
-    render_frame(scene, target, font_path=cjk_font, index=2, total=4, transparent=True)
+    render_frame(scene, target, font_path=cjk_font, index=2, total=4)
 
     left = render.SAFE_LEFT + render.CARD_PAD
     fill = render._rgb(render._COLORS["cyan"])
@@ -377,8 +377,8 @@ def test_pending_choices_keep_a_dim_name_and_an_empty_gauge_so_nothing_jumps(tmp
                   options=(("첫 선택지", "40%", .4), ("둘째 선택지", "60%", .6)))
     one, two = tmp_path / "one.png", tmp_path / "two.png"
 
-    render_frame(scene, one, font_path=cjk_font, index=2, total=4, shown=1, transparent=True)
-    render_frame(scene, two, font_path=cjk_font, index=2, total=4, shown=2, transparent=True)
+    render_frame(scene, one, font_path=cjk_font, index=2, total=4, shown=1)
+    render_frame(scene, two, font_path=cjk_font, index=2, total=4, shown=2)
 
     def rows(path, colours):
         with Image.open(path) as image:
@@ -494,3 +494,11 @@ def test_captions_have_no_box_and_light_up_only_the_numbers(tmp_path, cjk_font):
 def test_captions_are_centered_on_the_screen():
     """자막 상자의 가운데가 화면 가운데다 — 왼쪽 여백만 좁으면 자막이 왼쪽으로 쏠린다."""
     assert render.CAPTION_MARGIN_L == render.CAPTION_MARGIN_R
+
+
+def test_missing_blender_is_a_clear_render_error(tmp_path):
+    from polymarket_shorts import blender_render
+    with pytest.raises(render.RenderError, match="Blender를 실행할 수 없습니다"):
+        blender_render.compose(images=[], subtitles=[], audio_path=tmp_path / "a.wav",
+                               output_path=tmp_path / "out.mp4", work_dir=tmp_path, duration=3,
+                               blender_bin="definitely-not-blender")

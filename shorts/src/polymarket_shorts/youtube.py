@@ -56,8 +56,8 @@ def _json(response) -> dict:
 
 def _token(settings: Settings, **grant) -> dict:
     response = _request("POST", TOKEN_URL, data={
-        "client_id": settings.youtube_client_id,
-        "client_secret": settings.youtube_client_secret, **grant,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret, **grant,
     })
     # 갱신 토큰이 끊기면 HTTP 400만으로는 무엇을 할지 모른다 — 2026-10-04부터 나흘 동안 "요청 거부(HTTP 400)"만
     # 남기고 업로드가 멈췄다. 오류 본문의 `error` 코드만 읽는다(자격값은 성공 응답에만 있다).
@@ -246,7 +246,7 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
             problem = _shorts_problem(video, settings)
             if problem:
                 return {**empty, "status": "not_shorts", "reason": problem}
-            if not all((settings.youtube_client_id, settings.youtube_client_secret, settings.youtube_refresh_token)):
+            if not all((settings.google_client_id, settings.google_client_secret, settings.youtube_refresh_token)):
                 return {**empty, "status": "no_credentials"}
             token = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token).get("access_token")
             if not isinstance(token, str) or not token:
@@ -305,10 +305,16 @@ def publish_latest(base: Path, settings: Settings) -> dict | None:
     return None
 
 
+# 승인 결과를 받는 운영자 PC의 루프백 주소. 웹 애플리케이션 클라이언트는 등록한 주소만 받으므로(임의 포트는
+# 데스크톱 앱 유형만 허용) 포트를 고정하고 이 주소를 웹 로그인 클라이언트의 리디렉션 URI에 함께 등록한다.
+AUTH_PORT = 8765
+AUTH_REDIRECT = f"http://127.0.0.1:{AUTH_PORT}/"
+
+
 def authorize(settings: Settings) -> str:
-    """데스크톱 루프백 + state + PKCE. 토큰은 호출자가 화면에만 출력한다."""
-    if not settings.youtube_client_id or not settings.youtube_client_secret:
-        raise ReviewError(".env에 SHORTS_YOUTUBE_CLIENT_ID와 SHORTS_YOUTUBE_CLIENT_SECRET을 설정하세요")
+    """고정 루프백 + state + PKCE. 토큰은 호출자가 화면에만 출력한다."""
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise ReviewError(".env에 GOOGLE_CLIENT_ID와 GOOGLE_CLIENT_SECRET을 설정하세요")
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     result = {}
@@ -326,11 +332,14 @@ def authorize(settings: Settings) -> str:
             self.end_headers()
             self.wfile.write(b"Return to your terminal." if valid else b"Invalid callback.")
 
-    with HTTPServer(("127.0.0.1", 0), Callback) as server:
+    try:
+        server = HTTPServer(("127.0.0.1", AUTH_PORT), Callback)
+    except OSError as exc:
+        raise ReviewError(f"127.0.0.1:{AUTH_PORT} 포트를 쓰는 프로그램을 닫고 다시 실행하세요") from exc
+    with server:
         server.timeout = 1
-        redirect = f"http://127.0.0.1:{server.server_port}/"
         url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
-            "client_id": settings.youtube_client_id, "redirect_uri": redirect,
+            "client_id": settings.google_client_id, "redirect_uri": AUTH_REDIRECT,
             "response_type": "code", "scope": SCOPE, "access_type": "offline", "prompt": "consent",
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
         })
@@ -342,7 +351,7 @@ def authorize(settings: Settings) -> str:
     if not result.get("code") or result.get("error"):
         raise ReviewError("YouTube 승인이 거부되었거나 5분 안에 완료되지 않았습니다")
     token = _token(settings, grant_type="authorization_code", code=result["code"],
-                   redirect_uri=redirect, code_verifier=verifier).get("refresh_token")
+                   redirect_uri=AUTH_REDIRECT, code_verifier=verifier).get("refresh_token")
     if not isinstance(token, str) or not token:
         raise ReviewError("리프레시 토큰이 없습니다. 앱 승인을 해제하고 다시 승인하세요")
     return token

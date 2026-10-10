@@ -25,7 +25,7 @@ def _shorts_ok(monkeypatch):
 @pytest.fixture
 def prepared(tmp_path, monkeypatch):
     settings = replace(Settings.from_env(), output_dir=tmp_path,
-                       youtube_client_id="client", youtube_client_secret="secret",
+                       google_client_id="client", google_client_secret="secret",
                        youtube_refresh_token="refresh",
                        # 운영 기본값(youtube_privacy="public")에 기대지 않는다.
                        youtube_privacy="private")
@@ -211,10 +211,8 @@ def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
     captured = {}
 
     class Server:
-        server_port = 12345
-
         def __init__(self, address, handler):
-            assert address == ("127.0.0.1", 0)
+            assert address == ("127.0.0.1", youtube.AUTH_PORT)
             self.handler = handler
 
         def __enter__(self):
@@ -245,7 +243,9 @@ def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
     assert captured["scope"] == [youtube.SCOPE]
     assert captured["access_type"] == ["offline"] and captured["prompt"] == ["consent"]
     data = mock.call_args.kwargs["data"]
-    assert data["redirect_uri"] == "http://127.0.0.1:12345/" and data["code"] == "code"
+    # 웹 클라이언트에 등록한 고정 주소와 같아야 한다(임의 포트는 redirect_uri_mismatch).
+    assert captured["redirect_uri"] == ["http://127.0.0.1:8765/"]
+    assert data["redirect_uri"] == "http://127.0.0.1:8765/" and data["code"] == "code"
     challenge = base64.urlsafe_b64encode(hashlib.sha256(data["code_verifier"].encode()).digest()).decode().rstrip("=")
     assert captured["code_challenge"] == [challenge]
 

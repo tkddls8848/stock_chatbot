@@ -41,28 +41,6 @@ def render(manifest):
     def frame(seconds):
         return 1 + round(seconds * fps)
 
-    for index, row in enumerate(manifest["movies"]):
-        start, end = frame(row["start"]), frame(row["start"] + row["duration"])
-        cursor = start
-        while cursor < end:
-            movie = strips.new_movie(f"movie-{index}-{cursor}", row["path"], channel=1,
-                                     frame_start=cursor, fit_method="STRETCH")
-            length = movie.frame_final_duration
-            if movie.fps != fps:
-                # 입력이 24/25fps여도 재생 속도를 바꾸지 않는다.
-                last = movie.retiming_keys.add(timeline_frame=cursor + length)
-                length = max(1, round(length * fps / movie.fps))
-                last.timeline_frame = cursor + length
-            movie.frame_final_end = min(cursor + length, end)
-            # 색 곱과 밝기 오프셋은 이전 배경 필터와 같은 sRGB 공간에서 적용한다.
-            modifier = movie.modifiers.new("tone", "CURVES")
-            mapping = modifier.curve_mapping
-            for curve, multiply in zip(mapping.curves[:3], row["multiply"]):
-                curve.points[0].location = (0, row["brightness"])
-                curve.points[-1].location = (1, multiply + row["brightness"])
-            mapping.update()
-            cursor += length
-
     for index, row in enumerate(manifest["images"]):
         start, end = frame(row["start"]), frame(row["start"] + row["duration"])
         if end <= start:

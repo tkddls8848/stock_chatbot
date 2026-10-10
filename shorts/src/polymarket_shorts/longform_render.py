@@ -374,7 +374,7 @@ def render_longform(longform: Longform, *, audio_path: Path, segment_words: Sequ
             caption_frame(phrase.text, caption, font_path=font_path)
             subtitles.append({"start": phrase.start, "end": phrase.end, "path": str(caption.resolve())})
             captions.append({"start": round(phrase.start, 3), "end": round(phrase.end, 3), "text": phrase.text})
-    compose(images=images, movies=[], subtitles=subtitles, audio_path=audio_path, output_path=output_path,
+    compose(images=images, subtitles=subtitles, audio_path=audio_path, output_path=output_path,
             work_dir=work_dir, duration=duration, blender_bin=blender_bin, size=(WIDTH, HEIGHT))
     output_path.with_suffix(".timeline.json").write_text(
         json.dumps({"screens": timeline, "captions": captions}, ensure_ascii=False, indent=2),

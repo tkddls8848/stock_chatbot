@@ -64,7 +64,6 @@ class Scene:
     source_url: str = ""
     event_id: str = ""
     market_ids: tuple[str, ...] = ()
-    background: str = ""
     # 내레이션에서 확률을 말하기 시작하는 위치(0~1). 0이면 예전 고정 시점을 쓴다.
     options_at: float = 0.0
 

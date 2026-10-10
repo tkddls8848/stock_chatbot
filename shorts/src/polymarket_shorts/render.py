@@ -238,15 +238,14 @@ def _backdrop(path: Path | None, index: int, total: int, accent: str) -> Image.I
 
 
 @lru_cache(maxsize=16)
-def _atmosphere(accent: str, transparent: bool) -> Image.Image:
-    """글자 뒤의 어둠과 머리말 뒤에 고이는 빛. 움직이는 배경 위(`transparent`)에서는 조금 더 어둡게 깐다."""
+def _atmosphere(accent: str) -> Image.Image:
+    """글자 뒤의 어둠과 머리말 뒤에 고이는 빛."""
     layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
-    lift = .12 if transparent else 0.0
     for (top, start), (bottom, stop) in zip(_SCRIM, _SCRIM[1:]):
         for y in range(top, min(bottom, HEIGHT)):
             share = (y - top) / max(1, bottom - top)
-            alpha = min(1.0, start + (stop - start) * share + lift)
+            alpha = min(1.0, start + (stop - start) * share)
             draw.line((0, y, WIDTH, y), fill=(*_SCRIM_RGB, round(255 * alpha)))
     glow = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse((10, -110, WIDTH // 4 - 10, 120), fill=(*_rgb(accent), 120))
@@ -534,7 +533,6 @@ def render_list_frame(
     progress: float,
     shown: int | None,
     background_path: Path | None = None,
-    transparent: bool = False,
     index: int = 2,
     total: int = 5,
 ) -> None:
@@ -609,7 +607,6 @@ def render_frame(
     total: int,
     background_path: Path | None = None,
     shown: int | None = None,
-    transparent: bool = False,
 ) -> None:
     chrome = _CHROME
     accent = _accent(scene)
@@ -963,7 +960,7 @@ def render_video(
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions, font_path=font_path)
-    images, movies, timeline = [], [], []
+    images, timeline = [], []
     selected = background_paths or tuple(None for _ in scenario.scenes)
     if len(selected) != len(scenario.scenes):
         raise RenderError("배경 수와 장면 수가 다릅니다")
@@ -974,18 +971,6 @@ def render_video(
         listed = scene.kind == "consensus"
         # 본론은 목록 한 장이다. 배경도 첫 질문의 것 하나로 둬 질문이 바뀔 때 화면이 갈리지 않는다.
         background = selected[body_start] if listed else selected[index - 1]
-        is_clip = background is not None and background.suffix.lower() == ".mp4"
-        if is_clip:
-            tone = _COLORS.get(scene.accent, _COLORS["gold"]).lstrip("#")
-            previous_movie = movies[-1] if movies else None
-            if listed and previous_movie and previous_movie["path"] == str(background.resolve()) \
-                    and abs(previous_movie["start"] + previous_movie["duration"] - cursor) < 1e-6:
-                previous_movie["duration"] += seconds
-            else:
-                movies.append({"path": str(background.resolve()), "start": cursor, "duration": seconds,
-                               "multiply": [1 - _TONE_STRENGTH + _TONE_STRENGTH * int(tone[n:n + 2], 16) / 255
-                                            for n in (0, 2, 4)],
-                               "brightness": (_BRIGHTNESS[index % len(_BRIGHTNESS)] - 1) * .2})
         beats = _beats(scene, seconds)
         if listed:
             active = index - 1 - body_start
@@ -1004,11 +989,11 @@ def render_video(
                 rows[active] = display_scene
                 render_list_frame(rows, frame, font_path=font_path, active=active,
                                   previous=active - 1 if active > 0 else None, progress=progress, shown=shown,
-                                  background_path=background, transparent=is_clip,
+                                  background_path=background,
                                   index=body_start + 1, total=len(scenario.scenes))
             else:
                 render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                             background_path=background, shown=shown, transparent=is_clip)
+                             background_path=background, shown=shown)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업·펼침은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가 머무는 구간이다.
             # 앞 장면과 제목이 같을 수 있으므로 장면 번호로 구분한다.
@@ -1032,7 +1017,7 @@ def render_video(
         caption = work_dir / f"caption-{number:03d}.png"
         _caption_frame(_caption_lines(draw, phrase.text, font), caption, font_path=font_path)
         subtitles.append({"start": phrase.start, "end": phrase.end, "path": str(caption.resolve())})
-    compose(images=images, movies=movies, subtitles=subtitles, audio_path=audio_path,
+    compose(images=images, subtitles=subtitles, audio_path=audio_path,
             output_path=output_path, work_dir=work_dir, duration=duration, blender_bin=blender_bin)
     output_path.with_suffix(".timeline.json").write_text(
         json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"

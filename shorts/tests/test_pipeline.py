@@ -171,7 +171,7 @@ def test_force_reproduction_selects_new_root_only_after_success(tmp_path, monkey
 
     day = date(2026, 10, 6)
     settings = replace(Settings.from_env(), output_dir=tmp_path, state_file=tmp_path / "state.json",
-                       visuals_enabled=False, generated_clips=False)
+                       visuals_enabled=False)
     root = tmp_path / day.isoformat()
     previous = root / "revisions" / "last-reviewed"
     previous.mkdir(parents=True)
@@ -183,7 +183,6 @@ def test_force_reproduction_selects_new_root_only_after_success(tmp_path, monkey
         Scene(kind="outro", title="마무리", kicker="마무리", body="안내", narration="마무리 안내"),
     ))
     monkeypatch.setattr(pipeline, "prepare_daily", lambda *args: scenario)
-    monkeypatch.setattr(pipeline, "clips_for", lambda scenes, backgrounds, settings: backgrounds)
     monkeypatch.setattr(pipeline, "synthesize", lambda *args, **kwargs: ())
     monkeypatch.setattr(pipeline, "probe_duration", lambda *args, **kwargs: 30)
     monkeypatch.setattr(pipeline, "find_font", lambda *args: None)
