@@ -19,6 +19,8 @@ PAGE_SIZE, MAX_PAGES, MAX_DETAILS, MAX_NEWS_ITEMS = 100, 100, 5, 3
 # 우리가 모은 시장 뉴스(공개 웹 `/api/search`)를 읽는 기간과 쪽수 상한. 검색은 한 쪽 20건이고
 # 사흘치가 실측 200건 안팎이다(2026-10-08: 이틀 152건). 상한을 넘으면 최신 쪽만 쓴다.
 MARKET_NEWS_DAYS, MAX_MARKET_NEWS_PAGES = 3, 20
+# 롱폼이 시장상황 보고서를 찾는 기간. 보고서는 시장마다 하루 한두 편 이상 나온다.
+REPORT_DAYS = 3
 
 
 class SourceError(RuntimeError):
@@ -186,3 +188,55 @@ class PolymarketWebClient:
         except (requests.RequestException, ElementTree.ParseError, ValueError) as exc:
             logger.warning("관련 뉴스 검색 미완료: %s", type(exc).__name__)
             return []
+
+    # ── 롱폼: 시장상황 보고서 ─────────────────────────────
+    # 봇이 발행한 시장상황 보고서도 공개 웹 `/api/search`에 `kind: report`로 실린다(`news.json`). 롱폼은 그
+    # 보고서 한 편과, 같은 시장의 그 구간 기사·일일 감성(`/api/market`)만 읽는다. 봇 파일을 직접 읽지 않는다.
+
+    def _search_rows(self, query: dict[str, Any], *, pages: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for page in range(1, pages + 1):
+            self.requests["market_news"] += 1
+            payload = self._get("api/search?" + urlencode({**query, "page": page}))
+            found = payload.get("results")
+            if not isinstance(found, list):
+                raise SourceError("뉴스 검색 응답에 results가 없습니다")
+            rows.extend(row for row in found if isinstance(row, dict))
+            if page >= int(payload.get("page_count") or 0):
+                break
+        return rows
+
+    def market_report(self, market: str, report_id: str = "") -> dict[str, Any]:
+        """그 시장의 가장 최근 시장상황 보고서. `report_id`를 주면 그 보고서다."""
+        rows = self._search_rows({"q": "시장상황 보고서", "market": market, "days": REPORT_DAYS},
+                                 pages=MAX_MARKET_NEWS_PAGES)
+        reports = [row for row in rows if row.get("kind") == "report" and str(row.get("text") or "").strip()
+                   and (not report_id or row.get("id") == report_id)]
+        if not reports:
+            raise SourceError(f"{market} 시장상황 보고서가 없습니다" + (f": {report_id}" if report_id else ""))
+        return max(reports, key=lambda row: str(row.get("published_at") or ""))
+
+    def report_news(self, market: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """보고서 구간 [start, end] 안에 발행된, 봇이 공개한 그 시장의 기사(보고서가 근거로 고른 기사)."""
+        days = max(1, min(30, (end.date() - start.date()).days + 1))
+        result = []
+        for row in self._search_rows({"market": market, "days": days}, pages=MAX_MARKET_NEWS_PAGES):
+            if row.get("kind") != "news" or not str(row.get("title") or "").strip():
+                continue
+            try:
+                published = datetime.fromisoformat(str(row.get("published_at") or ""))
+            except ValueError:
+                continue
+            if published.tzinfo is not None and start <= published <= end:
+                result.append(row)
+        return sorted(result, key=lambda row: row["published_at"], reverse=True)
+
+    def market_sentiment(self, market: str) -> list[dict[str, Any]]:
+        """`/api/market`의 그 시장 일일 감성(날짜·평균 감성 -1~1·기사 수·요약). 날짜 오름차순."""
+        self.requests["market_news"] += 1
+        daily = ((self._get("api/market").get("markets") or {}).get(market) or {}).get("daily")
+        if not isinstance(daily, list):
+            raise SourceError(f"{market} 일일 감성 자료가 없습니다")
+        rows = [row for row in daily if isinstance(row, dict) and isinstance(row.get("avg_sentiment"), (int, float))
+                and math.isfinite(row["avg_sentiment"]) and row.get("date")]
+        return sorted(rows, key=lambda row: str(row["date"]))

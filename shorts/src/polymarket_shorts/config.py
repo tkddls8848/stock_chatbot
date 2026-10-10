@@ -102,9 +102,6 @@ class Settings:
     # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
     auto_publish: bool = False
     review_timeout_minutes: int = 60
-    # 켜면 한국어판을 만든 뒤 같은 이슈로 영어판(원고·화면·음성·게시 문구)을 따로 만든다.
-    english_edition: bool = False
-    english_voice: str = "en-US-AriaNeural"
 
     @property
     def public_dir(self) -> Path:
@@ -131,8 +128,6 @@ class Settings:
             youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
             auto_publish=_bool("SHORTS_AUTO_PUBLISH", False),
             review_timeout_minutes=int(os.getenv("SHORTS_REVIEW_TIMEOUT_MINUTES", "60")),
-            english_edition=_bool("SHORTS_ENGLISH_EDITION", False),
-            english_voice=os.getenv("SHORTS_EN_TTS_VOICE", "en-US-AriaNeural").strip(),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
             editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),

@@ -6,7 +6,6 @@
 
 import pytest
 
-from polymarket_shorts import english
 from polymarket_shorts.highlights import HighlightError, _shared_numbers, _translation
 
 EWY = ["Will South Korea ETF (EWY) hit (LOW) $186 Week of September 28 2026?",
@@ -29,10 +28,3 @@ def test_a_single_market_keeps_its_date():
     question = ["Fed rate cut in October 2026?"]
     with pytest.raises(HighlightError):
         _translation("금리 인하", question[0], "label", _shared_numbers(question))
-
-
-def test_english_labels_follow_the_same_rule():
-    english._check("Nicolás Maduro", LEADER[0], "label", _shared_numbers(LEADER))
-    english._check("Falls to $186", EWY[0], "label", _shared_numbers(EWY))
-    with pytest.raises(HighlightError):
-        english._check("Falls to $186", EWY[0], "label")            # 공통 수치를 모르면 예전처럼 요구한다

@@ -84,8 +84,6 @@ class Scenario:
     # metadata_for가 데이터를 다시 해석하지 않는다.
     lead_label: str = ""
     lead_volume: str = ""
-    # 화면 고정 문구·자막 길이를 고르는 언어. 영어판(english.py)만 "en"이다.
-    language: str = "ko"
 
     @property
     def narration(self) -> str:
@@ -101,7 +99,6 @@ class Scenario:
             "narration": self.narration,
             "lead_label": self.lead_label,
             "lead_volume": self.lead_volume,
-            "language": self.language,
         }
 
 

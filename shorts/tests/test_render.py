@@ -127,6 +127,42 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
     assert manifest["subtitles"] and all(Path(row["path"]).is_file() for row in manifest["subtitles"])
 
 
+@requires_cjk_font
+def test_intro_and_outro_show_no_captions(tmp_path, monkeypatch, cjk_font):
+    """도입·마무리는 고정 머리말이 같은 말을 크게 보이므로 자막을 띄우지 않는다(운영자 결정 2026-10-10)."""
+    scenes = (Scene("intro", "도입", "", "", "오늘의 요약입니다."),
+              Scene("consensus", "제목", "01 · 거시", "", "연준을 봅니다."),
+              Scene("outro", "마무리", "", "", "확인하세요."))
+    audio = tmp_path / "voice.mp3"
+    audio.touch()
+    monkeypatch.setattr(render, "probe_duration", lambda *args, **kwargs: 6.0)
+    monkeypatch.setattr(render, "render_frame", lambda scene, path, **kwargs: path.touch())
+    monkeypatch.setattr(render, "render_list_frame", lambda scenes, path, **kwargs: path.touch())
+    captured = {}
+    from polymarket_shorts import blender_render
+    monkeypatch.setattr(blender_render, "compose", lambda **kwargs: captured.update(kwargs))
+    words = ((Word(.1, .8, "오늘의"), Word(.9, 1.5, "요약입니다.")),
+             (Word(2.1, 2.6, "연준을"), Word(2.7, 3.2, "봅니다.")),
+             (Word(4.4, 5.2, "확인하세요."),))
+    render.render_video(Scenario("2026-10-10", "g1", "now", scenes), audio_path=audio, scene_words=words,
+                        output_path=tmp_path / "short.mp4", work_dir=tmp_path, font_path=cjk_font,
+                        blender_bin="blender", ffprobe_bin="ffprobe", max_duration=30)
+    starts = [row["start"] for row in captured["subtitles"]]
+    assert len(starts) == 1 and 1.5 < starts[0] < 2.1
+
+
+@requires_cjk_font
+def test_intro_headline_sits_in_the_middle_of_the_safe_area(tmp_path, cjk_font):
+    target = tmp_path / "intro.png"
+    render_frame(Scene("intro", "도입", "", "", "도입입니다."), target, font_path=cjk_font, index=1, total=3)
+    with Image.open(target) as image:
+        # 머리말 글자(밝은 픽셀)의 세로 범위가 안전 영역 가운데를 감싼다.
+        rows = [y for y in range(render.SAFE_TOP + 80, render.HEADLINE_FOOTER_Y)
+                if max(image.getpixel((x, y))[1] for x in range(140, 940, 4)) > 180]
+    assert rows and rows[0] < render.HEADLINE_CENTER < rows[-1]
+    assert abs((rows[0] + rows[-1]) / 2 - render.HEADLINE_CENTER) < 60
+
+
 def test_scene_cuts_land_on_the_next_scene_first_spoken_word():
     narrations = ["거래가 많으면 확실할까요?", "거시. 연준의 결정을 봅니다."]
     # 문장 사이에는 1.1초의 쉼이 있다. 장면은 그 쉼의 어딘가가 아니라 다음 장면의

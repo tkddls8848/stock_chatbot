@@ -9,9 +9,9 @@ from services.telegram_bot.features.shorts.feature import FEATURE
 from services.telegram_bot.features.shorts.runner import ShortsError
 from services.telegram_bot.tests.test_shorts_panel import FakeRunner, Message, STATUS, _run
 
-TOKEN = "2026-10-06-en-" + "a" * 32
+TOKEN = "2026-10-06-ko-" + "a" * 32
 ITEM = {"token": TOKEN, "script": "시나리오 " * 1500, "state": "pending",
-        "date": "2026-10-06", "language": "en", "delivered_at": None}
+        "date": "2026-10-06", "delivered_at": None}
 
 
 def _app(monkeypatch, item=ITEM, send=None):
@@ -84,7 +84,7 @@ def test_scheduler_and_callback_are_registered():
     assert FEATURE.callbacks[0].prefixes == ("shr:",)
 
 
-def test_explicit_english_edit_pauses_before_background_work():
+def test_explicit_token_edit_pauses_before_background_work():
     runner = FakeRunner({"--edit": {"summary": "자료 갱신"}})
     _run(["edit", TOKEN, "자료", "갱신"], runner)
     assert runner.calls[:2] == [["--review-pause", TOKEN], ["--edit", "자료 갱신", "--review-token", TOKEN]]
@@ -123,15 +123,15 @@ def test_manual_review_of_paused_scenario_does_not_restart_clock():
     assert "보류되었습니다" in message.texts[0]
 
 
-def test_english_edit_previews_returned_edition_not_latest_korean(tmp_path):
-    video = tmp_path / "english.mp4"
-    video.write_bytes(b"english")
+def test_token_edit_previews_returned_revision_not_latest_status(tmp_path):
+    video = tmp_path / "revision.mp4"
+    video.write_bytes(b"revised")
     runner = FakeRunner({"--edit": {**STATUS, "video_path": str(video), "video_bytes": 7,
-                                    "metadata": {"title": "English edition"}}})
+                                    "metadata": {"title": "수정본"}}})
     message, _ = _run(["edit", TOKEN, "자료 갱신"], runner)
     assert ["--status"] not in runner.calls
-    assert message.videos[0][0] == b"english"
-    assert "English edition" in message.texts[1]
+    assert message.videos[0][0] == b"revised"
+    assert "수정본" in message.texts[1]
 
 
 def test_manual_review_surfaces_invalid_gate_without_missing_token_crash():
@@ -152,7 +152,7 @@ def test_edit_prompt_pauses_before_accepting_input():
     assert "보류했습니다" in message.texts[0]
 
 
-def test_english_edit_button_pauses_and_binds_exact_token():
+def test_edit_button_pauses_and_binds_exact_token():
     runner = FakeRunner()
     message = Message()
     context = SimpleNamespace(user_data={}, bot_data={"shorts_runner": runner})

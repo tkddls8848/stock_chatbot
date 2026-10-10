@@ -27,6 +27,9 @@ def main() -> None:
     parser.add_argument("--workflow", type=Path, metavar="DIR", help="기존 산출물을 자연어로 검수하고 수정")
     parser.add_argument("--browser", type=Path, metavar="DIR", help="기존 산출물을 로컬 브라우저 패널에서 검수")
     parser.add_argument("--port", type=int, default=8765, help="브라우저 패널 포트, 기본값 8765")
+    parser.add_argument("--longform", metavar="MARKET", choices=("US", "KR", "CN", "HK", "JP", "EU"),
+                        help="그 시장의 최신 시장상황 보고서로 가로 롱폼 영상 제작(US·KR·CN·HK·JP·EU)")
+    parser.add_argument("--report-id", metavar="ID", help="--longform이 쓸 보고서 ID(report:US:2026-10-10T08:00:00+09:00)")
     parser.add_argument("--interactive", action="store_true", help="영상 생성 후 대화형 검수·편집 시작")
     # 텔레그램 관리 패널(/shorts)이 하위 프로세스로 부르는 비대화형 명령. stdout에 JSON 한 줄.
     parser.add_argument("--status", action="store_true", help="최근 제작일의 제작·검수 상태 JSON")
@@ -43,6 +46,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.review_token and args.edit is None:
         parser.error("--review-token은 --edit와 함께 씁니다")
+    if args.report_id and not args.longform:
+        parser.error("--report-id는 --longform과 함께 씁니다")
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
         parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth는 한 번에 하나만 씁니다")
@@ -50,6 +55,8 @@ def main() -> None:
         parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
     if args.interactive and chosen and chosen != ["plan"]:
         parser.error("--interactive는 일일 제작 또는 --plan과 함께 씁니다")
+    if args.longform and (chosen or args.date or args.interactive):
+        parser.error("--longform은 --force, --report-id하고만 함께 씁니다")
     if not 1 <= args.port <= 65535:
         parser.error("--port는 1부터 65535까지입니다")
     if not args.browser and args.port != 8765:
@@ -96,6 +103,16 @@ def main() -> None:
         if args.review:
             print(read_script(args.review.resolve()))
             return
+        if args.longform:
+            from .longform import LongformError, produce_longform
+            prune_old_days(settings, datetime.now(settings.timezone).date())
+            try:
+                payload = asdict(produce_longform(settings, args.longform, report_id=args.report_id or "",
+                                                  force=args.force))
+            except LongformError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(json.dumps(payload, ensure_ascii=False))
+            return
         if args.plan:
             payload = asdict(produce_editorial(args.plan.resolve(), settings))
         else:
@@ -108,8 +125,6 @@ def main() -> None:
             ))
             if not args.interactive:
                 payload["approval"] = _queue_review(payload, settings)
-            if settings.english_edition and not args.interactive:
-                payload["english"] = _english(payload, settings, force=args.force)
         if args.interactive and payload.get("video_path"):
             from .workflow import interact
             interact(Path(payload["video_path"]).parent, settings)
@@ -119,22 +134,11 @@ def main() -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
-def _english(payload: dict, settings: Settings, *, force: bool) -> dict | None:
-    """한국어판을 만든 날의 영어판도 별도 시나리오 검토에 등록한다."""
-    from .english import english_root, produce_english
-
-    if payload.get("status") not in {"pending_review", "already_produced"}:
-        return None
-    result = asdict(produce_english(settings, date.fromisoformat(payload["date"]), force=force))
-    result["approval"] = _queue_review(result, settings, root=english_root(settings, payload["date"]))
-    return result
-
-
-def _queue_review(payload: dict, settings: Settings, *, root: Path | None = None) -> dict | None:
+def _queue_review(payload: dict, settings: Settings) -> dict | None:
     """새 영상만 검토 큐에 넣는다. 기존 영상은 배포·재실행만으로 자동 승인하지 않는다."""
     from .approval import register
 
-    root = root or settings.output_dir / payload["date"]
+    root = settings.output_dir / payload["date"]
     if payload.get("status") == "already_produced":
         from .workflow import current_target
         record_path = current_target(root) / "review.json"

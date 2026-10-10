@@ -44,7 +44,7 @@ from services.telegram_bot.features.shorts.review import (
 logger = logging.getLogger(__name__)
 
 USAGE = "/shorts · /shorts run [force] · /shorts review · /shorts preview · /shorts edit [검토번호] 수정할 내용 · /shorts hold [검토번호] · /shorts done [검토번호] · /shorts upload"
-_TOKEN = re.compile(r"^\d{4}-\d{2}-\d{2}-(?:ko|en)-[0-9a-f]{32}$")
+_TOKEN = re.compile(r"^\d{4}-\d{2}-\d{2}-ko-[0-9a-f]{32}$")
 _REVIEW = {"pending": "검수 대기", "reviewed": "검수 완료", "superseded": "새 수정본으로 대체됨"}
 _SELECTION = {"no_suitable_issues": "적합한 이슈 없음", "failed": "제작 실패", "script_ready": "원고 준비됨"}
 

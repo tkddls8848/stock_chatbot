@@ -50,7 +50,7 @@ async def send_scenario(send, item: dict) -> None:
     else:
         timing = "원고가 모두 전달된 뒤 1시간 동안 수정·보류 요청이 없으면 자동 승인하여 업로드합니다."
     text = (
-        f"🎬 쇼츠 원고 검토 · {item.get('date', '')} · {item.get('language', 'ko')}\n"
+        f"🎬 쇼츠 원고 검토 · {item.get('date', '')}\n"
         f"검토 번호: {token}\n{timing}\n\n{item.get('script') or '원고 없음'}\n\n"
         f"자료·내용 수정: /shorts edit {token} 수정할 내용\n"
         f"보류: /shorts hold {token}"

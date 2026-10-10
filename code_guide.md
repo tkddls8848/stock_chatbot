@@ -160,7 +160,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
-| `public/shorts/ko.json`·`en.json` | 쇼츠(게시 직후 언어별 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
+| `public/shorts/ko.json` | 쇼츠(게시 직후 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
 
 옛 `data/`는 없다. 서버 이전은 코드가 아니라 절차다 — `data/webpub`→`storage/public`,
 `data/<feature>`→`storage/bot/<feature>`로 한 번 옮긴다(`infra/server-ops.md`).
@@ -461,16 +461,30 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   기계적으로 들렸다). 쇼츠가 공개 웹 `/api/search`로 최근 사흘치 기사를 읽고(봇 코드·`storage/public/news.json`을
   직접 읽지 않는다), 선정 모델이 낸 한국어 주체어로 후보를 거른 뒤 원고 모델이 `news_hook` 한 문장을 쓴다. 문장은
   그 기사 제목·원문의 사실과 숫자만 쓰고 기사와 전망 사이의 인과를 쓰지 않는다. 맞는 기사가 없으면 넣지 않는다.
-  **웹 첫 화면은 "오늘의 영상"으로 언어별 최신 게시본 하나씩을 붙인다**(운영자 요청 2026-10-09). 웹은
-  `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/<ko|en>.json`(날짜·영상 ID·제목)을
-  쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 언어마다 파일이 따로라 두 판의 게시가 겹쳐도
-  서로 덮지 않는다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
+  **웹 첫 화면은 "오늘의 영상"으로 최신 게시본 하나를 붙인다**(운영자 요청 2026-10-09). 웹은
+  `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/ko.json`(날짜·영상 ID·제목)을
+  쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
   `/`의 CSP만 그 출처의 `frame-src`를 연다.
-  `SHORTS_ENGLISH_EDITION=true`면 영어판을 `storage/shorts/en/<날짜>/`에 따로 만들며,
-  영어판도 같은 검토 절차를 거친다. 알림에 붙은 검토번호로 언어·날짜·수정본을 지정한다.
+  **영어판 쇼츠는 만들지 않는다**(운영자 결정 2026-10-10 — `english.py`·`SHORTS_ENGLISH_EDITION`을 지웠다).
+  알림에 붙은 검토번호(`<날짜>-ko-<수정본>`)로 날짜·수정본을 지정한다. 가운데 `ko`는 영어판을 두던 때의 칸이고,
+  이미 전달한 원고 버튼·승인 기록이 이 형식이라 그대로 둔다.
+  **영어판 대신 시장상황 보고서를 가로 롱폼(1920×1080, 4~5분)으로 만든다**(운영자 결정 2026-10-10,
+  `python -m polymarket_shorts.cli --longform US [--report-id ID] [--force]`). 원재료는 공개 웹에 실린 것뿐이다 —
+  `/api/search`의 그 시장 최신 `kind: report` 한 편, 같은 시장의 그 보고서 구간(제목의 `HH:MM~HH:MM`) 안에 발행된
+  공개 기사 최대 7건, `/api/market`의 최근 14일 일일 감성. **모델을 부르지 않는다.** 보고서 본문을 문장 단위로
+  합쇼체로 옮겨(`speech.to_polite_text`) 그대로 읽고, 앞뒤 원고(도입·감성 풀이·기사 제목 읽기·마무리)는 자료의
+  숫자와 제목만 채우는 고정 문장이다 — 새 사실이 들어갈 자리가 없다. 숫자 바로 뒤에 받침에 따라 갈리는 조사를
+  붙이지 않고("0.06였고" 대신 "0.06입니다"), 음수는 "마이너스"로 쓴다. 봇의 장 시점 이름(한국장 개장 전 등)은
+  한국 시각 기준이라 미국 보고서 본문과 어긋나 말하지 않고 실제 구간만 말한다. 화면은 왼쪽 내용·오른쪽 목차이고
+  지금 읽는 문장(기사 줄)을 밝게 짚어 그것이 자막이 된다(`longform_render.py`). 산출물은
+  `storage/shorts/longform/<날짜>/<시장>-<HHMM>/`이고 쇼츠 제작일 폴더와 같이 2주 보관한다. 검토·업로드·예약
+  제작·텔레그램 운영에는 아직 묶지 않았다.
+  **쇼츠의 도입·마무리 화면은 자막을 띄우지 않는다**(운영자 결정 2026-10-10, `render.UNCAPTIONED`). 고정 머리말이
+  같은 말을 이미 보이므로, 머리말을 안전 영역 가운데(`HEADLINE_CENTER`)에 크게 세우고 고지문을 안전 영역 바닥으로
+  내린다. 멘트(음성)는 그대로다.
   **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정
   2026-09-29). 일일 제작이 렌더 전에 오늘 포함 14일보다 오래된 `storage/shorts/<날짜>/`와
-  `storage/shorts/en/<날짜>/`를 통째로 지운다 — 영상은 YouTube에 있고, 배경·클립·수정본이
+  `storage/shorts/longform/<날짜>/`를 통째로 지운다 — 영상은 YouTube에 있고, 배경·클립·수정본이
   매일 쌓여 로컬 디스크를 채운다. 반복 회피(`SHORTS_REPEAT_DAYS`)가 읽는 기간보다는
   짧게 지우지 않는다. `state/`는 건드리지 않는다.
   모든 모듈의 설정은 저장소 루트 `.env` 하나에서 관리한다. 하위 폴더에 `.env`를 두지 않는다.

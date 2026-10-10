@@ -83,8 +83,6 @@ def _scenario(payload: dict) -> Scenario:
                               for k, v in row.items() if k in names})
                      for row in payload["scenes"]),
         lead_label=payload.get("lead_label", ""), lead_volume=payload.get("lead_volume", ""),
-        # 빠뜨리면 영어판 수정본이 한국어 화면 문구(_CHROME)로 다시 그려진다.
-        language=payload.get("language", "ko"),
     )
 
 
@@ -96,8 +94,6 @@ def request_edit(scenario: Scenario, metadata: dict, instruction: str,
         f"도입은 1, 마무리는 {len(scenario.scenes)}다. "
         f"삭제나 순서 변경 요청이 없다면 scene_order는 반드시 {current_order}로 반환한다."
     )
-    if scenario.language == "en":
-        prompt += "\n이 원고는 영어판이다. 바꾸는 화면 문구·멘트·게시 설명도 영어로 쓴다."
     try:
         return chat_json(settings, system=prompt, max_tokens=6000, user=json.dumps({
             "scenario": scenario.to_dict(), "metadata": metadata,
@@ -117,14 +113,11 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 # 편집으로 받는 선택지 확률. 원자료(markets.percent)보다 정밀할 이유가 없다.
 _SHARE = re.compile(r"(\d{1,3}(?:\.\d{1,3})?)\s*%")
-# 이슈 장면 잔글씨의 "표시 선택지 · 유효 N개 중 상위 K개"(영어판 "Showing top K of N options").
-_SHOWN_COUNT = re.compile(r"(상위 |Showing top )\d+")
-# metadata_for(한국어판·영어판)가 설명란에 적는 다룬 이슈 목록 줄.
-_ISSUES_LINE = re.compile(r"^(오늘 다룬 이슈: |Today's issues: ).*$", re.MULTILINE)
-_EDIT_WORDS = {
-    "ko": {"yes": "예", "note": " · 검수 수정", "edit": "검수 수정", "options": "선택지", "request": "요청"},
-    "en": {"yes": "yes", "note": " · edited", "edit": "Reviewer edit", "options": "options", "request": "request"},
-}
+# 이슈 장면 잔글씨의 "표시 선택지 · 유효 N개 중 상위 K개".
+_SHOWN_COUNT = re.compile(r"(상위 )\d+")
+# metadata_for가 설명란에 적는 다룬 이슈 목록 줄.
+_ISSUES_LINE = re.compile(r"^(오늘 다룬 이슈: ).*$", re.MULTILINE)
+_EDIT_WORDS = {"yes": "예", "note": " · 검수 수정", "edit": "검수 수정", "options": "선택지", "request": "요청"}
 
 
 def _squash(text: str) -> str:
@@ -292,7 +285,7 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
     allowed = _TEXT_FIELDS | _STYLE_FIELDS | {"options"}
     declared = _declarations(patch.get("source_edits", []), order, instruction)
     known, requested = _numbers([scenario.to_dict(), metadata]), _numbers(instruction)
-    words = _EDIT_WORDS[scenario.language]
+    words = _EDIT_WORDS
     seen = set()
     for row in changes:
         if not isinstance(row, dict) or "scene" not in row or set(row) - allowed - {"scene"}:
@@ -400,9 +393,6 @@ def revise(root: Path, instruction: str, settings: Settings, *,
             if record["status"] not in {"pending", "reviewed"}:
                 raise ReviewError("최신 완성본 폴더에서 검수를 이어가세요")
             scenario = _scenario(_read(current / "scenario.json"))
-            # 영어판 첫 원본에는 production.json이 없다. 한국어 기본 음성으로 다시 읽지 않는다.
-            if scenario.language == "en":
-                settings = replace(settings, tts_voice=settings.english_voice)
             production_path = current / "production.json"
             if production_path.exists():
                 production = _read(production_path)

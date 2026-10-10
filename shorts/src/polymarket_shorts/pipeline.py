@@ -89,31 +89,30 @@ RETENTION_DAYS = 14
 
 
 def prune_old_days(settings: Settings, today: date) -> list[Path]:
-    """보관 기간이 지난 제작일 폴더(한국어판·영어판)를 통째로 지운다.
+    """보관 기간이 지난 제작일 폴더를 통째로 지운다.
 
     오늘 포함 `RETENTION_DAYS`일만 남긴다. 반복 회피(`recently_featured`)가 지난
     `repeat_days`일 폴더를 읽으므로 그보다 짧게 지우지 않는다. 이름이 날짜가 아닌
     폴더(`state/` 등)는 건드리지 않는다. 지우지 못한 폴더는 경고만 남긴다 — 정리
-    실패가 제작을 막지 않는다.
+    실패가 제작을 막지 않는다. 롱폼(`longform/<날짜>/`)도 같은 기간으로 지운다.
     """
     cutoff = today - timedelta(days=max(RETENTION_DAYS, settings.repeat_days + 1) - 1)
     removed = []
-    for parent in (settings.output_dir, settings.output_dir / "en"):
-        if not parent.is_dir():
+    folders = [folder for base in (settings.output_dir, settings.output_dir / "longform") if base.is_dir()
+               for folder in sorted(base.iterdir())]
+    for folder in folders:
+        try:
+            day = date.fromisoformat(folder.name)
+        except ValueError:
             continue
-        for folder in sorted(parent.iterdir()):
-            try:
-                day = date.fromisoformat(folder.name)
-            except ValueError:
-                continue
-            if not folder.is_dir() or day >= cutoff:
-                continue
-            try:
-                shutil.rmtree(folder)
-            except OSError as exc:
-                logger.warning("보관 기간이 지난 쇼츠 폴더를 지우지 못했습니다: %s (%s)", folder, exc)
-                continue
-            removed.append(folder)
+        if not folder.is_dir() or day >= cutoff:
+            continue
+        try:
+            shutil.rmtree(folder)
+        except OSError as exc:
+            logger.warning("보관 기간이 지난 쇼츠 폴더를 지우지 못했습니다: %s (%s)", folder, exc)
+            continue
+        removed.append(folder)
     if removed:
         logger.info("보관 기간(%d일)이 지난 쇼츠 폴더 %d개를 지웠습니다", RETENTION_DAYS, len(removed))
     return removed
@@ -284,7 +283,7 @@ def info_time(stamp: str) -> str:
 
 # 설명란 맨 위에 두는 사이트 주소. 더보기를 펼치지 않아도 보이는 자리다(운영자 결정 2026-09-29).
 SITE_URL = "https://nunchi.live"
-# 사업 문의 줄. 한국어판·영어판 모두 영문 한 줄로 단다(운영자 결정 2026-09-29).
+# 사업 문의 줄. 영문 한 줄로 단다(운영자 결정 2026-09-29).
 CONTACT_LINE = "Business inquiries: tkddls8848@gmail.com"
 
 

@@ -15,11 +15,14 @@ NARRATION_GAIN = 1.3
 
 def compose(*, images: list[dict], movies: list[dict], subtitles: list[dict],
             audio_path: Path, output_path: Path, work_dir: Path,
-            duration: float, blender_bin: str) -> None:
-    """화면 카드(`images`)·움직이는 배경(`movies`)·자막 그림(`subtitles`, 화면 크기 투명 PNG)과 음성을 합친다."""
+            duration: float, blender_bin: str, size: tuple[int, int] = (WIDTH, HEIGHT)) -> None:
+    """화면 카드(`images`)·움직이는 배경(`movies`)·자막 그림(`subtitles`, 화면 크기 투명 PNG)과 음성을 합친다.
+
+    `size`는 (가로, 세로)다. 쇼츠는 세로 1080×1920, 롱폼(`longform_render`)은 가로 1920×1080이다.
+    """
     manifest = work_dir / "blender-manifest.json"
     manifest.write_text(json.dumps({
-        "width": WIDTH, "height": HEIGHT, "fps": 30, "duration": duration,
+        "width": size[0], "height": size[1], "fps": 30, "duration": duration,
         "audio": str(audio_path.resolve()), "output": str(output_path.resolve()),
         "narration_gain": NARRATION_GAIN,
         "tail_seconds": .6, "clone_padding_seconds": 1,

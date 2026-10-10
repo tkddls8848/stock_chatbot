@@ -230,15 +230,12 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
 
     @app.api_route("/api/shorts", methods=["GET", "HEAD"])
     def shorts() -> dict[str, Any]:
-        # 쇼츠가 게시 뒤 쓰는 언어별 최신 영상(storage/public/shorts/). 영상 ID 형식이 아니면 내보내지 않는다 —
+        # 쇼츠가 게시 뒤 쓰는 최신 영상(storage/public/shorts/ko.json). 영상 ID 형식이 아니면 내보내지 않는다 —
         # 화면이 이 값으로 플레이어 주소를 만든다.
-        latest = {}
-        for language in ("ko", "en"):
-            row = _read_json(f"shorts/{language}.json")
-            video = str(row.get("video_id") or "")
-            latest[language] = {key: str(row.get(key) or "") for key in ("date", "video_id", "title")} \
-                if re.fullmatch(r"[\w-]{6,20}", video) else None
-        return latest
+        row = _read_json("shorts/ko.json")
+        video = str(row.get("video_id") or "")
+        return {"ko": {key: str(row.get(key) or "") for key in ("date", "video_id", "title")}
+                if re.fullmatch(r"[\w-]{6,20}", video) else None}
 
     def polymarket_json(
         request: Request,

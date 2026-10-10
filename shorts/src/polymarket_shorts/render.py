@@ -84,7 +84,11 @@ TITLE_TOP, TITLE_BOTTOM = 290, 580
 PROGRESS_Y = 606                        # 질문 순서 점
 CARD_TOP, CARD_BOTTOM = 690, 1150       # 카드 테두리. 번호 탭은 위로 걸친다
 CARD_RADIUS = 32
-HEADLINE_CENTER = 800                   # 도입·마무리 머리말 묶음의 세로 가운데
+# 도입·마무리 머리말 묶음의 세로 가운데. 두 화면은 자막이 없어(`UNCAPTIONED`) 안전 영역 전체의 가운데에 크게 선다
+# (운영자 요청 2026-10-10). 예전에는 아래 자막 자리를 비워 두느라 800에 작게 섰다.
+UNCAPTIONED = ("intro", "outro")
+HEADLINE_CENTER = (SAFE_TOP + SAFE_BOTTOM) // 2   # 865
+HEADLINE_FOOTER_Y = SAFE_BOTTOM - 70    # 자막이 없는 화면의 고지문은 안전 영역 바닥에 붙인다
 CARD_PAD = 44
 BODY_TOP, BODY_BOTTOM = CARD_TOP + 48, CARD_BOTTOM - 36  # 카드 안 내용 칸
 META_Y = 1176                           # 수치 칩
@@ -163,20 +167,13 @@ def _background(path: Path | None, *, index: int, total: int, accent: str) -> Im
     return ImageEnhance.Brightness(frame).enhance(_BRIGHTNESS[index % len(_BRIGHTNESS)])
 
 
-# 화면에 고정으로 찍히는 말. 영어판은 같은 틀에 이 문구만 바꿔 그린다.
-_CHROME = {
-    "ko": {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문", "list_title": "오늘의 질문 {n}",
+# 화면에 고정으로 찍히는 말.
+_CHROME = {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문",
+           "list_title": "오늘의 질문 {n}",
            "open_top": "오늘의 집단 예측", "open_low": "컨센서스 요약", "open_note": "지금 시작합니다",
            "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
            "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
-           "footer": "집단 예측 컨센서스 · 투자 조언 아님"},
-    "en": {"yes": "YES", "site": "nunchi.live", "brand_tag": "Crowd forecast consensus", "list_tag": "Today's questions",
-           "list_title": "{n} questions today",
-           "open_top": "TODAY'S CROWD FORECASTS", "open_low": "CONSENSUS SUMMARY", "open_note": "Starting now",
-           "close_top": "Full details at", "close_note": "Check each question's conditions",
-           "footer_options": "Bar = YES probability · crowd forecast consensus · not investment advice",
-           "footer": "Crowd forecast consensus · not investment advice"},
-}
+           "footer": "집단 예측 컨센서스 · 투자 조언 아님"}
 _BRAND = "NUNCHI"
 _LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
 
@@ -344,7 +341,7 @@ def _headline(image, lines: Sequence[tuple[str, str]], font_path: Path, accent: 
     draw = ImageDraw.Draw(image)
     bold = _bold(font_path)
     width = SAFE_RIGHT - SAFE_LEFT
-    sizes = {"ink": range(92, 50, -4), "accent": range(124, 60, -4), "plain": range(58, 36, -2)}
+    sizes = {"ink": range(116, 50, -4), "accent": range(156, 60, -4), "plain": range(72, 36, -2)}
     fitted = [(role, *_fit(draw, text, bold if role != "plain" else font_path, width, sizes[role], 1))
               for text, role in lines if text.strip()]
     pitch = [round(font.size * (1.42 if role == "accent" else 1.3)) for role, font, _ in fitted]
@@ -539,12 +536,11 @@ def render_list_frame(
     shown: int | None,
     background_path: Path | None = None,
     transparent: bool = False,
-    language: str = "ko",
     index: int = 2,
     total: int = 5,
 ) -> None:
     """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다."""
-    chrome = _CHROME[language]
+    chrome = _CHROME
     scene = scenes[active]
     accent = _accent(scene)
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
@@ -615,9 +611,8 @@ def render_frame(
     background_path: Path | None = None,
     shown: int | None = None,
     transparent: bool = False,
-    language: str = "ko",
 ) -> None:
-    chrome = _CHROME[language]
+    chrome = _CHROME
     accent = _accent(scene)
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -645,9 +640,10 @@ def render_frame(
             _text_block(draw, scene.body, font_path, inner, size=62, center=True)
         _chips(draw, scene.bullets, font_path)
 
-    draw.text((SAFE_LEFT, FOOTER_Y), chrome["footer_options"] if scene.options else chrome["footer"],
+    footer = HEADLINE_FOOTER_Y if scene.kind in UNCAPTIONED else FOOTER_Y
+    draw.text((SAFE_LEFT, footer), chrome["footer_options"] if scene.options else chrome["footer"],
               font=_font(font_path, 23), fill=_COLORS["muted"])
-    draw.text((SAFE_LEFT, FOOTER_Y + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
+    draw.text((SAFE_LEFT, footer + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
     framed = Image.alpha_composite(_plain_backdrop().convert("RGBA"), image).convert("RGB")
     framed.save(path, "PNG", compress_level=1)
 
@@ -687,10 +683,8 @@ CAPTION_LEAD = 0.05
 # 새 화면 위에서 흐르므로, 화면이 먼저 자리를 잡은 뒤에 말이 시작된다.
 SCENE_LEAD = 0.55
 # 한 자막에 담는 글자 수. 커진 자막(CAPTION_FONT_SIZE)에서 두 줄에 들어가는 양이다.
-# 영문은 글자 폭이 한글의 절반쯤이라 같은 두 줄에 더 담는다. 자막을 가운데로 옮기며
-# 폭이 좁아져(752→644px) 26·44에서 24·40으로 줄였다 — 그대로 두면 세 줄이 네 배로 는다.
+# 자막을 가운데로 옮기며 폭이 좁아져(752→644px) 26에서 24로 줄였다 — 그대로 두면 세 줄이 네 배로 는다.
 _PHRASE_CHARS = 24
-_PHRASE_CHARS_BY_LANGUAGE = {"ko": _PHRASE_CHARS, "en": 40}
 _SENTENCE_END = (".", "?", "!")
 # 끊기 좋은 자리와 나쁜 자리. 쉼표는 말하는 사람이 이미 쉬는 자리이고 연결어미
 # ("…다르니")도 한 마디가 끝나는 자리다. 반대로 "…와·…과·…의"는 다음 말에 붙는
@@ -966,8 +960,7 @@ def render_video(
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
-    scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration,
-                             phrase_chars=_PHRASE_CHARS_BY_LANGUAGE[scenario.language])
+    scene_phrases = _phrases([scene.narration for scene in scenario.scenes], scene_words, duration)
     scene_durations = _scene_durations(scene_phrases, duration)
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions, font_path=font_path)
@@ -1012,12 +1005,11 @@ def render_video(
                 rows[active] = display_scene
                 render_list_frame(rows, frame, font_path=font_path, active=active,
                                   previous=active - 1 if active > 0 else None, progress=progress, shown=shown,
-                                  background_path=background, transparent=is_clip, language=scenario.language,
+                                  background_path=background, transparent=is_clip,
                                   index=body_start + 1, total=len(scenario.scenes))
             else:
                 render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                             background_path=background, shown=shown, transparent=is_clip,
-                             language=scenario.language)
+                             background_path=background, shown=shown, transparent=is_clip)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업·펼침은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가 머무는 구간이다.
             # 앞 장면과 제목이 같을 수 있으므로 장면 번호로 구분한다.
@@ -1034,7 +1026,10 @@ def render_video(
     draw = ImageDraw.Draw(Image.new("L", (1, 1)))
     font = _font(font_path, CAPTION_FONT_SIZE)
     subtitles = []
-    for number, phrase in enumerate((phrase for group in scene_phrases for phrase in group), start=1):
+    # 도입·마무리는 자막을 띄우지 않는다(운영자 결정 2026-10-10) — 고정 머리말이 같은 말을 이미 크게 보인다.
+    spoken = (phrase for scene, group in zip(scenario.scenes, scene_phrases, strict=True)
+              if scene.kind not in UNCAPTIONED for phrase in group)
+    for number, phrase in enumerate(spoken, start=1):
         caption = work_dir / f"caption-{number:03d}.png"
         _caption_frame(_caption_lines(draw, phrase.text, font), caption, font_path=font_path)
         subtitles.append({"start": phrase.start, "end": phrase.end, "path": str(caption.resolve())})

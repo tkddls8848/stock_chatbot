@@ -203,6 +203,7 @@ def test_shorts_api_exposes_only_well_formed_latest_videos(client, tmp_path):
     (tmp_path / "shorts").mkdir()
     (tmp_path / "shorts" / "ko.json").write_text(
         '{"date":"2026-10-08","video_id":"q5Vqf1hBOrQ","title":"시장 컨센서스","uploaded_at":"x"}', encoding="utf-8")
-    (tmp_path / "shorts" / "en.json").write_text('{"video_id":"x\' onload=\'"}', encoding="utf-8")
     assert client.get("/api/shorts").json() == {
-        "ko": {"date": "2026-10-08", "video_id": "q5Vqf1hBOrQ", "title": "시장 컨센서스"}, "en": None}
+        "ko": {"date": "2026-10-08", "video_id": "q5Vqf1hBOrQ", "title": "시장 컨센서스"}}
+    (tmp_path / "shorts" / "ko.json").write_text('{"video_id":"x\' onload=\'"}', encoding="utf-8")
+    assert client.get("/api/shorts").json() == {"ko": None}

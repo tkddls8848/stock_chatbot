@@ -14,7 +14,8 @@ from .core.storage import write_json
 from .review import REVIEW_FILE, ReviewError, complete_review, operation_lock, read_script
 
 GATE_FILE = "approval.json"
-_TOKEN = re.compile(r"(\d{4}-\d{2}-\d{2})-(ko|en)-([a-f0-9]{32})")
+# 가운데 "ko"는 영어판을 두던 때의 언어 칸이다. 이미 전달한 원고 버튼·승인 기록이 이 형식이라 그대로 둔다.
+_TOKEN = re.compile(r"(\d{4}-\d{2}-\d{2})-ko-([a-f0-9]{32})")
 
 
 def _read(path: Path) -> dict:
@@ -27,24 +28,21 @@ def _read(path: Path) -> dict:
     return value
 
 
-def _identity(root: Path, settings: Settings) -> tuple[str, str]:
+def _identity(root: Path, settings: Settings) -> str:
     try:
         relative = root.resolve().relative_to(settings.output_dir.resolve())
     except ValueError:
         raise ReviewError("검수 제작일 폴더가 저장소 밖에 있습니다") from None
     parts = relative.parts
-    if len(parts) == 1:
-        day, language = parts[0], "ko"
-    elif len(parts) == 2 and parts[0] == "en":
-        day, language = parts[1], "en"
-    else:
+    if len(parts) != 1:
         raise ReviewError("검수 제작일 폴더가 올바르지 않습니다")
+    day = parts[0]
     try:
         if date.fromisoformat(day).isoformat() != day:
             raise ValueError
     except ValueError:
         raise ReviewError("검수 제작일이 올바르지 않습니다") from None
-    return day, language
+    return day
 
 
 def _fingerprint(root: Path) -> tuple[Path, str]:
@@ -83,9 +81,7 @@ def _token_root(settings: Settings, token: str) -> Path:
     match = _TOKEN.fullmatch(token)
     if not match:
         raise ReviewError("검수 요청 번호가 올바르지 않습니다")
-    day, language, _ = match.groups()
-    parent = settings.output_dir / "en" if language == "en" else settings.output_dir
-    root = parent / day
+    root = settings.output_dir / match[1]
     _identity(root, settings)
     if not (root / GATE_FILE).is_file():
         raise ReviewError("등록된 검수 요청이 없습니다")
@@ -93,7 +89,7 @@ def _token_root(settings: Settings, token: str) -> Path:
 
 
 def resolve_root(settings: Settings, token: str, *, workflow_locked: bool = False) -> Path:
-    """토큰은 경로가 아니라 등록된 날짜·언어·수정본의 식별자다."""
+    """토큰은 경로가 아니라 등록된 날짜·수정본의 식별자다."""
     root = _token_root(settings, token)
     with nullcontext() if workflow_locked else operation_lock(root, ".workflow.lock"):
         _checked(root, token)
@@ -103,7 +99,7 @@ def resolve_root(settings: Settings, token: str, *, workflow_locked: bool = Fals
 def register(root: Path, settings: Settings, *, workflow_locked: bool = False) -> dict:
     """새 제작·수정 성공 뒤 호출한다. 전달 확인 전에는 시계를 시작하지 않는다."""
     root = root.resolve()
-    day, language = _identity(root, settings)
+    day = _identity(root, settings)
     with nullcontext() if workflow_locked else operation_lock(root, ".workflow.lock"):
         _, fingerprint = _fingerprint(root)
         path = root / GATE_FILE
@@ -111,8 +107,8 @@ def register(root: Path, settings: Settings, *, workflow_locked: bool = False) -
         if previous.get("fingerprint") == fingerprint:
             return previous
         gate = {
-            "token": f"{day}-{language}-{fingerprint}", "fingerprint": fingerprint,
-            "date": day, "language": language, "state": "pending",
+            "token": f"{day}-ko-{fingerprint}", "fingerprint": fingerprint,
+            "date": day, "state": "pending",
             "created_at": now().isoformat(), "delivered_at": None, "deadline": None,
             "timeout_minutes": settings.review_timeout_minutes,
         }
@@ -121,11 +117,10 @@ def register(root: Path, settings: Settings, *, workflow_locked: bool = False) -
 
 
 def _roots(settings: Settings):
-    for parent in (settings.output_dir, settings.output_dir / "en"):
-        if parent.is_dir():
-            for root in sorted(parent.iterdir()):
-                if re.fullmatch(r"\d{4}-\d{2}-\d{2}", root.name) and (root / GATE_FILE).is_file():
-                    yield root.resolve()
+    if settings.output_dir.is_dir():
+        for root in sorted(settings.output_dir.iterdir()):
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", root.name) and (root / GATE_FILE).is_file():
+                yield root.resolve()
 
 
 def pending(settings: Settings) -> list[dict]:

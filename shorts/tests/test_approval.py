@@ -96,16 +96,16 @@ def test_manual_approval_works_when_automatic_disabled(setup):
     assert len(calls) == 1
 
 
-def test_all_registered_dates_and_languages_but_not_legacy(setup):
+def test_all_registered_dates_but_not_legacy(setup):
     settings, instant, calls = setup
     roots = [make(settings.output_dir / "2026-10-04"),
-             make(settings.output_dir / "en" / "2026-10-05")]
+             make(settings.output_dir / "2026-10-05")]
     make(settings.output_dir / "2026-10-06")
     for root in roots:
         token = approval.register(root, settings)["token"]
         assert approval.resolve_root(settings, token) == root
         approval.acknowledge(settings, token)
-    assert {row["language"] for row in approval.pending(settings)} == {"ko", "en"}
+    assert {row["date"] for row in approval.pending(settings)} == {"2026-10-04", "2026-10-05"}
     instant[0] += timedelta(hours=1)
     assert len(approval.tick(settings)) == 2
     assert set(calls) == set(roots)

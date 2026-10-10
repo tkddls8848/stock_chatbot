@@ -371,20 +371,6 @@ def test_dropping_a_shown_option_rewrites_the_count_bullet(issue):
     assert edited.scenes[1].options == (("동결", "64.5%", 0.645),)
 
 
-def test_english_edition_keeps_language_through_edits(issue, monkeypatch):
-    scenario, metadata, settings = issue
-    scenario = replace(scenario, language="en")
-    assert workflow._scenario(scenario.to_dict()).language == "en"
-    edited, _, _ = workflow.apply_edit(scenario, metadata, source_patch(), settings, ASK)
-    assert edited.language == "en"
-    assert edited.scenes[1].body == "동결 — yes 70%"
-    assert edited.scenes[1].source_note.endswith(" · edited")
-    captured = {}
-    monkeypatch.setattr(workflow, "chat_json", lambda settings, **kw: captured.update(kw) or patch())
-    workflow.request_edit(scenario, metadata, "shorter", settings)
-    assert "영어판" in captured["system"]
-
-
 def test_revision_records_requested_source_edit(issue, tmp_path, monkeypatch):
     scenario, metadata, settings = issue
     video = tmp_path / "video.mp4"
@@ -440,22 +426,6 @@ def test_saved_revision_round_trips_and_takes_a_second_source_edit(issue, tmp_pa
     assert saved["title"] == "연준 금리 결정"
     assert saved["evidence"][:2] == list(scenario.scenes[1].evidence)
     assert saved["evidence"][-1].endswith(TITLE_ASK) and len(saved["evidence"]) == 5
-
-
-def test_first_english_edit_keeps_the_english_voice(issue, tmp_path, monkeypatch):
-    scenario, metadata, settings = issue
-    root = produced(tmp_path, replace(scenario, language="en"), metadata, settings)
-    assert not (root / "production.json").exists()
-    voices = []
-
-    def render(edited, meta, target, rendered):
-        voices.append(rendered.tts_voice)
-        fake_render(edited, meta, target, rendered)
-
-    monkeypatch.setattr(workflow, "request_edit", lambda *a: source_patch())
-    monkeypatch.setattr(workflow, "produce_revision", render)
-    workflow.revise(root, ASK, settings)
-    assert voices == [settings.english_voice] != [settings.tts_voice]
 
 
 def test_source_edit_field_names_must_be_strings(issue):
