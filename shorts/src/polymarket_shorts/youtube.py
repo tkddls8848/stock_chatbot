@@ -6,11 +6,11 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
-import os
 from pathlib import Path
 import re
 import secrets
 import sys
+import threading
 import time
 from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
@@ -313,13 +313,13 @@ AUTH_PORT = 8765
 AUTH_REDIRECT = f"http://127.0.0.1:{AUTH_PORT}/"
 
 
-def _headless() -> bool:
-    """화면이 없는 리눅스(운영 서버 SSH 등)인가. Windows·macOS는 늘 브라우저를 연다."""
-    return sys.platform.startswith("linux") and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY"))
+AUTH_WAIT_SECONDS = 300
+# 터미널이 붙여 넣은 글자 앞뒤에 다는 표시(bracketed paste). 입력으로 읽히면 주소가 깨진다.
+_PASTE_MARKS = re.compile(r"\x1b\[20[01]~")
 
 
 def authorize(settings: Settings) -> str:
-    """고정 루프백 + state + PKCE. 브라우저가 없으면 승인 뒤 주소를 붙여 넣는다. 토큰은 호출자가 화면에만 출력한다."""
+    """고정 루프백 + state + PKCE. 루프백 또는 붙여 넣은 주소로 승인을 받는다. 토큰은 호출자가 화면에만 출력한다."""
     if not settings.google_client_id or not settings.google_client_secret:
         raise ReviewError(".env에 GOOGLE_CLIENT_ID와 GOOGLE_CLIENT_SECRET을 설정하세요")
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
@@ -356,17 +356,26 @@ def authorize(settings: Settings) -> str:
             "response_type": "code", "scope": SCOPE, "access_type": "offline", "prompt": "consent",
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
         })
-        if _headless() or not webbrowser.open(url):
-            # 서버처럼 브라우저가 없는 곳: 다른 기기의 브라우저에서 승인하면 127.0.0.1:8765로 돌아가며
-            # "연결할 수 없음"이 뜬다. 그 주소창의 전체 주소에 승인 코드가 있으므로 붙여 넣게 한다.
-            print("아래 주소를 브라우저에서 열어 채널 소유자 계정으로 승인하세요:\n" + url, file=sys.stderr)
-            print("승인 뒤 열리지 않는 127.0.0.1:8765 페이지의 주소창 전체를 붙여 넣으세요:", file=sys.stderr)
-            if not _accept(input().strip()):
-                raise ReviewError("붙여 넣은 주소가 이번 승인 요청과 맞지 않습니다. 다시 실행하세요")
-        else:
-            deadline = time.monotonic() + 300
-            while not result and time.monotonic() < deadline:
-                server.handle_request()
+        # 주소는 늘 출력하고 두 길을 함께 기다린다. 같은 기기의 브라우저면 루프백으로 바로 돌아오고, 다른 기기의
+        # 브라우저(서버 SSH 등)면 127.0.0.1:8765가 "연결할 수 없음"으로 뜨므로 그 주소창 전체를 붙여 넣는다.
+        # 브라우저가 있는지 스스로 판단하지 않는다 — 운영 서버는 가상 화면(DISPLAY)과 BROWSER가 있어
+        # 열기가 "성공"으로 끝나지만 사람이 보는 화면에는 아무것도 뜨지 않았다(2026-10-10).
+        print("아래 주소를 브라우저에서 열어 채널 소유자 계정으로 승인하세요:\n" + url, file=sys.stderr)
+        print(f"다른 기기에서 승인했다면 열리지 않는 {AUTH_REDIRECT} 페이지의 주소창 전체를 여기 붙여 넣으세요:",
+              file=sys.stderr)
+        if sys.platform in ("win32", "darwin"):
+            webbrowser.open(url)
+
+        def _read_pasted():
+            for line in sys.stdin:
+                if _accept(_PASTE_MARKS.sub("", line).strip()):
+                    return
+                print("이번 승인 요청의 주소가 아닙니다. 새로 출력된 주소로 승인한 뒤 다시 붙여 넣으세요:", file=sys.stderr)
+
+        threading.Thread(target=_read_pasted, daemon=True).start()
+        deadline = time.monotonic() + AUTH_WAIT_SECONDS
+        while not result and time.monotonic() < deadline:
+            server.handle_request()
     if not result.get("code") or result.get("error"):
         raise ReviewError("YouTube 승인이 거부되었거나 5분 안에 완료되지 않았습니다")
     token = _token(settings, grant_type="authorization_code", code=result["code"],

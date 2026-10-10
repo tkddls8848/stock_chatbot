@@ -1,7 +1,9 @@
 import base64
 from dataclasses import replace
 import hashlib
+import io
 import json
+import time
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock
 
@@ -237,7 +239,8 @@ def test_oauth_loopback_pkce_and_state(prepared, monkeypatch):
         return True
 
     monkeypatch.setattr(youtube, "HTTPServer", Server)
-    monkeypatch.setattr(youtube, "_headless", lambda: False)
+    monkeypatch.setattr(youtube.sys, "platform", "win32")
+    monkeypatch.setattr(youtube.sys, "stdin", io.StringIO(""))
     monkeypatch.setattr(youtube.webbrowser, "open", browser)
     mock = http(monkeypatch, response(payload={"refresh_token": "refresh-result"}))
     assert youtube.authorize(settings) == "refresh-result"
@@ -340,10 +343,11 @@ def test_latest_published_day_wins_and_unuploaded_days_are_skipped(tmp_path):
     assert youtube.publish_latest(tmp_path / "missing", settings) is None
 
 
-def test_headless_server_takes_the_pasted_redirect_address(prepared, monkeypatch):
-    """서버(브라우저 없음)에서는 승인 주소를 출력하고, 승인 뒤 주소창의 전체 주소를 붙여 넣어 받는다."""
+def test_server_terminal_takes_the_pasted_redirect_address(prepared, monkeypatch):
+    """다른 기기에서 승인한 주소를 붙여 넣어 받는다. 운영 서버는 가상 화면이 있어 브라우저 열기가 "성공"하지만
+    사람에게는 아무것도 안 보였으므로(2026-10-10), 브라우저 유무와 상관없이 주소 출력과 붙여 넣기를 늘 받는다."""
     _, settings = prepared
-    printed = []
+    printed, opened = [], []
 
     class Server:
         def __init__(self, address, handler):
@@ -356,19 +360,26 @@ def test_headless_server_takes_the_pasted_redirect_address(prepared, monkeypatch
             pass
 
         def handle_request(self):
-            raise AssertionError("붙여 넣기 경로는 루프백을 기다리지 않는다")
+            time.sleep(.01)
 
-    def paste():
-        state = parse_qs(urlsplit(printed[0].splitlines()[-1]).query)["state"][0]
-        return f"http://127.0.0.1:8765/?state={state}&code=pasted&scope=x"
+    class Stdin:
+        def __iter__(self):
+            state = parse_qs(urlsplit(printed[0].splitlines()[-1]).query)["state"][0]
+            # 이전 요청의 주소는 넘기고, 터미널이 단 붙여 넣기 표시(ESC[200~ … ESC[201~)는 걷어 낸다.
+            yield "http://127.0.0.1:8765/?state=old&code=stale\n"
+            yield f"\x1b[200~http://127.0.0.1:8765/?state={state}&iss=x&code=pasted&scope=y\x1b[201~\n"
 
     monkeypatch.setattr(youtube, "HTTPServer", Server)
-    monkeypatch.setattr(youtube, "_headless", lambda: True)
+    monkeypatch.setattr(youtube.sys, "platform", "linux")
+    monkeypatch.setattr(youtube.sys, "stdin", Stdin())
+    monkeypatch.setattr(youtube.webbrowser, "open", lambda url: opened.append(url) or True)
     monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
-    monkeypatch.setattr("builtins.input", paste)
     mock = http(monkeypatch, response(payload={"refresh_token": "refresh-result"}))
     assert youtube.authorize(settings) == "refresh-result"
     assert mock.call_args.kwargs["data"]["code"] == "pasted"
-    monkeypatch.setattr("builtins.input", lambda: "http://127.0.0.1:8765/?state=wrong&code=bad")
-    with pytest.raises(youtube.ReviewError, match="맞지 않습니다"):
+    assert opened == [] and any("주소가 아닙니다" in line for line in printed)
+
+    monkeypatch.setattr(youtube.sys, "stdin", io.StringIO(""))
+    monkeypatch.setattr(youtube, "AUTH_WAIT_SECONDS", .05)
+    with pytest.raises(youtube.ReviewError, match="5분 안에"):
         youtube.authorize(settings)
