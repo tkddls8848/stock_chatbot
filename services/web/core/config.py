@@ -81,9 +81,8 @@ POLYMARKET_BASE_URL = "https://gamma-api.polymarket.com"
 POLYMARKET_PROXY_URL = os.environ.get("POLYMARKET_PROXY_URL", "").strip()
 POLYMARKET_TIMEOUT = 20
 POLYMARKET_WEB_DIR = PUBLIC_DIR / "polymarket"
-POLYMARKET_WEB_LOW_LIQUIDITY = float(
-    os.environ.get("POLYMARKET_WEB_LOW_LIQUIDITY", "1000")
-)
+# 수집 제외 기준이 아니라 화면의 데이터 품질 배지를 가르는 USD 기준이다.
+POLYMARKET_WEB_LOW_LIQUIDITY = 1000.0
 POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS = 900.0
 POLYMARKET_WEB_MAX_DAILY_REQUESTS = 3000
 # 마감이 이 시간 안에 닥친 event는 **확률 순위에서 뺀다.** 오늘 기온·5분짜리 코인

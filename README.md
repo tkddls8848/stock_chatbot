@@ -25,7 +25,7 @@ CLOUDFLARE_API_TOKEN=<Workers AI 실행 권한 토큰>
 
 ### LLM은 Cloudflare Workers AI를 사용합니다
 
-봇의 시장상황·감성·리서치·브리핑 분석이 모두 Cloudflare Workers AI(`@cf/qwen/qwen3-30b-a3b-fp8`, `CLOUDFLARE_MODEL`)로 동작합니다. 쇼츠는 같은 계정을 쓰되 원고·이슈 선정을 `@cf/deepseek-ai/deepseek-v4-flash-0731`(`SHORTS_EDITOR_MODEL`, 생각 단계 끔)로, 배경 그림을 `flux-1-schnell`로 만듭니다([`shorts/README.md`](shorts/README.md)). 로컬 GPU나 별도 추론 서버가 필요 없어서 **1GB 메모리 무료 VM에서도 돌아갑니다.**
+봇의 시장상황·감성·리서치·브리핑 분석이 모두 Cloudflare Workers AI(`@cf/qwen/qwen3-30b-a3b-fp8`, `CLOUDFLARE_MODEL`)로 동작합니다. 쇼츠는 같은 계정을 쓰되 원고·이슈 선정을 `@cf/deepseek-ai/deepseek-v4-flash-0731`(`shorts` `config.py` 상수, 생각 단계 끔)로, 배경 그림을 `flux-1-schnell`로 만듭니다([`shorts/README.md`](shorts/README.md)). 로컬 GPU나 별도 추론 서버가 필요 없어서 **1GB 메모리 무료 VM에서도 돌아갑니다.**
 
 - 무료 한도는 **하루 10,000 Neurons**이며 UTC 00시(UTC +9 오전 9시)에 리셋됩니다. 리서치 분석은 입력 깊이를 늘린 뒤(뉴스 16건 × 본문 600자, 후보 24개) 1회에 약 400~600 Neurons로 추정되며, 이전의 얕은 입력(6건 × 240자) 기준 실측치는 약 110 Neurons였습니다.
 - 예약 뉴스는 매시간 원문을 모으고 UTC +9 기준 03·08·15·20시(한국장·미국장 개장 전후)에 **발행할지부터 판정합니다.** 검토 시각은 발행 주기가 아닙니다 — 그 시장이 마지막 발행 뒤 모은 기사가 `NEWS_REPORT_MIN_ARTICLES`(8)에 못 미치면 LLM을 부르지 않고 보류하고, 모델이 직전 보고서 대비 새로울 것이 없다고 판정해도 보류합니다. 연속 보류가 `NEWS_REPORT_MAX_HELD_HOURS`(12)를 넘으면 판정과 무관하게 발행합니다. 따라서 LLM 호출 수는 기사 수가 아니라 **발행·검토한 시장 수**에 비례합니다.
@@ -59,7 +59,7 @@ python -m pytest -q shorts/tests   # 루트 pytest에 안 잡힙니다
 `shorts/`는 자기 `pyproject.toml`과 venv를 쓰는 별개 패키지라 루트 `pytest`가
 수집하지 않습니다. 쇼츠를 고쳤으면 위 줄을 함께 돌립니다 — 빼먹으면 조용히
 썩습니다. 한글 폰트가 없는 기기에서는 렌더 테스트가 건너뛰어집니다
-(`apt-get install fonts-noto-cjk` 또는 `SHORTS_FONT_FILE` 지정).
+(`apt-get install fonts-noto-cjk`).
 
 실제 Cloudflare 계정을 호출하는 스모크 테스트는 기본 실행에서 제외되며, 자격증명과 무료 할당량을 소비합니다.
 

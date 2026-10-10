@@ -217,7 +217,7 @@ def produce_revision(
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
         scenario, audio_path=audio, scene_words=scene_words, output_path=video,
-        work_dir=work, font_path=find_font(settings.font_file),
+        work_dir=work, font_path=find_font(),
         blender_bin=settings.blender_bin, ffprobe_bin=settings.ffprobe_bin,
         max_duration=settings.max_duration_seconds, background_paths=backgrounds,
     )
@@ -364,7 +364,7 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
             scene_words=scene_words,
             output_path=video_path,
             work_dir=work,
-            font_path=find_font(settings.font_file),
+            font_path=find_font(),
             blender_bin=settings.blender_bin,
             ffprobe_bin=settings.ffprobe_bin,
             max_duration=settings.max_duration_seconds,

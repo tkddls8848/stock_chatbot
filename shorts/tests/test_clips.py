@@ -199,13 +199,12 @@ def test_oversized_download_falls_back(source, settings, api, monkeypatch):
 
 @pytest.mark.parametrize("seconds", [3, 16, 8.5, True])
 def test_duration_bounds(settings, seconds):
-    with pytest.raises(ValueError, match="SHORTS_CLIP_SECONDS"):
+    with pytest.raises(ValueError, match="clip_seconds"):
         replace(settings, clip_seconds=seconds)
 
 
 def test_defaults_and_secret_repr(monkeypatch):
-    for name in ("SHORTS_GENERATED_CLIPS", "SHORTS_VIDEO_MODEL", "SHORTS_VIDEO_API_KEY", "SHORTS_CLIP_SECONDS"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("SHORTS_VIDEO_API_KEY", raising=False)
     settings = Settings.from_env()
     assert not settings.generated_clips and settings.clip_seconds == 8 and not settings.video_api_key
     monkeypatch.setenv("SHORTS_VIDEO_API_KEY", "private-key")

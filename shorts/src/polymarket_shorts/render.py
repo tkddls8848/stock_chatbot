@@ -39,18 +39,17 @@ class RenderError(RuntimeError):
     pass
 
 
-def find_font(configured: Path | None = None) -> Path:
+def find_font() -> Path:
     candidates = [
-        configured,
         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
         Path("C:/Windows/Fonts/malgunbd.ttf"),
         Path("C:/Windows/Fonts/malgun.ttf"),
     ]
     for candidate in candidates:
-        if candidate and candidate.is_file():
+        if candidate.is_file():
             return candidate
-    raise RenderError("한글 폰트가 없습니다. SHORTS_FONT_FILE을 지정하세요")
+    raise RenderError("한글 폰트가 없습니다. fonts-noto-cjk를 설치하세요")
 
 
 def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:

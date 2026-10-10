@@ -35,6 +35,6 @@ def compose(*, images: list[dict], movies: list[dict], subtitles: list[dict],
         result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
                                 errors="replace", check=False)
     except OSError as exc:
-        raise RenderError(f"Blender를 실행할 수 없습니다. BLENDER_BIN을 확인하세요: {blender_bin}") from exc
+        raise RenderError(f"Blender를 실행할 수 없습니다. blender를 설치하거나 PATH에 두세요: {blender_bin}") from exc
     if result.returncode or not output_path.is_file():
         raise RenderError(f"Blender 렌더링 실패: {(result.stderr + result.stdout)[-2000:]}")

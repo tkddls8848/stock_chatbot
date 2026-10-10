@@ -23,11 +23,11 @@
   게시 제목은 `yyyy-mm-dd 시장 컨센서스`(예: `2026-09-27 시장 컨센서스`)로 통일하고, 그날 다룬 이슈는 설명에 적습니다. 자연어 편집으로도 제목은 바꾸지 않습니다.
 - `review.json`: 검수 상태·영상 정보·제목/설명/태그
 
-영상은 인트로, 선정한 개별 이슈 최대 5개, 고지문 순서입니다. 인트로와 마무리는 그날 내용과 무관한 고정 화면입니다("오늘의 집단 예측 컨센서스 요약 / 지금 시작합니다", "자세한 내용은 nunchi.live에서 확인하세요", 2026-10-07 운영자 결정). 두 화면은 자막을 띄우지 않고 머리말을 안전 영역 가운데에 크게 세웁니다(2026-10-10 운영자 결정, 멘트는 그대로). 약한 분야를 억지로 채우지 않습니다. 완성과 음성 보존이 길이보다 우선입니다. `SHORTS_MAX_DURATION_SECONDS`는 기본 150초(2분 30초)의 허용 상한이며, 초과하면 경고 로그를 남기되 자동 배속이나 생성 중단은 하지 않습니다(완성·음성 보존 우선). 기본 발화 속도는 +0%입니다. Blender와 HyperFrames 모두 전체 원고를 한 번에 합성한 단일 음성을 사용하고 끝에 0.6초 여유를 둡니다. 화면은 edge-tts가 보고한 단어별 발화 시각에 맞춰 장면별로 전환하며, 장면이 바뀌는 자리에는 0.9~1.3초의 호흡을 둡니다(자리마다 다릅니다). 플랫폼의 Shorts 분류 조건과 제작 목표는 별개이므로 긴 완성본은 게시 전 확인합니다.
+영상은 인트로, 선정한 개별 이슈 최대 5개, 고지문 순서입니다. 인트로와 마무리는 그날 내용과 무관한 고정 화면입니다("오늘의 집단 예측 컨센서스 요약 / 지금 시작합니다", "자세한 내용은 nunchi.live에서 확인하세요", 2026-10-07 운영자 결정). 두 화면은 자막을 띄우지 않고 머리말을 안전 영역 가운데에 크게 세웁니다(2026-10-10 운영자 결정, 멘트는 그대로). 약한 분야를 억지로 채우지 않습니다. 완성과 음성 보존이 길이보다 우선입니다. `max_duration_seconds`는 150초(2분 30초)의 허용 상한이며, 초과하면 경고 로그를 남기되 자동 배속이나 생성 중단은 하지 않습니다(완성·음성 보존 우선). 기본 발화 속도는 +0%입니다. Blender와 HyperFrames 모두 전체 원고를 한 번에 합성한 단일 음성을 사용하고 끝에 0.6초 여유를 둡니다. 화면은 edge-tts가 보고한 단어별 발화 시각에 맞춰 장면별로 전환하며, 장면이 바뀌는 자리에는 0.9~1.3초의 호흡을 둡니다(자리마다 다릅니다). 플랫폼의 Shorts 분류 조건과 제작 목표는 별개이므로 긴 완성본은 게시 전 확인합니다.
 
 ## 시장상황 보고서 롱폼
 
-영어판 쇼츠 대신, 봇이 발행한 시장상황 보고서 한 편을 가로(1920×1080) 4~5분 영상으로 만듭니다(`longform.py`·`longform_render.py`, 2026-10-10 운영자 결정).
+영어판 쇼츠 대신, 봇이 발행한 시장상황 보고서 한 편을 가로(1920×1080) 영상으로 만듭니다(`longform.py`·`longform_render.py`, 2026-10-10 운영자 결정).
 
 ```bash
 .venv/bin/python -m polymarket_shorts.cli --longform US            # 미국 최신 보고서
@@ -35,10 +35,10 @@
 .venv/bin/python -m polymarket_shorts.cli --longform US --report-id "report:US:2026-10-10T08:00:00+09:00"
 ```
 
-- 원재료: 공개 웹 `/api/search`의 그 시장 최신 보고서(`kind: report`), 그 보고서 구간 안에 발행된 공개 기사 최대 7건, `/api/market`의 최근 14일 일일 감성. 모델은 부르지 않습니다.
-- 순서: 도입(고정 화면·자막 없음) → 최근 14일 뉴스 감성 막대 → 보고서 문단별 장면 → 이 구간 주요 기사 → 마무리(고정 화면·자막 없음).
-- 보고서 본문은 합쇼체로 옮겨 그대로 읽고, 화면은 지금 읽는 문장·기사 줄을 밝게 짚습니다. 오른쪽에는 목차가 있습니다.
-- 산출물: `storage/shorts/longform/<날짜>/<시장>-<HHMM>/` — `report-<시장>-<날짜>-<HHMM>.mp4`·`.timeline.json`, `scenario.json`(원고), `source.json`(보고서·기사·감성 원자료), `narration.mp3`, `words.jsonl`, `result.json`. 쇼츠 제작일 폴더와 같이 2주 보관합니다.
+- 원재료: 공개 웹 `/api/search`의 그 시장 최신 보고서(`kind: report`), 그 보고서 구간 안에 발행된 공개 기사 최대 7건, `/api/market`의 최근 14일 일일 감성.
+- 순서(운영자 수정 대사 2026-10-10): 시작(고정 화면·자막 없음) → 목차 → 최근 14일 뉴스 감성 막대 → 주요 기사(제목 + 매체·원제 한 줄 요약) → 시장 분석(보고서 한 장면, 주제는 화면에·내용은 자막으로) → 마무리(고정 화면·자막 없음).
+- 쇼츠 원고와 같은 모델(`editor_model`)을 한 번 부릅니다. 보고서를 2~3문단의 분석 원고로 줄이고 기사마다 원제에만 있는 정보를 한 문장으로 씁니다. 보고서에 없는 숫자, 보고서 문장 옮겨 적기, 같은 말 되풀이는 검증에서 막고, 걸리면 사유를 붙여 한 번 더 묻습니다. **길이를 채우려고 늘리지 않습니다** — 재료가 적으면 영상이 짧아집니다.
+- 산출물: `storage/shorts/longform/<날짜>/<시장>-<HHMM>/` — `report-<시장>-<날짜>-<HHMM>.mp4`·`.timeline.json`(화면 전환·자막), `scenario.json`(원고), `source.json`(보고서·기사·감성 원자료와 모델 원고), `narration.mp3`, `words.jsonl`, `result.json`. 쇼츠 제작일 폴더와 같이 2주 보관합니다.
 - 검토·YouTube 업로드·예약 제작·텔레그램 운영에는 아직 묶여 있지 않습니다.
 
 ## 설치
@@ -70,7 +70,7 @@ winget install --id BlenderFoundation.Blender -e
 ```
 
 Blender는 PATH 또는 `C:\Program Files\Blender Foundation\Blender *\blender.exe`에서 찾습니다.
-`BLENDER_BIN`에 실행 파일 경로를 지정할 수 있고, 지정한 경로가 없으면 명확한 렌더 오류로 중단합니다.
+찾지 못하면 명확한 렌더 오류로 중단합니다.
 FFmpeg는 WinGet 설치 경로도 자동 탐색합니다.
 
 로컬 영상 생성 테스트:
@@ -95,10 +95,12 @@ Workers AI API 토큰입니다. 저장소 루트 `.env.example`을 참고해 루
 ```dotenv
 CLOUDFLARE_ACCOUNT_ID=계정_ID
 CLOUDFLARE_API_TOKEN=Workers_AI_API_토큰
-SHORTS_EDITOR_MODEL=@cf/deepseek-ai/deepseek-v4-flash-0731
-# 추론 모델은 none으로 생각 단계를 끈다(채팅 템플릿 인자로 끈다 — reasoning_effort "none"은 무시된다)
-SHORTS_EDITOR_REASONING_EFFORT=none
 ```
+
+`.env`에는 비밀값과 `STORAGE_DIR`만 둡니다. 모델·음성·공개 범위·자동 승인 같은 조정값은
+`src/polymarket_shorts/config.py`의 `Settings` 기본값입니다 — 바꾸면 git에 남습니다.
+원고 모델은 `editor_model=@cf/deepseek-ai/deepseek-v4-flash-0731`, 추론 단계는 `editor_reasoning_effort=none`으로
+끕니다(채팅 템플릿 인자로 끈다 — reasoning_effort "none"은 무시된다).
 
 이슈 선정·원고·자연어 편집은 이 모델 하나가 맡습니다. 2026-09-28 같은 입력으로 6개 모델
 (qwen3-30b·qwen3.8-27b·mistral-small-3.1·gpt-oss-20b·glm-4.7-flash·deepseek-v4-flash)을
@@ -113,10 +115,10 @@ qwen3-30b라 `.env`에 적어야 바뀝니다. 생각 단계를 켜 두면 생�
    24시간 거래량 2,000달러·유동성 1,000달러 이상, 종료 예정일이 지나지 않은 이벤트를 대상으로 합니다.
    분야 안에서 거래량 로그 점수 50%, 유동성 20%, 관측된 가격 변동 20%, 종료일까지의 거리 10%로 정렬합니다.
    같은 주제의 날짜·가격 변형은 후보 두 개까지 허용하고, 분야별 최대 10개(전체 최대 50개)를 남깁니다.
-   최근 `SHORTS_REPEAT_DAYS`(7)일 안에 영상으로 다룬 이벤트와 같은 주제(날짜·숫자만 다른 변형 포함)는 후보에서 뺍니다.
+   최근 `repeat_days`(7)일 안에 영상으로 다룬 이벤트와 같은 주제(날짜·숫자만 다른 변형 포함)는 후보에서 뺍니다.
    2026-09-23~27 네 편이 모두 같은 연준·호르무즈 질문이었던 반복을 막습니다. 뺀 목록은 `selection.json`의 `recently_featured`에 남습니다.
-3. `SHORTS_EDITOR_MODEL`을 한 번 호출해 시장 관련성과 시의성을 평가합니다. 각 0~3점 중 모두 2점 이상인 이슈를
-   분야·주제당 최대 하나, 전체 최대 `SHORTS_MAX_GROUPS`개(상한 5개) 선정합니다. 기준을 넘는 후보가 둘 이상이면
+3. `editor_model`을 한 번 호출해 시장 관련성과 시의성을 평가합니다. 각 0~3점 중 모두 2점 이상인 이슈를
+   분야·주제당 최대 하나, 전체 최대 `max_groups`개(5개) 선정합니다. 기준을 넘는 후보가 둘 이상이면
    최소 2개를 고르라고 프롬프트에 적습니다(검증으로 강제하지 않아 호출이 늘지 않습니다). 중복 제안은 제외 기록을 남깁니다.
 4. 선정한 이슈만 상세와 Google News RSS를 조회합니다. 각각 최대 5회입니다.
    자료 시점 이전 7일 이내 뉴스 제목 최대 3개만 보조 자료로 쓰며 기사 본문을 읽었다고 주장하지 않습니다.
@@ -253,7 +255,7 @@ $env:PYTHONPATH='shorts/src'
    화면에 출력된 `SHORTS_YOUTUBE_REFRESH_TOKEN=...`을 복사합니다. 도구는 토큰을
    파일로 저장하지 않습니다. 터미널 출력도 외부에 공유하지 마세요.
 5. 서버의 `/srv/stock-chatbot/.env`에 같은 ID·secret과 refresh token을 넣습니다.
-   `SHORTS_YOUTUBE_PRIVACY=private`, `SHORTS_YOUTUBE_CATEGORY_ID=25`가 기본값입니다.
+   공개 범위(`youtube_privacy=public`)와 카테고리(`youtube_category_id=25`)는 `config.py` 상수입니다.
    **테스트 상태 앱의 refresh token은 발급 7일 뒤 끊깁니다** — 2026-09-27에 받은 토큰이 10-04에 끊겨
    나흘 동안 영상만 만들고 올리지 못했습니다. 지속 운영하려면 Google Auth Platform → 대상에서 앱을
    프로덕션으로 게시합니다(미검증 앱 경고는 채널 소유자 본인 승인에는 지장이 없습니다). YouTube API
@@ -262,9 +264,9 @@ $env:PYTHONPATH='shorts/src'
    서버 `.env`의 `SHORTS_YOUTUBE_REFRESH_TOKEN` 한 줄만 바꿉니다. 쇼츠 CLI는 실행마다 `.env`를 읽으므로
    봇을 재시작하지 않아도 되고, 승인된 원고는 다음 확인 주기(1분)에 다시 올라갑니다.
 
-제작한 시나리오는 텔레그램에 먼저 전송합니다. `SHORTS_AUTO_PUBLISH=true`이면 원고 전체가 전달된 뒤
-`SHORTS_REVIEW_TIMEOUT_MINUTES=60` 동안 응답이 없을 때 승인·업로드합니다. 전송 실패에는 자동 승인 시간이
-시작되지 않습니다. 끄면 직접 승인할 때까지 기다립니다.
+제작한 시나리오는 텔레그램에 먼저 전송합니다. `auto_publish`(켜짐)이면 원고 전체가 전달된 뒤
+`review_timeout_minutes`(60분) 동안 응답이 없을 때 승인·업로드합니다. 전송 실패에는 자동 승인 시간이
+시작되지 않습니다. `config.py`에서 끄면 직접 승인할 때까지 기다립니다.
 
 `/shorts done [검토번호]` 또는 승인 버튼으로 즉시 올리고, `/shorts hold [검토번호]`로 보류합니다.
 `/shorts edit [검토번호] 수정할 내용`은 자동 승인을 멈춘 뒤 수정·재렌더합니다. 수정본을 보낸 뒤 다시
@@ -436,8 +438,8 @@ $env:PYTHONPATH='shorts/src'
 이슈 사이 `TOPIC_PAUSE_SECONDS`(1.2초), 마무리 고지문 앞
 `CLOSING_PAUSE_SECONDS`(1.3초), 그리고 장면 안 문장 끝에
 `SENTENCE_PAUSE_SECONDS`(0.7초)입니다(2026-10-07 운영자 요청으로 넓혔습니다). 한 값으로 고정하면 어디서나 똑같이
-끊겨 사람이 읽는 리듬이 아니게 됩니다. 발화 속도·목소리는 `SHORTS_TTS_RATE`·
-`SHORTS_TTS_VOICE`로 조절하지만 기본값(+0%, `ko-KR-SunHiNeural`)은 그대로
+끊겨 사람이 읽는 리듬이 아니게 됩니다. 발화 속도·목소리는 `tts_rate`·
+`tts_voice`로 조절하지만 기본값(+0%, `ko-KR-SunHiNeural`)은 그대로
 둡니다 — 연출의 자연스러움은 속도나 억양을 과장해서가 아니라 호흡에서 옵니다.
 말소리 프레임은 건드리지 않아
 재인코딩이 없습니다. 이미 충분한 쉼은 유지하며, 복제할 무음이 없는 경계도 원래 음성과
@@ -478,9 +480,9 @@ Noto Sans CJK KR Bold 50px(`render.CAPTION_RENDER_SIZE`) 흰 글씨를 **상자 
 **지금 화면은 아래 배경 그림을 쓰지 않습니다**(2026-10-08). 바탕은 렌더가 그리는 남색 한 장이라 생성한 그림은
 화면에 나오지 않습니다. 생성 단계는 걷어낼 때까지 아래처럼 그대로 돕니다.
 배경은 그날 이슈로 새로 그립니다(`media.backgrounds_for`). 원고가 쓴 글자 없는 장면
-묘사(`image_scene`)를 Cloudflare `SHORTS_IMAGE_MODEL`(`flux-1-schnell`)로 그리고, 정사각형
+묘사(`image_scene`)를 Cloudflare `image_model`(`flux-1-schnell`)로 그리고, 정사각형
 결과의 가운데를 9:16으로 잘라 씁니다. 도입은 첫 이슈 그림을 다시 쓰지 않고 도입용 풍경을
-따로 그립니다. 그린 뒤 `SHORTS_VISION_MODEL`(LLaVA)로 사람·글자가 보이는지 묻고, 보이면 최대
+따로 그립니다. 그린 뒤 `vision_model`(LLaVA)로 사람·글자가 보이는지 묻고, 보이면 최대
 3번까지 다시 그립니다. 끝까지 걸리거나 호출이 실패하면 `assets/backgrounds/`의 저장 배경
 (`global-trade.png`·`financial-city.png`)으로 갑니다 — 배경 한 장 때문에 제작을 멈추지 않습니다.
 그림은 날짜 폴더 `backgrounds/`에 묘사의 해시로 저장해 수정·재렌더가 같은 그림을 다시 씁니다.
@@ -488,22 +490,22 @@ Noto Sans CJK KR Bold 50px(`render.CAPTION_RENDER_SIZE`) 흰 글씨를 **상자 
 배경으로는 차이가 거의 없고 한 장에 수 분이 걸려 schnell을 유지합니다.
 저장 배경은 **장면마다 다르게 잡습니다** — 크롭 위치를 장면 순서대로 옮기고, 짝수 장면은
 좌우를 뒤집고, 색조를 그 장면의 accent(gold/blue/red)로 입힙니다(`render._background`).
-`SHORTS_GENERATED_BACKGROUNDS=false`이면 생성하지 않고 저장 배경만 씁니다.
-`SHORTS_VISUALS_ENABLED=false`이면 기본 단색 배경을 사용하며, 이미지가 없거나
+`generated_backgrounds=False`이면 생성하지 않고 저장 배경만 씁니다.
+`visuals_enabled=False`이면 기본 단색 배경을 사용하며, 이미지가 없거나
 손상됐을 때도 경고를 기록하고 단색 배경으로 진행합니다.
 HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합니다.
 
 ### 선택 기능: Seedance 모션 배경
 
-`SHORTS_GENERATED_CLIPS=true`와 `SHORTS_VIDEO_API_KEY`(fal 키)를 설정하면 이미 만든
+`config.py`의 `generated_clips=True`와 `.env`의 `SHORTS_VIDEO_API_KEY`(fal 키)가 있으면 이미 만든
 flux 이슈 PNG를 무음 영상으로 확장합니다. 기본값은 꺼짐이며 키가 비어 있거나 성공한
 클립이 없으면 정지 PNG를 같은 Blender VSE 경로로 합성합니다.
-`SHORTS_VISUALS_ENABLED`와 `SHORTS_GENERATED_BACKGROUNDS`도 켜져 있어야 새 이슈 PNG를
+`visuals_enabled`와 `generated_backgrounds`도 켜져 있어야 새 이슈 PNG를
 만들 수 있습니다. 저장된 기본 배경은 영상 생성에 보내지 않습니다.
 
-- 모델: `SHORTS_VIDEO_MODEL=bytedance/seedance-2.0/fast/image-to-video`.
-- 길이: `SHORTS_CLIP_SECONDS=8`(정수 4~15), 720p·9:16·무음.
-- 최대 `SHORTS_MAX_GROUPS`개(상한 5개)를 동시에 제출하고 전체 10분까지만 기다립니다.
+- 모델: `video_model=bytedance/seedance-2.0/fast/image-to-video`.
+- 길이: `clip_seconds=8`(정수 4~15), 720p·9:16·무음.
+- 최대 `max_groups`개(5개)를 동시에 제출하고 전체 10분까지만 기다립니다.
   다운로드·길이·해상도·디코딩 검증 실패와 시간 초과는 경고를 남기고 PNG를 사용합니다.
 - `backgrounds/<이슈 해시>.mp4`를 캐시합니다. 도입은 따로 그린 정지 그림을 쓰고(클립 없음) 마무리는
   정지 배경입니다. 자연어 수정본은 원본 폴더의 캐시를 재사용합니다.

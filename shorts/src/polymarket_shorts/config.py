@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
-import math
 from pathlib import Path
 import shutil
 from zoneinfo import ZoneInfo
@@ -13,29 +12,22 @@ from dotenv import load_dotenv
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_DIR.parent / ".env")
 
-
-def _bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+# 설정 저장 방침은 봇·웹과 같다(`services/telegram_bot/core/config.py` 머리말). 루트 `.env`에는
+# 비밀값(Cloudflare·fal·YouTube 자격증명)과 저장 경로(`STORAGE_DIR`)만 두고, 운영자가 조정하는
+# 값(모델·음성·공개 범위·자동 승인 등)은 아래 `Settings`의 기본값으로 둔다 — 바꾸면 git에 남는다.
 
 
-def _media_binary(env_name: str, executable: str) -> str:
-    configured = os.getenv(env_name, "").strip() or executable
-    located = shutil.which(configured)
+def _media_binary(executable: str) -> str:
+    located = shutil.which(executable)
     if located:
         return located
-    configured_path = Path(configured)
-    if configured_path.is_file():
-        return str(configured_path)
     if executable == "blender":
-        if os.name == "nt" and not os.getenv(env_name, "").strip():
+        if os.name == "nt":
             root = Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Blender Foundation"
             matches = sorted(root.glob("Blender */blender.exe"), reverse=True)
             if matches:
                 return str(matches[0])
-        return configured
+        return executable
     # WinGet 설치 직후에는 현재 프로세스의 PATH가 갱신되지 않는다. Gyan 패키지의
     # 실제 bin 경로를 찾아 새 터미널이나 앱 재시작 없이도 첫 렌더를 진행한다.
     local_app_data = os.getenv("LOCALAPPDATA", "").strip()
@@ -47,7 +39,7 @@ def _media_binary(env_name: str, executable: str) -> str:
         )
         if matches:
             return str(matches[0])
-    return configured
+    return executable
 
 
 def _storage_dir() -> Path:
@@ -61,26 +53,27 @@ def _storage_dir() -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    web_url: str
-    timezone: ZoneInfo
     output_dir: Path
     state_file: Path
-    max_duration_seconds: float
-    target_script_chars: int
-    max_groups: int
-    tts_voice: str
-    tts_rate: str
-    font_file: Path | None
-    ffmpeg_bin: str
-    ffprobe_bin: str
-    visuals_enabled: bool
+    ffmpeg_bin: str = "ffmpeg"
+    ffprobe_bin: str = "ffprobe"
     blender_bin: str = "blender"
+    web_url: str = "https://nunchi.live"
+    timezone: ZoneInfo = ZoneInfo("Asia/Seoul")
+    max_duration_seconds: float = 150.0
+    target_script_chars: int = 1000
+    # 이슈 장면 수 상한. 화면·대사 구성이 5개까지만 맞춰져 있다.
+    max_groups: int = 5
+    tts_voice: str = "ko-KR-SunHiNeural"
+    tts_rate: str = "+0%"
+    visuals_enabled: bool = True
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
-    editor_model: str = "@cf/qwen/qwen3-30b-a3b-fp8"
+    # 이슈 선별·원고·자연어 편집·롱폼 원고 모델(Cloudflare Workers AI).
+    editor_model: str = "@cf/deepseek-ai/deepseek-v4-flash-0731"
     # 추론 모델(deepseek-v4 등)의 reasoning_effort. "none"이면 생각 단계를 끈다 — 켜 두면
     # 생각이 토큰 상한과 시간을 먹어 원고가 잘린다(실측 2026-09-28). 비우면 보내지 않는다.
-    editor_reasoning_effort: str = ""
+    editor_reasoning_effort: str = "none"
     # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
     generated_backgrounds: bool = True
     image_model: str = "@cf/black-forest-labs/flux-1-schnell"
@@ -90,6 +83,7 @@ class Settings:
     vision_model: str = "@cf/llava-hf/llava-1.5-7b-hf"
     # 최근 며칠 안에 다룬 이벤트·주제는 후보에서 뺀다(매일 같은 이슈 반복 방지).
     repeat_days: int = 7
+    # 만든 이슈 PNG를 fal Seedance 무음 클립으로 확장한다. 키(`SHORTS_VIDEO_API_KEY`)가 비면 정지 유지.
     generated_clips: bool = False
     video_model: str = "bytedance/seedance-2.0/fast/image-to-video"
     video_api_key: str = field(default="", repr=False)
@@ -97,10 +91,10 @@ class Settings:
     youtube_client_id: str = field(default="", repr=False)
     youtube_client_secret: str = field(default="", repr=False)
     youtube_refresh_token: str = field(default="", repr=False)
-    youtube_privacy: str = "private"
+    youtube_privacy: str = "public"
     youtube_category_id: str = "25"
     # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
-    auto_publish: bool = False
+    auto_publish: bool = True
     review_timeout_minutes: int = 60
 
     @property
@@ -110,49 +104,24 @@ class Settings:
 
     def __post_init__(self) -> None:
         if type(self.review_timeout_minutes) is not int or not 1 <= self.review_timeout_minutes <= 1440:
-            raise ValueError("SHORTS_REVIEW_TIMEOUT_MINUTES must be an integer from 1 to 1440")
+            raise ValueError("review_timeout_minutes must be an integer from 1 to 1440")
         if type(self.clip_seconds) is not int or not 4 <= self.clip_seconds <= 15:
-            raise ValueError("SHORTS_CLIP_SECONDS must be an integer from 4 to 15")
+            raise ValueError("clip_seconds must be an integer from 4 to 15")
 
     @classmethod
     def from_env(cls) -> "Settings":
-        maximum = float(os.getenv("SHORTS_MAX_DURATION_SECONDS", "150"))
-        if not math.isfinite(maximum) or maximum <= 0:
-            raise ValueError("SHORTS_MAX_DURATION_SECONDS must be finite and positive")
-        font = os.getenv("SHORTS_FONT_FILE", "").strip()
+        """`.env`에서는 비밀값과 저장 경로만 읽는다. 나머지는 위 기본값이다."""
+        output_dir = _storage_dir() / "shorts"
         return cls(
+            output_dir=output_dir,
+            state_file=output_dir / "state" / "published.json",
+            ffmpeg_bin=_media_binary("ffmpeg"),
+            ffprobe_bin=_media_binary("ffprobe"),
+            blender_bin=_media_binary("blender"),
+            editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
+            editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
+            video_api_key=os.getenv("SHORTS_VIDEO_API_KEY", "").strip(),
             youtube_client_id=os.getenv("SHORTS_YOUTUBE_CLIENT_ID", "").strip(),
             youtube_client_secret=os.getenv("SHORTS_YOUTUBE_CLIENT_SECRET", "").strip(),
             youtube_refresh_token=os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "").strip(),
-            youtube_privacy=os.getenv("SHORTS_YOUTUBE_PRIVACY", "private").strip(),
-            youtube_category_id=os.getenv("SHORTS_YOUTUBE_CATEGORY_ID", "25").strip(),
-            auto_publish=_bool("SHORTS_AUTO_PUBLISH", False),
-            review_timeout_minutes=int(os.getenv("SHORTS_REVIEW_TIMEOUT_MINUTES", "60")),
-            editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
-            editor_api_token=os.getenv("CLOUDFLARE_API_TOKEN", "").strip(),
-            editor_model=os.getenv("SHORTS_EDITOR_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8").strip(),
-            editor_reasoning_effort=os.getenv("SHORTS_EDITOR_REASONING_EFFORT", "").strip(),
-            web_url=os.getenv("POLYMARKET_WEB_URL", "https://nunchi.live").rstrip("/"),
-            timezone=ZoneInfo(os.getenv("SHORTS_TIMEZONE", "Asia/Seoul")),
-            output_dir=_storage_dir() / "shorts",
-            state_file=_storage_dir() / "shorts" / "state" / "published.json",
-            max_duration_seconds=maximum,
-            target_script_chars=max(300, int(os.getenv("SHORTS_TARGET_SCRIPT_CHARS", "1000"))),
-            max_groups=min(5, max(1, int(os.getenv("SHORTS_MAX_GROUPS", "5")))),
-            tts_voice=os.getenv("SHORTS_TTS_VOICE", "ko-KR-SunHiNeural"),
-            tts_rate=os.getenv("SHORTS_TTS_RATE", "+0%"),
-            font_file=Path(font) if font else None,
-            blender_bin=_media_binary("BLENDER_BIN", "blender"),
-            ffmpeg_bin=_media_binary("FFMPEG_BIN", "ffmpeg"),
-            ffprobe_bin=_media_binary("FFPROBE_BIN", "ffprobe"),
-            visuals_enabled=_bool("SHORTS_VISUALS_ENABLED", True),
-            generated_backgrounds=_bool("SHORTS_GENERATED_BACKGROUNDS", True),
-            repeat_days=max(0, int(os.getenv("SHORTS_REPEAT_DAYS", "7"))),
-            image_model=os.getenv("SHORTS_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip(),
-            background_check=_bool("SHORTS_BACKGROUND_CHECK", True),
-            vision_model=os.getenv("SHORTS_VISION_MODEL", "@cf/llava-hf/llava-1.5-7b-hf").strip(),
-            generated_clips=_bool("SHORTS_GENERATED_CLIPS", False),
-            video_model=os.getenv("SHORTS_VIDEO_MODEL", "bytedance/seedance-2.0/fast/image-to-video").strip(),
-            video_api_key=os.getenv("SHORTS_VIDEO_API_KEY", "").strip(),
-            clip_seconds=int(os.getenv("SHORTS_CLIP_SECONDS", "8")),
         )

@@ -733,14 +733,13 @@ coverage_status complete 유지
 CPU 상한을 넘으면 30분으로 늘린다. status에는 재시도를 포함한 실제 request 수와
 24시간 합계도 기록한다.
 
-환경 변수는 운영자가 조정할 표시 기준만 둔다.
+환경 변수는 지역 차단 우회용 proxy 하나만 둔다.
 
 ```text
 POLYMARKET_PROXY_URL=
-POLYMARKET_WEB_LOW_LIQUIDITY=1000
 ```
 
-timeout과 파일 경로처럼 운영 중 조정하지 않는 값은 `services/web/core/config.py`의 literal
+표시 기준(`POLYMARKET_WEB_LOW_LIQUIDITY=1000`), timeout, 파일 경로는 `services/web/core/config.py`의 literal
 상수로 둔다.
 
 ### 9-2. 실제 주기로 freshness를 판정한다
@@ -789,7 +788,7 @@ infra/systemd/stock-chatbot-polymarket-refresh.timer
 services/web/server.py             /polymarket와 /api/forecast/*
 services/web/pages.py       nav와 공통 shell
 services/web/core/config.py           현재 웹에 필요한 literal·env만 유지
-.env.example              POLYMARKET_WEB_LOW_LIQUIDITY와 proxy
+.env.example              proxy
 infra/Caddyfile.example  공개 읽기 정책
 infra/server-ops.md        설치·상태·장애·철수 절차 교체
 README.md                 keyset smoke와 현재 웹 설명으로 교체
@@ -834,7 +833,7 @@ POLYMARKET_RETENTION_DAYS
 ```
 
 `POLYMARKET_BASE_URL`, `POLYMARKET_PROXY_URL`, `POLYMARKET_TIMEOUT`은 새 transport에
-필요한 동안 유지한다. `POLYMARKET_WEB_LOW_LIQUIDITY`는 표시용 새 env다.
+필요한 동안 유지한다. `POLYMARKET_WEB_LOW_LIQUIDITY`는 표시용 상수다.
 
 기존 테스트 8개의 처리는 명시적으로 나눈다.
 

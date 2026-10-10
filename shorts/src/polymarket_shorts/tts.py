@@ -116,6 +116,8 @@ SPOKEN_FORMS = {
     "NASDAQ": "나스닥", "Nasdaq": "나스닥", "KOSPI": "코스피", "KOSDAQ": "코스닥", "Nikkei": "닛케이",
     "NIKKEI": "닛케이", "Dow Jones": "다우존스", "DAX": "닥스", "FTSE": "풋시", "Hang Seng": "항셍",
     "NYSE": "뉴욕증권거래소",
+    # 화면·자막에는 주소를 그대로 적고 소리만 우리말로 읽는다(영문 철자로 읽으면 주소로 들리지 않는다).
+    "nunchi.live": "눈치 닷 라이브",
 }
 # 영문 낱말 중간("DAXX", "Nasdaqs")에서는 바꾸지 않는다.
 _SPOKEN = re.compile(_UNSPOKEN.pattern + "|" + "|".join(

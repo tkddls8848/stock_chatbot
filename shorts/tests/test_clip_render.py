@@ -197,13 +197,8 @@ def test_validation_rejects_dimensions_duration_and_codec(metadata, monkeypatch,
 
 
 def test_missing_blender_is_a_clear_render_error(tmp_path, cjk_font):
-    with pytest.raises(render.RenderError, match="BLENDER_BIN"):
+    with pytest.raises(render.RenderError, match="Blender를 실행할 수 없습니다"):
         blender_render.compose(images=[], movies=[], subtitles=[], audio_path=tmp_path / "a.wav",
                                output_path=tmp_path / "out.mp4", work_dir=tmp_path, duration=3,
                                blender_bin="definitely-not-blender")
 
-
-def test_blender_explicit_missing_path_is_not_replaced(monkeypatch, tmp_path):
-    missing = str(tmp_path / "missing-blender.exe")
-    monkeypatch.setenv("BLENDER_BIN", missing)
-    assert Settings.from_env().blender_bin == missing
