@@ -457,3 +457,14 @@ def test_keyboard_focus_stays_visible():
                      "select:focus-visible", "textarea:focus-visible", "[tabindex]:focus-visible"):
         assert selector in _STYLE, selector
     assert "outline:none" not in _STYLE.replace("main#main:focus{outline:none}", "")
+
+
+def test_every_screen_shows_login_state_and_logout_in_the_top_menu():
+    """상단 메뉴가 어느 화면에서나 로그인 상태와 로그아웃을 보여 준다(운영자 요청 2026-10-10)."""
+    client = TestClient(server.build_app())
+    for path in SCREENS:
+        body = client.get(path).text
+        nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
+        assert "id='nav-acct'" in nav and "id='nav-logout'" in nav, path
+        # 상태는 세션 API로 채우고, 로그아웃은 같은 API의 DELETE다.
+        assert "fetch('/api/account/session',{method:'DELETE'" in body, path

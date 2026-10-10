@@ -125,6 +125,11 @@ border-bottom:3px double var(--rule)}
 border-bottom:2px solid transparent}
 .links a[aria-current]{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
 .links a[href='/research']{margin-left:12px;padding-left:22px;border-left:1px solid var(--line)}
+.acct{display:flex;align-items:baseline;gap:8px;padding-left:16px;border-left:1px solid var(--line);
+font-size:13px;color:var(--mut);white-space:nowrap}
+.acct.on #nav-acct-state{color:var(--ink);font-weight:600}
+.acct-btn{border:1px solid var(--line);border-radius:var(--r1);background:none;padding:3px 10px;font:inherit;
+color:var(--ink-soft);text-decoration:none;cursor:pointer}
 
 /* 날짜 줄 — 이 사이트가 실시간이 아니라는 사실을 모든 화면의 같은 자리에 둔다. */
 .asof{background:var(--bg);color:var(--mut);font-size:13px}
@@ -289,6 +294,7 @@ justify-content:space-between;color:var(--faint);font-size:var(--fs-xs)}
 
 @media(hover:hover) and (pointer:fine){
 .links a:hover{color:var(--ink);border-bottom-color:var(--line)}
+.acct-btn:hover{color:var(--ink);border-color:var(--ink-soft)}
 .tablewrap tbody tr:hover td{background:var(--fill-1)}
 .sf-links a:hover{color:var(--gold)}}
 
@@ -347,7 +353,8 @@ border-radius:var(--r1);background:#fff;color:var(--gold);text-decoration:none;f
 .news-row h4{margin:6px 0;font-size:16px}.news-row p{font-size:14px;line-height:1.8;white-space:pre-wrap;margin:8px 0}
 .news-row a{font-size:12px;color:var(--acc)}
 .docbody h2{font-family:var(--font-serif);font-size:21px;margin-top:32px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-@media(max-width:760px){.navin{flex-wrap:wrap;gap:8px}.links{flex-basis:100%;margin-left:-10px;flex-wrap:wrap}.links a[href='/research']{margin-left:0;padding-left:10px;border-left:0}}
+@media(max-width:760px){.navin{flex-wrap:wrap;gap:8px}.links{flex-basis:100%;margin-left:-10px;flex-wrap:wrap;order:2}
+.acct{order:1;margin-left:auto;align-self:center;border-left:0;padding-left:0}.links a[href='/research']{margin-left:0;padding-left:10px;border-left:0}}
 @media(max-width:520px){.login-panel{padding:24px 18px}.login-panel h2{font-size:22px}.workspace-toolbar{align-items:start;flex-direction:column}.research-form{padding:14px}.research-form label:first-child{flex-basis:100%}.research-form .action{flex:1}.asofin{gap:6px}.mh-date{font-size:11px}.mh-id{display:none}}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -405,6 +412,10 @@ def _header(active: str) -> str:
         + "<span class='brand-t'><span>" + SITE_BRAND + "</span>"
         "<small>" + SITE_TAGLINE + "</small></span></a>"
         "<div class='links'>" + nav + "</div>"
+        # 로그인 상태는 공통 스크립트가 /api/account/session으로 채운다. 로그인 설정이 없으면 숨긴 채 둔다.
+        "<div class='acct' id='nav-acct' hidden><span id='nav-acct-state'></span>"
+        "<a class='acct-btn' id='nav-login' href='/auth/google?next=/portfolio' hidden>로그인</a>"
+        "<button class='acct-btn' id='nav-logout' type='button' hidden>로그아웃</button></div>"
         "</div></nav>"
     )
 
@@ -507,5 +518,20 @@ fetch('/api/meta').then(r=>r.json()).then(d=>{
   stat.hidden=false;
 }).catch(()=>{
   document.getElementById('asof-date').textContent='자료 시각을 읽지 못했습니다';
+});
+// 상단 메뉴의 로그인 상태. 로그인 설정이 없으면(configured=false) 띄우지 않는다.
+fetch('/api/account/session',{credentials:'same-origin'}).then(r=>r.json()).then(s=>{
+  if(!s.configured)return;
+  const box=document.getElementById('nav-acct');
+  box.classList.toggle('on',!!s.unlocked);
+  document.getElementById('nav-acct-state').textContent=s.unlocked?'로그인됨':'로그인 안 됨';
+  if(s.unlocked){document.getElementById('nav-logout').hidden=false;}
+  else{const a=document.getElementById('nav-login');
+    a.href='/auth/google?next='+(location.pathname==='/research'?'/research':'/portfolio');a.hidden=false;}
+  box.hidden=false;
+}).catch(()=>{});
+document.getElementById('nav-logout').addEventListener('click',async()=>{
+  const r=await fetch('/api/account/session',{method:'DELETE',credentials:'same-origin'});
+  if(r.ok)location.reload();
 });
 """
