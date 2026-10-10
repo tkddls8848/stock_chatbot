@@ -93,6 +93,8 @@ class Settings:
     # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
     auto_publish: bool = True
     review_timeout_minutes: int = 60
+    # 쇼츠와 같은 시각에 만들어 쇼츠가 게시될 때 함께 올리는 시장상황 보고서 롱폼의 시장(운영자 결정 2026-10-10).
+    longform_market: str = "US"
 
     @property
     def public_dir(self) -> Path:

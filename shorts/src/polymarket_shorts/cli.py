@@ -130,6 +130,10 @@ def main() -> None:
                 force=args.force,
             ))
             if not args.interactive:
+                # 롱폼을 먼저 만들어 이어 둔 뒤 검토에 넣는다. 쇼츠가 승인되는 순간 둘이 함께 올라간다.
+                if payload.get("status") in {"pending_review", "already_produced"}:
+                    from .longform import produce_daily as produce_daily_longform
+                    payload["longform"] = produce_daily_longform(settings.output_dir / payload["date"], settings)
                 payload["approval"] = _queue_review(payload, settings)
         if args.interactive and payload.get("video_path"):
             from .workflow import interact

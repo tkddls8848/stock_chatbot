@@ -196,3 +196,13 @@ def test_menu_edit_button_routes_through_pause_prompt(monkeypatch):
     update = SimpleNamespace(effective_message=message, callback_query=SimpleNamespace(message=message))
     asyncio.run(navigation.handle_menu_callback(update, context, "nav:shorts:edit"))
     assert cmd.call_args.args[1].args == ["edit_prompt"]
+
+
+def test_upload_message_carries_the_daily_longform():
+    shorts = {"status": "uploaded", "url": "https://www.youtube.com/shorts/s1"}
+    assert review.upload_text(shorts) == "YouTube 업로드 완료: https://www.youtube.com/shorts/s1"
+    done = review.upload_text({**shorts, "longform": {"status": "uploaded",
+                                                      "url": "https://www.youtube.com/watch?v=l1"}})
+    assert done.endswith("\n롱폼 업로드 완료: https://www.youtube.com/watch?v=l1")
+    failed = review.upload_text({**shorts, "longform": {"status": "error", "error": "YouTube 연결 실패"}})
+    assert "롱폼 업로드 실패: YouTube 연결 실패" in failed and "--longform-upload" in failed

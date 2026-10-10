@@ -166,3 +166,25 @@ def test_youtube_metadata_lists_chapters_and_passes_the_upload_check():
     assert "\n0:00 시작\n0:12 최근 뉴스 감성\n1:05 주요 기사\n2:05 시장 분석\n" in metadata["description"]
     assert metadata["description"].endswith("https://nunchi.live")
     _metadata({"youtube": metadata}, replace(Settings.from_env(), youtube_privacy="private"))
+
+
+def test_daily_longform_links_once_and_failure_leaves_no_link(tmp_path: Path, monkeypatch):
+    from dataclasses import replace
+
+    from polymarket_shorts import longform
+    from polymarket_shorts.config import Settings
+
+    settings = replace(Settings.from_env(), output_dir=tmp_path)
+    root = tmp_path / "2026-10-10"
+    root.mkdir()
+    monkeypatch.setattr(longform, "produce_longform", lambda *a, **k: (_ for _ in ()).throw(
+        longform.SourceError("웹 응답 없음")))
+    assert longform.produce_daily(root, settings) == {"status": "error", "error": "웹 응답 없음"}
+    assert longform.linked(root, settings) is None
+    video = tmp_path / "longform" / "2026-10-10" / "US-1500" / "report.mp4"
+    made = []
+    monkeypatch.setattr(longform, "produce_longform", lambda settings, market, **k: made.append(market) or
+                        longform.LongformResult("produced", market, "r", str(video)))
+    assert longform.produce_daily(root, settings)["status"] == "produced"
+    assert longform.linked(root, settings) == video.parent.resolve() and made == ["US"]
+    assert longform.produce_daily(root, settings) == {"status": "already_linked"} and made == ["US"]

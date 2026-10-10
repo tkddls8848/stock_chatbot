@@ -214,3 +214,33 @@ def test_new_revision_recovers_after_process_dies_before_gate_registration(setup
     with pytest.raises(ReviewError, match="이전 수정본"):
         approval.approve(settings, old)
     assert approval.tick(settings) == [] and not calls
+
+
+def test_linked_longform_uploads_with_the_short_and_its_failure_keeps_the_short(setup, monkeypatch):
+    settings, instant, calls = setup
+    root = make(settings.output_dir / "2026-10-06")
+    target = settings.output_dir / "longform" / "2026-10-06" / "US-1500"
+    target.mkdir(parents=True)
+    write_json(root / "longform.json", {"dir": "2026-10-06/US-1500", "report_id": "r"})
+    sent = []
+    monkeypatch.setattr(youtube, "upload_longform", lambda path, settings: sent.append(path) or {
+        "status": "uploaded", "video_id": "long", "url": "https://www.youtube.com/watch?v=long"})
+    token = approval.register(root, settings)["token"]
+    approval.acknowledge(settings, token)
+    instant[0] += timedelta(hours=1)
+    result = approval.tick(settings)[0]
+    assert result["status"] == "uploaded" and result["longform"]["url"].endswith("long")
+    assert sent == [target.resolve()] and len(calls) == 1
+
+    other = make(settings.output_dir / "2026-10-07")
+    write_json(other / "longform.json", {"dir": "2026-10-07/US-1500", "report_id": "r"})
+    monkeypatch.setattr(youtube, "upload_longform", lambda path, settings: (_ for _ in ()).throw(
+        ReviewError("YouTube 연결 실패")))
+    result = approval.approve(settings, approval.register(other, settings)["token"])
+    assert result["state"] == "uploaded" and result["longform"] == {"status": "error", "error": "YouTube 연결 실패"}
+
+
+def test_short_without_a_linked_longform_reports_nothing_extra(setup):
+    settings, instant, calls = setup
+    root = make(settings.output_dir / "2026-10-06")
+    assert "longform" not in approval.approve(settings, approval.register(root, settings)["token"])

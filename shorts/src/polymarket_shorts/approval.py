@@ -184,7 +184,21 @@ def _publish(root: Path, gate: dict, target: Path, settings: Settings, reason: s
     if result.get("status") in {"uploaded", "already_uploaded"}:
         gate.update(state="uploaded", url=result.get("url"))
         write_json(root / GATE_FILE, gate)
+        longform = _publish_longform(root, settings)
+        if longform:
+            return {**gate, "upload": result, **result, "longform": longform}
     return {**gate, "upload": result, **result}
+
+
+def _publish_longform(root: Path, settings: Settings) -> dict | None:
+    """그날 쇼츠에 이어 둔 롱폼을 쇼츠와 같은 때 올린다. 실패해도 쇼츠 게시 결과는 그대로다."""
+    from .longform import LongformError, linked
+    from .youtube import upload_longform
+    try:
+        target = linked(root, settings)
+        return upload_longform(target, settings) if target else None
+    except (ReviewError, LongformError, OSError, ValueError, KeyError) as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 def approve(settings: Settings, token: str) -> dict:

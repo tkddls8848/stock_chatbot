@@ -23,13 +23,15 @@ import re
 import shutil
 from typing import Any
 
-from .client import PolymarketWebClient
+from .client import PolymarketWebClient, SourceError
 from .config import Settings
 from .core.storage import write_json
 from .highlights import _numbers
 from .llm import LLMError, chat_json
+from .render import RenderError
 from .review import _digest
 from .speech import end_sentence, to_polite_text
+from .tts import TTSError
 
 
 logger = logging.getLogger(__name__)
@@ -473,3 +475,40 @@ def produce_longform(settings: Settings, market: str, *, report_id: str = "", fo
     shutil.rmtree(work)
     logger.info("롱폼 완료 %s %.1f초 %d자", video, duration, characters)
     return LongformResult("produced", market, longform.report_id, str(video), round(duration, 2), characters)
+
+
+# ── 일일 쇼츠와 묶기 ─────────────────────────────────────
+
+# 쇼츠 제작일 폴더에 두는, 그날 함께 게시할 롱폼 폴더 기록(운영자 결정 2026-10-10: 쇼츠와 같은 시각에 업로드).
+LINK_FILE = "longform.json"
+DAILY_ERRORS = (LongformError, SourceError, LLMError, TTSError, RenderError, OSError, ValueError)
+
+
+def produce_daily(root: Path, settings: Settings) -> dict[str, Any]:
+    """쇼츠 제작일 폴더 `root`에 그날의 롱폼을 만들어 잇는다. 쇼츠가 게시될 때(`approval._publish`) 함께 올라간다.
+
+    이미 이어 둔 롱폼이 있으면 다시 만들지 않는다. 실패는 쇼츠를 막지 않도록 결과로만 돌려준다.
+    """
+    if linked(root, settings):
+        return {"status": "already_linked"}
+    try:
+        result = produce_longform(settings, settings.longform_market)
+    except DAILY_ERRORS as exc:
+        logger.exception("일일 롱폼 제작 실패")
+        return {"status": "error", "error": str(exc)}
+    target = Path(str(result.video_path)).parent.resolve()
+    write_json(root / LINK_FILE, {"dir": str(target.relative_to(longform_root(settings).resolve())),
+                                  "report_id": result.report_id})
+    return asdict(result)
+
+
+def linked(root: Path, settings: Settings) -> Path | None:
+    """`root`에 이어 둔 롱폼 폴더. 기록이 없으면 None이다."""
+    path = root / LINK_FILE
+    if not path.is_file():
+        return None
+    base = longform_root(settings).resolve()
+    target = (base / str(json.loads(path.read_text(encoding="utf-8"))["dir"])).resolve()
+    if not target.is_relative_to(base):
+        raise LongformError("롱폼 기록이 산출물 폴더 밖을 가리킵니다")
+    return target
