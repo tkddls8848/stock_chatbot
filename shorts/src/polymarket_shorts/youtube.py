@@ -240,8 +240,7 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
                 raise ReviewError("검수 후 영상이 변경됐습니다. 다시 제작·검수하세요")
             identifier = revision_id(target, record)
             history = _read(target / "upload.json")
-            entries = history.setdefault("revisions", {})
-            entry = entries.get(identifier, {})
+            entry = history.get("revisions", {}).get(identifier, {})
             if entry.get("video_id"):
                 return {"status": "already_uploaded", "video_id": entry["video_id"],
                         "url": shorts_url(entry["video_id"])}
@@ -250,31 +249,74 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
                 return {**empty, "status": "not_shorts", "reason": problem}
             if not all((settings.google_client_id, settings.google_client_secret, settings.youtube_refresh_token)):
                 return {**empty, "status": "no_credentials"}
-            token = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token).get("access_token")
-            if not isinstance(token, str) or not token:
-                raise ReviewError("YouTube 액세스 토큰 발급 실패")
-            resume = bool(entry.get("session_url"))
-            if not resume:
-                response = _request("POST", UPLOAD_URL, json=metadata, headers={
-                    "Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
-                    "X-Upload-Content-Length": str(video.stat().st_size),
-                })
-                if response.status_code not in (200, 201):
-                    _json(response)
-                entry = {"revision_id": identifier, "session_url": _session_url(response.headers.get("Location", ""))}
-                entries[identifier] = entry
-                write_json(target / "upload.json", history)
-            video_id = _transfer(_session_url(entry["session_url"]), token, video, resume=resume)
-            entry.update(video_id=video_id, url=shorts_url(video_id),
-                         uploaded_at=now().isoformat())
-            entry.pop("session_url", None)
-            write_json(target / "upload.json", history)
+            video_id = _send(target / "upload.json", history, identifier, metadata, video, settings, shorts_url)
         try:
             publish_latest(root.parent, settings)
         except OSError:
             # 게시는 이미 끝났다. 웹 첫 화면은 다음 게시 때 따라잡는다.
             logger.warning("오늘의 영상 공개 파일을 쓰지 못했습니다", exc_info=True)
         return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id)}
+
+
+def _send(path: Path, history: dict, identifier: str, metadata: dict, video: Path, settings: Settings,
+          link) -> str:
+    """재개 세션을 먼저 `path`에 남기고 영상을 보낸다. 응답을 잃어도 같은 세션으로 이어 중복 게시를 막는다."""
+    token = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token).get("access_token")
+    if not isinstance(token, str) or not token:
+        raise ReviewError("YouTube 액세스 토큰 발급 실패")
+    entries = history.setdefault("revisions", {})
+    entry = entries.get(identifier, {})
+    resume = bool(entry.get("session_url"))
+    if not resume:
+        response = _request("POST", UPLOAD_URL, json=metadata, headers={
+            "Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
+            "X-Upload-Content-Length": str(video.stat().st_size),
+        })
+        if response.status_code not in (200, 201):
+            _json(response)
+        entry = {"revision_id": identifier, "session_url": _session_url(response.headers.get("Location", ""))}
+        entries[identifier] = entry
+        write_json(path, history)
+    video_id = _transfer(_session_url(entry["session_url"]), token, video, resume=resume)
+    entry.update(video_id=video_id, url=link(video_id), uploaded_at=now().isoformat())
+    entry.pop("session_url", None)
+    write_json(path, history)
+    return video_id
+
+
+def watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def upload_longform(target: Path, settings: Settings) -> dict:
+    """롱폼 한 편(`storage/shorts/longform/<날짜>/<시장-시각>`)을 올린다.
+
+    롱폼에는 쇼츠의 텔레그램 검토 게이트가 없다. 운영자가 이 명령을 직접 부르는 것이 승인이다.
+    제작 기록(`result.json`)의 영상 해시와 게시 문구가 그대로일 때만 올리고, 같은 영상은 두 번 올리지 않는다.
+    """
+    empty = {"video_id": None, "url": None}
+    target = target.resolve()
+    if not target.is_relative_to(settings.output_dir.resolve() / "longform"):
+        raise ReviewError("롱폼 산출물 폴더가 아닙니다")
+    with operation_lock(target):
+        record = _read(target / "result.json")
+        if not record:
+            raise ReviewError("롱폼 제작 기록(result.json)이 없습니다")
+        metadata = _metadata(record, settings)
+        video = (target / str(record.get("video", ""))).resolve()
+        if not video.is_relative_to(target) or not video.is_file() or not video.stat().st_size:
+            raise ReviewError("롱폼 영상 파일이 없습니다")
+        if _digest(video) != record.get("video_sha256"):
+            raise ReviewError("제작 후 영상이 변경됐습니다. 다시 제작하세요")
+        identifier = revision_id(target, record)
+        history = _read(target / "upload.json")
+        entry = history.get("revisions", {}).get(identifier, {})
+        if entry.get("video_id"):
+            return {"status": "already_uploaded", "video_id": entry["video_id"], "url": watch_url(entry["video_id"])}
+        if not all((settings.google_client_id, settings.google_client_secret, settings.youtube_refresh_token)):
+            return {**empty, "status": "no_credentials"}
+        video_id = _send(target / "upload.json", history, identifier, metadata, video, settings, watch_url)
+    return {"status": "uploaded", "video_id": video_id, "url": watch_url(video_id)}
 
 
 def publish_latest(base: Path, settings: Settings) -> dict | None:

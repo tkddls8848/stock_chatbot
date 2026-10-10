@@ -33,13 +33,15 @@
 .venv/bin/python -m polymarket_shorts.cli --longform US            # 미국 최신 보고서
 .venv/bin/python -m polymarket_shorts.cli --longform KR --force    # 이미 만든 보고서도 다시
 .venv/bin/python -m polymarket_shorts.cli --longform US --report-id "report:US:2026-10-10T08:00:00+09:00"
+.venv/bin/python -m polymarket_shorts.cli --longform-upload ../storage/shorts/longform/2026-10-10/US-0800  # 업로드
 ```
 
 - 원재료: 공개 웹 `/api/search`의 그 시장 최신 보고서(`kind: report`), 그 보고서 구간 안에 발행된 공개 기사 최대 7건, `/api/market`의 최근 14일 일일 감성.
 - 순서(운영자 수정 대사 2026-10-10): 시작(고정 화면·자막 없음) → 목차 → 최근 14일 뉴스 감성 막대 → 주요 기사(제목 + 매체·원제 한 줄 요약) → 시장 분석(보고서 한 장면, 주제는 화면에·내용은 자막으로) → 마무리(고정 화면·자막 없음).
 - 쇼츠 원고와 같은 모델(`editor_model`)을 한 번 부릅니다. 보고서를 2~3문단의 분석 원고로 줄이고 기사마다 원제에만 있는 정보를 한 문장으로 씁니다. 보고서에 없는 숫자, 보고서 문장 옮겨 적기, 같은 말 되풀이는 검증에서 막고, 걸리면 사유를 붙여 한 번 더 묻습니다. **길이를 채우려고 늘리지 않습니다** — 재료가 적으면 영상이 짧아집니다.
 - 산출물: `storage/shorts/longform/<날짜>/<시장>-<HHMM>/` — `report-<시장>-<날짜>-<HHMM>.mp4`·`.timeline.json`(화면 전환·자막), `scenario.json`(원고), `source.json`(보고서·기사·감성 원자료와 모델 원고), `narration.mp3`, `words.jsonl`, `result.json`. 쇼츠 제작일 폴더와 같이 2주 보관합니다.
-- 검토·YouTube 업로드·예약 제작·텔레그램 운영에는 아직 묶여 있지 않습니다.
+- 업로드는 `--longform-upload <폴더>`이며 이 명령을 부르는 것이 운영자 승인입니다(텔레그램 검토 게이트 없음). `result.json`의 제목·설명(보고서 구간·챕터·고지문)·태그로 일반 영상으로 올리고, 같은 영상은 두 번 올리지 않습니다.
+- 예약 제작·텔레그램 운영에는 아직 묶여 있지 않습니다.
 
 ## 설치
 

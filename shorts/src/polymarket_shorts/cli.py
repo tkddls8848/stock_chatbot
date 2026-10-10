@@ -14,7 +14,7 @@ from .review import ReviewError, read_script
 
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
-    "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
+    "review_pending", "review_ack", "review_pause", "review_approve", "review_tick", "longform_upload",
 )
 
 
@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--longform", metavar="MARKET", choices=("US", "KR", "CN", "HK", "JP", "EU"),
                         help="그 시장의 최신 시장상황 보고서로 가로 롱폼 영상 제작(US·KR·CN·HK·JP·EU)")
     parser.add_argument("--report-id", metavar="ID", help="--longform이 쓸 보고서 ID(report:US:2026-10-10T08:00:00+09:00)")
+    parser.add_argument("--longform-upload", type=Path, metavar="DIR",
+                        help="롱폼 산출물 폴더의 영상을 YouTube에 업로드(이 명령이 운영자 승인이다)")
     parser.add_argument("--interactive", action="store_true", help="영상 생성 후 대화형 검수·편집 시작")
     # 텔레그램 관리 패널(/shorts)이 하위 프로세스로 부르는 비대화형 명령. stdout에 JSON 한 줄.
     parser.add_argument("--status", action="store_true", help="최근 제작일의 제작·검수 상태 JSON")
@@ -77,6 +79,10 @@ def main() -> None:
             else:
                 result = approval.approve(settings, args.review_approve)
             print(json.dumps(result, ensure_ascii=False))
+            return
+        if args.longform_upload:
+            from .youtube import upload_longform
+            print(json.dumps(upload_longform(args.longform_upload, settings), ensure_ascii=False))
             return
         if args.youtube_auth:
             from .youtube import authorize

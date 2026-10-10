@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
 import json
 import logging
@@ -28,6 +28,7 @@ from .config import Settings
 from .core.storage import write_json
 from .highlights import _numbers
 from .llm import LLMError, chat_json
+from .review import _digest
 from .speech import end_sentence, to_polite_text
 
 
@@ -137,7 +138,7 @@ def _clock(moment: datetime) -> str:
 
 
 def _day(stamp: str) -> str:
-    moment = datetime.fromisoformat(stamp) if "T" in stamp else datetime.strptime(stamp, "%Y-%m-%d")
+    moment = datetime.fromisoformat(stamp) if "T" in stamp else date.fromisoformat(stamp)
     return f"{moment.month}월 {moment.day}일"
 
 
@@ -360,6 +361,53 @@ def build_longform(report: dict[str, Any], news: list[dict[str, Any]], daily: li
                     tuple(segments), evidence)
 
 
+# ── 게시 문구 ───────────────────────────────────────────
+
+# YouTube가 설명란 시각 목록을 챕터로 쓰는 조건: 0:00부터 시작, 셋 이상, 각 10초 이상. 어기면 챕터가 통째로 빠진다.
+CHAPTER_MIN_SECONDS = 10
+CHAPTER_MIN_COUNT = 3
+
+
+def chapters(screens: list[dict[str, Any]], duration: float) -> list[tuple[float, str]]:
+    """화면 기록(`*.timeline.json`의 screens)에서 장면이 처음 나온 시각을 챕터로 고른다.
+
+    10초가 안 되는 장면(시작·목차·마무리)은 앞 챕터에 접는다. 조건을 못 채우면 빈 목록이다.
+    """
+    marks: list[tuple[float, str]] = []
+    for screen in screens:
+        if not marks or marks[-1][1] != screen["segment"]:
+            marks.append((0.0 if not marks else float(screen["start"]), str(screen["segment"])))
+    kept: list[tuple[float, str]] = []
+    for start, name in marks:
+        if kept and start - kept[-1][0] < CHAPTER_MIN_SECONDS:
+            continue
+        kept.append((start, name))
+    if len(kept) > 1 and duration - kept[-1][0] < CHAPTER_MIN_SECONDS:
+        kept.pop()
+    return kept if len(kept) >= CHAPTER_MIN_COUNT else []
+
+
+def _stamp(seconds: float) -> str:
+    whole = int(seconds)
+    return f"{whole // 60}:{whole % 60:02d}"
+
+
+def youtube_metadata(longform: Longform, screens: list[dict[str, Any]], duration: float) -> dict[str, Any]:
+    """제목·설명·태그. 설명은 보고서 구간, 챕터, 고지문이다. 기사 제목은 넣지 않는다(금지 표현 검사에 걸릴 수 있다)."""
+    published = datetime.fromisoformat(longform.published_at)
+    agenda = next(segment for segment in longform.segments if segment.kind == "agenda")
+    title = f"{published.month}월 {published.day}일 {longform.label} 시장상황 | " + " · ".join(
+        str(row["item"]) for row in agenda.rows)
+    lines = [f"{published.month}월 {published.day}일 {published:%H:%M}(한국 시각)에 발행한 {longform.label} 시장상황 보고서를 "
+             "영상으로 정리했습니다." + (f" 보고서 구간은 {longform.window}입니다." if longform.window else "")]
+    marks = chapters(screens, duration)
+    if marks:
+        lines += ["", *(f"{_stamp(start)} {name}" for start, name in marks)]
+    lines += ["", CLOSING_LINE, "https://nunchi.live"]
+    return {"title": title[:100], "description": "\n".join(lines),
+            "tags": [f"{longform.label} 증시", f"{longform.label} 시장", "시장상황", "증시 뉴스", "시장 분석", "nunchi"]}
+
+
 # ── 제작 ─────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -417,8 +465,11 @@ def produce_longform(settings: Settings, market: str, *, report_id: str = "", fo
                                font_path=find_font(), blender_bin=settings.blender_bin,
                                ffprobe_bin=settings.ffprobe_bin)
     characters = longform.to_dict()["characters"]
-    write_json(target / "result.json", {"video": video.name, "duration_seconds": round(duration, 2),
-                                        "characters": characters, "report_id": longform.report_id})
+    screens = json.loads(video.with_suffix(".timeline.json").read_text(encoding="utf-8"))["screens"]
+    write_json(target / "result.json", {"video": video.name, "video_sha256": _digest(video),
+                                        "duration_seconds": round(duration, 2), "characters": characters,
+                                        "report_id": longform.report_id,
+                                        "youtube": youtube_metadata(longform, screens, duration)})
     shutil.rmtree(work)
     logger.info("롱폼 완료 %s %.1f초 %d자", video, duration, characters)
     return LongformResult("produced", market, longform.report_id, str(video), round(duration, 2), characters)

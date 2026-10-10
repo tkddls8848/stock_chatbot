@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from polymarket_shorts.longform import (
-    LongformError, build_longform, check_script, report_window, sentences,
+    LongformError, build_longform, chapters, check_script, report_window, sentences, youtube_metadata,
 )
 from polymarket_shorts.longform_render import HEIGHT, WIDTH, beats, caption_frame, render_longform_frame
 from polymarket_shorts.render import find_font
@@ -139,3 +139,30 @@ def test_caption_sits_in_the_bottom_band(tmp_path: Path):
     from PIL import Image
     box = Image.open(target).getchannel("A").getbbox()
     assert box and box[1] > 830 and box[3] <= 990
+
+
+def test_chapters_fold_short_scenes_and_need_three():
+    screens = [{"start": 0, "segment": "시작"}, {"start": 6, "segment": "목차"},
+               {"start": 14, "segment": "최근 뉴스 감성"}, {"start": 40, "segment": "주요 기사"},
+               {"start": 44, "segment": "주요 기사"}, {"start": 100, "segment": "시장 분석"},
+               {"start": 170, "segment": "마무리"}]
+    # 6초짜리 시작 뒤 목차는 접히고, 끝까지 10초가 안 남는 마무리도 빠진다.
+    assert chapters(screens, 176) == [(0.0, "시작"), (14.0, "최근 뉴스 감성"), (40.0, "주요 기사"),
+                                      (100.0, "시장 분석")]
+    assert chapters(screens[:3], 30) == []
+
+
+def test_youtube_metadata_lists_chapters_and_passes_the_upload_check():
+    from dataclasses import replace
+
+    from polymarket_shorts.config import Settings
+    from polymarket_shorts.youtube import _metadata
+
+    longform = build_longform(REPORT, NEWS, DAILY, check_script(PAYLOAD, REPORT["text"], NEWS))
+    screens = [{"start": 0, "segment": "시작"}, {"start": 12, "segment": "최근 뉴스 감성"},
+               {"start": 65, "segment": "주요 기사"}, {"start": 125, "segment": "시장 분석"}]
+    metadata = youtube_metadata(longform, screens, 192.4)
+    assert metadata["title"] == "10월 10일 미국 시장상황 | 최근 뉴스 감성 흐름 · 주요 헤드라인 뉴스 3건 · 시장 주요 상황 분석"
+    assert "\n0:00 시작\n0:12 최근 뉴스 감성\n1:05 주요 기사\n2:05 시장 분석\n" in metadata["description"]
+    assert metadata["description"].endswith("https://nunchi.live")
+    _metadata({"youtube": metadata}, replace(Settings.from_env(), youtube_privacy="private"))

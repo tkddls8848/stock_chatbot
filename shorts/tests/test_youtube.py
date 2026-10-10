@@ -383,3 +383,37 @@ def test_server_terminal_takes_the_pasted_redirect_address(prepared, monkeypatch
     monkeypatch.setattr(youtube, "AUTH_WAIT_SECONDS", .05)
     with pytest.raises(youtube.ReviewError, match="5분 안에"):
         youtube.authorize(settings)
+
+
+@pytest.fixture
+def longform(prepared):
+    _, settings = prepared
+    target = settings.output_dir / "longform" / "2026-10-10" / "US-0800"
+    target.mkdir(parents=True)
+    (target / "report.mp4").write_bytes(b"landscape!")
+    write_json(target / "result.json", {
+        "video": "report.mp4", "video_sha256": hashlib.sha256(b"landscape!").hexdigest(), "report_id": "r",
+        "youtube": {"title": "10월 10일 미국 시장상황", "description": "0:00 시작", "tags": ["미국 증시"]},
+    })
+    return target, settings
+
+
+def test_longform_uploads_once_as_a_regular_video(longform, monkeypatch):
+    target, settings = longform
+    # 롱폼은 공개 웹의 "오늘의 영상"(쇼츠)을 바꾸지 않는다.
+    monkeypatch.setattr(youtube, "publish_latest", Mock(side_effect=AssertionError("shorts only")))
+    mock = http(monkeypatch, response(payload={"access_token": "access"}), start(), response(201, {"id": "long_1"}))
+    result = youtube.upload_longform(target, settings)
+    assert result == {"status": "uploaded", "video_id": "long_1", "url": "https://www.youtube.com/watch?v=long_1"}
+    assert mock.call_args_list[1].kwargs["json"]["snippet"]["title"] == "10월 10일 미국 시장상황"
+    assert youtube.upload_longform(target, settings)["status"] == "already_uploaded"
+    assert mock.call_count == 3
+
+
+def test_longform_upload_refuses_changed_video_and_foreign_folders(longform, tmp_path):
+    target, settings = longform
+    (target / "report.mp4").write_bytes(b"edited....")
+    with pytest.raises(ReviewError, match="변경"):
+        youtube.upload_longform(target, settings)
+    with pytest.raises(ReviewError, match="롱폼 산출물"):
+        youtube.upload_longform(settings.output_dir / "2026-09-27", settings)

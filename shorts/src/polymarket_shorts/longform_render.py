@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -152,7 +152,7 @@ def _sentiment(image, segment: Segment, font_path: Path, label: str) -> None:
         value = f"{row['value']:+.2f}"
         y = bar[1] - 30 if row["value"] >= 0 else bar[3] + 6
         draw.text((center - draw.textlength(value, font=value_font) / 2, y), value, font=value_font, fill=color)
-        stamp = f"{datetime.strptime(row['date'], '%Y-%m-%d'):%m/%d}"
+        stamp = f"{date.fromisoformat(row['date']):%m/%d}"
         draw.text((center - draw.textlength(stamp, font=date_font) / 2, bottom + 12), stamp, font=date_font,
                   fill=_COLORS["muted"])
     values = [row["value"] for row in rows]
