@@ -77,6 +77,16 @@ def test_script_check_rejects_invented_numbers_copies_and_repeats(analysis, reas
         check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS)
 
 
+def test_script_check_names_every_copied_sentence_for_the_retry():
+    # 하나만 알려 주면 재시도가 그 문장만 고치고 다른 옮긴 문장으로 다시 떨어졌다.
+    analysis = [{"topic": "기술주 약세", "text": "이전 보고서에서 지적된 기술주 중심의 상승세는 지속되고 있었지만 최근 기사들에 "
+                                           "따르면 기술주가 약세를 보이고 있습니다. "
+                                           "오늘 장에서는 기업들의 실적 발표가 오늘 장에 어떤 영향을 미칠지 주목해야 합니다."}]
+    with pytest.raises(LongformError) as error:
+        check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS)
+    assert str(error.value).count("/ 보고서: ") == 2
+
+
 def test_order_follows_operator_script_and_report_is_one_scene():
     longform = build_longform(REPORT, NEWS, DAILY, check_script(PAYLOAD, REPORT["text"], NEWS))
     assert [segment.kind for segment in longform.segments] == [
