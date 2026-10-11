@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from services.web.accounts import Account, Accounts, account_lock
 from services.web.core import config
@@ -54,6 +54,11 @@ class CodeIn(BaseModel):
     code: str = Field(min_length=1, max_length=12)
 
 
+class PersonalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool  # "yes"·1을 켜짐으로 읽지 않는다
+
+
 def build_newsletter_router(accounts: Accounts, *, mailer_factory=None) -> APIRouter:
     router = APIRouter(prefix="/api/account/newsletter")
 
@@ -74,6 +79,7 @@ def build_newsletter_router(accounts: Accounts, *, mailer_factory=None) -> APIRo
             "last_sent_on": record.get("last_sent_on") if record else None,
             "codes_today": codes_sent_on(record, now()),
             "codes_per_day": config.NEWSLETTER_CODES_PER_DAY,
+            "personal": bool(record and record.get("personal")),
         }
 
     @router.get("")
@@ -121,6 +127,17 @@ def build_newsletter_router(accounts: Accounts, *, mailer_factory=None) -> APIRo
             if hasattr(error, "record"):
                 subscription.write(error.record)
             raise HTTPException(410 if error.final else 422, str(error)) from error
+        subscription.write(record)
+        return view(record, (mailer_factory or build_mailer)())
+
+    @router.put("/personal")
+    def personal(body: PersonalIn, subscription: SubscriptionStore = Depends(store)) -> dict[str, Any]:
+        # 편지에 내 자산 점검(새로 넘은 기준·내 종목 기사)을 함께 싣는다. 금액은 싣지 않는다.
+        record = read(subscription)
+        if record is None:
+            raise HTTPException(404, "구독 신청이 없습니다.")
+        # 켤 때 기준 기록을 비운다 — 처음 받는 편지에 지금 넘어 있는 기준이 모두 실린다.
+        record = {**record, "personal": body.enabled, "alerts_sent": []}
         subscription.write(record)
         return view(record, (mailer_factory or build_mailer)())
 

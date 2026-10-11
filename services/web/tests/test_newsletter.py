@@ -384,3 +384,80 @@ def test_old_link_cannot_cancel_new_address(env):
     anonymous = TestClient(env["app"], base_url="https://testserver")
     assert anonymous.post(old_path).status_code == 400
     assert env["a"].get("/api/account/newsletter").json()["email"] == "new@example.com"
+
+
+# ── 내 자산 소식(계정이 켰을 때만) ───────────────────────────────────────────
+
+def test_personal_toggle_needs_a_subscription_and_survives_address_change(env):
+    a, mailer = env["a"], env["mailer"]
+    assert a.put("/api/account/newsletter/personal", json={"enabled": True}).status_code == 404
+    a.put("/api/account/newsletter", json={"email": "one@example.com"})
+    a.post("/api/account/newsletter/confirm", json={"code": _code(mailer.sent[-1])})
+    assert a.get("/api/account/newsletter").json()["personal"] is False
+    assert a.put("/api/account/newsletter/personal", json={"enabled": True}).json()["personal"] is True
+    assert env["b"].get("/api/account/newsletter").json()["personal"] is False
+    # 주소를 바꿔도 고른 것은 남는다(확인할 때까지 멈추는 것은 그대로다).
+    body = a.put("/api/account/newsletter", json={"email": "two@example.com"}).json()
+    assert body["status"] == "pending" and body["personal"] is True
+    assert a.put("/api/account/newsletter/personal", json={"enabled": "yes"}).status_code == 422
+
+
+def _personal_account(users, key, *, personal=True):
+    _subscriber(users, key, f"{key[:1]}@example.com")
+    path = users / key / "newsletter.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    SubscriptionStore(path).write({**record, "personal": personal, "alerts_sent": []})
+    (users / key / "assets.json").write_text(json.dumps({"assets": [
+        {"id": "s", "kind": "stock", "name": "코스피 펀드", "market": "KR", "code": "", "value_krw": 90_000_000},
+        {"id": "d", "kind": "deposit", "name": "정기예금", "value_krw": 10_000_000, "maturity": "2026-10-20"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    (users / key / "watchlist.json").write_text(json.dumps({"US:NASDAQ:AAPL": "Apple Inc."}), encoding="utf-8")
+
+
+def test_personal_section_sends_new_alerts_once_and_never_amounts(tmp_path):
+    public, users = tmp_path / "public", tmp_path / "users"
+    public.mkdir()
+    _public(public)
+    documents = json.loads((public / "news.json").read_text(encoding="utf-8"))["documents"]
+    documents.append({"id": "n9", "kind": "news", "market": "US", "title": "애플 신제품", "text": "Apple unveils",
+                      "date": "2026-09-30", "published_at": "2026-09-30T06:00:00+09:00", "source": "CNBC",
+                      "url": "https://example.com/apple"})
+    (public / "news.json").write_text(json.dumps({"documents": documents}, ensure_ascii=False), encoding="utf-8")
+    _personal_account(users, "a" * 64)
+    _personal_account(users, "b" * 64, personal=False)
+    mailer = FakeMailer()
+
+    run(users_dir=users, public_dir=public, identity_key=KEY, mailer=mailer, moment=NOW)
+    mine = next(m for m in mailer.sent if m["To"] == "a@example.com")
+    other = next(m for m in mailer.sent if m["To"] == "b@example.com")
+    text = mine.get_body(("plain",)).get_content()
+    assert mine["Subject"] == "[눈치] 9월 30일 시장 요약 · 내 자산 알림 3건"
+    assert text.index("■ 내 자산 소식") < text.index("■ 미국")
+    assert "'정기예금' 만기 2026-10-20(20일 남음)" in text and "주식 비중 90.0%(기준 60%)" in text
+    assert "[관심] Apple Inc." in text and "애플 신제품" in text
+    assert "만원" not in text and "억" not in text  # 금액은 싣지 않는다
+    assert "내 자산 소식" not in other.get_body(("plain",)).get_content() and "알림" not in other["Subject"]
+    record = SubscriptionStore(users / ("a" * 64) / "newsletter.json").read()
+    assert len(record["alerts_sent"]) == 3
+
+    # 다음 날: 같은 기준이 그대로면 다시 싣지 않는다.
+    later = NOW + timedelta(days=1)
+    mailer.sent.clear()
+    run(users_dir=users, public_dir=public, identity_key=KEY, mailer=mailer,
+        moment=later.replace(hour=8, minute=30))
+    again = next(m for m in mailer.sent if m["To"] == "a@example.com")
+    assert "알림" not in again["Subject"]
+    # 애플 기사도 24시간 밖으로 나가 내 자산 소식이 비었다고 밝힌다.
+    assert "새로 넘은 점검 기준도, 내 종목이 나온 기사도 없습니다." in again.get_body(("plain",)).get_content()
+
+
+def test_broken_asset_file_still_gets_the_market_digest(tmp_path):
+    public, users = tmp_path / "public", tmp_path / "users"
+    public.mkdir()
+    _public(public)
+    _personal_account(users, "a" * 64)
+    (users / ("a" * 64) / "assets.json").write_text("{broken", encoding="utf-8")
+    mailer = FakeMailer()
+    counts = run(users_dir=users, public_dir=public, identity_key=KEY, mailer=mailer, moment=NOW)
+    assert counts["sent"] == 1 and "내 자산 소식" not in mailer.sent[0].get_body(("plain",)).get_content()
+    assert SubscriptionStore(users / ("a" * 64) / "newsletter.json").read()["alerts_sent"] == []

@@ -11,9 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.web.core.storage import FileLockTimeout
 from services.web.accounts import Account, Accounts
 from services.web.core import config
+from services.web.core.clock import now
 from services.web.llm.factory import build_portfolio_advisor
 from services.web.portfolio.service import AdviceBusy, AdviceLimit, AdviceService
 from services.web.portfolio.store import AdviceStore, AssetStore, StoreError, WatchlistStore, canonical_code
+from services.web.portfolio.watch import PublicFeed, build_watch
 
 _CANONICAL = re.compile(r"\d{6}|\d{5}|KR:(KOSPI|KOSDAQ):\d{6}|US:(NASDAQ|NYSE):[A-Z][A-Z0-9.-]{0,14}")
 _KIND_FIELDS = {
@@ -72,8 +74,9 @@ class AdviceIn(BaseModel):
     use_ai: Literal[False] = False
 
 
-def build_router(*, accounts: Accounts, advice_factory=None) -> APIRouter:
+def build_router(*, accounts: Accounts, advice_factory=None, public_dir=None) -> APIRouter:
     router = APIRouter(prefix="/api/portfolio")
+    feed = PublicFeed(public_dir or config.PUBLIC_DIR)
 
     def resources(account: Account = Depends(accounts.context)):
         assets = AssetStore(account.root / "assets.json")
@@ -141,6 +144,16 @@ def build_router(*, accounts: Accounts, advice_factory=None) -> APIRouter:
         if len(items) > config.PORTFOLIO_MAX_WATCHLIST:
             raise HTTPException(status_code=422, detail=f"관심종목은 {config.PORTFOLIO_MAX_WATCHLIST}개까지입니다.")
         return {"items": store_call(watchlist.replace, items)}
+
+    # ── 내 자산 점검 ──
+    @router.get("/watch")
+    def get_watch(stores=Depends(resources)) -> dict[str, Any]:
+        # 요청마다 계산한다. LLM·외부 API 없이 계정 파일과 공개 산출물만 읽는다.
+        assets, watchlist, _, _ = stores
+        return build_watch(store_call(assets.list), store_call(watchlist.get), feed, now(),
+                           news_hours=config.PORTFOLIO_WATCH_NEWS_HOURS,
+                           report_hours=config.PORTFOLIO_WATCH_REPORT_HOURS,
+                           matches=config.PORTFOLIO_WATCH_MATCHES)
 
     # ── advice ──
     @router.get("/advice")

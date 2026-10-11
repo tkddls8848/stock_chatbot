@@ -4,7 +4,10 @@ systemd timer(`stock-chatbot-newsletter.timer`, 매일 08:30 한국 시간)가 �
 감성 갱신과 08시 시장상황 보고서 판정 뒤라 그날 아침 자료가 들어간다. 웹 서버·봇과 다른
 프로세스이고, 공개 산출물과 `users/<계정키>/newsletter.json`만 읽는다.
 
-계정마다 계정 잠금을 잡고 다시 읽은 뒤 보내고 `last_sent_on`을 쓴다. 그래서 같은 날 다시
+계정마다 계정 잠금을 잡고 다시 읽은 뒤 보내고 `last_sent_on`을 쓴다. "내 자산 소식"을 켠
+계정은 같은 잠금 안에서 자산·관심종목을 읽어 내 자산 점검(`portfolio/watch.py`)을 붙이고, 그때
+넘어 있던 기준을 `alerts_sent`로 남긴다 — 다음 편지는 새로 넘은 기준만 싣는다. 자산 파일이 깨졌으면
+그 계정에도 시장 요약만 보낸다. 그래서 같은 날 다시
 돌려도(재시도·수동 실행) 이미 받은 계정에는 또 보내지 않고, 탈퇴·해지와 겹쳐도 지운 주소로
 나가지 않는다. 실패·잠금 대기가 하나라도 있으면 종료 코드 1로 끝나 systemd에 드러난다.
 """
@@ -22,9 +25,11 @@ from services.web.accounts import account_lock
 from services.web.core import config
 from services.web.core.clock import now
 from services.web.core.storage import FileLockTimeout
-from services.web.newsletter.digest import build_digest, render
+from services.web.newsletter.digest import build_digest, personal_section, render, subject
 from services.web.newsletter.mailer import Mailer, build_mailer, compose
 from services.web.newsletter.subscription import SubscriptionError, SubscriptionStore, unsubscribe_url
+from services.web.portfolio.store import AssetStore, StoreError, WatchlistStore
+from services.web.portfolio.watch import PublicFeed, build_watch
 
 logger = logging.getLogger(__name__)
 _ACCOUNT_KEY = re.compile(r"[0-9a-f]{64}")
@@ -68,6 +73,22 @@ def run(*, users_dir: Path, public_dir: Path, mailer: Mailer, identity_key: str,
     if digest is None:
         return {**counts, "result": "no_fresh_data"}
 
+    feed = PublicFeed(public_dir)
+
+    def watch_for(folder: Path, record: dict) -> tuple[dict | None, list[str] | None]:
+        if not record.get("personal"):
+            return None, None
+        try:
+            watch = build_watch(AssetStore(folder / "assets.json").list(),
+                                WatchlistStore(folder / "watchlist.json").get(), feed, moment,
+                                news_hours=config.NEWSLETTER_WINDOW_HOURS,
+                                report_hours=config.PORTFOLIO_WATCH_REPORT_HOURS,
+                                matches=config.PORTFOLIO_WATCH_MATCHES)
+        except StoreError as error:
+            logger.warning("[NEWSLETTER] 내 자산 소식 생략 account=%s error=%s", folder.name[:8], type(error).__name__)
+            return None, None
+        return personal_section(watch, record.get("alerts_sent") or []), [a["key"] for a in watch["alerts"]]
+
     finished = 0  # 결과(보냄·건너뜀·실패·대기)가 정해진 계정 수
     try:
         with mailer.session() as send:
@@ -81,9 +102,11 @@ def run(*, users_dir: Path, public_dir: Path, mailer: Mailer, identity_key: str,
                         subscription = SubscriptionStore(folder / "newsletter.json")
                         record = subscription.read()
                         link = unsubscribe_url(config.AUTH_ORIGIN, identity_key, folder.name, record["email"])
-                        text, html = render(digest, site=config.AUTH_ORIGIN, unsubscribe_url=link)
-                        send(compose(mailer, record["email"], digest["subject"], text, html, unsubscribe_url=link))
-                        subscription.write({**record, "last_sent_on": day})
+                        personal, keys = watch_for(folder, record)
+                        text, html = render(digest, site=config.AUTH_ORIGIN, unsubscribe_url=link, personal=personal)
+                        send(compose(mailer, record["email"], subject(digest, personal), text, html, unsubscribe_url=link))
+                        subscription.write({**record, "last_sent_on": day,
+                                            **({"alerts_sent": keys} if keys is not None else {})})
                         counts["sent"] += 1
                 except FileLockTimeout:
                     counts["busy"] += 1

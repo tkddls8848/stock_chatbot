@@ -3,7 +3,8 @@
 구독자 모두에게 같은 내용이 가므로 한 번만 고르고(`build_digest`), 받는 사람마다 다른 것은
 서명한 해지 링크뿐이라 그것만 끼워 글로 옮긴다(`render`). LLM을 부르지 않는다 — 시장 요약과
 보고서는 봇이 이미 써서 공개해 둔 문장이고, 여기서는 고르고 묶기만 한다. 공개 화면에
-없는 것(관심종목·자산·리서치)은 넣지 않는다.
+없는 것(관심종목·자산·리서치)은 넣지 않는다 — 예외는 계정이 켠 "내 자산 소식"(`personal`)이다.
+그것도 금액 없이 새로 넘은 점검 기준과 내 종목 기사 제목만 싣는다(`send.py`가 계정마다 만든다).
 
 자료가 비었거나 오래됐으면 `None`이다. 어제와 같은 편지를 오늘 또 보내는 것보다
 하루 쉬는 편이 낫다.
@@ -80,18 +81,46 @@ def build_digest(public_dir: Path, moment: datetime, *, window_hours: int, max_m
     return {"subject": f"[눈치] {title}", "title": title, "sections": sections}
 
 
-def render(digest: dict[str, Any], *, site: str, unsubscribe_url: str) -> tuple[str, str]:
-    """(본문 글, 본문 HTML). 해지 링크는 받는 사람마다 다르다."""
-    return (_text(digest["title"], digest["sections"], site, unsubscribe_url),
-            _html(digest["title"], digest["sections"], site, unsubscribe_url))
+def personal_section(watch: dict[str, Any], alerts_sent: list[str]) -> dict[str, Any]:
+    """내 자산 점검(`portfolio/watch.py`) 결과에서 편지에 실을 것만 고른다. 금액이 든 `message` 대신
+    `brief`를 쓰고, 지난 편지 때 이미 넘어 있던 기준은 다시 싣지 않는다."""
+    previous = set(alerts_sent)
+    return {
+        "alerts": [a["brief"] for a in watch["alerts"] if a["key"] not in previous],
+        "holdings": [{"name": h["name"], "held": h["held"], "market_label": h["market_label"],
+                      "matches": h["matches"]} for h in watch["holdings"] if h["count"]],
+    }
+
+
+def subject(digest: dict[str, Any], personal: dict[str, Any] | None) -> str:
+    alerts = len((personal or {}).get("alerts") or [])
+    return digest["subject"] + (f" · 내 자산 알림 {alerts}건" if alerts else "")
+
+
+def render(digest: dict[str, Any], *, site: str, unsubscribe_url: str,
+           personal: dict[str, Any] | None = None) -> tuple[str, str]:
+    """(본문 글, 본문 HTML). 해지 링크와 내 자산 소식은 받는 사람마다 다르다."""
+    return (_text(digest["title"], digest["sections"], site, unsubscribe_url, personal),
+            _html(digest["title"], digest["sections"], site, unsubscribe_url, personal))
 
 
 def _tone(value: float | None) -> str:
     return "" if value is None else f"논조 {value:+.2f}"
 
 
-def _text(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: str) -> str:
+def _text(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: str,
+          personal: dict[str, Any] | None) -> str:
     lines = [f"눈치 · {title}", ""]
+    if personal is not None:
+        lines.append("■ 내 자산 소식")
+        lines += [f"! {line}" for line in personal["alerts"]]
+        for holding in personal["holdings"]:
+            lines.append(f"[{'보유' if holding['held'] else '관심'}] {holding['name']}")
+            lines += [f"- {m['title']} ({m['source']})" + (f"\n  {m['url']}" if m["url"] else "")
+                      for m in holding["matches"]]
+        if not (personal["alerts"] or personal["holdings"]):
+            lines.append("새로 넘은 점검 기준도, 내 종목이 나온 기사도 없습니다.")
+        lines.append("")
     for s in sections:
         lines.append(f"■ {s['name']}  {_tone(s['tone'])}".rstrip())
         if s["summary"]:
@@ -106,7 +135,8 @@ def _text(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: st
     return "\n".join(lines)
 
 
-def _html(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: str) -> str:
+def _html(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: str,
+          personal: dict[str, Any] | None) -> str:
     # 메일 프로그램은 <style>과 외부 글꼴을 버리는 경우가 많아 인라인 스타일만 쓴다.
     # 부호 색은 화면과 같다 — 빨강이 긍정, 파랑이 부정.
     def tone(value: float | None) -> str:
@@ -115,7 +145,27 @@ def _html(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: st
         color = "#b42331" if value > 0 else "#1f57b0" if value < 0 else "#4c5a6b"
         return f" <span style='color:{color};font-weight:700'>{escape(_tone(value))}</span>"
 
+    def link(item: dict[str, Any]) -> str:
+        label = escape(str(item.get("title", "")))
+        url = str(item.get("url") or "")
+        if url.startswith(("https://", "http://")):
+            label = f"<a href='{escape(url, quote=True)}' style='color:#16324f'>{label}</a>"
+        return (f"<li style='margin:0 0 4px'>{label} <span style='color:#8a857b'>"
+                f"{escape(str(item.get('source', '')))}</span></li>")
+
     body = []
+    if personal is not None:
+        part = ["<h2 style='font-size:17px;margin:24px 0 6px'>내 자산 소식</h2>"]
+        part += [f"<p style='margin:0 0 6px;padding-left:10px;border-left:3px solid #8f4511'>{escape(line)}</p>"
+                 for line in personal["alerts"]]
+        for holding in personal["holdings"]:
+            part.append(f"<p style='margin:10px 0 2px;font-weight:700'>{escape(holding['name'])} "
+                        f"<span style='color:#8a857b;font-weight:400'>{'보유' if holding['held'] else '관심'}"
+                        f" · {escape(holding['market_label'])}</span></p>"
+                        "<ul style='margin:0;padding-left:18px'>" + "".join(link(m) for m in holding["matches"]) + "</ul>")
+        if not (personal["alerts"] or personal["holdings"]):
+            part.append("<p style='margin:0;color:#4c5a6b'>새로 넘은 점검 기준도, 내 종목이 나온 기사도 없습니다.</p>")
+        body.append("".join(part))
     for s in sections:
         part = [f"<h2 style='font-size:17px;margin:24px 0 6px'>{escape(s['name'])}{tone(s['tone'])}</h2>"]
         if s["summary"]:
@@ -126,15 +176,7 @@ def _html(title: str, sections: list[dict[str, Any]], site: str, unsubscribe: st
             part.append(f"<p style='margin:8px 0 4px;font-weight:700'>{escape(str(s['report'].get('title', '')))}</p>"
                         + paragraphs)
         if s["news"]:
-            items = []
-            for item in s["news"]:
-                label = escape(str(item.get("title", "")))
-                url = str(item.get("url") or "")
-                if url.startswith(("https://", "http://")):
-                    label = f"<a href='{escape(url, quote=True)}' style='color:#16324f'>{label}</a>"
-                items.append(f"<li style='margin:0 0 4px'>{label} <span style='color:#8a857b'>"
-                             f"{escape(str(item.get('source', '')))}</span></li>")
-            part.append("<ul style='margin:6px 0 0;padding-left:18px'>" + "".join(items) + "</ul>")
+            part.append("<ul style='margin:6px 0 0;padding-left:18px'>" + "".join(link(i) for i in s["news"]) + "</ul>")
         body.append("".join(part))
     return (
         "<!doctype html><html lang='ko'><body style='margin:0;background:#f5f2ea'>"

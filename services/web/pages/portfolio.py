@@ -1,11 +1,11 @@
 """개인 화면(`/portfolio`): 전체 자산 어드바이저.
 
 화면은 정적 껍데기다. Google 로그인 뒤 브라우저가 `/api/portfolio/*`·`/api/account/newsletter`에서
-자산·관심종목·조언·뉴스레터 구독을 채운다. 값은 전부 `esc()`를 거쳐 넣는다 — 조언 본문은 모델이
+자산·오늘 점검·관심종목·조언·뉴스레터 구독을 채운다. 값은 전부 `esc()`를 거쳐 넣는다 — 조언 본문은 모델이
 쓴 문자열이다. 금액 입력은 만원 단위로 받아 원으로 바꿔 보낸다.
 """
 
-from services.web.pages.shell import I_DOC, I_LAYERS, I_SCALE, I_SHIELD, I_SPEC, JS_UTIL, h1, icon, page
+from services.web.pages.shell import I_CHART, I_DOC, I_LAYERS, I_SCALE, I_SHIELD, I_SPEC, JS_UTIL, h1, icon, page
 
 _MAIN = (
     """<style>
@@ -34,6 +34,9 @@ _MAIN = (
 .pf-advice p{line-height:1.8;margin:0 0 12px}
 .pf-find{margin:6px 0;padding-left:10px;border-left:3px solid var(--line);font-size:var(--fs-sm)}
 .pf-find.warn{border-color:var(--warnc)}
+.pf-check h3{font-size:var(--fs-sm);margin:16px 0 4px;color:var(--mut);font-weight:700}
+.pf-check ul{margin:4px 0 10px;padding-left:18px;font-size:var(--fs-sm)}.pf-check li{margin:0 0 4px;overflow-wrap:anywhere}
+.pf-check .stock{margin:10px 0 0}.pf-check .src{color:var(--mut);font-size:var(--fs-xs)}
 .pf-hist button{background:none;border:0;color:var(--acc);cursor:pointer;padding:2px 0;font:inherit;font-size:var(--fs-sm)}
 @media(max-width:620px){.pf-cls{grid-template-columns:70px 1fr 90px}.pf-table .opt{display:none}
 .pf-table th,.pf-table td{padding:8px 4px}}
@@ -53,6 +56,9 @@ _MAIN = (
  <section class='histbox'><div class='histh'><span class='phico'>"""
     + icon(I_LAYERS)
     + """</span>자산 구성</div><div id='pf-summary' class='pf-card'>불러오는 중…</div></section>
+ <section class='histbox'><div class='histh'><span class='phico'>"""
+    + icon(I_CHART)
+    + """</span>오늘 점검</div><div id='pf-check' class='pf-card pf-check'>불러오는 중…</div></section>
  <section class='histbox'><div class='histh'><span class='phico'>"""
     + icon(I_SPEC)
     + """</span>자산 목록</div>
@@ -108,7 +114,7 @@ _MAIN = (
     + icon(I_DOC)
     + """</span>뉴스레터</div>
   <div class='pf-card'>
-   <p class='pf-msg'>매일 아침 8시 30분, 여섯 시장의 논조와 시장상황 보고서, 주요 기사를 이메일로 받습니다. 공개 화면과 같은 자료이며 내 자산·관심종목은 담기지 않습니다. 확인 코드를 입력한 주소로만 보냅니다.</p>
+   <p class='pf-msg'>매일 아침 8시 30분, 여섯 시장의 논조와 시장상황 보고서, 주요 기사를 이메일로 받습니다. 공개 화면과 같은 자료이며, 아래 "내 자산 소식"을 켜지 않으면 내 자산·관심종목은 담기지 않습니다. 확인 코드를 입력한 주소로만 보냅니다.</p>
    <p id='nl-state' class='pf-msg'>불러오는 중…</p>
    <form id='nl-email-form' class='pf-row pf-hide'>
     <input name='email' type='email' maxlength='254' placeholder='받을 이메일 주소' aria-label='받을 이메일 주소' autocomplete='email' required>
@@ -118,6 +124,7 @@ _MAIN = (
     <input name='code' inputmode='numeric' pattern='\\d{6}' maxlength='6' placeholder='6자리 코드' aria-label='확인 코드' autocomplete='one-time-code' required>
     <button class='pf-btn pri' type='submit'>구독 확인</button>
    </form>
+   <label id='nl-personal-row' class='pf-row pf-row-spaced pf-msg pf-hide'><input id='nl-personal' type='checkbox'> 내 자산 소식도 받기 — 오늘 점검에서 새로 넘은 기준(금액 없이 비율·만기일만)과 내 종목이 나온 기사 제목을 편지 맨 앞에 싣습니다. 종목 이름이 메일로 갑니다.</label>
    <div class='pf-row pf-row-spaced'><button id='nl-off' class='pf-btn pf-hide' type='button'>뉴스레터 끄기</button></div>
    <p id='nl-msg' class='pf-msg'></p>
   </div>
@@ -151,7 +158,23 @@ $('pf-delete-account').addEventListener('click',async()=>{
 });
 window.addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
 function loadAll(){loadAssets();loadWatch();loadAdviceList();loadNl()}
-async function loadAssets(){const d=await api('assets');assets=d.assets||[];renderAssets();renderSummary()}
+async function loadAssets(){const d=await api('assets');assets=d.assets||[];renderAssets();renderSummary();loadCheck()}
+const toneText=v=>v==null?'':" · 논조 <span class='"+(v>0?'pos':v<0?'neg':'')+"'>"+(v>0?'+':'')+Number(v).toFixed(2)+"</span>";
+const linked=m=>/^https?:\\/\\//.test(m.url||'')?"<a href='"+esc(m.url)+"' rel='noopener noreferrer' target='_blank'>"+esc(m.title)+"</a>":esc(m.title);
+async function loadCheck(){try{renderCheck(await api('watch'))}catch(err){$('pf-check').innerHTML="<p class='pf-msg err'>"+esc(err.message)+"</p>"}}
+function renderCheck(d){const p=["<p class='pf-msg'>"+esc(stamp(d.as_of))+" 기준</p>","<h3>점검 기준</h3>"];
+ p.push(d.alerts.length?d.alerts.map(a=>"<div class='pf-find "+esc(a.level)+"'>"+esc(a.message)+"</div>").join(''):"<p class='pf-msg'>지금 넘은 기준이 없습니다(자산군·종목 편중, 예적금 비중, 만기, 대출 비율).</p>");
+ p.push("<h3>내 종목 소식 · 최근 "+esc(d.news_hours)+"시간</h3>");
+ const hit=d.holdings.filter(h=>h.count),miss=d.holdings.filter(h=>!h.count);
+ if(!d.holdings.length)p.push("<p class='pf-msg'>주식을 입력하거나 관심종목을 더하면 공개 기사에서 그 종목 소식을 찾습니다.</p>");
+ hit.forEach(h=>p.push("<div class='stock'><b>"+esc(h.name)+"</b> <span class='tag "+(h.held?'tag-add':'tag-watch')+"'>"+(h.held?'보유':'관심')+"</span> <span class='src'>"+esc(h.market_label)+" · "+h.count+"건"+toneText(h.tone)+"</span><ul>"
+  +h.matches.map(m=>"<li>"+(m.kind==='report'?'[보고서] ':'')+linked(m)+" <span class='src'>"+esc(m.source||'')+" "+esc(stamp(m.published_at))+"</span></li>").join('')+"</ul></div>"));
+ if(miss.length)p.push("<p class='pf-msg'>찾은 기사가 없는 종목: "+esc(miss.map(h=>h.name).join(', '))+"</p>");
+ if(d.markets.length){p.push("<h3>내 종목이 있는 시장</h3>");
+  d.markets.forEach(m=>p.push("<div class='stock'><b>"+esc(m.name)+"</b><span class='src'>"+(m.tone_date?' '+esc(m.tone_date):'')+toneText(m.tone)+"</span>"
+   +(m.report?"<p class='pf-msg'>"+esc(m.report.lead)+" <span class='src'>"+esc(m.report.title)+"</span></p>":m.summary?"<p class='pf-msg'>"+esc(m.summary)+"</p>":"")+"</div>"))}
+ p.push("<p class='pf-msg'>시장상황 보고서가 근거로 고른 공개 기사에서 종목 이름·코드가 그대로 나온 것만 찾습니다(다른 언어 표기는 따로 찾지 않습니다). 외부 AI를 부르지 않습니다.</p>");
+ $('pf-check').innerHTML=p.join('')}
 function detail(a){const p=[];if(a.market)p.push(a.market+(a.code?' '+a.code:''));if(a.rate_pct!=null)p.push(a.rate_pct+'%');if(a.maturity)p.push('만기 '+a.maturity);
  if(a.region_code)p.push('지역 '+a.region_code+(a.complex?' '+a.complex:''));if(a.area_m2)p.push(a.area_m2+'㎡');if(a.loan_krw)p.push('대출 '+won(a.loan_krw));return p.join(' · ')}
 function renderAssets(){$('pf-assets').innerHTML=assets.map(a=>"<tr><td>"+esc(KIND[a.kind]||a.kind)+"</td><td>"+esc(a.name)+"</td><td class='n'>"+esc(won(a.value_krw))+"</td><td class='opt'>"+esc(detail(a))+"</td><td class='n act'><button class='pf-btn' data-edit='"+esc(a.id)+"'>수정</button> <button class='pf-btn' data-del='"+esc(a.id)+"'>삭제</button></td></tr>").join('')||"<tr><td colspan='5'>아직 입력한 자산이 없습니다.</td></tr>";
@@ -179,7 +202,7 @@ $('pf-form').addEventListener('submit',async e=>{e.preventDefault();const f=$('p
 async function loadWatch(){const d=await api('watchlist');watch=d.items||{};renderWatch()}
 function renderWatch(){$('pf-watch').innerHTML=Object.entries(watch).map(([c,n])=>"<tr><td>"+esc(n)+"</td><td>"+esc(c)+"</td><td class='n act'><button class='pf-btn' data-wdel='"+esc(c)+"'>빼기</button></td></tr>").join('')||"<tr><td>관심종목이 없습니다.</td></tr>";
  $('pf-watch').querySelectorAll('[data-wdel]').forEach(b=>b.addEventListener('click',()=>{const next={...watch};delete next[b.dataset.wdel];saveWatch(Object.entries(next).map(([code,name])=>({code,name})))}))}
-async function saveWatch(items){try{const d=await api('watchlist',{method:'PUT',body:JSON.stringify({items})});watch=d.items||{};renderWatch();$('pf-watch-msg').textContent=''}catch(err){$('pf-watch-msg').textContent=err.message;$('pf-watch-msg').classList.add('err')}}
+async function saveWatch(items){try{const d=await api('watchlist',{method:'PUT',body:JSON.stringify({items})});watch=d.items||{};renderWatch();loadCheck();$('pf-watch-msg').textContent=''}catch(err){$('pf-watch-msg').textContent=err.message;$('pf-watch-msg').classList.add('err')}}
 $('pf-watch-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target.elements,[market,exchange]=f.ex.value.split(':');
  // 저장 직전에 다시 읽는다 — 그사이 봇의 리서치가 목록을 바꿨을 수 있다.
  await loadWatch();const items=Object.entries(watch).map(([code,name])=>({code,name}));items.push({code:f.code.value.trim(),name:f.name.value.trim(),market,exchange});await saveWatch(items);e.target.reset()});
@@ -200,7 +223,11 @@ function renderNl(d){const on=d.status==='active',wait=d.status==='pending';
  $('nl-state').textContent=!d.configured?'메일 발송을 준비 중입니다.':on?d.email+' 주소로 받고 있습니다.'+(d.last_sent_on?' 마지막 발송 '+d.last_sent_on+'.':'')
   :wait?d.email+' 주소로 보낸 6자리 코드를 입력하세요. 코드는 10분 동안 유효합니다(오늘 '+d.codes_today+' / '+d.codes_per_day+'회).':'구독하지 않았습니다.';
  $('nl-email-form').classList.toggle('pf-hide',on||!d.configured);$('nl-code-form').classList.toggle('pf-hide',!wait);
- $('nl-off').classList.toggle('pf-hide',d.status==='none');$('nl-off').textContent=on?'뉴스레터 끄기':'신청 취소'}
+ $('nl-off').classList.toggle('pf-hide',d.status==='none');$('nl-off').textContent=on?'뉴스레터 끄기':'신청 취소';
+ $('nl-personal-row').classList.toggle('pf-hide',d.status==='none');$('nl-personal').checked=!!d.personal}
+$('nl-personal').addEventListener('change',async e=>{const b=e.currentTarget;b.disabled=true;
+ try{renderNl(await nl('/personal',{method:'PUT',body:JSON.stringify({enabled:b.checked})}));nlMsg(b.checked?'다음 편지부터 내 자산 소식을 함께 보냅니다.':'내 자산 소식을 빼고 보냅니다.')}
+ catch(err){nlMsg(err.message,true);loadNl()}finally{b.disabled=false}});
 async function loadNl(){try{renderNl(await nl(''))}catch(err){nlMsg(err.message,true)}}
 $('nl-email-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;if(b)b.disabled=true;
  try{renderNl(await nl('',{method:'PUT',body:JSON.stringify({email:e.target.elements.email.value.trim()})}));nlMsg('확인 코드를 보냈습니다. 메일함(스팸함 포함)을 확인하세요.')}

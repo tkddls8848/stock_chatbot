@@ -19,6 +19,8 @@ from services.web.portfolio.routes import build_router
 from services.web.portfolio.diagnosis import diagnose
 from services.web.portfolio.service import AdviceService
 from services.web.portfolio.store import AdviceStore, AssetStore, canonical_code
+from services.web.portfolio import routes as routes_module
+from services.web.portfolio.watch import PublicFeed, build_watch
 
 PASSWORD = "correct horse"
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=JST)
@@ -82,12 +84,13 @@ def env(tmp_path, monkeypatch):
         advice._assets = tenant_assets
         advice._advice = tenant_advice
         return advice
-    router = build_router(accounts=accounts, advice_factory=factory)
+    monkeypatch.setattr(routes_module, "now", lambda: NOW)
+    router = build_router(accounts=accounts, advice_factory=factory, public_dir=public)
     client = TestClient(server.build_app(portfolio_router=router, accounts=accounts),
                         base_url="https://testserver", headers={"origin": "https://testserver"})
     client.test_session_token = token
     return {"client": client, "root": root, "fake": fake, "estimates": estimates,
-            "advice": advice, "accounts": accounts}
+            "advice": advice, "accounts": accounts, "public": public}
 
 
 def _unlock(client):
@@ -97,7 +100,7 @@ def _unlock(client):
 def test_every_resource_is_locked_until_google_login(env):
     client = env["client"]
     for method, path in (("get", "assets"), ("post", "assets"), ("get", "watchlist"), ("put", "watchlist"),
-                         ("get", "advice"), ("post", "advice"), ("get", "advice/latest")):
+                         ("get", "advice"), ("post", "advice"), ("get", "advice/latest"), ("get", "watch")):
         assert client.request(method.upper(), "/api/portfolio/" + path, json={}).status_code == 401
     assert client.post("/api/portfolio/session", json={"password": PASSWORD}).status_code == 405
     _unlock(client)
@@ -229,6 +232,20 @@ def test_diagnosis_skips_what_external_data_could_not_supply():
     codes = {f["code"] for f in report["findings"]}
     assert "rate_gap" not in codes and "estimate_gap" not in codes
     assert report["deposit_best"] == {} and "estimate_krw" not in report["real_estate"][0]
+
+
+def test_alert_findings_carry_a_stable_key_and_an_amount_free_brief():
+    report = diagnose(_assets(), today=date(2026, 9, 24), deposit_rates={}, market_rates={}, estimates={})
+    alerts = [f for f in report["findings"] if f.get("key")]
+    assert {f["code"] for f in alerts} == {"class_concentration", "single_concentration", "maturity", "ltv"}
+    # 편지에 실리는 줄이다. 금액(원)은 빼고 비율·날짜만 둔다.
+    assert all("원" not in f["brief"] for f in alerts)
+    maturity = next(f for f in alerts if f["code"] == "maturity")
+    assert maturity["key"].endswith(":30") and "16일 남음" in maturity["brief"]
+    later = diagnose(_assets(), today=date(2026, 10, 3), deposit_rates={}, market_rates={}, estimates={})
+    # 7일 안으로 들어오면 key가 바뀌어 다시 알린다. 편중처럼 그대로인 조건은 key가 같다.
+    assert next(f for f in later["findings"] if f["code"] == "maturity")["key"].endswith(":7")
+    assert {f["key"] for f in later["findings"] if f["code"] == "ltv"} == {f["key"] for f in alerts if f["code"] == "ltv"}
 
 
 def test_empty_portfolio_is_not_diagnosed():
@@ -393,3 +410,71 @@ def test_molit_estimates_from_the_median_price_per_m2_in_both_tag_styles():
     failing = _Session([_Response(text="<response><header><resultCode>30</resultCode></header></response>")])
     assert market_data.estimate_property("11680", 50.0, today=date(2026, 9, 24), session=failing,
                                          key="k")["status"] == "error"
+
+
+# ── 내 자산 점검 ─────────────────────────────────────────────────────────────
+
+WATCH_NEWS = [
+    {"id": "r1", "kind": "report", "market": "KR", "title": "한국 시장상황 보고서",
+     "text": "외국인이 삼성전자를 팔았다.\n둘째 문단", "published_at": "2026-09-24T08:00:00+09:00"},
+    {"id": "n1", "kind": "news", "market": "KR", "title": "삼성전자가 반등했다", "text": "삼성전자가 반등했다",
+     "published_at": "2026-09-24T09:00:00+09:00", "source": "연합", "url": "https://example.com/1", "sentiment": 0.4},
+    {"id": "n2", "kind": "news", "market": "US", "title": "엔비디아 상승", "text": "Nvidia (NASDAQ:NVDA) rallies",
+     "published_at": "2026-09-23T22:00:00+09:00", "source": "CNBC", "url": "javascript:alert(1)", "sentiment": -0.2},
+    {"id": "n3", "kind": "news", "market": "US", "title": "뮤 상승", "text": "Mu Sigma and the risk of AI",
+     "published_at": "2026-09-23T21:00:00+09:00", "source": "X", "url": ""},
+    {"id": "n4", "kind": "news", "market": "US", "title": "마이크론", "text": "Why $MU jumped today",
+     "published_at": "2026-09-23T20:00:00+09:00", "source": "Y", "url": ""},
+    {"id": "n5", "kind": "news", "market": "KR", "title": "오래된 삼성전자 기사", "text": "삼성전자",
+     "published_at": "2026-09-20T09:00:00+09:00", "source": "Z", "url": ""},
+    {"id": "n6", "kind": "news", "market": "KR", "title": "Samsung Electronics guidance", "text": "",
+     "published_at": "2026-09-24T07:00:00+09:00", "source": "Z", "url": ""},
+]
+
+
+def _watch_public(public):
+    (public / "news.json").write_text(json.dumps({"generated_at": "2026-09-24T09:30:00+09:00",
+                                                  "documents": WATCH_NEWS}, ensure_ascii=False), encoding="utf-8")
+    (public / "market.json").write_text(json.dumps({"generated_at": "2026-09-24T07:40:00+09:00", "markets": {
+        "KR": {"daily": [{"date": "2026-09-24", "avg_sentiment": -0.12, "summary": "외국인 매도"}]}}},
+        ensure_ascii=False), encoding="utf-8")
+
+
+def test_watch_finds_holdings_by_name_and_code_only_in_the_window(tmp_path):
+    _watch_public(tmp_path)
+    assets = [
+        {"id": "s", "kind": "stock", "name": "삼성전자(주)", "market": "KR", "code": "005930", "value_krw": 60_000_000},
+        {"id": "n", "kind": "stock", "name": "NVIDIA Corporation", "market": "US", "code": "NVDA", "value_krw": 30_000_000},
+        {"id": "m", "kind": "stock", "name": "Micron", "market": "US", "code": "MU", "value_krw": 10_000_000},
+    ]
+    watchlist = {"KR:KOSPI:005930": "삼성전자", "US:NASDAQ:TSLA": "Tesla, Inc."}
+    result = build_watch(assets, watchlist, PublicFeed(tmp_path), NOW, news_hours=72, report_hours=36, matches=3)
+    by_name = {h["name"]: h for h in result["holdings"]}
+    # 같은 시장·이름의 관심종목은 보유 주식과 겹쳐 한 번만 둔다. 보유가 먼저다.
+    assert [h["name"] for h in result["holdings"]] == ["삼성전자(주)", "NVIDIA Corporation", "Micron", "Tesla, Inc."]
+    samsung = by_name["삼성전자(주)"]
+    # 이름은 한국어 조사가 붙어도 찾는다. 사흘 밖의 기사, 다른 언어 표기("Samsung")는 찾지 않는다.
+    assert [m["title"] for m in samsung["matches"]] == ["삼성전자가 반등했다", "한국 시장상황 보고서"]
+    assert samsung["tone"] == 0.4  # 보고서는 논조 평균에 넣지 않는다
+    assert by_name["NVIDIA Corporation"]["count"] == 1  # "Corporation"을 떼고 원제에서 찾는다
+    assert by_name["NVIDIA Corporation"]["matches"][0]["url"] == ""  # http(s)가 아닌 링크는 버린다
+    # 두 글자 티커는 "$MU"처럼 표지가 있을 때만 찾는다("Mu Sigma"는 아니다).
+    assert [m["title"] for m in by_name["Micron"]["matches"]] == ["마이크론"]
+    assert by_name["Tesla, Inc."]["count"] == 0 and by_name["Tesla, Inc."]["held"] is False
+    assert [m["code"] for m in result["markets"]] == ["US", "KR"]
+    korea = result["markets"][1]
+    assert korea["tone"] == -0.12 and korea["report"]["lead"] == "외국인이 삼성전자를 팔았다."
+    assert {a["code"] for a in result["alerts"]} >= {"class_concentration", "single_concentration", "low_liquidity"}
+
+
+def test_watch_route_reads_only_this_account_and_public_files(env):
+    client = env["client"]
+    _unlock(client)
+    _watch_public(env["public"])
+    client.post("/api/portfolio/assets", json={"kind": "stock", "name": "삼성전자", "value_krw": 1_000_000,
+                                               "market": "KR", "code": "005930"})
+    body = client.get("/api/portfolio/watch").json()
+    assert body["holdings"][0]["count"] == 2 and body["news_hours"] == 72
+    assert body["as_of"] == NOW.isoformat(timespec="seconds")
+    assert env["fake"].calls == []  # 외부 AI를 부르지 않는다
+    assert "오늘 점검" in client.get("/portfolio").text

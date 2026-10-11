@@ -9,7 +9,12 @@
     {"email": str, "status": "pending" | "active",
      "code": {"salt", "hash", "expires_at", "attempts"} | null,
      "codes_sent": [ISO 시각, ...], "confirmed_at": ISO | null,
-     "last_sent_on": "YYYY-MM-DD" | null, "updated_at": ISO}
+     "last_sent_on": "YYYY-MM-DD" | null, "updated_at": ISO,
+     "personal": bool, "alerts_sent": [경보 key, ...]}
+
+`personal`과 `alerts_sent`는 계정이 "내 자산 소식도 받기"를 켠 뒤에만 생긴다(없으면 꺼짐).
+`alerts_sent`는 마지막 편지 때 넘어 있던 점검 기준(`diagnosis`의 `key`)이다 — 편지는 새로 넘은
+기준만 알리고, 풀렸다가 다시 넘으면 다시 알린다.
 
 확인 코드는 남의 주소를 등록하지 못하게 하는 장치다. 코드 원문은 저장하지 않는다.
 """
@@ -115,6 +120,7 @@ def issue_code(record: dict[str, Any] | None, email: str, moment: datetime, *,
         "confirmed_at": None,
         "last_sent_on": (record or {}).get("last_sent_on"),
         "updated_at": stamp,
+        **{key: record[key] for key in ("personal", "alerts_sent") if record and key in record},
     }, code
 
 

@@ -276,6 +276,13 @@ PORTFOLIO_RATE_GAP_PP = 0.5            # 보유 예적금 금리가 시중 최�
 PORTFOLIO_LTV_WARNING = 0.6            # 부동산 대출 비율
 PORTFOLIO_MIN_LIQUID_SHARE = 0.1       # 예적금 비중이 이보다 낮으면 유동성 부족
 
+# 내 자산 점검(`portfolio/watch.py`). 보유 주식·관심종목을 찾는 공개 기사의 범위와 종목당 보여 줄 기사 수.
+# 공개 기사는 보고서 근거라 하루 수십 건이다 — 하루만 보면 대부분 종목이 비어 사흘을 본다.
+PORTFOLIO_WATCH_NEWS_HOURS = 72
+PORTFOLIO_WATCH_MATCHES = 3
+# 시장 흐름 칸에 싣는 보고서의 나이 상한. 주말엔 미국·일본 보고서가 하루 넘게 쉬어 36시간이다.
+PORTFOLIO_WATCH_REPORT_HOURS = 36
+
 # ── 뉴스레터: 일일 요약 다이제스트(로그인 계정이 확인한 이메일로) ──────────────────
 # 발송은 SMTP 하나다. 호스트·보내는 주소가 비면 구독 API가 503을 돌려주고 발송
 # one-shot은 실패로 끝난다 — 구독자가 받는 줄 알고 있는데 조용히 안 나가는 상태를 만들지 않는다.

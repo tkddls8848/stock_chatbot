@@ -3,6 +3,10 @@
 LLM은 이 결과를 해석만 한다(`advisor.py`). 모델이 쓴 금액·비율을 그대로 믿으면
 검산할 수 없기 때문이다. 문턱은 `core/config.py`의 `PORTFOLIO_*` 상수다.
 외부 자료가 없는 항목은 계산하지 않고 "자료 없음"으로 남긴다.
+
+경보가 되는 발견에는 `key`와 `brief`를 단다. `key`는 같은 조건이 이어지는 동안 바뀌지 않는
+이름이라 내 자산 점검(`watch.py`)이 "새로 넘은 기준"만 골라 편지로 알린다. `brief`는 금액을
+빼고 비율·날짜만 남긴 한 줄이다 — 편지는 메일 서버를 거쳐 가므로 자산 금액을 싣지 않는다.
 """
 
 from __future__ import annotations
@@ -56,9 +60,11 @@ def diagnose(
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
 
-    def note(level: str, code: str, message: str, asset_id: str | None = None) -> None:
+    def note(level: str, code: str, message: str, asset_id: str | None = None, *,
+             key: str = "", brief: str = "") -> None:
         findings.append({"level": level, "code": code, "message": message,
-                         **({"asset_id": asset_id} if asset_id else {})})
+                         **({"asset_id": asset_id} if asset_id else {}),
+                         **({"key": key, "brief": brief} if key else {})})
 
     total = float(sum(max(0, int(a.get("value_krw") or 0)) for a in assets))
     loans = float(sum(max(0, int(a.get("loan_krw") or 0)) for a in assets if a.get("kind") == "real_estate"))
@@ -75,21 +81,24 @@ def diagnose(
     # ── 편중 ──
     for kind, row in by_class.items():
         if row["share_pct"] / 100 > PORTFOLIO_CLASS_CONCENTRATION:
+            limit = round(PORTFOLIO_CLASS_CONCENTRATION * 100)
             note("warn", "class_concentration",
-                 f"{row['label']} 비중이 {row['share_pct']}%로 한 자산군에 치우쳐 있다"
-                 f"(기준 {round(PORTFOLIO_CLASS_CONCENTRATION * 100)}%).")
+                 f"{row['label']} 비중이 {row['share_pct']}%로 한 자산군에 치우쳐 있다(기준 {limit}%).",
+                 key=f"class:{kind}", brief=f"{row['label']} 비중 {row['share_pct']}%(기준 {limit}%)")
     for asset in assets:
         share = _pct(int(asset.get("value_krw") or 0), total)
         if share / 100 > PORTFOLIO_SINGLE_CONCENTRATION:
+            limit = round(PORTFOLIO_SINGLE_CONCENTRATION * 100)
             note("warn", "single_concentration",
-                 f"'{asset.get('name')}' 하나가 전체의 {share}%다"
-                 f"(기준 {round(PORTFOLIO_SINGLE_CONCENTRATION * 100)}%).", asset.get("id"))
+                 f"'{asset.get('name')}' 하나가 전체의 {share}%다(기준 {limit}%).", asset.get("id"),
+                 key=f"single:{asset.get('id')}", brief=f"'{asset.get('name')}' 비중 {share}%(기준 {limit}%)")
 
     liquid_share = by_class["deposit"]["share_pct"]
     if liquid_share / 100 < PORTFOLIO_MIN_LIQUID_SHARE:
+        limit = round(PORTFOLIO_MIN_LIQUID_SHARE * 100)
         note("warn", "low_liquidity",
-             f"예적금 비중이 {liquid_share}%로 급할 때 꺼낼 돈이 얇다"
-             f"(기준 {round(PORTFOLIO_MIN_LIQUID_SHARE * 100)}%).")
+             f"예적금 비중이 {liquid_share}%로 급할 때 꺼낼 돈이 얇다(기준 {limit}%).",
+             key="liquidity", brief=f"예적금 비중 {liquid_share}%(기준 {limit}%)")
 
     # ── 만기 ──
     maturities = []
@@ -105,10 +114,13 @@ def diagnose(
                                "maturity": day.isoformat(), "days_left": left,
                                "value_krw": int(asset.get("value_krw") or 0)})
             state = "이미 지났다" if left < 0 else f"{left}일 남았다"
+            # 만기가 다가오는 단계마다 한 번씩 다시 알린다(90·30·7일 전, 지난 뒤).
+            stage = "past" if left < 0 else next(d for d in (7, 30, PORTFOLIO_MATURITY_WINDOW_DAYS) if left <= d)
             note("warn" if left <= 30 else "info", "maturity",
                  f"'{asset.get('name')}' 만기({day.isoformat()})가 {state}. "
                  f"{_won(int(asset.get('value_krw') or 0))}의 재예치·재투자 계획이 필요하다.",
-                 asset.get("id"))
+                 asset.get("id"), key=f"maturity:{asset.get('id')}:{stage}",
+                 brief=f"'{asset.get('name')}' 만기 {day.isoformat()}({'지남' if left < 0 else f'{left}일 남음'})")
 
     # ── 예적금 금리 차이 ──
     rate_gaps = []
@@ -159,10 +171,11 @@ def diagnose(
                         "estimate_gap_pct": _pct(estimate["estimate_krw"] - value, value)})
         real_estate.append(row)
         if value and loan / value > PORTFOLIO_LTV_WARNING:
+            limit = round(PORTFOLIO_LTV_WARNING * 100)
             note("warn", "ltv",
-                 f"'{asset.get('name')}' 대출 비율이 {row['ltv_pct']}%다"
-                 f"(기준 {round(PORTFOLIO_LTV_WARNING * 100)}%). 금리가 오르면 부담이 커진다.",
-                 asset.get("id"))
+                 f"'{asset.get('name')}' 대출 비율이 {row['ltv_pct']}%다(기준 {limit}%). 금리가 오르면 부담이 커진다.",
+                 asset.get("id"), key=f"ltv:{asset.get('id')}",
+                 brief=f"'{asset.get('name')}' 대출 비율 {row['ltv_pct']}%(기준 {limit}%)")
         if "estimate_gap_pct" in row and abs(row["estimate_gap_pct"]) >= 15:
             note("info", "estimate_gap",
                  f"'{asset.get('name')}' 입력 평가액과 최근 실거래 기반 추정치"
