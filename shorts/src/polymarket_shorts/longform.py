@@ -217,10 +217,11 @@ def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str,
     if long:
         raise LongformError(f"analysis 문장이 {_SENTENCE_MAX}자를 넘습니다: {long[:40]}")
     source = sentences(to_polite_text(re.sub(r"\s+", " ", report_text)))
-    copied = next((line for line in lines if len(line) >= _COPY_MIN for original in source
+    copied = next(((line, original) for line in lines if len(line) >= _COPY_MIN for original in source
                    if SequenceMatcher(None, line, original).ratio() >= _COPY_RATIO), None)
     if copied:
-        raise LongformError(f"analysis가 보고서 문장을 거의 그대로 옮겼습니다: {copied[:40]}")
+        # 재시도 모델이 어느 문장을 어떻게 고칠지 알도록 두 문장을 다 적는다(앞 40자만 주면 낱말만 바꿨다).
+        raise LongformError(f"analysis가 보고서 문장을 거의 그대로 옮겼습니다: {copied[0]} / 보고서: {copied[1]}")
     repeated = _repeats(lines)
     if repeated:
         raise LongformError(f"analysis에 같은 뜻의 문장이 두 번 있습니다: {repeated[0][:40]} / {repeated[1][:40]}")
@@ -262,7 +263,8 @@ def write_script(report: dict[str, Any], news: list[dict[str, Any]], settings: S
             return check_script(payload, str(report["text"]), news)
         except LongformError as error:
             retry = (f"{user}\n\n직전 응답이 검증에 실패했습니다: {error}\n해당 부분만 고쳐 같은 형식의 JSON 전체를 다시 "
-                     f"반환하세요.\n직전 응답: {json.dumps(payload, ensure_ascii=False)}")
+                     f"반환하세요. 보고서 문장을 옮겼다는 지적이면 낱말 몇 개만 바꾸지 말고 주어·어순을 바꾸거나 "
+                     f"다른 사실과 묶어 문장 구조를 새로 쓰세요.\n직전 응답: {json.dumps(payload, ensure_ascii=False)}")
             second = chat_json(settings, system=SCRIPT_PROMPT, user=retry, max_tokens=SCRIPT_MAX_TOKENS)
             return check_script(second, str(report["text"]), news)
     except LLMError as exc:
