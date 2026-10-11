@@ -20,7 +20,7 @@ def public(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "now", lambda: datetime(2026, 9, 23, 12, tzinfo=JST))
     for name, file in (("MARKET_JSON", "market.json"), ("MARKET_CHART", "market_chart.png"),
                        ("RESEARCH_JSON", "research.json"), ("NEWS_JSON", "news.json"),
-                       ("META_JSON", "meta.json")):
+                       ("META_JSON", "meta.json"), ("WATCH_NEWS_JSON", "watch_news.json")):
         monkeypatch.setattr(publish, name, tmp_path / file)
     return tmp_path
 
@@ -86,3 +86,26 @@ def test_news_failure_preserves_existing_artifact(public, monkeypatch):
     with pytest.raises(OSError):
         publish.publish_news([article("new")])
     assert (public / "news.json").read_bytes() == before
+
+
+def queued(article_id, title="Samsung Electronics beats estimates", published="Wed, 23 Sep 2026 01:00:00 GMT", **changes):
+    return {"article_id": article_id, "event_id": "e" + article_id, "source": "gnews_us", "label": "미국 증시 뉴스",
+            "market": "US", "title": title, "publisher": "Reuters", "url": "https://example.com/" + article_id,
+            "published_at": published, "published_date": "", "prefilter_candidate_id": "c",
+            "prefilter_exploration": False, **changes}
+
+
+def test_watch_news_rolls_queued_articles_for_72_hours(public):
+    publish.publish_watch_news([queued("a"), queued("old", published="Sat, 19 Sep 2026 00:00:00 GMT"),
+                                queued("junk", title="NVIDIA Corporation (NVDA) Stock Price, News, Quote & History"),
+                                queued("notime", published="")])
+    # 보고서가 발행해 큐가 비어도 이미 담은 기사는 남는다. 같은 기사는 한 번만이다.
+    assert publish.publish_watch_news([]) == 1
+    assert publish.publish_watch_news([queued("a"), queued("b", publisher="", published="Wed, 23 Sep 2026 02:00:00 GMT")]) == 2
+    payload = json.loads((public / "watch_news.json").read_text(encoding="utf-8"))
+    assert payload["format"] == publish.WATCH_NEWS_FORMAT and payload["hours"] == 72
+    assert [row["id"] for row in payload["items"]] == ["b", "a"]  # 최신순
+    first = payload["items"][1]
+    assert first == {"id": "a", "market": "US", "title": "Samsung Electronics beats estimates", "source": "Reuters",
+                     "url": "https://example.com/a", "published_at": "2026-09-23T10:00:00+09:00"}
+    assert payload["items"][0]["source"] == "미국 증시 뉴스"  # 매체명이 없으면 수집 경로 이름

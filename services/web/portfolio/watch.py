@@ -3,12 +3,14 @@
 조언(`service.py`)은 요청할 때 한 번 받는 진단이고, 이것은 매일 들여다보는 자리다. 화면
 (`GET /api/portfolio/watch`)과 뉴스레터(`newsletter/send.py`, 계정이 켰을 때만)가 같은 결과를 쓴다.
 
-**LLM·외부 API를 부르지 않는다.** 읽는 것은 계정 파일(자산·관심종목)과 공개 산출물(`news.json`·
-`market.json`)뿐이다. 숫자는 규칙 진단(`diagnosis.py`)이 만들고, 여기서는 고르고 묶기만 한다.
+**LLM·외부 API를 부르지 않는다.** 읽는 것은 계정 파일(자산·관심종목)과 봇이 구운 산출물뿐이다 —
+`news.json`(보고서와 그 근거 기사, 논조 있음), `watch_news.json`(보고서 큐에 들어온 기사 72시간, 하루
+700~1,300건, 논조 없음), `market.json`. 숫자는 규칙 진단(`diagnosis.py`)이 만들고, 여기서는 고르고
+묶기만 한다.
 
-종목 찾기는 이름·코드가 기사 제목·원제에 그대로 나올 때만 맞춘다. 별칭·번역 사전을 두지 않는다 —
-"삼성전자"로 적은 종목은 영어 기사 "Samsung Electronics"를 찾지 못한다. 대신 화면에 찾은 범위를
-밝힌다. `news.json`은 시장상황 보고서가 근거로 고른 기사라 수집한 기사 전부가 아니다.
+종목 찾기는 이름·코드가 기사 제목·원제에 나올 때 맞춘다. 주요 종목은 여러 언어 이름(`aliases.py`)으로도
+찾는다 — "삼성전자"로 적어도 "Samsung Electronics"·"三星电子"를 찾는다. 표에 없는 종목은 적힌 그대로만
+찾고, 그 범위를 화면에 밝힌다.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from services.web.core.clock import ensure_jst
+from services.web.portfolio.aliases import lookup
 from services.web.portfolio.diagnosis import diagnose
 from services.web.search import MARKETS
 
@@ -37,6 +40,12 @@ _US_TICKER = re.compile(r"[A-Z][A-Z0-9.-]{0,14}")
 _MIN_LATIN = 3
 # 거래소 표기 없이 맨몸으로 찾는 티커의 최소 길이. "MU"·"ON"은 낱말과 구분할 수 없다.
 _MIN_BARE_TICKER = 4
+# 두 글자 한국어 이름은 다른 낱말 속에 든다("애플"→애플리케이션, "기아"→위기아). 앞이 한글이 아니고, 뒤가
+# 한글이 아니거나 조사일 때만 맞춘다. 세 글자부터는 그대로 찾는다 — "삼성전자에서"처럼 조사가 길게 붙는다.
+_SHORT_HANGUL = 2
+_PARTICLE = "이가은는을를의에와과도만로서"
+# 버전 형식. 봇의 `publish.WATCH_NEWS_FORMAT`과 같아야 읽는다.
+WATCH_NEWS_FORMAT = 1
 
 
 def _normal(text: str) -> str:
@@ -61,13 +70,16 @@ def _patterns(name: str, market: str, code: str) -> list[tuple[re.Pattern[str], 
     """그 종목을 기사에서 찾는 (정규식, 원문에서 찾나). 이름은 정규화한(소문자) 글에서 찾고,
     코드는 원문에서 찾는다 — 티커는 대문자여야 낱말과 구분된다."""
     found: list[tuple[re.Pattern[str], bool]] = []
-    alias = _alias(name)
-    if re.fullmatch(r"[a-z0-9&.'/ -]+", alias):
-        if len(alias.replace(" ", "")) >= _MIN_LATIN:
-            found.append((re.compile(r"(?<![a-z0-9])" + re.escape(alias).replace(r"\ ", r"\s+") + r"(?![a-z0-9])"),
-                          False))
-    elif len(alias) >= 2:
-        found.append((re.compile(re.escape(alias)), False))  # 한국어 조사가 붙어도 찾는다
+    written = {_alias(name), _normal(name)}
+    for alias in sorted({_alias(n) for n in (*written, *lookup(market, code, written))} - {""}):
+        escaped = re.escape(alias).replace(r"\ ", r"\s*")
+        if re.fullmatch(r"[a-z0-9&.'/ -]+", alias):
+            if len(alias.replace(" ", "")) >= _MIN_LATIN:
+                found.append((re.compile(r"(?<![a-z0-9])" + escaped + r"(?![a-z0-9])"), False))
+        elif re.fullmatch(r"[가-힣]+", alias) and len(alias) <= _SHORT_HANGUL:
+            found.append((re.compile(rf"(?<![가-힣]){escaped}(?:(?![가-힣])|(?=[{_PARTICLE}]))"), False))
+        elif len(alias) >= 2:
+            found.append((re.compile(escaped), False))  # 한국어 조사가 붙어도 찾는다
     raw = code.rsplit(":", 1)[-1].strip().upper()
     if market == "US" and _US_TICKER.fullmatch(raw) and not raw.isdigit():
         ticker = re.escape(raw)
@@ -148,15 +160,25 @@ def build_watch(assets: list[dict[str, Any]], watchlist: dict[str, str], feed: P
                 moment: datetime, *, news_hours: int, report_hours: int, matches: int) -> dict[str, Any]:
     since = moment - timedelta(hours=news_hours)
     news = feed.read("news.json")
-    documents = []
-    for row in news.get("documents", []) if isinstance(news.get("documents"), list) else []:
-        if not isinstance(row, dict) or row.get("kind") not in {"news", "report"}:
-            continue
+    queued = feed.read("watch_news.json")
+    if queued.get("format") != WATCH_NEWS_FORMAT:
+        queued = {}  # 형식이 다르면 "자료 없음"이다(현재 형식만 읽는다)
+    # 보고서 근거(news.json)가 먼저다 — 한국어 제목과 논조가 있다. 같은 기사가 큐 묶음에도 있으면 뺀다.
+    rows = [row for row in news.get("documents", []) if isinstance(row, dict) and row.get("kind") in {"news", "report"}]
+    rows += [{**row, "kind": "news", "text": ""} for row in queued.get("items", []) if isinstance(row, dict)]
+    documents, seen = [], set()
+    for row in rows:
         stamp = _stamp(row.get("published_at"))
         if stamp is None or not since <= stamp <= moment:
             continue
-        documents.append((stamp, row, _normal(f"{row.get('title', '')} {row.get('text', '')}"),
-                          f"{row.get('title', '')} {row.get('text', '')}"))
+        original = f"{row.get('title', '')} {row.get('text', '')}"
+        # news.json의 `text`가 원제이고, 큐 묶음은 `title`이 원제다. 주소나 원제 중 하나가 같으면 같은 기사다.
+        keys = {key for key in (str(row.get("url") or ""), _normal(str(row.get("text") or row.get("title") or "")))
+                if key}
+        if row.get("kind") == "news" and keys & seen:
+            continue
+        seen |= keys
+        documents.append((stamp, row, _normal(original), original))
     documents.sort(key=lambda item: item[0], reverse=True)
 
     tracked = holdings(assets, watchlist)
@@ -197,6 +219,7 @@ def build_watch(assets: list[dict[str, Any]], watchlist: dict[str, str], feed: P
         "holdings": tracked,
         "markets": contexts,
         "data": {"news_generated_at": str(news.get("generated_at") or ""),
+                 "watch_news_generated_at": str(queued.get("generated_at") or ""),
                  "market_generated_at": str(market.get("generated_at") or ""),
                  "documents": len(documents)},
     }

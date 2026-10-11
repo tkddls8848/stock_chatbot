@@ -191,6 +191,15 @@ async def collect_report_articles(app: Application) -> None:
         sum(counts),
         len(specs),
     )
+    # 웹 "내 자산 점검"의 기사 묶음. 큐는 보고서 발행 때 비워지므로 매 수집 뒤 지금 큐를 합쳐 둔다.
+    # 실패해도 수집·보고서에는 영향이 없다.
+    try:
+        from services.telegram_bot.publish import publish_watch_news
+
+        _, queued = await queue.snapshot()
+        await asyncio.to_thread(publish_watch_news, queued)
+    except Exception:
+        logger.exception("[NEWS REPORT] 내 자산 점검 기사 묶음 저장 실패")
 
 
 def _sorted_by_recency(items: list[dict]) -> list[dict]:

@@ -173,7 +173,7 @@ function renderCheck(d){const p=["<p class='pf-msg'>"+esc(stamp(d.as_of))+" 기�
  if(d.markets.length){p.push("<h3>내 종목이 있는 시장</h3>");
   d.markets.forEach(m=>p.push("<div class='stock'><b>"+esc(m.name)+"</b><span class='src'>"+(m.tone_date?' '+esc(m.tone_date):'')+toneText(m.tone)+"</span>"
    +(m.report?"<p class='pf-msg'>"+esc(m.report.lead)+" <span class='src'>"+esc(m.report.title)+"</span></p>":m.summary?"<p class='pf-msg'>"+esc(m.summary)+"</p>":"")+"</div>"))}
- p.push("<p class='pf-msg'>시장상황 보고서가 근거로 고른 공개 기사에서 종목 이름·코드가 그대로 나온 것만 찾습니다(다른 언어 표기는 따로 찾지 않습니다). 외부 AI를 부르지 않습니다.</p>");
+ p.push("<p class='pf-msg'>시장상황 보고서와 그 근거 기사, 서비스가 모은 기사에서 찾습니다. 주요 종목은 한국어·영어·중국어·일본어 이름으로도 찾고, 그 밖의 종목은 적힌 이름·코드 그대로 찾습니다. 논조는 보고서가 매긴 기사로만 냅니다. 외부 AI를 부르지 않습니다.</p>");
  $('pf-check').innerHTML=p.join('')}
 function detail(a){const p=[];if(a.market)p.push(a.market+(a.code?' '+a.code:''));if(a.rate_pct!=null)p.push(a.rate_pct+'%');if(a.maturity)p.push('만기 '+a.maturity);
  if(a.region_code)p.push('지역 '+a.region_code+(a.complex?' '+a.complex:''));if(a.area_m2)p.push(a.area_m2+'㎡');if(a.loan_krw)p.push('대출 '+won(a.loan_krw));return p.join(' · ')}

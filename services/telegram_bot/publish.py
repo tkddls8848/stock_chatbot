@@ -13,12 +13,12 @@ import json
 import logging
 import threading
 from typing import Any
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from services.telegram_bot.core.clock import now
-from services.telegram_bot.core.config import DATA_DIR, PUBLIC_DIR
+from services.telegram_bot.core.config import DATA_DIR, PUBLIC_DIR, WATCH_NEWS_HOURS, WATCH_NEWS_MAX_ITEMS
 from services.telegram_bot.core.storage import write_bytes_atomic, write_json_atomic
-from services.telegram_bot.news.utils import junk_reason
+from services.telegram_bot.news.utils import junk_reason, parse_news_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,15 @@ NEWS_JSON = PUBLIC_DIR / "news.json"
 RESEARCH_INPUTS_JSON = PUBLIC_DIR / "research_inputs.json"
 # 입력 묶음 형식. 바꾸면 웹의 읽는 쪽(`services/web/personal_research.py`)을 같은 커밋에서 고친다.
 RESEARCH_INPUTS_FORMAT = 1
+# 웹 "내 자산 점검"이 보유 종목을 찾는 기사 묶음. 보고서 큐에 들어온 원문 제목을 최근 72시간 굴려 둔다.
+# 공개 라우트가 내보내지 않는다 — 웹은 로그인한 계정의 점검과 그 계정이 켠 뉴스레터에서만 읽는다.
+WATCH_NEWS_JSON = PUBLIC_DIR / "watch_news.json"
+# 형식. 바꾸면 웹의 읽는 쪽(`services/web/portfolio/watch.py`)을 같은 커밋에서 고친다.
+WATCH_NEWS_FORMAT = 1
 META_JSON = PUBLIC_DIR / "meta.json"
 _META_LOCK = threading.Lock()
 _NEWS_LOCK = threading.Lock()
+_WATCH_LOCK = threading.Lock()
 
 
 def publish_news(documents: list[dict[str, Any]]) -> None:
@@ -73,6 +79,43 @@ def publish_news(documents: list[dict[str, Any]]) -> None:
         generated_at = moment.isoformat(timespec="seconds")
         write_json_atomic(target, {"generated_at": generated_at, "documents": kept})
     _update_meta("news_generated_at", generated_at)
+
+
+def publish_watch_news(queued: list[dict[str, Any]]) -> int:
+    """보고서 큐 항목을 굴리는 기사 묶음에 합친다. 남긴 건수를 돌려준다.
+
+    큐는 보고서가 발행하면 비워지므로, 매시간 수집이 끝날 때마다 그때 큐에 있는 것을 기사 ID로
+    합쳐 둔다 — 큐에 한 시간이라도 머문 기사는 다 남는다. 발행 시각을 못 읽은 기사와 기사가 아닌 글
+    (`junk_reason`)은 넣지 않는다. 제목·매체·주소·시각만 담고 사전선별 점수·사건 ID는 담지 않는다.
+    """
+    moment = now()
+    cutoff = moment - timedelta(hours=WATCH_NEWS_HOURS)
+    with _WATCH_LOCK:
+        try:
+            existing = json.loads(WATCH_NEWS_JSON.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            existing = {}
+        # 형식이 다른 묶음은 이어 쓰지 않고 새로 시작한다(현재 형식만 읽는다).
+        rows = ({row["id"]: row for row in existing.get("items", [])}
+                if existing.get("format") == WATCH_NEWS_FORMAT else {})
+        for item in queued:
+            published = parse_news_datetime(item.get("published_at"), item.get("published_date"))
+            title = str(item.get("title") or "").strip()
+            publisher = str(item.get("publisher") or "")
+            if published is None or not title or junk_reason(title, publisher):
+                continue
+            rows[str(item["article_id"])] = {
+                "id": str(item["article_id"]), "market": str(item.get("market") or ""), "title": title,
+                "source": publisher or str(item.get("label") or ""), "url": str(item.get("url") or ""),
+                "published_at": published.isoformat(timespec="seconds"),
+            }
+        kept = sorted((row for row in rows.values()
+                       if cutoff <= datetime.fromisoformat(row["published_at"]) <= moment + timedelta(hours=1)),
+                      key=lambda row: (row["published_at"], row["id"]), reverse=True)[:WATCH_NEWS_MAX_ITEMS]
+        write_json_atomic(WATCH_NEWS_JSON, {"format": WATCH_NEWS_FORMAT,
+                                            "generated_at": moment.isoformat(timespec="seconds"),
+                                            "hours": WATCH_NEWS_HOURS, "items": kept})
+    return len(kept)
 
 
 def _update_meta(key: str, generated_at: str) -> None:

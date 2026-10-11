@@ -453,8 +453,10 @@ def test_watch_finds_holdings_by_name_and_code_only_in_the_window(tmp_path):
     # 같은 시장·이름의 관심종목은 보유 주식과 겹쳐 한 번만 둔다. 보유가 먼저다.
     assert [h["name"] for h in result["holdings"]] == ["삼성전자(주)", "NVIDIA Corporation", "Micron", "Tesla, Inc."]
     samsung = by_name["삼성전자(주)"]
-    # 이름은 한국어 조사가 붙어도 찾는다. 사흘 밖의 기사, 다른 언어 표기("Samsung")는 찾지 않는다.
-    assert [m["title"] for m in samsung["matches"]] == ["삼성전자가 반등했다", "한국 시장상황 보고서"]
+    # 이름은 한국어 조사가 붙어도 찾고, 주요 종목은 다른 언어 이름("Samsung Electronics")으로도 찾는다.
+    # 사흘 밖의 기사는 찾지 않는다.
+    assert [m["title"] for m in samsung["matches"]] == ["삼성전자가 반등했다", "한국 시장상황 보고서",
+                                                        "Samsung Electronics guidance"]
     assert samsung["tone"] == 0.4  # 보고서는 논조 평균에 넣지 않는다
     assert by_name["NVIDIA Corporation"]["count"] == 1  # "Corporation"을 떼고 원제에서 찾는다
     assert by_name["NVIDIA Corporation"]["matches"][0]["url"] == ""  # http(s)가 아닌 링크는 버린다
@@ -474,7 +476,50 @@ def test_watch_route_reads_only_this_account_and_public_files(env):
     client.post("/api/portfolio/assets", json={"kind": "stock", "name": "삼성전자", "value_krw": 1_000_000,
                                                "market": "KR", "code": "005930"})
     body = client.get("/api/portfolio/watch").json()
-    assert body["holdings"][0]["count"] == 2 and body["news_hours"] == 72
+    assert body["holdings"][0]["count"] == 3 and body["news_hours"] == 72
     assert body["as_of"] == NOW.isoformat(timespec="seconds")
     assert env["fake"].calls == []  # 외부 AI를 부르지 않는다
     assert "오늘 점검" in client.get("/portfolio").text
+
+
+def test_watch_reads_the_queued_feed_and_drops_duplicates(tmp_path):
+    _watch_public(tmp_path)
+    (tmp_path / "watch_news.json").write_text(json.dumps({"format": 1, "generated_at": "2026-09-24T09:05:00+09:00",
+                                                          "hours": 72, "items": [
+        # news.json에 이미 있는 기사(같은 주소)는 한 번만 센다.
+        {"id": "q1", "market": "KR", "title": "삼성전자가 반등했다", "source": "연합", "url": "https://example.com/1",
+         "published_at": "2026-09-24T09:00:00+09:00"},
+        {"id": "q2", "market": "CN", "title": "三星电子三季度利润大增", "source": "新浪", "url": "https://example.com/q2",
+         "published_at": "2026-09-24T08:30:00+09:00"},
+        {"id": "q3", "market": "KR", "title": "모바일 애플리케이션 시장 커진다", "source": "X", "url": "",
+         "published_at": "2026-09-24T08:00:00+09:00"},
+        {"id": "q4", "market": "US", "title": "애플이 신제품을 공개했다", "source": "Y", "url": "",
+         "published_at": "2026-09-24T07:30:00+09:00"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    assets = [{"id": "s", "kind": "stock", "name": "삼성전자", "market": "KR", "code": "005930", "value_krw": 1},
+              {"id": "a", "kind": "stock", "name": "애플", "market": "US", "code": "", "value_krw": 1}]
+    result = build_watch(assets, {}, PublicFeed(tmp_path), NOW, news_hours=72, report_hours=36, matches=5)
+    samsung, apple = result["holdings"]
+    assert [m["title"] for m in samsung["matches"]] == [
+        "삼성전자가 반등했다", "三星电子三季度利润大增", "한국 시장상황 보고서", "Samsung Electronics guidance"]
+    # 두 글자 한국어 이름은 다른 낱말 속("애플리케이션")에서 찾지 않고, 조사가 붙은 것은 찾는다.
+    assert [m["title"] for m in apple["matches"]] == ["애플이 신제품을 공개했다"]
+    assert result["data"]["watch_news_generated_at"] == "2026-09-24T09:05:00+09:00"
+
+    # 형식이 다른 묶음은 읽지 않는다.
+    (tmp_path / "watch_news.json").write_text(json.dumps({"format": 2, "items": []}), encoding="utf-8")
+    again = build_watch(assets, {}, PublicFeed(tmp_path), NOW, news_hours=72, report_hours=36, matches=5)
+    assert again["holdings"][0]["count"] == 3 and again["data"]["watch_news_generated_at"] == ""
+
+
+def test_aliases_follow_the_code_whatever_name_was_written():
+    from services.web.portfolio.aliases import GROUPS, lookup
+    # 자산은 거래소 없이 코드를 적는다. 이름이 별칭이어도 코드로 묶음을 찾는다.
+    assert "엔비디아" in lookup("US", "NVDA", {"내 엔비디아"})
+    assert "Samsung Electronics" in lookup("KR", "5930", {"삼성"})
+    assert "腾讯" in lookup("HK", "700", set())
+    assert "SK hynix" in lookup("", "", {"sk하이닉스"})
+    assert lookup("KR", "123456", {"없는 종목"}) == ()
+    # 같은 이름이 두 묶음에 들어가면 어느 종목인지 정할 수 없다.
+    names = [name.casefold() for _, aliases in GROUPS for name in aliases]
+    assert len(names) == len(set(names))
