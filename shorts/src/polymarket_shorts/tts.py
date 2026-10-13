@@ -13,6 +13,11 @@ import subprocess
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
 
+from . import edge_token
+
+# 서버가 v1 토큰을 거절한다(2026-10-10~). 상류가 고친 판을 내면 지운다 — edge_token.py 머리말.
+edge_token.install()
+
 
 logger = logging.getLogger(__name__)
 

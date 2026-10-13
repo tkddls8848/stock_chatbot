@@ -22,6 +22,20 @@ def _fake_communicate(captured, words):
     return Fake
 
 
+def test_edge_tts_speaks_with_the_v2_token_the_server_now_requires():
+    # 서버가 v1 토큰을 403으로 거절한다(2026-10-10~). 값은 상류 PR #492의 계산과 2000개 시각에서
+    # 맞춰 본 것이고, 같은 5분 구간 안에서는 바뀌지 않는다. 실제 서버에서 이 형식으로 음성을 받았다.
+    from edge_tts import communicate
+    from edge_tts.drm import DRM
+    from polymarket_shorts import edge_token
+
+    expected = "31DE969FFA38E06B-BD29DC903722D717D852F4F854F2386D98C8D3A93663E1A1AE89223A876AFDB4"
+    assert edge_token.token(1_792_000_000) == edge_token.token(1_792_000_199) == expected
+    assert edge_token.token(1_792_000_200) != expected
+    assert communicate.SEC_MS_GEC_VERSION.startswith("2-")
+    assert len(DRM.generate_sec_ms_gec()) == 16 + 1 + 64
+
+
 def test_synthesis_asks_for_word_timing_and_returns_it_per_scene(tmp_path, monkeypatch):
     captured = {}
     monkeypatch.setattr(tts.edge_tts, "Communicate", _fake_communicate(captured, [
