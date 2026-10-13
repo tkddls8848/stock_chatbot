@@ -434,6 +434,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   | `/shorts edit <자연어>` | 기존 자연어 편집 흐름으로 수정·재렌더한 뒤 새 MP4를 보낸다 |
   | `/shorts done` | 현재 수정본을 검수 완료로 기록하고 YouTube에 업로드한다 |
   | `/shorts upload` | 검수 완료된 현재 수정본 업로드를 재시도한다 |
+  **예약 제작은 하루 두 번까지만 시도한다**(운영자 지시 2026-10-13 — 음성 서버 403에 15분마다 원고·배경을 새로
+  만들며 3시간을 돌고도 알림이 없었다). 타이머는 `--scheduled`로 부르고, 쇼츠가 제작일 폴더 `attempts.json`에
+  시작마다 센다. 첫 실패는 비정상 종료로 systemd의 15분 뒤 재시작을 받고, 두 번째 실패는 정상 종료로 끊으며 포기를
+  남긴다. 롱폼 실패도 같은 시도로 세고(두 번째 시도는 이미 만든 쇼츠를 건너뛰고 롱폼만 다시 만든다), 봇이
+  `--review-pending`의 `failures`로 받아 텔레그램에 한 번 알린 뒤 `--failure-ack`로 확인을 남긴다. `/shorts run`
+  같은 직접 제작은 세지 않는다(`attempts.py`).
   **봇은 쇼츠를 import하지 않는다.** 쇼츠는 이 저장소 코드를 import하지 않는 별개
   패키지이고 반대 방향도 같다. 봇은 쇼츠 CLI를 **쇼츠 자기 venv의 하위 프로세스로**
   부르고(`SHORTS_PYTHON`·`SHORTS_WORKDIR`), 상태도 CLI(`--status`)가 `storage/shorts/`를 읽어

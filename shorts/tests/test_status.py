@@ -95,3 +95,18 @@ def test_cli_upload_never_posts_unreviewed_video(tmp_path):
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout) == {"status": "not_reviewed", "video_id": None, "url": None}
         assert len(result.stdout.strip().splitlines()) == 1
+
+
+def test_cli_review_pending_carries_unnotified_failures(tmp_path):
+    root = tmp_path / "shorts" / "2026-10-13"
+    root.mkdir(parents=True)
+    (root / "attempts.json").write_text(json.dumps({"date": "2026-10-13", "gave_up": True, "attempts": [
+        {"stage": "쇼츠", "error": "a"}, {"stage": "쇼츠", "error": "403"}]}), encoding="utf-8")
+    pending = _cli(tmp_path, "--review-pending")
+    assert pending.returncode == 0, pending.stderr
+    assert json.loads(pending.stdout)["failures"] == [
+        {"date": "2026-10-13", "attempts": 2, "stage": "쇼츠", "error": "403"}]
+    ack = _cli(tmp_path, "--failure-ack", "2026-10-13")
+    assert ack.returncode == 0, ack.stderr
+    assert json.loads(_cli(tmp_path, "--review-pending").stdout)["failures"] == []
+    assert _cli(tmp_path, "--scheduled", "--force").returncode != 0

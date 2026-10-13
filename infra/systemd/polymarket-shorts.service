@@ -12,13 +12,15 @@ Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/srv/stock-chatbot/.env
-ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli
+ExecStart=/srv/stock-chatbot/shorts/.venv/bin/python -m polymarket_shorts.cli --scheduled
 Nice=10
 CPUWeight=20
 # Blender 합성: 서버 실측 최대 RSS 643MB(2026-09-27, 단일 프로세스). 파이썬과 블렌더가
 # 함께 떠 있으므로 여유를 둔다. 18시에는 다른 무거운 작업이 없다(폴리마켓 갱신은 16·20시).
 MemoryMax=1G
 TimeoutStartSec=40min
+# 재시도 횟수는 쇼츠가 센다(polymarket_shorts/attempts.py — 하루 두 번, 다 쓰면 정상 종료하고 봇이
+# 텔레그램으로 알린다). [Unit]의 StartLimit은 그 기록조차 못 남기는 고장에 대비한 바깥 상한이다.
 Restart=on-failure
 RestartSec=15min
 NoNewPrivileges=true

@@ -62,6 +62,19 @@ async def send_scenario(send, item: dict) -> None:
         await send(chunk, **kwargs)
 
 
+def failure_text(item: dict) -> str:
+    """예약 제작이 하루 시도를 다 쓰고 포기한 날. 쇼츠 CLI `--review-pending`의 `failures` 한 줄."""
+    day, stage = item.get("date", ""), item.get("stage") or "쇼츠"
+    if stage == "롱폼":
+        outcome = "롱폼을 만들지 못했습니다. 쇼츠는 검토 대기로 그대로 진행합니다."
+        retry = "/shorts run 으로 롱폼만 다시 만들 수 있습니다."
+    else:
+        outcome = "쇼츠를 만들지 못해 오늘 쇼츠·롱폼이 올라가지 않습니다."
+        retry = "/shorts run 으로 다시 만들 수 있습니다."
+    return (f"⚠️ 예약 제작 실패 · {day}\n{item.get('attempts', 2)}번 시도했지만 {outcome}\n"
+            f"마지막 오류: {str(item.get('error') or '로그를 확인하세요')[:300]}\n{retry}")
+
+
 def upload_text(result: dict) -> str:
     outcome = result.get("status")
     if outcome in {"uploaded", "already_uploaded"}:
@@ -102,6 +115,12 @@ async def poll_reviews(app) -> None:
                     await runner(app).call(["--review-ack", item["token"]], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
                 except Exception:
                     logger.exception("[SHORTS] 원고 전달·확인 실패: %s", item.get("token"))
+            for item in pending.get("failures", []):
+                try:
+                    await send(failure_text(item))
+                    await runner(app).call(["--failure-ack", item["date"]], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
+                except Exception:
+                    logger.exception("[SHORTS] 제작 실패 알림 전달·확인 실패: %s", item.get("date"))
             results = await runner(app).call(["--review-tick"], timeout=SHORTS_RUN_TIMEOUT_SECONDS)
             notified = app.bot_data.setdefault("shorts_review_notified", set())
             for item in results.get("items", []):

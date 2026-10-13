@@ -15,6 +15,7 @@ from .review import ReviewError, read_script
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
     "review_pending", "review_ack", "review_pause", "review_approve", "review_tick", "longform_upload",
+    "failure_ack", "scheduled",
 )
 
 
@@ -45,6 +46,9 @@ def main() -> None:
     parser.add_argument("--review-approve", metavar="TOKEN", help="해당 수정본 승인 및 업로드")
     parser.add_argument("--review-tick", action="store_true", help="검토 시간이 지난 수정본 업로드")
     parser.add_argument("--review-token", metavar="TOKEN", help="수정 대상 시나리오 식별자")
+    parser.add_argument("--failure-ack", metavar="DATE", help="예약 제작 포기 알림을 전달했다고 기록")
+    # systemd 타이머만 쓴다. 하루 시도 횟수를 세고 다 쓰면 재시작을 끊는다(attempts.py).
+    parser.add_argument("--scheduled", action="store_true", help="매일 예약 제작(하루 두 번까지 시도)")
     args = parser.parse_args()
     if args.review_token and args.edit is None:
         parser.error("--review-token은 --edit와 함께 씁니다")
@@ -66,10 +70,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = Settings.from_env()
     try:
-        if any((args.review_pending, args.review_ack, args.review_pause, args.review_approve, args.review_tick)):
-            from . import approval
+        if any((args.review_pending, args.review_ack, args.review_pause, args.review_approve, args.review_tick,
+                args.failure_ack)):
+            from . import approval, attempts
             if args.review_pending:
-                result = {"items": approval.pending(settings)}
+                result = {"items": approval.pending(settings), "failures": attempts.failures(settings)}
+            elif args.failure_ack:
+                result = attempts.acknowledge(settings, args.failure_ack)
             elif args.review_tick:
                 result = {"items": approval.tick(settings)}
             elif args.review_ack:
@@ -119,22 +126,24 @@ def main() -> None:
                 raise SystemExit(str(exc)) from exc
             print(json.dumps(payload, ensure_ascii=False))
             return
-        if args.plan:
+        if args.scheduled:
+            from .attempts import AttemptFailed, run
+            try:
+                payload = run(settings, lambda: _produce_today(settings))
+            except AttemptFailed as exc:
+                raise SystemExit(str(exc)) from exc
+        elif args.plan:
             payload = asdict(produce_editorial(args.plan.resolve(), settings))
-        else:
-            # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
+        elif args.interactive:
             prune_old_days(settings, datetime.now(settings.timezone).date())
             payload = asdict(produce_daily(
                 settings,
                 production_date=date.fromisoformat(args.date) if args.date else None,
                 force=args.force,
             ))
-            if not args.interactive:
-                # 롱폼을 먼저 만들어 이어 둔 뒤 검토에 넣는다. 쇼츠가 승인되는 순간 둘이 함께 올라간다.
-                if payload.get("status") in {"pending_review", "already_produced"}:
-                    from .longform import produce_daily as produce_daily_longform
-                    payload["longform"] = produce_daily_longform(settings.output_dir / payload["date"], settings)
-                payload["approval"] = _queue_review(payload, settings)
+        else:
+            payload = _produce_today(
+                settings, production_date=date.fromisoformat(args.date) if args.date else None, force=args.force)
         if args.interactive and payload.get("video_path"):
             from .workflow import interact
             interact(Path(payload["video_path"]).parent, settings)
@@ -142,6 +151,18 @@ def main() -> None:
     except ReviewError as exc:
         raise SystemExit(str(exc)) from exc
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def _produce_today(settings: Settings, *, production_date: date | None = None, force: bool = False) -> dict:
+    # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
+    prune_old_days(settings, datetime.now(settings.timezone).date())
+    payload = asdict(produce_daily(settings, production_date=production_date, force=force))
+    # 롱폼을 먼저 만들어 이어 둔 뒤 검토에 넣는다. 쇼츠가 승인되는 순간 둘이 함께 올라간다.
+    if payload.get("status") in {"pending_review", "already_produced"}:
+        from .longform import produce_daily as produce_daily_longform
+        payload["longform"] = produce_daily_longform(settings.output_dir / payload["date"], settings)
+    payload["approval"] = _queue_review(payload, settings)
+    return payload
 
 
 def _queue_review(payload: dict, settings: Settings) -> dict | None:

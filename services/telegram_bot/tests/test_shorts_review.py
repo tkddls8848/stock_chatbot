@@ -65,6 +65,25 @@ def test_repeated_upload_failure_notifies_once(monkeypatch):
     app.bot.send_message.assert_called_once()
 
 
+def test_given_up_production_is_announced_then_acknowledged(monkeypatch):
+    # 예약 제작이 하루 두 번을 다 쓰면 쇼츠 CLI가 failures로 내놓는다. 보낸 뒤에만 확인을 남긴다.
+    failure = {"date": "2026-10-13", "attempts": 2, "stage": "쇼츠", "error": "RuntimeError: 403"}
+    app, runner = _app(monkeypatch, {**ITEM, "state": "paused"})
+    runner.responses["--review-pending"] = {"items": [], "failures": [failure]}
+    asyncio.run(review.poll_reviews(app))
+    text = app.bot.send_message.call_args.kwargs["text"]
+    assert "2026-10-13" in text and "2번 시도" in text and "403" in text and "/shorts run" in text
+    assert ["--failure-ack", "2026-10-13"] in runner.calls
+
+    longform = review.failure_text({**failure, "stage": "롱폼"})
+    assert "롱폼을 만들지 못했습니다" in longform and "쇼츠는 검토 대기로" in longform
+
+    app, runner = _app(monkeypatch, send=AsyncMock(side_effect=RuntimeError("telegram unavailable")))
+    runner.responses["--review-pending"] = {"items": [], "failures": [failure]}
+    asyncio.run(review.poll_reviews(app))
+    assert ["--failure-ack", "2026-10-13"] not in runner.calls
+
+
 def test_poll_does_not_compete_with_running_edit(monkeypatch):
     app, runner = _app(monkeypatch)
 
