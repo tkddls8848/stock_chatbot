@@ -23,6 +23,7 @@ from services.web.pages import (
     RESEARCH_HTML,
     ROBOTS_TXT,
     TERMS_HTML,
+    WEB_MANIFEST,
 )
 from services.web.pages.portfolio import PORTFOLIO_HTML
 from services.web.pages.newsletter import UNSUBSCRIBE_CONFIRM_HTML
@@ -43,6 +44,9 @@ POLYMARKET_REPOSITORY = PolymarketRepository(PUBLIC_DIR / "polymarket")
 # 이름도 바꾸는 규칙이라 1년 캐시(immutable)로 둔다.
 FONT_DIR = Path(__file__).parent / "static" / "fonts"
 FONTS = {"pretendard-sub.woff2", "noto-serif-kr-bold-sub.woff2"}
+# 홈 화면 앱 아이콘(services/web/pages/shell.py의 「앱 모드」). 글꼴과 같은 고정 목록·이름 규칙이다.
+ICON_DIR = Path(__file__).parent / "static" / "icons"
+ICONS = {"icon-192.png", "icon-512.png", "apple-touch-icon.png"}
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +67,7 @@ def _content_security_policy(html: str = "", *, frame_src: str = "'none'") -> st
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; frame-src " + frame_src + "; form-action 'self'; "
-        "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; "
         "script-src " + hashes("script") + "; script-src-attr 'none'; "
         "style-src " + hashes("style") + "; style-src-attr 'none'"
     )
@@ -375,6 +379,17 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
             raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(FONT_DIR / name, media_type="font/woff2",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    @app.api_route("/icons/{name}", methods=["GET", "HEAD"])
+    def icon_file(name: str) -> Response:
+        if name not in ICONS:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse(ICON_DIR / name, media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    @app.api_route("/manifest.webmanifest", methods=["GET", "HEAD"])
+    def web_manifest() -> Response:
+        return Response(WEB_MANIFEST, media_type="application/manifest+json")
 
     @app.api_route("/market_chart.png", methods=["GET", "HEAD"])
     def market_chart(request: Request) -> Response:

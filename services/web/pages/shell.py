@@ -3,7 +3,8 @@
 여기에는 정적 문자열만 둔다. 페이지는 프로세스가 뜰 때 한 번 조립되고 요청마다
 다시 만들지 않으며, 수치는 브라우저가 `/api/*`를 읽어 채운다. 외부 폰트·CDN을
 쓰지 않는 것도 같은 이유다 - 공개 웹은 자기 프로세스 밖에서 아무것도 부르지
-않는다. 로고와 아이콘은 파일이 아니라 인라인 SVG다.
+않는다. 화면 안의 로고와 아이콘은 파일이 아니라 인라인 SVG다(홈 화면 앱 아이콘 PNG만
+파일이다 — 아래 「앱 모드」).
 
 화면은 **리서치 리포트 지면**이다(2026-09-29 운영자 결정, 시안 A 터미널·B 리포트·C 핀테크 중 B).
 흰 종이에 먹색 글자, 명조 제호·표제, 겹괘선 마스트헤드, 따뜻한 회색 괘선. 카드·그림자·
@@ -14,6 +15,8 @@
 """
 
 from __future__ import annotations
+
+import json
 
 # 화면에 보이는 사이트 이름은 영문 소문자 "nunchi"다(2026-09-29 운영자 결정 — "눈치"로 쓰지 않는다).
 SITE_NAME = "nunchi"
@@ -374,6 +377,31 @@ _NAV_LINKS = (
 
 
 
+# ── 앱 모드(홈 화면에 추가) ────────────────────────────────────────────────────
+# 매니페스트와 아이콘만 둔다. **서비스 워커는 두지 않는다** — 설치에는 필요 없고, 개인 화면을
+# 어떤 캐시에도 남기지 않는 규칙(`no-store`)을 기기 쪽 캐시가 깨뜨릴 수 있으며, 한 번 설치되면
+# 서버를 고쳐도 기기에 남는다. 웹 푸시가 필요해지면 그때 알림만 다루는 워커로 따로 판단한다.
+# 아이콘 PNG(`static/icons/`)는 `server.py`의 favicon SVG를 그대로 옮긴 그림이고, 가장자리까지
+# 배경을 채우고 그림을 80%로 줄여 안드로이드 마스커블(원·둥근 사각형으로 잘림)에도 쓴다.
+_THEME_COLOR = "#ffffff"  # 상단 메뉴 배경(--bg)과 같아 상태 표시줄이 화면에 이어진다
+WEB_MANIFEST = json.dumps({
+    "id": "/",
+    "name": SITE_NAME,
+    "short_name": SITE_NAME,
+    "description": SITE_TAGLINE,
+    "lang": "ko",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": _THEME_COLOR,
+    "icons": [
+        {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    ],
+}, ensure_ascii=False)
+
+
 def _head(title: str, description: str, path: str) -> str:
     """제목·설명·주소를 한 번에 적는다.
 
@@ -387,6 +415,11 @@ def _head(title: str, description: str, path: str) -> str:
         "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<meta name='color-scheme' content='light'>"
+        "<meta name='theme-color' content='" + _THEME_COLOR + "'>"
+        "<link rel='manifest' href='/manifest.webmanifest'>"
+        "<link rel='apple-touch-icon' href='/icons/apple-touch-icon.png'>"
+        # iOS는 홈 화면 이름을 이 값이나 <title>("화면 · nunchi")에서 고른다.
+        "<meta name='apple-mobile-web-app-title' content='" + SITE_NAME + "'>"
         "<meta name='robots' content='noindex'>"
         "<meta name='description' content='" + description + "'>"
         "<meta property='og:title' content='" + full_title + "'>"

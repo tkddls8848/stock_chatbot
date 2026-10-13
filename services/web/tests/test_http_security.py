@@ -47,14 +47,14 @@ def assert_security(response):
         assert feature + "=()" in permissions
     csp = response.headers["content-security-policy"]
     for directive in ("default-src 'none'", "frame-ancestors 'none'", "base-uri 'none'",
-                      "form-action 'self'", "object-src 'none'", "connect-src 'self'",
+                      "form-action 'self'", "object-src 'none'", "connect-src 'self'", "manifest-src 'self'",
                       "img-src 'self' data:", "style-src-attr 'none'", "script-src-attr 'none'"):
         assert directive in csp
     assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
 
 
-@pytest.mark.parametrize("path", (*SCREENS, "/robots.txt", "/favicon.ico",
-                                 "/market_chart.png", *PUBLIC_API))
+@pytest.mark.parametrize("path", (*SCREENS, "/robots.txt", "/favicon.ico", "/manifest.webmanifest",
+                                 "/icons/icon-192.png", "/market_chart.png", *PUBLIC_API))
 def test_get_and_head_share_status_and_headers_without_body(client, path):
     get = client.get(path)
     head = client.head(path)
@@ -190,6 +190,32 @@ def test_fonts_are_served_from_a_fixed_list_with_a_long_cache(client):
     for name in ("../server.py", "OFL-Pretendard.txt", "missing.woff2"):
         assert client.get("/fonts/" + name).status_code == 404, name
     assert "font-src 'self'" in client.get("/").headers["content-security-policy"]
+
+
+def test_every_screen_can_be_installed_as_an_app_without_a_service_worker(client):
+    """홈 화면에 추가하면 주소창 없는 창으로 열린다. 매니페스트·아이콘만 두고 서비스 워커는 두지 않는다."""
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.headers["content-type"] == "application/manifest+json"
+    body = manifest.json()
+    assert body["display"] == "standalone" and body["start_url"] == "/" and body["name"]
+    sizes = set()
+    for icon in body["icons"]:
+        response = client.get(icon["src"])
+        assert response.status_code == 200 and response.headers["content-type"] == "image/png", icon
+        assert "immutable" in response.headers["cache-control"]
+        width, height = int.from_bytes(response.content[16:20], "big"), int.from_bytes(response.content[20:24], "big")
+        assert icon["sizes"] == f"{width}x{height}"
+        sizes.add(icon["sizes"])
+    assert {"192x192", "512x512"} <= sizes  # Chrome 설치 조건
+    for name in ("../server.py", "missing.png"):
+        assert client.get("/icons/" + name).status_code == 404, name
+    for path in SCREENS:
+        page = client.get(path)
+        assert "<link rel='manifest' href='/manifest.webmanifest'>" in page.text, path
+        assert client.get(re.search(r"rel='apple-touch-icon' href='([^']+)'", page.text)[1]).status_code == 200
+        assert "serviceWorker" not in page.text, path
+        # worker-src가 없으면 default-src 'none'을 따라 워커 등록 자체가 막힌다.
+        assert "worker-src" not in page.headers["content-security-policy"], path
 
 
 def test_only_the_front_page_may_frame_the_youtube_player(client):
