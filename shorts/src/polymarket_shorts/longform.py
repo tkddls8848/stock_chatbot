@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
@@ -29,7 +30,7 @@ from .core.storage import write_json
 from .highlights import _numbers
 from .llm import LLMError, chat_json
 from .render import RenderError
-from .review import _digest
+from .review import ReviewError, _digest, operation_lock
 from .speech import end_sentence, to_polite_text
 from .tts import TTSError
 
@@ -464,35 +465,42 @@ def produce_longform(settings: Settings, market: str, *, report_id: str = "", fo
     published = datetime.fromisoformat(str(report["published_at"]))
     target = _target(settings, market, published.isoformat())
     video = target / f"report-{market.lower()}-{published:%Y%m%d-%H%M}.mp4"
-    if video.is_file() and not force:
-        return LongformResult("already_produced", market, str(report["id"]), str(video))
-    start, end = report_window(report)
-    news = client.report_news(market, start, end)[:MAX_HEADLINES]
-    daily = client.market_sentiment(market)
-    script = write_script(report, news, settings)
-    longform = build_longform(report, news, daily, script)
-    work = target / "work"
-    if work.exists():
+    # 일일 제작과 수동 `--longform`이 같은 폴더에 겹쳐 쓰면 원고·음성·영상이 서로 다른 실행에서 와 섞이고 한쪽이
+    # 다른 쪽 렌더 중에 `work/`를 지운다(10/14). 업로드(`youtube.upload_longform`)와 같은 잠금이라 만드는 중에는 못 올린다.
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(operation_lock(target))
+        except ReviewError as exc:
+            raise LongformError(f"{exc}: {target}") from None
+        if video.is_file() and not force:
+            return LongformResult("already_produced", market, str(report["id"]), str(video))
+        start, end = report_window(report)
+        news = client.report_news(market, start, end)[:MAX_HEADLINES]
+        daily = client.market_sentiment(market)
+        script = write_script(report, news, settings)
+        longform = build_longform(report, news, daily, script)
+        work = target / "work"
+        if work.exists():
+            shutil.rmtree(work)
+        work.mkdir(parents=True)
+        write_json(target / "source.json", longform.evidence)
+        write_json(target / "scenario.json", longform.to_dict())
+        audio = target / "narration.mp3"
+        words = synthesize([segment.narration for segment in longform.segments], audio_path=audio,
+                           words_path=target / "words.jsonl", voice=settings.tts_voice, rate=settings.tts_rate,
+                           ffmpeg_bin=settings.ffmpeg_bin)
+        duration = render_longform(longform, audio_path=audio, segment_words=words, output_path=video, work_dir=work,
+                                   font_path=find_font(), blender_bin=settings.blender_bin,
+                                   ffprobe_bin=settings.ffprobe_bin)
+        characters = longform.to_dict()["characters"]
+        screens = json.loads(video.with_suffix(".timeline.json").read_text(encoding="utf-8"))["screens"]
+        write_json(target / "result.json", {"video": video.name, "video_sha256": _digest(video),
+                                            "duration_seconds": round(duration, 2), "characters": characters,
+                                            "report_id": longform.report_id,
+                                            "youtube": youtube_metadata(longform, screens, duration)})
         shutil.rmtree(work)
-    work.mkdir(parents=True)
-    write_json(target / "source.json", longform.evidence)
-    write_json(target / "scenario.json", longform.to_dict())
-    audio = target / "narration.mp3"
-    words = synthesize([segment.narration for segment in longform.segments], audio_path=audio,
-                       words_path=target / "words.jsonl", voice=settings.tts_voice, rate=settings.tts_rate,
-                       ffmpeg_bin=settings.ffmpeg_bin)
-    duration = render_longform(longform, audio_path=audio, segment_words=words, output_path=video, work_dir=work,
-                               font_path=find_font(), blender_bin=settings.blender_bin,
-                               ffprobe_bin=settings.ffprobe_bin)
-    characters = longform.to_dict()["characters"]
-    screens = json.loads(video.with_suffix(".timeline.json").read_text(encoding="utf-8"))["screens"]
-    write_json(target / "result.json", {"video": video.name, "video_sha256": _digest(video),
-                                        "duration_seconds": round(duration, 2), "characters": characters,
-                                        "report_id": longform.report_id,
-                                        "youtube": youtube_metadata(longform, screens, duration)})
-    shutil.rmtree(work)
-    logger.info("롱폼 완료 %s %.1f초 %d자", video, duration, characters)
-    return LongformResult("produced", market, longform.report_id, str(video), round(duration, 2), characters)
+        logger.info("롱폼 완료 %s %.1f초 %d자", video, duration, characters)
+        return LongformResult("produced", market, longform.report_id, str(video), round(duration, 2), characters)
 
 
 # ── 일일 쇼츠와 묶기 ─────────────────────────────────────
