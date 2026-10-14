@@ -195,8 +195,12 @@ def _shared_phrase(left: str, right: str) -> str:
     return phrase if len(phrase) >= _SHARED_PHRASE else ""
 
 
-def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str, Any]]) -> dict[str, Any]:
-    """모델 원고의 모양과 의미를 검사한다. 고칠 수 있는 기사 요약은 비우고, 분석 원고의 위반은 오류다."""
+def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str, Any]], *,
+                 drop_copies: bool = False) -> dict[str, Any]:
+    """모델 원고의 모양과 의미를 검사한다. 고칠 수 있는 기사 요약은 비우고, 분석 원고의 위반은 오류다.
+
+    `drop_copies`면 보고서를 옮겨 적은 문장은 오류 대신 빼고, 그래서 빈 문단이 생길 때만 오류다.
+    """
     analysis = payload.get("analysis")
     if not isinstance(analysis, list) or not 1 <= len(analysis) <= MAX_ANALYSIS_PARAGRAPHS:
         raise LongformError(f"analysis는 1~{MAX_ANALYSIS_PARAGRAPHS}문단이어야 합니다")
@@ -220,11 +224,20 @@ def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str,
     pairs = [(line, next((original for original in source
                           if SequenceMatcher(None, line, original).ratio() >= _COPY_RATIO), ""))
              for line in lines if len(line) >= _COPY_MIN]
-    copied = [f"{line} / 보고서: {original}" for line, original in pairs if original]
+    copied = {line: original for line, original in pairs if original}
     if copied:
         # 재시도 모델이 한 번에 다 고치도록 걸린 문장을 모두, 닮은 보고서 문장과 함께 적는다
         # (앞 40자 하나만 주면 낱말만 바꾸거나 그 문장만 고치고 다른 문장이 다시 걸렸다).
-        raise LongformError("analysis가 보고서 문장을 거의 그대로 옮겼습니다: " + " | ".join(copied))
+        error = LongformError("analysis가 보고서 문장을 거의 그대로 옮겼습니다: "
+                              + " | ".join(f"{line} / 보고서: {original}" for line, original in copied.items()))
+        # 고쳐 쓸 말이 없는 사실 문장은 재시도도 거의 그대로 낸다(10/14 "주요 은행들의 실적 발표가 예정되어…"가
+        # 모델 호출 네 번에 모두 걸려 롱폼이 빠졌다). 재시도에서는 그 문장만 빼고 나머지 원고로 간다.
+        kept = [[line for line in sentences(row["text"]) if line not in copied] for row in paragraphs]
+        if not drop_copies or not all(kept):
+            raise error
+        logger.warning("%s — 걸린 문장을 빼고 씁니다", error)
+        paragraphs = [{**row, "text": " ".join(rest)} for row, rest in zip(paragraphs, kept)]
+        lines = [line for rest in kept for line in rest]
     repeated = _repeats(lines)
     if repeated:
         raise LongformError(f"analysis에 같은 뜻의 문장이 두 번 있습니다: {repeated[0][:40]} / {repeated[1][:40]}")
@@ -269,7 +282,7 @@ def write_script(report: dict[str, Any], news: list[dict[str, Any]], settings: S
                      f"반환하세요. 보고서 문장을 옮겼다는 지적이면 낱말 몇 개만 바꾸지 말고 주어·어순을 바꾸거나 "
                      f"다른 사실과 묶어 문장 구조를 새로 쓰고, 나머지 문장도 보고서 문장을 옮기지 않았는지 확인하세요.\n직전 응답: {json.dumps(payload, ensure_ascii=False)}")
             second = chat_json(settings, system=SCRIPT_PROMPT, user=retry, max_tokens=SCRIPT_MAX_TOKENS)
-            return check_script(second, str(report["text"]), news)
+            return check_script(second, str(report["text"]), news, drop_copies=True)
     except LLMError as exc:
         raise LongformError(f"롱폼 원고 모델 호출 실패: {exc}") from exc
 

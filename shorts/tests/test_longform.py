@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from polymarket_shorts import longform as longform_module
 from polymarket_shorts.longform import (
     LongformError, build_longform, chapters, check_script, report_window, sentences, youtube_metadata,
 )
@@ -85,6 +86,28 @@ def test_script_check_names_every_copied_sentence_for_the_retry():
     with pytest.raises(LongformError) as error:
         check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS)
     assert str(error.value).count("/ 보고서: ") == 2
+
+
+COPIED = "이전 보고서에서 지적된 기술주 중심의 상승세는 지속되고 있었지만 최근 기사들에 따르면 기술주가 약세를 보이고 있습니다."
+
+
+def test_retry_drops_copied_sentences_unless_a_paragraph_empties():
+    # 고쳐 쓸 말이 없는 사실 문장은 재시도도 그대로 냈다(10/14) — 그 문장만 빼고 나머지 원고로 간다.
+    analysis = [ANALYSIS[0], {"topic": "기술주 약세", "text": f"{COPIED} 변동성은 아직 크지 않습니다."}]
+    script = check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS, drop_copies=True)
+    assert [row["text"] for row in script["analysis"]] == [ANALYSIS[0]["text"], "변동성은 아직 크지 않습니다."]
+    with pytest.raises(LongformError, match="옮겼습니다"):
+        check_script({**PAYLOAD, "analysis": [ANALYSIS[0], {"topic": "기술주 약세", "text": COPIED}]},
+                     REPORT["text"], NEWS, drop_copies=True)
+
+
+def test_write_script_drops_copies_only_on_the_retry(monkeypatch):
+    copied = {**PAYLOAD, "analysis": [ANALYSIS[0], {"topic": "기술주 약세", "text": f"{COPIED} 변동성은 아직 크지 않습니다."}]}
+    calls = []
+    monkeypatch.setattr(longform_module, "chat_json", lambda settings, **kwargs: calls.append(kwargs["user"]) or copied)
+    script = longform_module.write_script(REPORT, NEWS, None)
+    assert len(calls) == 2 and "옮겼습니다" in calls[1]
+    assert script["analysis"][1]["text"] == "변동성은 아직 크지 않습니다."
 
 
 def test_order_follows_operator_script_and_report_is_one_scene():
