@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,8 @@ from .core.storage import write_json
 
 REVIEW_FILE = "review.json"
 SCRIPT_FILE = "review.md"
+# 잠금을 기다릴 때 다시 잡아 보는 간격.
+_LOCK_POLL_SECONDS = 5
 
 
 class ReviewError(RuntimeError):
@@ -24,20 +27,25 @@ class ReviewError(RuntimeError):
 
 
 @contextmanager
-def operation_lock(target: Path, name: str = ".review.lock"):
-    """프로세스 종료 시 OS가 해제하는 비차단 잠금."""
+def operation_lock(target: Path, name: str = ".review.lock", *, wait: float = 0):
+    """프로세스 종료 시 OS가 해제하는 잠금. 다른 작업이 잡고 있으면 `wait`초까지 기다린 뒤 실패한다."""
     target.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + wait
     with (target / name).open("a+b") as stream:
         stream.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            raise ReviewError("이 산출물을 다른 작업이 처리 중입니다") from None
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise ReviewError("이 산출물을 다른 작업이 처리 중입니다") from None
+                time.sleep(min(_LOCK_POLL_SECONDS, max(deadline - time.monotonic(), 0)))
         try:
             yield
         finally:

@@ -501,8 +501,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   기사 줄·분석 주제를 짚는다)·오른쪽 목차·아래 자막이다(`longform_render.py`). 도입·마무리는 자막이 없다. 주소는
   화면에 nunchi.live로 쓰고 음성만 "눈치 닷 라이브"로 읽는다(`tts.SPOKEN_FORMS`). 산출물은
   `storage/shorts/longform/<날짜>/<시장>-<HHMM>/`이고 쇼츠 제작일 폴더와 같이 2주 보관한다. 제작과 업로드는 그
-  폴더의 같은 잠금을 잡고, 겹친 실행은 손대지 않고 실패한다(2026-10-14 일일·수동 제작이 겹쳐 써 원고·음성·영상이
-  섞였다). 업로드는
+  폴더의 같은 잠금을 잡는다(2026-10-14 일일·수동 제작이 겹쳐 써 원고·음성·영상이 섞였다). 늦게 온 제작은 앞 실행이
+  끝나기를 30분까지 기다렸다가 그사이 생긴 영상을 쓰고, 그래도 잡혀 있으면 손대지 않고 실패한다(운영자 결정
+  2026-10-15, `longform.LOCK_WAIT_SECONDS`). 이 대기만큼 예약 유닛 `TimeoutStartSec`(70분)과 봇의
+  `SHORTS_RUN_TIMEOUT_SECONDS`를 늘렸다. 업로드는
   `--longform-upload <폴더>`(`youtube.upload_longform`)이고, **운영자가 이 명령을 부르는 것이 승인이다** — 쇼츠의
   텔레그램 검토 게이트는 없다. `result.json`의 영상 해시·게시 문구(`longform.youtube_metadata`: 제목, 보고서 구간,
   화면 기록에서 뽑은 챕터, 고지문)가 그대로일 때만 일반 영상(watch 주소)으로 올리고, 쇼츠와 같은 재개 세션

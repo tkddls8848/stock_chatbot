@@ -441,6 +441,11 @@ class LongformResult:
     characters: int | None = None
 
 
+# 다른 실행이 같은 롱폼 폴더를 잡고 있을 때 기다리는 시간(운영자 결정 2026-10-15: 두 실행 사이에 30분 텀).
+# 예약 유닛의 TimeoutStartSec과 봇의 SHORTS_RUN_TIMEOUT_SECONDS는 쇼츠·롱폼 제작에 이 대기를 더한 길이다.
+LOCK_WAIT_SECONDS = 30 * 60
+
+
 def longform_root(settings: Settings) -> Path:
     return settings.output_dir / "longform"
 
@@ -467,11 +472,12 @@ def produce_longform(settings: Settings, market: str, *, report_id: str = "", fo
     video = target / f"report-{market.lower()}-{published:%Y%m%d-%H%M}.mp4"
     # 일일 제작과 수동 `--longform`이 같은 폴더에 겹쳐 쓰면 원고·음성·영상이 서로 다른 실행에서 와 섞이고 한쪽이
     # 다른 쪽 렌더 중에 `work/`를 지운다(10/14). 업로드(`youtube.upload_longform`)와 같은 잠금이라 만드는 중에는 못 올린다.
+    # 늦게 온 실행은 앞 실행이 끝나기를 기다렸다가, 그사이 영상이 생겼으면 다시 만들지 않고 그것을 쓴다.
     with ExitStack() as stack:
         try:
-            stack.enter_context(operation_lock(target))
+            stack.enter_context(operation_lock(target, wait=LOCK_WAIT_SECONDS))
         except ReviewError as exc:
-            raise LongformError(f"{exc}: {target}") from None
+            raise LongformError(f"{exc}({LOCK_WAIT_SECONDS // 60}분 기다림): {target}") from None
         if video.is_file() and not force:
             return LongformResult("already_produced", market, str(report["id"]), str(video))
         start, end = report_window(report)

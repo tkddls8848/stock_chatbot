@@ -224,12 +224,14 @@ def test_daily_longform_links_once_and_failure_leaves_no_link(tmp_path: Path, mo
     assert longform.produce_daily(root, settings) == {"status": "already_linked"} and made == ["US"]
 
 
-def test_longform_refuses_a_folder_another_run_is_writing(tmp_path: Path, monkeypatch):
-    # 일일 제작과 수동 제작이 같은 폴더에 겹쳐 써 원고·음성·영상이 섞였다(10/14). 뒤에 온 쪽은 손대지 않고 실패한다.
+def test_longform_waits_for_another_run_and_reuses_its_video(tmp_path: Path, monkeypatch):
+    # 일일 제작과 수동 제작이 같은 폴더에 겹쳐 써 원고·음성·영상이 섞였다(10/14). 뒤에 온 쪽은 앞 실행이 끝나기를
+    # 기다렸다가 그 영상을 쓰고, 기다려도 안 끝나면 손대지 않고 실패한다.
     from dataclasses import replace
+    import threading
 
+    from polymarket_shorts import review
     from polymarket_shorts.config import Settings
-    from polymarket_shorts.review import operation_lock
 
     class Client:
         def market_report(self, market, report_id):
@@ -237,7 +239,28 @@ def test_longform_refuses_a_folder_another_run_is_writing(tmp_path: Path, monkey
 
     settings = replace(Settings.from_env(), output_dir=tmp_path)
     monkeypatch.setattr(longform_module, "write_script", lambda *a: pytest.fail("잠긴 폴더에서 원고를 만들었다"))
+    monkeypatch.setattr(review, "_LOCK_POLL_SECONDS", .01)
     target = tmp_path / "longform" / "2026-10-10" / "US-0800"
-    with operation_lock(target), pytest.raises(LongformError, match="다른 작업이 처리 중"):
+    video = target / "report-us-20261010-0800.mp4"
+
+    monkeypatch.setattr(longform_module, "LOCK_WAIT_SECONDS", 0)
+    with review.operation_lock(target), pytest.raises(LongformError, match="다른 작업이 처리 중"):
         longform_module.produce_longform(settings, "US", client=Client())
     assert sorted(path.name for path in target.iterdir()) == [".review.lock"]
+
+    monkeypatch.setattr(longform_module, "LOCK_WAIT_SECONDS", 5)
+    held, release = threading.Event(), threading.Event()
+
+    def other_run():
+        with review.operation_lock(target):
+            held.set()
+            release.wait(5)
+            video.write_bytes(b"video")
+
+    thread = threading.Thread(target=other_run)
+    thread.start()
+    held.wait(5)
+    threading.Timer(.1, release.set).start()
+    result = longform_module.produce_longform(settings, "US", client=Client())
+    thread.join()
+    assert (result.status, result.video_path) == ("already_produced", str(video))
