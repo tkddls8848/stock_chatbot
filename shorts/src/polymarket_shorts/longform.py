@@ -174,14 +174,6 @@ def _check_numbers(text: str, allowed: set[str], where: str) -> None:
         raise LongformError(f"{where}에 원자료에 없는 숫자가 있습니다: {', '.join(sorted(extra))}")
 
 
-def _repeats(lines: list[str]) -> tuple[str, str] | None:
-    for index, line in enumerate(lines):
-        for other in lines[index + 1:]:
-            if SequenceMatcher(None, line, other).ratio() >= _REPEAT_RATIO:
-                return line, other
-    return None
-
-
 # 두 문장이 이만큼 긴 구절을 같이 쓰면 같은 말을 되풀이한 것으로 본다("오늘 장에 어떤 영향을 미칠지"가 14자).
 _SHARED_PHRASE = 12
 # 보고서 문장과 이만큼 닮은 문장은 줄여 쓰지 않고 옮겨 적은 것이다(첫 시도는 보고서 문장을 거의 그대로 옮겼다).
@@ -196,11 +188,31 @@ def _shared_phrase(left: str, right: str) -> str:
     return phrase if len(phrase) >= _SHARED_PHRASE else ""
 
 
+def _same_meaning(line: str, other: str) -> bool:
+    return SequenceMatcher(None, line, other).ratio() >= _REPEAT_RATIO
+
+
+def _sentence_problem(lines: list[str], copied: dict[str, str]) -> str:
+    """문장 단위 위반의 사유. 없으면 빈 문자열이다."""
+    if copied:
+        # 재시도 모델이 한 번에 다 고치도록 걸린 문장을 모두, 닮은 보고서 문장과 함께 적는다
+        # (앞 40자 하나만 주면 낱말만 바꾸거나 그 문장만 고치고 다른 문장이 다시 걸렸다).
+        return "analysis가 보고서 문장을 거의 그대로 옮겼습니다: " + " | ".join(
+            f"{line} / 보고서: {original}" for line, original in copied.items())
+    pairs = [(line, other) for index, line in enumerate(lines) for other in lines[index + 1:]]
+    same = next(((line, other) for line, other in pairs if _same_meaning(line, other)), None)
+    if same:
+        return f"analysis에 같은 뜻의 문장이 두 번 있습니다: {same[0][:40]} / {same[1][:40]}"
+    phrase = next((phrase for line, other in pairs if (phrase := _shared_phrase(line, other))), "")
+    return f"analysis가 같은 구절을 두 번 씁니다: {phrase}" if phrase else ""
+
+
 def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str, Any]], *,
-                 drop_copies: bool = False) -> dict[str, Any]:
+                 drop_flawed: bool = False) -> dict[str, Any]:
     """모델 원고의 모양과 의미를 검사한다. 고칠 수 있는 기사 요약은 비우고, 분석 원고의 위반은 오류다.
 
-    `drop_copies`면 보고서를 옮겨 적은 문장은 오류 대신 빼고, 그래서 빈 문단이 생길 때만 오류다.
+    `drop_flawed`면 문장 단위 위반(보고서를 옮겨 적음, 앞 문장과 같은 뜻·같은 구절)은 오류 대신 그 문장을 빼고,
+    다 빠진 문단은 문단째 뺀다. 남는 문장이 없을 때만 오류다.
     """
     analysis = payload.get("analysis")
     if not isinstance(analysis, list) or not 1 <= len(analysis) <= MAX_ANALYSIS_PARAGRAPHS:
@@ -226,27 +238,27 @@ def check_script(payload: dict[str, Any], report_text: str, news: list[dict[str,
                           if SequenceMatcher(None, line, original).ratio() >= _COPY_RATIO), ""))
              for line in lines if len(line) >= _COPY_MIN]
     copied = {line: original for line, original in pairs if original}
-    if copied:
-        # 재시도 모델이 한 번에 다 고치도록 걸린 문장을 모두, 닮은 보고서 문장과 함께 적는다
-        # (앞 40자 하나만 주면 낱말만 바꾸거나 그 문장만 고치고 다른 문장이 다시 걸렸다).
-        error = LongformError("analysis가 보고서 문장을 거의 그대로 옮겼습니다: "
-                              + " | ".join(f"{line} / 보고서: {original}" for line, original in copied.items()))
-        # 고쳐 쓸 말이 없는 사실 문장은 재시도도 거의 그대로 낸다(10/14 "주요 은행들의 실적 발표가 예정되어…"가
-        # 모델 호출 네 번에 모두 걸려 롱폼이 빠졌다). 재시도에서는 그 문장만 빼고 나머지 원고로 간다.
-        kept = [[line for line in sentences(row["text"]) if line not in copied] for row in paragraphs]
-        if not drop_copies or not all(kept):
-            raise error
-        logger.warning("%s — 걸린 문장을 빼고 씁니다", error)
-        paragraphs = [{**row, "text": " ".join(rest)} for row, rest in zip(paragraphs, kept)]
-        lines = [line for rest in kept for line in rest]
-    repeated = _repeats(lines)
-    if repeated:
-        raise LongformError(f"analysis에 같은 뜻의 문장이 두 번 있습니다: {repeated[0][:40]} / {repeated[1][:40]}")
-    for index, line in enumerate(lines):
-        for other in lines[index + 1:]:
-            phrase = _shared_phrase(line, other)
-            if phrase:
-                raise LongformError(f"analysis가 같은 구절을 두 번 씁니다: {phrase}")
+    problem = _sentence_problem(lines, copied)
+    if problem and not drop_flawed:
+        raise LongformError(problem)
+    if problem:
+        # 고쳐 쓸 말이 없는 사실 문장은 재시도도 거의 그대로 내고(10/14), 고치면 다른 검사에 걸린다(10/15 옮긴 문장을
+        # 고치자 "기술주와 메모리 반도체"가 두 문장에 남았다). 재시도에서는 걸린 문장만 앞에서부터 빼고 나머지로 간다.
+        kept: list[str] = []
+        salvaged = []
+        for row in paragraphs:
+            rest = []
+            for line in sentences(row["text"]):
+                if line in copied or any(_same_meaning(line, other) or _shared_phrase(line, other) for other in kept):
+                    continue
+                rest.append(line)
+                kept.append(line)
+            if rest:
+                salvaged.append({**row, "text": " ".join(rest)})
+        if not salvaged:
+            raise LongformError(problem)
+        logger.warning("%s — 걸린 문장 %d개를 빼고 씁니다", problem, len(lines) - len(kept))
+        paragraphs = salvaged
 
     summaries = {str((row or {}).get("id")): str((row or {}).get("summary") or "").strip()
                  for row in payload.get("headlines") or [] if isinstance(row, dict)}
@@ -283,7 +295,7 @@ def write_script(report: dict[str, Any], news: list[dict[str, Any]], settings: S
                      f"반환하세요. 보고서 문장을 옮겼다는 지적이면 낱말 몇 개만 바꾸지 말고 주어·어순을 바꾸거나 "
                      f"다른 사실과 묶어 문장 구조를 새로 쓰고, 나머지 문장도 보고서 문장을 옮기지 않았는지 확인하세요.\n직전 응답: {json.dumps(payload, ensure_ascii=False)}")
             second = chat_json(settings, system=SCRIPT_PROMPT, user=retry, max_tokens=SCRIPT_MAX_TOKENS)
-            return check_script(second, str(report["text"]), news, drop_copies=True)
+            return check_script(second, str(report["text"]), news, drop_flawed=True)
     except LLMError as exc:
         raise LongformError(f"롱폼 원고 모델 호출 실패: {exc}") from exc
 

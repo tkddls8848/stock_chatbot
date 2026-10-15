@@ -91,17 +91,31 @@ def test_script_check_names_every_copied_sentence_for_the_retry():
 COPIED = "이전 보고서에서 지적된 기술주 중심의 상승세는 지속되고 있었지만 최근 기사들에 따르면 기술주가 약세를 보이고 있습니다."
 
 
-def test_retry_drops_copied_sentences_unless_a_paragraph_empties():
+def test_retry_drops_flawed_sentences_and_empty_paragraphs():
     # 고쳐 쓸 말이 없는 사실 문장은 재시도도 그대로 냈다(10/14) — 그 문장만 빼고 나머지 원고로 간다.
     analysis = [ANALYSIS[0], {"topic": "기술주 약세", "text": f"{COPIED} 변동성은 아직 크지 않습니다."}]
-    script = check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS, drop_copies=True)
+    script = check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS, drop_flawed=True)
     assert [row["text"] for row in script["analysis"]] == [ANALYSIS[0]["text"], "변동성은 아직 크지 않습니다."]
+    # 다 옮겨 적은 문단은 문단째 빠지고, 남는 문장이 없을 때만 실패한다.
+    script = check_script({**PAYLOAD, "analysis": [ANALYSIS[0], {"topic": "기술주 약세", "text": COPIED}]},
+                          REPORT["text"], NEWS, drop_flawed=True)
+    assert [row["topic"] for row in script["analysis"]] == ["AI 기대와 금리 부담"]
     with pytest.raises(LongformError, match="옮겼습니다"):
-        check_script({**PAYLOAD, "analysis": [ANALYSIS[0], {"topic": "기술주 약세", "text": COPIED}]},
-                     REPORT["text"], NEWS, drop_copies=True)
+        check_script({**PAYLOAD, "analysis": [{"topic": "기술주 약세", "text": COPIED}]},
+                     REPORT["text"], NEWS, drop_flawed=True)
 
 
-def test_write_script_drops_copies_only_on_the_retry(monkeypatch):
+def test_retry_drops_the_later_sentence_that_repeats_a_phrase():
+    # 옮긴 문장을 고치자 같은 구절이 두 문장에 남았다(10/15 "기술주와 메모리 반도체").
+    analysis = [{"topic": "금리 부담", "text": "기술주와 메모리 반도체 주식이 크게 내렸습니다. 금리는 5.3%를 넘었습니다."},
+                {"topic": "반도체 약세", "text": "앞으로는 연준 결정 뒤 기술주와 메모리 반도체 흐름이 어디로 갈지 봐야 합니다. 변동성은 아직 크지 않습니다."}]
+    with pytest.raises(LongformError, match="같은 구절을 두 번 씁니다: 기술주와 메모리 반도체"):
+        check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS)
+    script = check_script({**PAYLOAD, "analysis": analysis}, REPORT["text"], NEWS, drop_flawed=True)
+    assert [row["text"] for row in script["analysis"]] == [analysis[0]["text"], "변동성은 아직 크지 않습니다."]
+
+
+def test_write_script_drops_flawed_sentences_only_on_the_retry(monkeypatch):
     copied = {**PAYLOAD, "analysis": [ANALYSIS[0], {"topic": "기술주 약세", "text": f"{COPIED} 변동성은 아직 크지 않습니다."}]}
     calls = []
     monkeypatch.setattr(longform_module, "chat_json", lambda settings, **kwargs: calls.append(kwargs["user"]) or copied)
