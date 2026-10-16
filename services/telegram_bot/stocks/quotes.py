@@ -6,14 +6,17 @@
 테이블은 TTL 캐시로 재사용한다.
 
 데이터소스: 동방재부 push2* 시세 API는 해외 IP를 차단하므로
-시세·자금흐름·섹터는 텐센트(qt.gtimg.cn)·시나 API를 쓰고,
-해외에서도 열려 있는 涨停(push2ex)·용호방(datacenter-web)만 AkShare를 유지한다.
+시세·자금흐름·섹터·涨停은 텐센트(qt.gtimg.cn)·시나 API를 쓰고,
+해외에서도 열려 있는 용호방(datacenter-web)만 AkShare를 유지한다.
+涨停 풀(push2ex)도 막혔다 — 2026-10-09~16 서버에서 76번 모두 접속 시간 초과였다. 그래서
+시나 상승률 순위에서 가격제한폭으로 涨停을 센다(`parse_sina_limit_up`).
 """
 
 import json
 import logging
 import time
 from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from services.telegram_bot.core.clock import now
 from typing import Any, Callable
 
@@ -34,6 +37,14 @@ _HTTP_HEADERS = {
     "Referer": "https://finance.sina.com.cn",
 }
 _TENCENT_BATCH_SIZE = 60
+_SINA_RANKED_URL = (
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+    "Market_Center.getHQNodeData"
+)
+_LIMIT_UP_PAGE_SIZE = 100
+_LIMIT_UP_MAX_PAGES = 8
+# 상승률 순위를 이 밑까지만 읽는다. 가장 좁은 가격제한폭이 ST의 5%라 그 아래에는 涨停이 없다.
+_LIMIT_UP_SCAN_FLOOR_PCT = 4.8
 
 
 def _akshare_retry(func):
@@ -153,6 +164,39 @@ def parse_tencent_quotes(text: str) -> dict[str, dict[str, Any]]:
             "amount": amount,
         }
     return quotes
+
+
+def _limit_up_ratio(code: str, name: str) -> float | None:
+    """A주 가격제한폭. 상장 초기(N·C 접두) 종목은 제한이 없어 None이다."""
+    if name.startswith(("N", "C")):
+        return None
+    if code.startswith(("30", "688", "689")):
+        return 0.20  # 창업판·과창판은 ST도 20%다
+    if code.startswith(("4", "8", "92")):
+        return 0.30  # 북경거래소
+    if "ST" in name.upper():
+        return 0.05
+    return 0.10
+
+
+def parse_sina_limit_up(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """시나 상승률 순위 한 쪽 → 종가가 涨停가에 닿은 종목 [{code, name, amount}].
+
+    涨停가는 전일 종가(settlement)에 가격제한폭을 곱해 2자리에서 반올림한 값이다(거래소 규칙).
+    """
+    hits = []
+    for row in rows:
+        code = str(row.get("code") or "")
+        name = str(row.get("name") or "")
+        trade = _safe_float(row.get("trade"))
+        settlement = _safe_float(row.get("settlement"))
+        ratio = _limit_up_ratio(code, name)
+        if ratio is None or not trade or not settlement:
+            continue
+        limit = Decimal(str(settlement)) * Decimal(str(1 + ratio))
+        if trade >= float(limit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)):
+            hits.append({"code": code, "name": name, "amount": _safe_float(row.get("amount")) or 0.0})
+    return hits
 
 
 def parse_sina_moneyflow(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -392,20 +436,35 @@ class QuoteService:
             logger.warning("[SECTOR_SUMMARY] %s 구성종목 조회 실패: %s", board_name, e)
             return []
 
+    def _fetch_sina_limit_up(self) -> list[dict[str, Any]]:
+        """沪深京 A주를 상승률 순으로 읽어 涨停 종목을 모은다. 상승률이 가장 좁은 제한폭 밑이면 멈춘다."""
+        hits: list[dict[str, Any]] = []
+        for page in range(1, _LIMIT_UP_MAX_PAGES + 1):
+            r = requests.get(
+                _SINA_RANKED_URL,
+                params={"page": page, "num": _LIMIT_UP_PAGE_SIZE, "sort": "changepercent",
+                        "asc": 0, "node": "hs_a"},
+                headers=_HTTP_HEADERS,
+                timeout=10,
+            )
+            r.raise_for_status()
+            rows = r.json() or []
+            hits.extend(parse_sina_limit_up(rows))
+            last = _safe_float(rows[-1].get("changepercent")) if rows else None
+            if last is None or last < _LIMIT_UP_SCAN_FLOOR_PCT:
+                break
+        return hits
+
     def get_zt_pool_summary(self) -> dict[str, Any]:
         """오늘 涨停 종목 수와 상위 몇 종목(단기 과열 온도계)."""
         try:
             date = now().strftime("%Y%m%d")
-            df = self._cache.get_or_fetch(
-                f"zt_pool:{date}",
-                _akshare_retry(lambda: ak.stock_zt_pool_em(date=date)),
+            hits = self._cache.get_or_fetch(
+                f"zt_pool:{date}", _akshare_retry(self._fetch_sina_limit_up)
             )
-            if df is None or df.empty:
-                return {"count": 0, "names": []}
-            return {
-                "count": int(len(df)),
-                "names": [str(n) for n in df["名称"].head(5).tolist()],
-            }
+            # 대표 종목은 거래대금이 큰 순서다 — 상승률 순서면 북경거래소 30% 종목이 앞을 채운다.
+            leaders = sorted(hits, key=lambda hit: hit["amount"], reverse=True)
+            return {"count": len(hits), "names": [hit["name"] for hit in leaders[:5]]}
         except Exception as e:
             logger.warning("[SECTOR_SUMMARY] 涨停 풀 조회 실패: %s", e)
             return {}

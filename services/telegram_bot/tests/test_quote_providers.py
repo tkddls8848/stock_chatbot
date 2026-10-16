@@ -3,6 +3,7 @@ import pytest
 
 from services.telegram_bot.stocks.quotes import (
     QuoteService,
+    parse_sina_limit_up,
     parse_sina_moneyflow,
     parse_tencent_quotes,
     parse_yahoo_closes,
@@ -133,3 +134,62 @@ def test_parse_sina_moneyflow_computes_main_net_inflow():
 
 def test_parse_sina_moneyflow_rejects_incomplete_payload():
     assert parse_sina_moneyflow({"r0_in": "1"}) is None
+
+
+def _ranked(code, name, trade, settlement, amount=1.0, changepercent=10.0):
+    return {"code": code, "name": name, "trade": str(trade), "settlement": str(settlement),
+            "amount": amount, "changepercent": changepercent}
+
+
+def test_parse_sina_limit_up_uses_each_board_price_limit():
+    rows = [
+        _ranked("600001", "主板涨停", 11.0, 10.0),        # 10% → 11.00
+        _ranked("000002", "主板未封", 10.99, 10.0),       # 10.99 < 11.00
+        _ranked("300003", "创业板", 12.0, 10.0),          # 20%
+        _ranked("688004", "科创板", 11.0, 10.0),          # 20% → 11.00은 아직 아니다
+        _ranked("600005", "*ST某某", 5.25, 5.0),          # ST 5% → 5.25
+        _ranked("300006", "ST创业", 6.0, 5.0),            # 창업판 ST도 20%
+        _ranked("920007", "北交所", 13.0, 10.0),          # 30%
+        _ranked("600008", "N新股", 20.0, 10.0),           # 상장 초기 제한 없음
+        _ranked("600009", "停牌", 0, 10.0),               # 거래 없음
+    ]
+
+    names = [hit["name"] for hit in parse_sina_limit_up(rows)]
+
+    assert names == ["主板涨停", "创业板", "*ST某某", "ST创业", "北交所"]
+
+
+def test_parse_sina_limit_up_rounds_the_limit_price_half_up():
+    # 7.35 × 1.1 = 8.085 → 거래소 규칙대로 반올림해 8.09다. 8.08은 涨停이 아니다.
+    assert parse_sina_limit_up([_ranked("600010", "반올림", 8.08, 7.35)]) == []
+    assert len(parse_sina_limit_up([_ranked("600010", "반올림", 8.09, 7.35)])) == 1
+
+
+def test_zt_pool_summary_stops_below_the_narrowest_limit(monkeypatch):
+    """push2ex는 해외 IP를 막는다(2026-10). 시나 상승률 순위를 5% 밑까지 읽고 멈춘다."""
+    pages = {
+        1: [_ranked("600001", "작은", 11.0, 10.0, amount=1.0), _ranked("600002", "큰", 22.0, 20.0, amount=9.0)],
+        2: [_ranked("600003", "끝", 4.0, 4.0, changepercent=0.0)],
+    }
+    calls = []
+
+    class _Response:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._rows
+
+    def fake_get(url, params, headers, timeout):
+        calls.append(params["page"])
+        return _Response(pages[params["page"]])
+
+    monkeypatch.setattr("services.telegram_bot.stocks.quotes.requests.get", fake_get)
+
+    summary = QuoteService().get_zt_pool_summary()
+
+    assert summary == {"count": 2, "names": ["큰", "작은"]}
+    assert calls == [1, 2]
