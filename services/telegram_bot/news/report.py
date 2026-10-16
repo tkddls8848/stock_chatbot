@@ -38,7 +38,6 @@ from services.telegram_bot.core.config import (
     NEWS_REPORT_MIN_ARTICLES,
     NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
     NEWS_REPORT_SESSIONS,
-    NEWS_REPORT_SHOWN_HIGHLIGHTS,
     NEWS_SOURCE_MARKETS,
     TELEGRAM_CHAT_ID,
 )
@@ -49,9 +48,7 @@ from services.telegram_bot.news.registry import NewsSourceRegistry, SourceSpec
 from services.telegram_bot.news.utils import (
     chunk_message_items,
     display_time,
-    compact_sentiment_line,
     format_china_time_as_jst,
-    format_digest_article,
     parse_news_datetime,
     publication_time_naive,
     signal_codes,
@@ -80,7 +77,7 @@ _MARKET_LABELS = {
 # 아래에서 정렬돼 뒤에 붙는다 — 순서가 우연이 되지 않게 JP·EU 를 명시한다.
 _MARKET_ORDER = ("CN", "HK", "US", "KR", "JP", "EU")
 _DIGEST_HEADER_RESERVE = 200
-# 요약이 실패한 시장에 원문 제목만 남길 때의 건수.
+# 요약이 실패한 채 보류 상한에 닿아 발행하는 시장이 공개 뉴스 검색에 남기는 원문 제목 건수.
 _FALLBACK_HEADLINE_LIMIT = 10
 _EPOCH = datetime(1970, 1, 1, tzinfo=JST)
 # 수동 실행과 예약 실행이 겹쳐 같은 보고서가 두 번 전송되는 것을 막는다.
@@ -339,53 +336,29 @@ def _notable(highlights: list[dict]) -> list[dict]:
     return [highlight for highlight in highlights if highlight.get("impact") != "low"]
 
 
-def _highlight_text(highlight: dict) -> str:
-    # 근거 기사는 제목과 감성만 적는다. 링크·발행 시각은 본문 판단의 각주로는
-    # 과해서 목록을 뉴스 나열처럼 보이게 했다.
-    return format_digest_article(
-        highlight["title"],
-        "",
-        "",
-        compact_sentiment_line(highlight["sentiment"], highlight["impact"]),
-    )
-
-
 def format_market_section(
     market: str,
     items: list[dict],
     result: dict | None,
     elapsed: str = "",
 ) -> str:
-    """시장 하나의 상황 보고서 섹션. result가 없으면 제목만 나열한다.
+    """시장 하나의 상황 보고서 섹션. 텔레그램에는 본문만 싣는다.
 
-    근거 기사는 앞 `NEWS_REPORT_SHOWN_HIGHLIGHTS`건만 붙인다. 본문이 판단이고
-    목록은 그 각주라, 목록이 길어질수록 글이 아니라 뉴스 나열로 읽힌다.
-    나머지 근거도 `_log_highlights`가 NewsLog와 사전선별 라벨에 그대로 넣는다 —
-    줄이는 것은 표시 분량이지 라벨 공급량이 아니다.
+    근거 기사 제목은 싣지 않는다(운영자 지시 2026-10-16). 본문은 제목을 인용하지 않고
+    묶음 전체를 종합하는 글인데, 그 아래 붙은 제목 목록이 보고서를 뉴스 나열로 읽히게 했다.
+    근거는 여전히 `_log_highlights`가 NewsLog와 사전선별 라벨에, `_public_news`가 공개 뉴스
+    검색에 넣는다 — 뺀 것은 텔레그램 표시이지 라벨·공개 자료가 아니다.
     """
     label = _MARKET_LABELS.get(market, market)
     head = f"<b>[{html.escape(label)}]</b> 수집 {len(items)}건"
     if elapsed:
         head = f"{head} · {html.escape(elapsed)}"
-    lines = [head]
     if result is None:
-        # LLM이 실패한 시장이다. 그 시간의 뉴스를 통째로 잃지 않도록 원문
-        # 제목만이라도 남긴다.
-        lines.append("<i>요약 생성 실패 — 원문 제목만 표시합니다.</i>")
-        for item in items[:_FALLBACK_HEADLINE_LIMIT]:
-            lines.append(format_digest_article(str(item.get("title") or ""), "", ""))
-        return "\n\n".join(lines)
-
-    if result["analysis"]:
-        lines.append(html.escape(result["analysis"]))
-    notable = _notable(result["highlights"])
-    shown = notable[:NEWS_REPORT_SHOWN_HIGHLIGHTS]
-    for highlight in shown:
-        lines.append(_highlight_text(highlight))
-    hidden = len(notable) - len(shown)
-    if hidden > 0:
-        lines.append(f"<i>이 판단이 읽은 기사 {hidden}건 더</i>")
-    return "\n\n".join(lines)
+        # 분석이 실패한 채 보류 상한에 닿아 발행하는 시장이다. 원문 제목은 공개 뉴스 검색에 남는다.
+        return f"{head}\n\n<i>요약 생성 실패 — 이 구간 기사는 웹 뉴스 검색에서 볼 수 있습니다.</i>"
+    if not result["analysis"]:
+        return head
+    return f"{head}\n\n{html.escape(result['analysis'])}"
 
 
 async def _analyze_market(

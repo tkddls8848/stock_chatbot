@@ -563,16 +563,16 @@ def test_markets_are_grouped_in_display_order():
     assert [market for market, _ in grouped] == ["CN", "KR"]
 
 
-def test_failed_market_still_shows_its_headlines():
-    """분석이 실패해도 그 시장의 수집 뉴스를 통째로 잃지 않는다."""
+def test_failed_market_reports_the_failure_without_listing_titles():
+    """분석이 실패한 채 상한에 닿은 시장도 원문 제목을 나열하지 않는다(2026-10-16)."""
     section = format_market_section("US", [_item(0)], None)
 
     assert "요약 생성 실패" in section
-    assert "Headline 0" in section
+    assert "Headline 0" not in section
 
 
-def test_highlights_show_only_title_and_sentiment():
-    """근거 기사에는 링크·발행 시각 없이 제목과 감성만 붙는다."""
+def test_market_section_carries_only_the_analysis():
+    """근거 기사 제목·감성 줄은 텔레그램 보고서에 싣지 않는다(운영자 지시 2026-10-16)."""
     item = {**_item(0), "url": "https://example.com/a"}
     result = {
         "analysis": "판단.",
@@ -581,11 +581,7 @@ def test_highlights_show_only_title_and_sentiment():
 
     section = format_market_section("US", [item], result)
 
-    assert "href" not in section
-    assert section.split("\n\n")[-1].splitlines() == [
-        "• 제목",
-        "- 감성 : 긍정 +0.40 · 영향 높음",
-    ]
+    assert section == "<b>[미국]</b> 수집 1건\n\n판단."
 
 
 # ── 전송 ──────────────────────────────────────────────
@@ -614,7 +610,7 @@ def test_report_sends_confirms_and_clears_the_queue(tmp_path):
     assert "시장상황 보고서" in app.bot.messages[0]
     assert "UTC +9" in app.bot.messages[0]
     assert "JST" not in app.bot.messages[0]
-    assert "한국어 제목 0" in app.bot.messages[0]
+    assert "한국어 제목 0" not in app.bot.messages[0]
     # 큐에 있던 기사는 전부 확정된다 — release하면 주간 주기가 다시 번역한다.
     assert sorted(tracker.confirmed) == ["gnews_us-0", "gnews_us-1"]
     assert asyncio.run(queue.snapshot())[1] == []
@@ -998,9 +994,8 @@ def test_a_failed_send_does_not_record_the_report_as_published(tmp_path):
     assert len(asyncio.run(queue.snapshot())[1]) == 1
 
 
-def test_only_the_first_highlights_are_shown_but_all_are_logged(tmp_path, monkeypatch):
-    """본문이 판단이고 목록은 그 각주다. 줄이는 것은 표시 분량이지 라벨이 아니다."""
-    monkeypatch.setattr(news_report, "NEWS_REPORT_SHOWN_HIGHLIGHTS", 2)
+def test_highlights_are_not_shown_but_all_are_logged(tmp_path):
+    """제목은 텔레그램에서 뺐다. 뺀 것은 표시이지 라벨이 아니다."""
     items = [_item(index) for index in range(5)]
     news_log = _RecordingLog()
     app, _, _ = _gate_app(
@@ -1013,9 +1008,8 @@ def test_only_the_first_highlights_are_shown_but_all_are_logged(tmp_path, monkey
     asyncio.run(send_news_report(app))
 
     message = app.bot.messages[0]
-    assert "한국어 제목 1" in message
-    assert "한국어 제목 4" not in message
-    assert "기사 3건 더" in message
+    assert "한국어 제목" not in message
+    assert "건 더" not in message
     # 표시에서 뺀 근거도 라벨은 그대로 간다.
     assert len(news_log.records) == 5
 
@@ -1925,15 +1919,13 @@ def test_report_header_and_model_input_carry_the_session(tmp_path, monkeypatch):
     assert analyzer._backend.calls[0]["session"] == "한국장 개장 전"
 
 
-def test_low_impact_highlights_are_logged_but_not_shown_or_published(tmp_path):
+def test_low_impact_highlights_are_logged_but_not_published(tmp_path):
     payload = _payload(indexes=(0, 1))
     payload["highlights"][1]["impact"] = "low"
     app, _, _, news_log = _send_app(tmp_path, analyzer=_analyzer(tmp_path, payload))
 
     asyncio.run(send_news_report(app))
 
-    assert "한국어 제목 0" in app.bot.messages[0]
-    assert "한국어 제목 1" not in app.bot.messages[0]
     # 근거에서 빠져도 라벨(NewsLog·사전선별)에는 남는다 — low도 학습의 음성이다.
     assert len(news_log.records) == 2
     result = {"analysis": "본문", "highlights": [
