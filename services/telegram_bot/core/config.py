@@ -576,8 +576,8 @@ SHORTS_WORKDIR = BASE_DIR
 # (test_shorts_panel.py가 대조한다). 표시용이며 실행은 timer가 한다.
 SHORTS_SCHEDULE_HOUR = 20
 SHORTS_STATUS_TIMEOUT_SECONDS = 60
-# 제작은 이슈 선별·TTS·렌더에 롱폼 폴더 잠금 대기(30분)까지 더해 유닛의 TimeoutStartSec(70분)과 같게 둔다.
-SHORTS_RUN_TIMEOUT_SECONDS = 70 * 60
+# 제작은 이슈 선별·TTS·렌더까지 유닛의 TimeoutStartSec(40분)과 같게 둔다.
+SHORTS_RUN_TIMEOUT_SECONDS = 40 * 60
 SHORTS_EDIT_TIMEOUT_SECONDS = 15 * 60
 # 텔레그램 봇 API의 파일 업로드 상한. 넘으면 경로만 알린다.
 SHORTS_TELEGRAM_VIDEO_MAX_BYTES = 50 * 1024 * 1024

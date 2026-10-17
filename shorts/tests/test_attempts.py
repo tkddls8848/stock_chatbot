@@ -46,22 +46,6 @@ def test_second_failure_gives_up_and_stops_retrying(settings):
     assert _record(settings)["notified_at"]
 
 
-def test_longform_failure_retries_only_the_longform_then_succeeds(settings):
-    with pytest.raises(attempts.AttemptFailed, match="롱폼"):
-        attempts.run(settings, lambda: {"status": "pending_review", "longform": {"status": "error", "error": "403"}})
-    payload = attempts.run(settings, lambda: {"status": "already_produced", "longform": {"status": "produced"}})
-    assert payload["status"] == "already_produced"
-    assert _record(settings)["succeeded_at"] and attempts.failures(settings) == []
-
-
-def test_longform_failing_twice_is_reported_as_longform(settings):
-    broken = {"status": "pending_review", "longform": {"status": "error", "error": "보고서 없음"}}
-    with pytest.raises(attempts.AttemptFailed):
-        attempts.run(settings, lambda: broken)
-    assert attempts.run(settings, lambda: broken)["status"] == "gave_up"
-    assert attempts.failures(settings)[0]["stage"] == "롱폼"
-
-
 def test_attempts_killed_without_a_result_still_count(settings):
     root = settings.output_dir / "2026-10-13"
     root.mkdir()

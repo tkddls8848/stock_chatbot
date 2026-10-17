@@ -75,9 +75,6 @@ def test_given_up_production_is_announced_then_acknowledged(monkeypatch):
     assert "2026-10-13" in text and "2번 시도" in text and "403" in text and "/shorts run" in text
     assert ["--failure-ack", "2026-10-13"] in runner.calls
 
-    longform = review.failure_text({**failure, "stage": "롱폼"})
-    assert "롱폼을 만들지 못했습니다" in longform and "쇼츠는 검토 대기로" in longform
-
     app, runner = _app(monkeypatch, send=AsyncMock(side_effect=RuntimeError("telegram unavailable")))
     runner.responses["--review-pending"] = {"items": [], "failures": [failure]}
     asyncio.run(review.poll_reviews(app))
@@ -217,11 +214,6 @@ def test_menu_edit_button_routes_through_pause_prompt(monkeypatch):
     assert cmd.call_args.args[1].args == ["edit_prompt"]
 
 
-def test_upload_message_carries_the_daily_longform():
+def test_upload_message_carries_the_shorts_link():
     shorts = {"status": "uploaded", "url": "https://www.youtube.com/shorts/s1"}
     assert review.upload_text(shorts) == "YouTube 업로드 완료: https://www.youtube.com/shorts/s1"
-    done = review.upload_text({**shorts, "longform": {"status": "uploaded",
-                                                      "url": "https://www.youtube.com/watch?v=l1"}})
-    assert done.endswith("\n롱폼 업로드 완료: https://www.youtube.com/watch?v=l1")
-    failed = review.upload_text({**shorts, "longform": {"status": "error", "error": "YouTube 연결 실패"}})
-    assert "롱폼 업로드 실패: YouTube 연결 실패" in failed and "--longform-upload" in failed

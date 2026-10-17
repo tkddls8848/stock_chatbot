@@ -64,37 +64,22 @@ async def send_scenario(send, item: dict) -> None:
 
 def failure_text(item: dict) -> str:
     """예약 제작이 하루 시도를 다 쓰고 포기한 날. 쇼츠 CLI `--review-pending`의 `failures` 한 줄."""
-    day, stage = item.get("date", ""), item.get("stage") or "쇼츠"
-    if stage == "롱폼":
-        outcome = "롱폼을 만들지 못했습니다. 쇼츠는 검토 대기로 그대로 진행합니다."
-        retry = "/shorts run 으로 롱폼만 다시 만들 수 있습니다."
-    else:
-        outcome = "쇼츠를 만들지 못해 오늘 쇼츠·롱폼이 올라가지 않습니다."
-        retry = "/shorts run 으로 다시 만들 수 있습니다."
-    return (f"⚠️ 예약 제작 실패 · {day}\n{item.get('attempts', 2)}번 시도했지만 {outcome}\n"
-            f"마지막 오류: {str(item.get('error') or '로그를 확인하세요')[:300]}\n{retry}")
+    return (f"⚠️ 예약 제작 실패 · {item.get('date', '')}\n"
+            f"{item.get('attempts', 2)}번 시도했지만 쇼츠를 만들지 못해 오늘 쇼츠가 올라가지 않습니다.\n"
+            f"마지막 오류: {str(item.get('error') or '로그를 확인하세요')[:300]}\n"
+            "/shorts run 으로 다시 만들 수 있습니다.")
 
 
 def upload_text(result: dict) -> str:
     outcome = result.get("status")
     if outcome in {"uploaded", "already_uploaded"}:
-        return "YouTube 업로드 완료: " + str(result.get("url") or "") + _longform_text(result.get("longform"))
+        return "YouTube 업로드 완료: " + str(result.get("url") or "")
     reasons = {
         "not_reviewed": "현재 수정본을 먼저 검수 완료하세요.",
         "no_credentials": ".env에 YouTube 자격 증명을 설정한 뒤 /shorts upload로 재시도하세요.",
         "stale": "이 원고는 새 수정본으로 대체되었습니다. /shorts review에서 확인하세요.",
     }
     return "YouTube 업로드: " + str(reasons.get(outcome) or result.get("reason") or result.get("error") or outcome or "응답을 확인하세요.")
-
-
-def _longform_text(result: dict | None) -> str:
-    """쇼츠와 함께 올린 그날 롱폼의 결과 한 줄. 이어 둔 롱폼이 없으면 빈 문자열."""
-    if not result:
-        return ""
-    if result.get("status") in {"uploaded", "already_uploaded"}:
-        return "\n롱폼 업로드 완료: " + str(result.get("url") or "")
-    return ("\n롱폼 업로드 실패: " + str(result.get("error") or result.get("status"))
-            + "\n서버에서 --longform-upload <롱폼 폴더>로 다시 올리세요.")
 
 
 async def poll_reviews(app) -> None:

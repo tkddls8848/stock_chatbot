@@ -69,7 +69,7 @@ class Settings:
     visuals_enabled: bool = True
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
-    # 이슈 선별·원고·자연어 편집·롱폼 원고 모델(Cloudflare Workers AI).
+    # 이슈 선별·원고·자연어 편집 모델(Cloudflare Workers AI).
     editor_model: str = "@cf/deepseek-ai/deepseek-v4-flash-0731"
     # 추론 모델(deepseek-v4 등)의 reasoning_effort. "none"이면 생각 단계를 끈다 — 켜 두면
     # 생각이 토큰 상한과 시간을 먹어 원고가 잘린다(실측 2026-09-28). 비우면 보내지 않는다.
@@ -93,8 +93,6 @@ class Settings:
     # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
     auto_publish: bool = True
     review_timeout_minutes: int = 60
-    # 쇼츠와 같은 시각에 만들어 쇼츠가 게시될 때 함께 올리는 시장상황 보고서 롱폼의 시장(운영자 결정 2026-10-10).
-    longform_market: str = "US"
 
     @property
     def public_dir(self) -> Path:

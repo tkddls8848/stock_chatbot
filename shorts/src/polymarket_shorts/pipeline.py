@@ -94,12 +94,11 @@ def prune_old_days(settings: Settings, today: date) -> list[Path]:
     오늘 포함 `RETENTION_DAYS`일만 남긴다. 반복 회피(`recently_featured`)가 지난
     `repeat_days`일 폴더를 읽으므로 그보다 짧게 지우지 않는다. 이름이 날짜가 아닌
     폴더(`state/` 등)는 건드리지 않는다. 지우지 못한 폴더는 경고만 남긴다 — 정리
-    실패가 제작을 막지 않는다. 롱폼(`longform/<날짜>/`)도 같은 기간으로 지운다.
+    실패가 제작을 막지 않는다.
     """
     cutoff = today - timedelta(days=max(RETENTION_DAYS, settings.repeat_days + 1) - 1)
     removed = []
-    folders = [folder for base in (settings.output_dir, settings.output_dir / "longform") if base.is_dir()
-               for folder in sorted(base.iterdir())]
+    folders = sorted(settings.output_dir.iterdir()) if settings.output_dir.is_dir() else []
     for folder in folders:
         try:
             day = date.fromisoformat(folder.name)

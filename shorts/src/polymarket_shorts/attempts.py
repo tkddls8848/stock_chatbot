@@ -7,9 +7,6 @@
 `failures`로 포기한 날을 받아 알리고 `--failure-ack DATE`로 확인을 남긴다 — 전달이 실패하면 다음
 주기에 다시 보낸다.
 
-롱폼은 쇼츠 뒤에 이어 만들어지므로 같은 시도 안에서 센다. 롱폼만 실패해도 쇼츠는 검토 대기로
-넘어가고, 두 번째 시도는 이미 만든 쇼츠를 건너뛰고 롱폼만 다시 만든다.
-
 시도는 시작할 때 센다. 제한 시간에 걸려 죽은 시도는 결과를 남기지 못하지만 횟수에는 들어간다.
 운영자가 텔레그램(`/shorts run`)이나 CLI로 직접 돌린 제작은 세지 않는다 — 결과를 그 자리에서 본다.
 """
@@ -28,10 +25,6 @@ from .review import ReviewError, operation_lock
 
 MAX_ATTEMPTS = 2
 ATTEMPTS_FILE = "attempts.json"
-
-
-class AttemptFailed(RuntimeError):
-    """재시도가 남은 실패. 비정상 종료해 systemd의 재시작을 받는다."""
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -68,11 +61,6 @@ def run(settings: Settings, produce: Callable[[], dict[str, Any]]) -> dict[str, 
         if not _failed(path, "쇼츠", f"{type(exc).__name__}: {exc}"):
             raise
         return {"status": "gave_up", "date": day, "stage": "쇼츠", "error": str(exc)}
-    longform = payload.get("longform") or {}
-    if longform.get("status") == "error":
-        if not _failed(path, "롱폼", str(longform.get("error") or "")):
-            raise AttemptFailed("롱폼 제작 실패 — 남은 시도로 다시 만든다: " + str(longform.get("error")))
-        return {**payload, "status": "gave_up", "stage": "롱폼"}
     record = _read(path)
     if record and not record.get("succeeded_at"):
         record["succeeded_at"] = now().isoformat()

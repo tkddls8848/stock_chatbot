@@ -14,7 +14,7 @@ from .review import ReviewError, read_script
 
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
-    "review_pending", "review_ack", "review_pause", "review_approve", "review_tick", "longform_upload",
+    "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
     "failure_ack", "scheduled",
 )
 
@@ -28,11 +28,6 @@ def main() -> None:
     parser.add_argument("--workflow", type=Path, metavar="DIR", help="기존 산출물을 자연어로 검수하고 수정")
     parser.add_argument("--browser", type=Path, metavar="DIR", help="기존 산출물을 로컬 브라우저 패널에서 검수")
     parser.add_argument("--port", type=int, default=8765, help="브라우저 패널 포트, 기본값 8765")
-    parser.add_argument("--longform", metavar="MARKET", choices=("US", "KR", "CN", "HK", "JP", "EU"),
-                        help="그 시장의 최신 시장상황 보고서로 가로 롱폼 영상 제작(US·KR·CN·HK·JP·EU)")
-    parser.add_argument("--report-id", metavar="ID", help="--longform이 쓸 보고서 ID(report:US:2026-10-10T08:00:00+09:00)")
-    parser.add_argument("--longform-upload", type=Path, metavar="DIR",
-                        help="롱폼 산출물 폴더의 영상을 YouTube에 업로드(이 명령이 운영자 승인이다)")
     parser.add_argument("--interactive", action="store_true", help="영상 생성 후 대화형 검수·편집 시작")
     # 텔레그램 관리 패널(/shorts)이 하위 프로세스로 부르는 비대화형 명령. stdout에 JSON 한 줄.
     parser.add_argument("--status", action="store_true", help="최근 제작일의 제작·검수 상태 JSON")
@@ -52,8 +47,6 @@ def main() -> None:
     args = parser.parse_args()
     if args.review_token and args.edit is None:
         parser.error("--review-token은 --edit와 함께 씁니다")
-    if args.report_id and not args.longform:
-        parser.error("--report-id는 --longform과 함께 씁니다")
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
         parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth는 한 번에 하나만 씁니다")
@@ -61,8 +54,6 @@ def main() -> None:
         parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
     if args.interactive and chosen and chosen != ["plan"]:
         parser.error("--interactive는 일일 제작 또는 --plan과 함께 씁니다")
-    if args.longform and (chosen or args.date or args.interactive):
-        parser.error("--longform은 --force, --report-id하고만 함께 씁니다")
     if not 1 <= args.port <= 65535:
         parser.error("--port는 1부터 65535까지입니다")
     if not args.browser and args.port != 8765:
@@ -86,10 +77,6 @@ def main() -> None:
             else:
                 result = approval.approve(settings, args.review_approve)
             print(json.dumps(result, ensure_ascii=False))
-            return
-        if args.longform_upload:
-            from .youtube import upload_longform
-            print(json.dumps(upload_longform(args.longform_upload, settings), ensure_ascii=False))
             return
         if args.youtube_auth:
             from .youtube import authorize
@@ -116,22 +103,9 @@ def main() -> None:
         if args.review:
             print(read_script(args.review.resolve()))
             return
-        if args.longform:
-            from .longform import LongformError, produce_longform
-            prune_old_days(settings, datetime.now(settings.timezone).date())
-            try:
-                payload = asdict(produce_longform(settings, args.longform, report_id=args.report_id or "",
-                                                  force=args.force))
-            except LongformError as exc:
-                raise SystemExit(str(exc)) from exc
-            print(json.dumps(payload, ensure_ascii=False))
-            return
         if args.scheduled:
-            from .attempts import AttemptFailed, run
-            try:
-                payload = run(settings, lambda: _produce_today(settings))
-            except AttemptFailed as exc:
-                raise SystemExit(str(exc)) from exc
+            from .attempts import run
+            payload = run(settings, lambda: _produce_today(settings))
         elif args.plan:
             payload = asdict(produce_editorial(args.plan.resolve(), settings))
         elif args.interactive:
@@ -157,10 +131,6 @@ def _produce_today(settings: Settings, *, production_date: date | None = None, f
     # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
     prune_old_days(settings, datetime.now(settings.timezone).date())
     payload = asdict(produce_daily(settings, production_date=production_date, force=force))
-    # 롱폼을 먼저 만들어 이어 둔 뒤 검토에 넣는다. 쇼츠가 승인되는 순간 둘이 함께 올라간다.
-    if payload.get("status") in {"pending_review", "already_produced"}:
-        from .longform import produce_daily as produce_daily_longform
-        payload["longform"] = produce_daily_longform(settings.output_dir / payload["date"], settings)
     payload["approval"] = _queue_review(payload, settings)
     return payload
 

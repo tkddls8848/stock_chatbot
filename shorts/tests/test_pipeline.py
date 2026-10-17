@@ -135,19 +135,6 @@ def test_prune_old_days_keeps_two_weeks_of_folders(tmp_path):
     assert kept.is_dir() and (output / "state").is_dir()
 
 
-def test_prune_old_days_also_clears_old_longform_days(tmp_path):
-    from polymarket_shorts.pipeline import prune_old_days
-
-    output = tmp_path / "output"
-    settings = replace(Settings.from_env(), output_dir=output, repeat_days=7)
-    old, kept = output / "longform" / "2026-09-15", output / "longform" / "2026-09-16"
-    for folder in (old / "US-0800", kept / "US-0800"):
-        folder.mkdir(parents=True)
-
-    assert prune_old_days(settings, date(2026, 9, 29)) == [old]
-    assert kept.is_dir() and (output / "longform").is_dir()
-
-
 def test_prune_old_days_never_drops_folders_repeat_avoidance_reads(tmp_path):
     from polymarket_shorts.pipeline import prune_old_days
 
