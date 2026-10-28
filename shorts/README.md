@@ -360,7 +360,7 @@ $env:PYTHONPATH='shorts/src'
 - [Planet Money 제작진 인터뷰](https://www.linkinbio.news/p/lets-talk-about-brands-on-tiktok): 짧은 세로 영상에 맞춘 설명과 독립적인 스토리 구성.
 - [Planet Money의 공개 성과 사례](https://www.nationalpublicmedia.com/insights/articles/planet-money-tiktok-builds-awareness-among-young-audiences/): 2023년 SVB 영상 170만 회 이상 사례. TikTok 사례이며 YouTube 성과와 동일시하지 않습니다.
 
-도입은 "10월 7일 집단 예측 컨센서스 요약입니다. 오늘은 금융시장과 맞닿은 질문 N개를 차례로
+도입은 "10월 7일 집단 예측 컨센서스 요약입니다. 오늘은 금융시장과 관련된 질문 N개를 차례로
 짚어 보겠습니다"로 말합니다. 오래되거나 실패한 요약은 읽지 않습니다.
 
 **이슈 장면은 여는 말 → 그날 보도(있을 때) → 해설 → 질문 → 확률 → 갈림 풀이 순서로 말합니다.** 여는 말(`lead_in`)은
@@ -393,6 +393,12 @@ $env:PYTHONPATH='shorts/src'
 듣게 됩니다. 모델이 쓰는 경로(`highlights.PROMPT`·`workflow.EDITOR_PROMPT`·
 `prompts/editorial_ko.txt`)에도 같은 기준을 적어 두었고 `tests/test_tone.py`가
 셋 다 확인합니다.
+
+**글말 비유·상투어를 대사에 쓰지 않습니다.** "맞닿은"·"관통하는"·"가늠하는 잣대"·"분수령"처럼 모델이
+즐겨 쓰는 말은 사람이 하는 말로 들리지 않습니다(2026-10-28 운영자 지시 — 10월 원고에 "…방향을 가늠하는
+잣대가 됩니다"가 거듭 나왔고, 고정 도입문에도 "맞닿은"이 있었습니다). 목록은 `highlights.CLICHES` 하나이고
+세 프롬프트가 모두 옮겨 적습니다. 원고 검증은 제목·질문·해설에 이 말이 있으면 한 번 다시 묻고, 여는 말·뉴스
+문장·전망 구절은 버리고 대체 문장으로 읽습니다.
 
 **이슈 화면은 선택지 이름 + 큰 '예' 확률 + 막대입니다.** 2026-09-23 산출물은
 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%, 아니오 0.05%" 한

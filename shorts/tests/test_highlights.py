@@ -240,3 +240,19 @@ def test_topic_may_use_another_form_of_a_title_word_but_not_another_subject(issu
     candidate = {**issue_source[1], "title": title}
     row = selection(source_title=title, topic=topic)
     assert bool(validate_selection({"selected": [row]}, [candidate], 5)) is kept
+
+
+@pytest.mark.parametrize("field, text", [
+    ("context", "연준 회의는 국채 금리 방향을 가늠하는 잣대가 되는데, 10월 결정이 금리 경로와 맞닿아 있습니다."),
+    ("question", "연준이 10월 금리를 관통하는 결정을 내릴까요?"),
+])
+def test_cliches_in_spoken_fields_stop(issue_source, field, text):
+    issue, script = issue_source[3:]
+    with pytest.raises(HighlightError, match="상투어"):
+        validate_scripts({"scripts": [{**script, field: text}]}, [issue])
+
+
+def test_a_cliche_lead_in_is_dropped_for_the_fallback_line(issue_source):
+    issue, script = issue_source[3:]
+    (clean,) = validate_scripts({"scripts": [{**script, "lead_in": "금융시장과 맞닿은 연준 결정을 보겠습니다."}]}, [issue])
+    assert "lead_in" not in clean

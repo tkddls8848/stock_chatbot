@@ -15,6 +15,18 @@ class HighlightError(RuntimeError):
     pass
 
 
+# 모델이 즐겨 쓰는 문어투 비유·상투어. 사람이 말하는 대사가 아니라 기계가 쓴 글로 들린다(운영자 지시 2026-10-28).
+# 10월 원고에 "…방향을 가늠하는 잣대가 됩니다"가 거듭 나왔고, 고정 도입문에도 "맞닿은"이 있었다.
+# 부분 문자열로 찾으므로 "기로"처럼 다른 낱말("하기로") 속에 흔히 들어가는 말은 뒤 글자까지 붙인다.
+CLICHES = ("맞닿", "관통", "궤를 같이", "결을 같이", "맥을 같이", "방점", "시금석", "바로미터", "가늠", "잣대",
+           "리트머스", "분수령", "신호탄", "이정표", "나침반", "변곡점", "갈림길", "기로에", "엿보", "엿볼",
+           "녹아 있", "녹아든", "녹아들", "자리매김", "의미심장", "오롯이", "고스란히", "촉각", "귀추", "이목이", "이목을",
+           "화두", "여정", "서막", "방증", "실타래", "격랑", "소용돌이", "시사")
+_CLICHE = re.compile("|".join(map(re.escape, CLICHES)))
+CLICHE_RULE = (f"[어휘] 글에서나 쓰는 비유·상투어를 대사에 쓰지 마세요: {', '.join(CLICHES)}. "
+               "같은 뜻을 평소 말하듯 쉬운 말로 씁니다(\"방향을 가늠하는 잣대가 됩니다\" → \"방향을 보여 줍니다\").\n")
+
+
 SELECT_PROMPT = """경제 영상 편집자입니다. 후보는 해외 집단 예측 서비스의 개별 이벤트이며 거래량·유동성으로 사전 선별됐습니다.
 [호칭 규칙] 이 자료는 해외 집단 예측 서비스의 참여 현황이다. 한국은 정책상 이 서비스의 이용을 제한하고 있어, 서비스 이름(영문·한글 표기 모두)·예측시장·베팅·배팅·거래(참여를 가리킬 때)라는 말을 쓰지 않고 우회해 표현한다. 이 자료는 일관되게 "집단 예측 컨센서스"(줄여서 "컨센서스")라고 부르고, 질문별 확률은 "컨센서스 확률", 참여 금액은 "참여 규모"로 쓴다. "시장"은 실제 금융시장(주식·채권·외환·원자재)을 가리킬 때만 쓰고 이 자료를 "시장"이라고 부르지 않는다.
 경제·금융시장과 연결되고 지금 설명할 가치가 있는 사건을 중요도순으로 최대 max_issues개 고르세요.
@@ -95,7 +107,7 @@ watch_point(8~50자)는 확인할 다음 발표·조건을 제시하는 완전�
 [지칭] "그쪽"·"저쪽"·"반대쪽"·"한쪽"·"그 반대"처럼 대상을 대명사로 퉁치지 말고, 무엇을 가리키는지 이름으로 말하세요.
 "이는"·"이것은"·"이러한"·"그것은"처럼 앞 문장을 지시어로 받지도 마세요("…키우는데, 이는 원유 선물에…"는 실패) — 받을 대상을
 이름으로 다시 말하세요("…키우는데, 공급 차질 우려는 원유 선물에…").
-question은 말로 묻듯 씁니다 — "얼마에 도달할 것인가?"가 아니라 "얼마까지 갈까요?"입니다.
+""" + CLICHE_RULE + """question은 말로 묻듯 씁니다 — "얼마에 도달할 것인가?"가 아니라 "얼마까지 갈까요?"입니다.
 context는 이슈마다 끝맺음을 바꿔 같은 틀이 반복되지 않게 하세요("…와 연결됩니다"만 다섯 번 쓰지 않습니다).
 확률을 말로 푸는 일은 프로그램이 합니다. lead_in·context에 확률·참여 규모를 쓰지 마세요.
 news_hook(15~90자, 한 문장)은 숫자만 읽는 원고가 아니라 지금 흐름 속의 이야기로 들리게 하는 문장입니다.
@@ -363,6 +375,7 @@ def _outlook(value, question: str, shared: set[str]) -> str | None:
     try:
         text = _text(value, "outlook", 6, 60)
         _translation(text, question, "label", shared)
+        _no_cliche(text, "outlook")
     except HighlightError:
         return None
     last = text[-1]
@@ -391,6 +404,12 @@ def _no_pointer(text: str, field: str) -> None:
     match = _POINTER.search(text)
     if match:
         raise HighlightError(f"{field}에 대상을 이름으로 대지 않은 지시어 '{match.group().strip(' ,')}'가 있습니다: {text}")
+
+
+def _no_cliche(text: str, field: str) -> None:
+    match = _CLICHE.search(text)
+    if match:
+        raise HighlightError(f"{field}에 상투어 '{match.group()}'가 있습니다. 같은 뜻을 쉬운 말로 쓰세요: {text}")
 
 
 _SOURCE_NAMES = re.compile(r"polymarket|폴리마켓|베팅|배팅|예측\s*시장|컨센서스|참여자", re.IGNORECASE)
@@ -424,7 +443,7 @@ def _news_hook(row: dict, issue: dict) -> tuple[str, str] | None:
         _translation(text, source, "news_hook")
     except HighlightError:
         return None
-    if _SOURCE_NAMES.search(text) or _POINTER.search(text):
+    if _SOURCE_NAMES.search(text) or _POINTER.search(text) or _CLICHE.search(text):
         return None
     # 문장이 이 질문의 주체(선정 때 낸 주체어)를 말해야 한다. 연준 질문에 유럽중앙은행의 추가 인상 언급을
     # 붙인 적이 있다(2026-10-08 시험) — 프롬프트가 막아도 모델이 넘었다.
@@ -460,6 +479,7 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                 _translation(text, source, field)
                 if field == "context":
                     _no_pointer(text, field)
+                _no_cliche(text, field)
                 ticker = _etf_ticker(issue)
                 if ticker and field in {"headline", "question"} and ticker not in text:
                     raise HighlightError(f"{field}에 ETF 티커 {ticker}가 없어 지수 이야기로 들립니다: {text}")
@@ -483,6 +503,7 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
             if "%" in lead_in:
                 raise HighlightError("lead_in에는 확률을 쓰지 않습니다")
             _no_pointer(lead_in, "lead_in")
+            _no_cliche(lead_in, "lead_in")
             clean["lead_in"] = lead_in
         except HighlightError:
             pass

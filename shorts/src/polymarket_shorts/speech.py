@@ -244,4 +244,4 @@ def opening_line(count: int, as_of=None) -> str:
     subject = "질문 하나를" if count == 1 else f"질문 {count}개를 차례로"
     day = f"{as_of.month}월 {as_of.day}일" if as_of else "오늘의"
     return (f"{day} 집단 예측 컨센서스 요약입니다. "
-            f"오늘은 금융시장과 맞닿은 {subject} 짚어 보겠습니다.")
+            f"오늘은 금융시장과 관련된 {subject} 짚어 보겠습니다.")
