@@ -53,6 +53,8 @@ class Scene:
     # 아니오는 나머지라 두 번 적을 값이 아니고, 두 줄이 되면 어느 쪽 숫자를
     # 봐야 하는지 한눈에 들어오지 않는다.
     options: tuple[tuple[str, str, float], ...] = ()
+    # 이지선다에서 화면에 세운 답. 아니오가 더 많으면 "no"이고 options의 확률은 아니오 쪽이다.
+    side: str = "yes"
     metric: str = ""
     metric_label: str = ""
     takeaway: str = ""
@@ -162,17 +164,29 @@ def build_scenario(
             raise ValueError("원고와 이벤트가 일치하지 않습니다")
         options, spoken = [], []
         evidence = [f"이벤트 질문: {issue['title']}", f"이벤트 설명: {issue['description']}"]
-        for market, label in zip(issue["markets"], script["market_labels"], strict=True):
-            if market["id"] != label["id"]:
-                raise ValueError("개별 질문과 확률이 일치하지 않습니다")
-            options.append((label["label"], market["yes"], market["yes_probability"]))
-            spoken.append((label["label"], market["yes"], market["no"], label.get("outlook")))
+        # 원고 검증이 셋째 줄을 뺐을 수 있다(`highlights.REQUIRED_LABELS`). 라벨이 남은 선택지만 세운다.
+        labels = {label["id"]: label for label in script["market_labels"]}
+        markets = [market for market in issue["markets"] if market["id"] in labels]
+        if len(markets) < min(len(issue["markets"]), 2):
+            raise ValueError("개별 질문과 확률이 일치하지 않습니다")
+        if len(issues) >= 5 and len(markets) > 2:
+            # 이슈가 다섯이면 목록 화면에 세 줄이 들어가지 않는다(`render._list_layout`). 확률 높은 둘만 남긴다.
+            keep = {m["id"] for m in sorted(markets, key=lambda m: -m["yes_probability"])[:2]}
+            markets = [market for market in markets if market["id"] in keep]
+        side = markets[0].get("side", "yes")
+        for market in markets:
+            label = labels[market["id"]]
+            shown, probability = ((market["no"], market["no_probability"]) if side == "no"
+                                  else (market["yes"], market["yes_probability"]))
+            options.append((label["label"], shown, probability))
+            spoken.append((label["label"], shown, market["no"], label.get("outlook")))
             evidence.append(f"시장 {market['id']}: {market['question']} / 예 {market['yes']} / 아니오 {market['no']}")
         deadline = datetime.fromisoformat(issue["end_date"].replace("Z", "+00:00"))
         end_text = deadline.strftime("%Y-%m-%d %H:%M %z")
         volume = _money(issue["volume24hr"])
         keywords = (issue.get("selection") or {}).get("keywords") or []
-        evidence.append(f"표시 선택지: 유효 {issue['valid_market_count']}개 중 상위 {len(options)}개")
+        evidence.append(f"표시 선택지: 유효 {issue['valid_market_count']}개 중 {len(options)}개"
+                        + (" (이지선다 · 아니오가 더 많아 아니오를 세움)" if side == "no" else ""))
         evidence.extend((f"이벤트 24시간 참여 규모: {issue['volume24hr']} USD",
                          f"이벤트 종료 예정: {end_text} (개별 판정 시각과 다를 수 있음)"))
         evidence.extend(f"관련 뉴스 제목: {n['title']} / {n['url']}" for n in issue["news"] if n["id"] in script["news_ids"])
@@ -210,7 +224,7 @@ def build_scenario(
             to_spoken_question(script["question"]),
         ) if part)
         markets_line = " ".join(part for part in (
-            speak_markets(issue.get("event_type", ""), script["headline"], spoken),
+            speak_markets(issue.get("event_type", ""), script["headline"], spoken, side=side),
             mood,
         ) if part)
         narration = f"{lead} {markets_line}".strip()
@@ -218,8 +232,8 @@ def build_scenario(
         options_at = len(lead) / len(narration) if markets_line else 0.0
         scenes.append(Scene(
             kind="consensus", title=script["headline"], kicker=f"{index + 1:02d} · {issue['sector_label']}",
-            body="\n".join(f"{label} — 예 {percent}" for label, percent, _ in options),
-            options=tuple(options),
+            body="\n".join(f"{label} — {'아니오' if side == 'no' else '예'} {percent}" for label, percent, _ in options),
+            options=tuple(options), side=side,
             narration=narration,
             options_at=options_at,
             accent=("gold", "blue", "red")[index % 3],
@@ -231,7 +245,7 @@ def build_scenario(
             bullets=(f"24시간 참여 규모 · {volume}",
                      f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시",
                      f"주제어 · {' · '.join(keywords[:3])}" if keywords
-                     else f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 상위 {len(options)}개"),
+                     else f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 {len(options)}개"),
             # 배경 생성이 그날 이슈를 그리도록 원제를 붙인다. 저장 배경 선택은 앞 낱말만 본다.
             visual_query=(f"{_VISUAL_QUERIES[issue['sector']]}; topic: "
                           f"{script.get('image_scene') or _SCENE_DEFAULTS[issue['sector']]}"),
@@ -241,7 +255,7 @@ def build_scenario(
             takeaway=script["watch_point"], source_note=f"자료 기준 {shown_stamp}",
             evidence=tuple(evidence), selection_note=issue["selection"]["reason"],
             event_id=issue["id"],
-            market_ids=tuple(m["id"] for m in issue["markets"]),
+            market_ids=tuple(m["id"] for m in markets),
         ))
     # 마무리는 짧은 고지 한 줄이다. "조건"이라는 큰 글자 카드는 자리만 차지하고
     # 아무것도 알려 주지 않았다. 화면 문구는 마무리 멘트와 같은 말을 한다.

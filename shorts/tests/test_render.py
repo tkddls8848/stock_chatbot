@@ -372,6 +372,19 @@ def test_a_choice_is_drawn_as_a_name_a_big_probability_and_a_gauge(tmp_path, cjk
 
 
 @requires_cjk_font
+def test_a_yes_no_showing_no_labels_the_number_as_no(tmp_path, cjk_font, monkeypatch):
+    """아니오가 더 많은 이지선다는 큰 숫자 옆에 '아니오'를 붙인다. '예'를 붙이면 88.5%가 '예' 쪽으로 읽힌다."""
+    written = []
+    original = render.ImageDraw.ImageDraw.text
+    monkeypatch.setattr(render.ImageDraw.ImageDraw, "text",
+                        lambda self, xy, text, *a, **k: (written.append(text), original(self, xy, text, *a, **k))[1])
+    scene = Scene("consensus", "호르무즈 해협", "01 · 지정학", "본문", "멘트",
+                  options=(("통행량 정상화", "88.5%", .885),), side="no")
+    render_frame(scene, tmp_path / "frame.png", font_path=cjk_font, index=2, total=4)
+    assert "아니오" in written and "예" not in written
+
+
+@requires_cjk_font
 def test_pending_choices_keep_a_dim_name_and_an_empty_gauge_so_nothing_jumps(tmp_path, cjk_font):
     scene = Scene("consensus", "제목", "01 · 기준", "본문", "멘트",
                   options=(("첫 선택지", "40%", .4), ("둘째 선택지", "60%", .6)))

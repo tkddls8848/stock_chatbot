@@ -231,7 +231,7 @@ def issue():
     consensus = Scene(
         "consensus", "연준 10월 결정", "01 · 거시·통화", "동결 — 예 64.5%", OLD_LINE,
         options=(("동결", "64.5%", 0.645),), metric="64.5%", metric_label="동결", probability=0.645,
-        bullets=("24시간 참여 규모 · 1.2M달러", "표시 선택지 · 유효 3개 중 상위 1개"),
+        bullets=("24시간 참여 규모 · 1.2M달러", "표시 선택지 · 유효 3개 중 1개"),
         source_note="자료 기준 10/05 18:00 +0900", options_at=0.3,
         evidence=("이벤트 질문: Fed decision in October?", "시장 m1: Fed holds? / 예 64.5% / 아니오 35.5%"),
         event_id="e1", market_ids=("m1",),
@@ -287,8 +287,8 @@ def test_requested_option_change_rewrites_screen_values_and_keeps_provenance(iss
       "source_edits": [{"scene": 2, "fields": ["options"], "request": "70%로"}]}, "이전 확률"),
     ({"changes": [{"scene": 1, "options": [{"label": "동결", "yes": "70%"}]}],
       "source_edits": [{"scene": 1, "fields": ["options"], "request": "70%로"}]}, "이슈 장면"),
-    ({"changes": [{"scene": 2, "options": [{"label": f"선택{n}", "yes": "70%"} for n in range(3)],
-                   "narration": NEW_LINE}]}, "1~2개"),
+    ({"changes": [{"scene": 2, "options": [{"label": f"선택{n}", "yes": "70%"} for n in range(4)],
+                   "narration": NEW_LINE}]}, "1~3개"),
     ({"changes": [{"scene": 2, "options": [{"label": "동결", "yes": "170%"}], "narration": NEW_LINE}]},
      "0~100%"),
     ({"changes": [{"scene": 2, "options": [{"label": "동결", "yes": "70%", "probability": 0.1}],
@@ -367,7 +367,7 @@ def test_dropping_a_shown_option_rewrites_the_count_bullet(issue):
                   "narration": "참여자의 64.5%는 동결될 것으로, 35.5%는 그렇지 않을 것으로 봅니다."}],
         source_edits=[{"scene": 2, "fields": ["options"], "request": "인하 선택지는 빼"}]),
         settings, "인하 선택지는 빼 줘")
-    assert edited.scenes[1].bullets[1] == "표시 선택지 · 유효 3개 중 상위 1개"
+    assert edited.scenes[1].bullets[1] == "표시 선택지 · 유효 3개 중 1개"
     assert edited.scenes[1].options == (("동결", "64.5%", 0.645),)
 
 

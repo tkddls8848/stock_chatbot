@@ -75,3 +75,60 @@ def test_questions_already_settled_for_viewers_are_not_candidates(event_factory,
     summary = {"generation_id": "g1", "generated_at": "2026-09-23T09:00:00+09:00", "freshness": {"state": "normal"}}
     candidates, audit = shortlist(Snapshot(summary, (event_factory(**changes),), {}))
     assert candidates == [] and audit["excluded"] == {reason: 1}
+
+
+def _rows(*values, labels=None):
+    """(확률, 24시간 참여 규모) 줄로 원자료 선택지를 만든다."""
+    return [{"id": f"m{i}", "question": f"Q{i}", "outcome_label": (labels or [None] * len(values))[i],
+             "yes_probability": p, "no_probability": round(1 - p, 4), "yes": percent(p), "no": percent(round(1 - p, 4)),
+             "volume24hr": v, "liquidity": 1} for i, (p, v) in enumerate(values)]
+
+
+def test_a_yes_no_question_shows_the_answer_most_participants_chose():
+    """이지선다는 많은 답 하나만 세운다(운영자 결정 2026-10-29). 호르무즈 통행 정상화 '예' 11.5%가 화면을 차지했다."""
+    from polymarket_shorts.markets import shown_markets
+    (row,) = shown_markets("binary", _rows((.115, 10)))
+    assert row["side"] == "no"
+    (row,) = shown_markets("binary", _rows((.765, 10)))
+    assert row["side"] == "yes"
+
+
+def test_one_of_several_shows_the_top_three_unless_the_third_says_nothing():
+    from polymarket_shorts.markets import shown_markets
+    # 연준 12월 결정(2026-10-29): 25bp 인상 76.5 · 동결 21.5 · 50bp 이상 인상 1.95
+    fed = _rows((.0025, 24), (.0045, 16), (.215, 28), (.765, 18), (.0195, 13))
+    assert [r["yes"] for r in shown_markets("exclusive_multi", fed)] == ["76.5%", "21.5%", "1.95%"]
+    # 2026년 인하 횟수: 셋째가 0.15%라 두 줄
+    cuts = _rows((.9715, 64), (.0095, 13), (.0015, 12))
+    assert [r["yes"] for r in shown_markets("exclusive_multi", cuts)] == ["97.15%", "0.95%"]
+    # 묶음 선택지(Other)는 셋째로 세우지 않는다
+    other = _rows((.775, 39), (.205, 51), (.0215, 9), labels=["Hike–Pause–Hike", "Hike–Pause–Pause", "Other"])
+    assert [r["yes"] for r in shown_markets("exclusive_multi", other)] == ["77.5%", "20.5%"]
+
+
+def test_a_date_ladder_shows_its_slope_in_date_order_without_inverted_rungs():
+    """이스라엘·이란 휴전(2026-10-29). 확률순 상위 둘은 99.6%·99.1%로 거의 확정된 칸뿐이었다.
+
+    10/30 50.25%는 10/31 95.5%보다 낮아 순서가 뒤집힌 칸이다 — 참여가 얇은 그 칸을 버린다.
+    """
+    from polymarket_shorts.markets import shown_markets
+    labels = ["October 31", "December 31", "November 30", "November 15", "October 27", "December 15",
+              "November 3", "October 29", "October 30"]
+    rows = _rows((.955, 42.8), (.33, 14.5), (.37, 3.2), (.66, 9.6), (.996, 8.6), (.55, .3), (.926, 4.9),
+                 (.991, .4), (.5025, 4.3), labels=labels)
+    shown = shown_markets("independent_multi", rows, 2026)
+    assert [r["outcome_label"] for r in shown] == ["October 31", "December 15", "December 31"]
+
+
+def test_a_price_ladder_reads_from_the_highest_price():
+    from polymarket_shorts.markets import shown_markets
+    labels = ["Below 4.00%", "Below 4.10%", "Below 4.50%", "Below 4.65%", "Below 4.70%"]
+    rows = _rows((.026, 1), (.0475, 1), (.56, 3), (.56, 70), (.795, 2), labels=labels)
+    shown = shown_markets("independent_multi", rows)
+    assert [r["outcome_label"] for r in shown] == ["Below 4.70%", "Below 4.65%", "Below 4.10%"]
+
+
+def test_several_true_choices_that_are_not_a_ladder_fall_back_to_the_top_three():
+    from polymarket_shorts.markets import shown_markets
+    rows = _rows((.2, 1), (.6, 1), (.4, 1), (.3, 1), labels=["Apple", "NVIDIA", "Microsoft", "Alphabet"])
+    assert [r["outcome_label"] for r in shown_markets("independent_multi", rows)] == ["NVIDIA", "Microsoft", "Alphabet"]

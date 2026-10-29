@@ -396,6 +396,10 @@ def _etf_ticker(issue: dict) -> str | None:
     return match.group(1) if match and match.group(1) in _ETF_TICKERS else None
 
 
+# 반드시 옮겨야 하는 선택지 수. 그 뒤 선택지는 틀리거나 빠지면 그 줄만 뺀다.
+REQUIRED_LABELS = 2
+
+
 # 대상을 이름으로 대지 않고 앞 문장이나 "그쪽"으로 퉁치는 말(운영자 지시 2026-10-08, 독립 검토 2026-10-08).
 _POINTER = re.compile(r"(?:^|[\s,])(?:이는|이것은|이것이|이러한|이런|그것은|그것이|그러한|그쪽|저쪽|반대쪽|한쪽|그 반대)(?=[\s,]|$)")
 
@@ -524,14 +528,20 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                       or not (label.get("id") in seen or seen.add(label.get("id")))]
         expected = [market["id"] for market in issue["markets"]]
         got = [label.get("id") for label in labels if isinstance(label, dict)] if isinstance(labels, list) else []
-        if not isinstance(labels, list) or got != expected:
+        # 셋째 선택지(`markets.shown_markets`)는 곁들이는 줄이다. 모델이 빠뜨렸으면 그 줄 없이 간다.
+        optional = set(expected[REQUIRED_LABELS:])
+        if not isinstance(labels, list) or got != [i for i in expected if i in got] or not set(expected) - optional <= set(got):
             # 어느 ID가 어떤 순서로 필요한지 적는다. 사유 없이 "빠졌다"만 주면 교정이
             # 같은 모양을 다시 낸다(실측 2026-09-26: 두 번 연속 같은 오류).
             errors.append(f"이슈 {issue['id']} market_labels는 id {expected}를 이 순서로 하나씩 담아야 합니다(받은 id {got})")
             continue
         clean["market_labels"] = []
         shared = _shared_numbers([market["question"] for market in issue["markets"]])
-        for market, label in zip(issue["markets"], labels):
+        by_id = {label["id"]: label for label in labels if isinstance(label, dict)}
+        for market in issue["markets"]:
+            label = by_id.get(market["id"])
+            if label is None:
+                continue
             try:
                 text = _text(label.get("label"), "label", 2, 55)
                 try:
@@ -552,6 +562,10 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
                     else:
                         raise missing
             except HighlightError as error:
+                if market["id"] in optional:
+                    # 셋째 줄이 틀렸다고 이슈를 버리지 않는다 — 그 줄만 뺀다. 이슈가 빠지면 영상에서 질문 하나가
+                    # 통째로 사라진다(라벨 하나로 이슈를 잃던 규칙, 2026-09-27).
+                    continue
                 # 라벨은 해당 질문 하나만 옮긴다. 어느 질문인지 붙여야 교정이 조건을 되찾는다.
                 errors.append(f"이슈 {issue['id']} 개별 질문 {market['id']}({market['question']}) {error}")
                 continue

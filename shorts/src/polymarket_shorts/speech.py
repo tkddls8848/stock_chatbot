@@ -123,7 +123,7 @@ def _with_object(word: str) -> str:
     return f"{word}을" if (ord(last) - _HANGUL_BASE) % _JONGSEONG else f"{word}를"
 
 
-def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
+def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence], *, side: str = "yes") -> str:
     """선택지 확률을 "컨센서스 참여자의 N%는 ⟨전망⟩ 것을 기대하고 있습니다"로 말한다(운영자 결정 2026-10-08).
 
     주어는 "참여자"가 아니라 "컨센서스 참여자"이고, 선택지가 여럿이면 비율마다 주어를 다시 댄다 — "…것을, 70.5%는
@@ -136,6 +136,8 @@ def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
     만든다 — 음성이 모델에 묶이지 않게.
     - 양자택일: "컨센서스 참여자의 X%는 ⟨전망⟩ 것을 기대하고 있습니다." '아니오' 쪽은 읽지 않는다 — "Y%는 그 반대를"·
       "그렇지 않을 것을"은 무엇의 반대인지 이름을 대지 않고 대명사로 퉁치는 말이다(운영자 지시 2026-10-08).
+      아니오가 더 많아 화면이 아니오를 세운 이지선다(`side="no"`)는 "X%는 ⟨전망⟩ 것을 기대하지 않고 있습니다"다 —
+      전망을 이름으로 다시 대므로 무엇을 기대하지 않는지 분명하다(운영자 결정 2026-10-29: 이지선다는 많은 답 하나).
     - 여러 선택지: "컨센서스 참여자의 X%는 ⟨A⟩ 것을, 컨센서스 참여자의 Y%는 ⟨B⟩ 것을 기대하고 있습니다."
       한 가지만 고르는 질문(exclusive)은 앞에 "주제에 대해"를 붙인다.
     """
@@ -149,7 +151,8 @@ def speak_markets(event_type: str, topic: str, rows: Sequence[Sequence]) -> str:
         return f"{yes}는 {outlook} 것을" if outlook else f"{yes}는 {_with_object(label)}"
 
     if event_type == "binary" or len(rows) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
-        return f"{SUBJECT} {clause(rows[0])} 기대하고 있습니다."
+        verb = "기대하지 않고 있습니다" if side == "no" else "기대하고 있습니다"
+        return f"{SUBJECT} {clause(rows[0])} {verb}."
     spoken = ", ".join(f"{SUBJECT} {clause(row)}" for row in rows) + " 기대하고 있습니다."
     if event_type == "exclusive_multi" and topic:
         return f"{topic}에 대해 {spoken}"

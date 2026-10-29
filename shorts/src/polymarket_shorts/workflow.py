@@ -13,6 +13,7 @@ from . import approval
 from .config import Settings
 from .highlights import CLICHE_RULE
 from .llm import LLMError, TruncatedError, chat_json
+from .markets import MAX_SHOWN
 from .pipeline import produce_revision
 from .review import REVIEW_FILE, ReviewError, complete_review, operation_lock, read_script, write_json
 from .scenario import Scenario, Scene
@@ -41,7 +42,7 @@ visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지
 이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
 화면을 검수용으로 옮겨 적은 글이고, takeaway는 화면에 넣지 않는 확인점이다.
 선택지를 바꾸라는 요청이 있을 때만 이슈(consensus) 장면에 options를 넣는다. 형식은
-[{"label":"선택지 이름","yes":"70%"}]이고 1~2개, 화면 위에서부터의 순서다. 바꾸지 않는
+[{"label":"선택지 이름","yes":"70%"}]이고 1~3개, 화면 위에서부터의 순서다. 바꾸지 않는
 선택지도 함께 적는다. metric·metric_label·probability·body는 서버가 options로 다시 쓰므로
 넣지 않는다. 선택지 확률을 바꾸면 해당 장면 narration이 말하는 확률도 같은 값으로 고친다.
 원자료 내용을 바꾼 필드는 source_edits에 하나씩 밝힌다:
@@ -112,11 +113,11 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 # 편집으로 받는 선택지 확률. 원자료(markets.percent)보다 정밀할 이유가 없다.
 _SHARE = re.compile(r"(\d{1,3}(?:\.\d{1,3})?)\s*%")
-# 이슈 장면 잔글씨의 "표시 선택지 · 유효 N개 중 상위 K개".
-_SHOWN_COUNT = re.compile(r"(상위 )\d+")
+# 이슈 장면 잔글씨의 "표시 선택지 · 유효 N개 중 K개".
+_SHOWN_COUNT = re.compile(r"(중 )\d+")
 # metadata_for가 설명란에 적는 다룬 이슈 목록 줄.
 _ISSUES_LINE = re.compile(r"^(오늘 다룬 이슈: ).*$", re.MULTILINE)
-_EDIT_WORDS = {"yes": "예", "note": " · 검수 수정", "edit": "검수 수정", "options": "선택지", "request": "요청"}
+_EDIT_WORDS = {"yes": "예", "no": "아니오", "note": " · 검수 수정", "edit": "검수 수정", "options": "선택지", "request": "요청"}
 
 
 def _squash(text: str) -> str:
@@ -202,11 +203,11 @@ def _check_numbers(where: Any, field: str, value: Any, *, known: set[str], reque
 
 
 def _options(value: Any, scene: Scene) -> tuple[tuple[str, str, float], ...]:
-    # 화면 막대는 두 줄 높이로 짰고, 제작도 상위 두 선택지만 고른다(markets.prepare_issue).
+    # 제작이 세우는 선택지가 많아야 셋이다(markets.MAX_SHOWN). 목록 화면도 세 줄까지 짰다.
     if scene.kind != "consensus" or not scene.options:
         raise ReviewError("선택지는 이슈 장면에서만 바꿀 수 있습니다")
-    if not isinstance(value, list) or not 1 <= len(value) <= 2:
-        raise ReviewError("선택지는 1~2개입니다")
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_SHOWN:
+        raise ReviewError(f"선택지는 1~{MAX_SHOWN}개입니다")
     options = []
     for row in value:
         if not isinstance(row, dict) or set(row) != {"label", "yes"}:
@@ -242,7 +243,8 @@ def _source_scene(scene: Scene, values: dict, words: dict) -> dict:
         raise ReviewError("바뀐 선택지 확률을 멘트가 말하지 않습니다. 멘트도 함께 고쳐 달라고 요청하세요")
     derived = {
         "metric": options[0][1], "metric_label": options[0][0], "probability": options[0][2],
-        "body": "\n".join(f"{label} — {words['yes']} {percent}" for label, percent, _ in options),
+        "body": "\n".join(f"{label} — {words['no' if scene.side == 'no' else 'yes']} {percent}"
+                           for label, percent, _ in options),
         "source_note": scene.source_note if scene.source_note.endswith(words["note"])
         else scene.source_note + words["note"],
     }

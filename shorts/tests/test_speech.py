@@ -132,3 +132,12 @@ def test_rule_based_lines_never_point_with_a_pronoun(event_type):
         rows = rows[:1] if event_type == "binary" else rows
         for text in (speech.consensus_mood(event_type, rows), speech.speak_markets(event_type, "연준 금리", rows)):
             assert not _PRONOUN.search(text), text
+
+
+def test_a_yes_no_showing_no_says_what_participants_do_not_expect():
+    """아니오가 더 많은 이지선다는 화면이 아니오를 세운다. 무엇을 기대하지 않는지 전망을 이름으로 다시 댄다."""
+    line = speech.speak_markets("binary", "호르무즈 해협", [("정상화", "88.5%", "88.5%",
+                                                          "호르무즈 해협 통행량이 12월 31일까지 정상 수준으로 돌아올")],
+                                side="no")
+    assert line == ("컨센서스 참여자의 88.5%는 호르무즈 해협 통행량이 12월 31일까지 정상 수준으로 돌아올 것을 "
+                    "기대하지 않고 있습니다.")

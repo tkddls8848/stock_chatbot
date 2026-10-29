@@ -33,7 +33,8 @@ def test_video_uses_individual_questions_and_preserves_probabilities(issue_sourc
 
 def test_wrong_market_association_is_rejected_before_render(issue_source):
     snapshot, _, _, issue, script = issue_source
-    script["market_labels"].reverse()
+    # 라벨은 id로 짝짓는다. 원자료에 없는 id만 남으면 세울 선택지가 모자라 렌더 전에 멈춘다.
+    script["market_labels"] = [{"id": "m9", "label": "엉뚱한 선택지"}]
     with pytest.raises(ValueError, match="확률"):
         build_scenario(snapshot, [issue], [script], production_date=date(2026, 9, 23))
 
@@ -160,3 +161,51 @@ def test_an_opener_written_for_another_position_is_fixed(issue_source):
                               production_date=date(2026, 9, 23))
     assert scenario.scenes[1].narration.startswith(script["context"])
     assert "질문 하나를 짚어 보겠습니다" in scenario.scenes[0].narration
+
+
+def _with_third(issue, script):
+    third = {**issue["markets"][1], "id": "m3", "question": "Will the Fed cut rates by 25 bps in October?",
+             "yes_probability": .05, "no_probability": .95, "yes": "5%", "no": "95%"}
+    return ({**issue, "markets": [*issue["markets"], third]},
+            {**script, "market_labels": [*script["market_labels"], {"id": "m3", "label": "10월 금리 25bp 인하"}]})
+
+
+def test_a_yes_no_question_with_more_no_shows_and_says_no(issue_source):
+    snapshot, _, _, issue, script = issue_source
+    market = {**issue["markets"][0], "yes_probability": .115, "no_probability": .885, "yes": "11.5%", "no": "88.5%",
+              "side": "no"}
+    issue = {**issue, "event_type": "binary", "markets": [market]}
+    script = {**script, "market_labels": [{"id": market["id"], "label": "10월 금리 동결", "outlook": "연준이 10월에 금리를 동결할"}]}
+    scene = build_scenario(snapshot, [issue], [script], production_date=date(2026, 9, 23)).scenes[1]
+    assert scene.side == "no" and scene.options == (("10월 금리 동결", "88.5%", .885),)
+    assert "88.5%는 연준이 10월에 금리를 동결할 것을 기대하지 않고 있습니다." in scene.narration
+    assert "11.5%" not in scene.narration and scene.body == "10월 금리 동결 — 아니오 88.5%"
+
+
+def test_three_choices_are_shown_but_a_five_issue_day_keeps_two(issue_source):
+    """이슈가 다섯이면 목록 화면에 세 줄이 들어가지 않는다(`render._list_layout`)."""
+    snapshot, _, _, issue, script = issue_source
+    issue, script = _with_third(issue, script)
+    scene = build_scenario(snapshot, [issue], [script], production_date=date(2026, 9, 23)).scenes[1]
+    assert [option[1] for option in scene.options] == ["55%", "40%", "5%"]
+    issues = [{**issue, "id": f"e{n}"} for n in range(5)]
+    scripts = [{**script, "id": f"e{n}"} for n in range(5)]
+    scenario = build_scenario(snapshot, issues, scripts, production_date=date(2026, 9, 23))
+    assert all(len(scene.options) == 2 for scene in scenario.scenes[1:-1])
+
+
+def test_a_broken_third_label_drops_only_that_line(issue_source):
+    """셋째 줄이 검증에 걸려도 이슈는 영상에 남는다 — 라벨 하나로 질문 하나를 잃지 않는다."""
+    from polymarket_shorts.highlights import validate_scripts
+    snapshot, _, _, issue, script = issue_source
+    issue, script = _with_third(issue, script)
+    script["market_labels"][2] = {"id": "m3", "label": "10월 금리 50bp 인하"}   # 원문에 없는 50
+    (clean,) = validate_scripts({"scripts": [script]}, [issue])
+    assert [label["id"] for label in clean["market_labels"]] == ["m1", "m2"]
+    scene = build_scenario(snapshot, [issue], [clean], production_date=date(2026, 9, 23)).scenes[1]
+    assert len(scene.options) == 2
+    # 셋째를 아예 빠뜨려도 같다. 앞의 둘이 빠지면 여전히 교정을 요구한다.
+    (clean,) = validate_scripts({"scripts": [{**script, "market_labels": script["market_labels"][:2]}]}, [issue])
+    assert len(clean["market_labels"]) == 2
+    with pytest.raises(Exception, match="market_labels"):
+        validate_scripts({"scripts": [{**script, "market_labels": script["market_labels"][1:]}]}, [issue])

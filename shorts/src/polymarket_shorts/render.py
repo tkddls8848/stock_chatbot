@@ -167,11 +167,11 @@ def _background(path: Path | None, *, index: int, total: int, accent: str) -> Im
 
 
 # 화면에 고정으로 찍히는 말.
-_CHROME = {"yes": "예", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문",
+_CHROME = {"yes": "예", "no": "아니오", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문",
            "list_title": "오늘의 질문 {n}",
            "open_top": "오늘의 집단 예측", "open_low": "컨센서스 요약", "open_note": "지금 시작합니다",
            "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
-           "footer_options": "막대는 '예' 쪽 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
+           "footer_options": "막대는 표시한 답의 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
            "footer": "집단 예측 컨센서스 · 투자 조언 아님"}
 _BRAND = "NUNCHI"
 _LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
@@ -409,11 +409,12 @@ def _card(image, box, accent: str, font_path: Path, *, tab: str = "") -> None:
 
 def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, shown: int,
                    yes: str = "예") -> None:
-    """선택지를 이름 + 큰 '예' 확률 + 게이지 한 줄로 그린다.
+    """선택지를 이름 + 큰 확률 + 게이지 한 줄로 그린다.
 
     예전 화면은 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%,
-    아니오 0.05%" 한 덩어리였다. 이지선다에서 아니오는 예의 나머지이므로 화면은
-    '예' 확률 하나만 크게 세우고 막대로 그 크기를 보여 준다.
+    아니오 0.05%" 한 덩어리였다. 한쪽은 다른 쪽의 나머지이므로 화면은 확률 하나만
+    크게 세우고 막대로 그 크기를 보여 준다. 보통은 '예'이고, 이지선다에서 아니오가 더
+    많으면 아니오다(`Scene.side`, `yes`에 그 말이 온다).
 
     `shown`은 지금까지 등장한 줄 수다. 아직 말하지 않은 줄도 이름(흐린 색)과 빈 게이지를
     처음부터 그려 두어, 질문을 듣는 동안 무엇을 고르는지 보이고 이미 뜬 줄이 밀리지 않는다.
@@ -472,10 +473,10 @@ def _chips(draw, bullets: Sequence[str], font_path: Path, *, top: int = META_Y, 
 
 
 def _compact(value: str) -> str:
-    """칩 한 칸에 들게 줄인다: "2027-01-01 세계 표준시" → "2027.01.01", "유효 13개 중 상위 2개" → "13개 중 2개"."""
+    """칩 한 칸에 들게 줄인다: "2027-01-01 세계 표준시" → "2027.01.01", "유효 13개 중 3개" → "13개 중 3개"."""
     value = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b", r"\1.\2.\3", value)
     value = re.sub(r"(\d{4}\.\d{2}\.\d{2}) (?:세계 표준시|UTC)\b", r"\1", value)
-    return re.sub(r"유효 (\d+개) 중 상위 (\d+개)", r"\1 중 \2", value)
+    return re.sub(r"유효 (\d+개) 중 (\d+개)", r"\1 중 \2", value)
 
 
 # ── 본론 목록 화면 ─────────────────────────────────────
@@ -587,7 +588,8 @@ def render_list_frame(
         if inner > 2 and (is_active or number == previous):
             content = _row_content(scene if is_active else row, font_path=font_path, accent=row_accent,
                                    shown=(len(row.options) if shown is None else shown) if is_active else len(row.options),
-                                   yes=chrome["yes"], option_row=option_row, chips=chips)
+                                   yes=chrome["no" if (scene if is_active else row).side == "no" else "yes"],
+                                   option_row=option_row, chips=chips)
             image.alpha_composite(content.crop((0, 0, content.width, min(inner, content.height))),
                                   (SAFE_LEFT, box[1] + ROW_HEIGHT))
         y += height + ROW_GAP
@@ -631,7 +633,8 @@ def render_frame(
         _card(image, card, accent, font_path, tab=f"Q{int(number[1])}" if number else "")
         if scene.options:
             _options_block(draw, scene, font_path, accent, inner,
-                           shown=len(scene.options) if shown is None else shown, yes=chrome["yes"])
+                           shown=len(scene.options) if shown is None else shown,
+                           yes=chrome["no" if scene.side == "no" else "yes"])
         else:
             _text_block(draw, scene.body, font_path, inner, size=62, center=True)
         _chips(draw, scene.bullets, font_path)
