@@ -156,7 +156,8 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `public/polymarket/` | 예측 컨센서스 one-shot(웹 도메인) | 웹, 봇 `/web` |
 | `public/research_inputs.json` | 봇(4시간마다, `research/inputs.py`) | 웹 개인 리서치(로그인 계정의 실행만. 공개 라우트 없음) |
 | `public/watch_news.json` | 봇(매시간 수집 뒤, `publish.publish_watch_news`) | 웹 내 자산 점검·그 계정이 켠 뉴스레터(공개 라우트 없음) |
-| `users/<계정키>/assets.json`·`advice/`·`watchlist.json`·`research/` | 웹 | 해당 계정의 웹 요청, 뉴스레터 one-shot(`assets.json`·`watchlist.json`만, "내 자산 소식"을 켠 계정만) |
+| `users/<계정키>/assets.json`·`advice/`·`watchlist.json`·`research/`·`forecast/` | 웹 | 해당 계정의 웹 요청, 뉴스레터 one-shot(`assets.json`·`watchlist.json`만, "내 자산 소식"을 켠 계정만) |
+| `users/.research-usage.json`·`.forecast-ask-usage.json`·`.forecast-ask-log/` | 웹(서버 하루 상한·질의 로그, 계정 식별값 없음) | 웹 |
 | `users/<계정키>/newsletter.json` | 웹(구독 API와 뉴스레터 one-shot, 계정 잠금) | 해당 계정의 웹 요청, 뉴스레터 one-shot |
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
@@ -550,7 +551,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   이것은 임의의 숫자가 아니라 설계 판정 기준이다(`services/web/docs/polymarket-dashboard.md`
   7-4). 넘으면 `write_generation`이 멈추고 current를 교체하지 않는다 —
   상한을 올려 넘기지 않는다. 공개 웹이 이 파일을 통째로 파이썬 객체로 올리고
-  `MemoryMax=192M`이 걸려 있어, 올리면 화면이 비는 대신 웹 프로세스가 OOM으로
+  `MemoryMax=256M`이 걸려 있어(2026-11-04 196MB 사용), 올리면 화면이 비는 대신 웹 프로세스가 OOM으로
   죽는다. **compact에 필드를 추가하면 그 크기에 event 수(실측 21,872)가
   곱해진다** — 20 B짜리 필드 하나가 0.42 MiB다. 목록·순위·필터·정렬이 읽지
   않는 값은 detail로 내린다(detail은 byte-addressed라 한 행만 seek한다).
@@ -575,6 +576,28 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS`(4,000)에 닿으면 건너뛰고, 응답이 없는
   실패는 예약한 출력 전부가 나갔다고 센다. 계획서는
   `services/web/docs/polymarket-nl-search.md`.
+  **검색 점수에는 용어집·중앙은행 구분·기간 가중·선택지 이름이 들어간다**(`relevance.py`, 2026-11-04). "또 올릴까"가
+  키워드의 "인상"에, "금값"이 제목의 Gold에 닿게 낱말마다 같은 뜻의 표기를 함께 찾고(용어집 표기는 낱말 전체로만),
+  질문이 일본은행을 말하면 다른 중앙은행의 질문을 뒤로 보내고, "12월"·"연말"은 낱말이 아니라 마감일 범위로 쓴다.
+  "엔비디아 시가총액"처럼 대상이 선택지에만 있는 질문을 위해 주석 one-shot이 LLM 없이 주기마다 선택지 이름을 색인에
+  옮긴다(`refresh_labels` — 비스포츠·여러 선택지·하루 참여 1,000달러 이상, 2026-11-04 1,384건 중 해당분). 낱말마다
+  영문 표기를 정규식 하나로 묶는다 — 표기마다 따로 돌리자 공개 검색 한 번이 p50 230→350ms로 느려졌다(묶은 뒤 270ms).
+- **예측 컨센서스 질의응답(`/api/forecast/ask`)은 로그인하고 동의한 계정만 쓴다**(운영자 지시 2026-11-04,
+  계획서 `services/web/docs/polymarket-consensus-qa.md`). 검색처럼 조건을 해석하는 데서 그치지 않고 답을 만들므로
+  뉴스 검색의 "챗봇이 아니다"와 따로 둔다. 질문 → 1차 검색 후보 30(`repository.candidates`, 확률을 읽은 질문만,
+  LLM 없음) → 답변 호출 한 번(`llm/polymarket_answer.py`) → 서버 조립(`polymarket/ask.py`)이다. **숫자는 서버가 쓴다** —
+  모델 입력에는 확률 대신 줄글 브리프의 등급(`outlook`)만 두고, 모델은 후보 번호·물은 선택지 번호·숫자 없는 해설만
+  낸다. 해설의 확률 숫자·금지어는 줄글 브리프의 `has_model_probability`·`FORBIDDEN_COPY`로 반려해 한 번 교정하고,
+  또 틀리면 해설 없이 사실 줄만 낸다. 원문 제목·요약·선택지 이름에 금지어가 든 질문은 내지 않는다. 후보가 없으면
+  모델을 부르지 않고 "없음"으로 답한다. 선택지는 이지선다면 많은 답 하나, 다지선다면 위 셋(셋째는 1% 이상),
+  여러 질문 묶음이면 3~97% 칸의 높은 칸·50%에 가까운 칸·낮은 칸이고 물은 선택지는 늘 보인다(쇼츠와 같은 생각이지만
+  코드는 따로다). 질문 원문이 Cloudflare로 가므로 개인 리서치와 같은 기준으로 동의(`users/<계정키>/forecast/ask.json`의
+  `consented_at`)를 받는다. 계정 하루 10회·서버 하루 3,000회(`.forecast-ask-usage.json`)·동시 2이고 실패한 호출도
+  센다 — 서버 상한은 무료 한도가 아니라 남용을 막는 선이다(Workers Paid, 질문당 약 30 Neurons). 같은 질문 + 같은
+  수집분·색인이면 프로세스 메모리 캐시로 돌려주고 캐시는 상한을 쓰지 않는다. 답은 요청 안에서 만들고 그동안 계정
+  잠금을 잡는다. 질의 로그는 계정 식별값 없이 `storage/users/.forecast-ask-log/<날짜>.jsonl`에
+  `POLYMARKET_ASK_LOG_DAYS`(30)일 둔다(`/privacy`와 같은 값). 후보 적중은 `services/web/tests/polymarket_ask_probe.py`가
+  운영 수집분으로 잰다.
 - **generation은 두 벌만 남긴다.** detail shard가 generation 하나에 116 MiB라
   쌓이면 디스크가 상한보다 먼저 찬다. 직전 하나를 남기는 것은 이력이 아니라,
   승격 순간에 이미 들어와 있던 요청이 자기가 읽던 shard를 계속 seek할 수 있게
@@ -605,7 +628,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `/icons/*`(favicon 그림의 PNG)만 두고 **서비스 워커는 두지 않는다**: 설치에 필요 없고, 기기 쪽 캐시가 개인 화면의
   `no-store`를 깨뜨릴 수 있으며, 한 번 깔리면 서버를 고쳐도 기기에 남는다(근거는 `pages/shell.py` 「앱 모드」).
   페이지는 기동 시 한 번 조립되고 값은 브라우저가 `/api/*`에서 채운다 —
-  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된 자산 진단, 동의한 계정의 개인 리서치, 뉴스레터 확인 코드 메일이다), 빌드
+  이 프로세스가 요청을 받아 밖으로 나가는 경로를 만들지 않으려는 것이고(예외는 인증된 자산 진단, 동의한 계정의 개인 리서치·예측 질문 답변, 뉴스레터 확인 코드 메일이다), 빌드
   산출물이 없어야 배포가 파일 복사로 끝나기 때문이다. 값을 넣을 때는 `esc()`를
   거친다: 산출물에는 리서치 `reason`처럼 모델이 쓴 문자열이 그대로 들어 있다.
   화면은 **라이트 전용**이고(`color-scheme:light`) 감성의 부호는 **빨강이 긍정,
@@ -796,12 +819,13 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   지우지 않는다. 공유 호스트와의 경계·계약 값과 앱 설치는 `infra/host-contract.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 다섯이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  현재 계획서는 여섯이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
   게시물 추적), `services/web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
   대시보드로),
   `services/web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
   이동 추적), `services/web/docs/polymarket-nl-search.md`(event 주석을 미리 달아 두는
-  한국어 자연어 배팅 검색). 뒤 셋은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
+  한국어 자연어 배팅 검색), `services/web/docs/polymarket-consensus-qa.md`(자연어 질문에
+  지금의 컨센서스로 답하는 질의응답). 뒤 넷은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
   계획서가 먼저 끝나 지워져도 나머지 계획은 남아야 한다.
   **계획서를 새로 파는 것은 주제가 기존 계획서와 독립일 때뿐이고, 다 끝나면 파일째
   지운다.** 종류를 섞지 않는다: 절차서에 할 일을

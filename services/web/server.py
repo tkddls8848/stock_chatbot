@@ -120,7 +120,7 @@ def build_accounts() -> Accounts:
 
 
 def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts | None = None,
-              research_router: APIRouter | None = None) -> FastAPI:
+              research_router: APIRouter | None = None, ask_router: APIRouter | None = None) -> FastAPI:
     app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
     search_repository = NewsSearch(PUBLIC_DIR)
     accounts = accounts or build_accounts()
@@ -130,6 +130,8 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
     app.include_router(build_unsubscribe_router(accounts))
     from services.web.personal_research import build_research_router
     app.include_router(research_router or build_research_router(accounts))
+    from services.web.polymarket.ask import build_ask_router
+    app.include_router(ask_router or build_ask_router(accounts, POLYMARKET_REPOSITORY))
 
     @app.middleware("http")
     async def response_policy(request: Request, call_next):
@@ -146,7 +148,7 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
         )
         # 개인 화면은 어떤 캐시(브라우저·프록시)에도 남기지 않는다.
         if request.url.path.startswith(("/portfolio", "/research", "/auth/", "/api/portfolio", "/api/research", "/api/account",
-                                        "/newsletter/")):
+                                        "/api/forecast/ask", "/newsletter/")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["Vary"] = "Cookie"

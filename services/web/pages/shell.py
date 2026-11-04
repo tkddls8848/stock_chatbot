@@ -560,7 +560,7 @@ fetch('/api/account/session',{credentials:'same-origin'}).then(r=>r.json()).then
   document.getElementById('nav-acct-state').textContent=s.unlocked?'로그인됨':'로그인 안 됨';
   if(s.unlocked){document.getElementById('nav-logout').hidden=false;}
   else{const a=document.getElementById('nav-login');
-    a.href='/auth/google?next='+(location.pathname==='/research'?'/research':'/portfolio');a.hidden=false;}
+    a.href='/auth/google?next='+(['/research','/forecast'].includes(location.pathname)?location.pathname:'/portfolio');a.hidden=false;}
   box.hidden=false;
 }).catch(()=>{});
 document.getElementById('nav-logout').addEventListener('click',async()=>{

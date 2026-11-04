@@ -1,8 +1,9 @@
 """웹의 LLM 조립 지점.
 
-**웹이 LLM을 부르는 곳은 셋이다** — 예측 컨센서스 one-shot 둘(섹터 줄글 브리프,
-자연어 검색용 event 주석)은 순회 뒤에 돌고, 개인 화면의 조언은 잠금을 연 사람이
-`POST /api/portfolio/advice`로 요청할 때만 돈다. 공개 화면 요청은 LLM을 부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
+**웹이 LLM을 부르는 곳은 다섯이다** — 예측 컨센서스 one-shot 둘(섹터 줄글 브리프,
+자연어 검색용 event 주석)은 순회 뒤에 돌고, 개인 화면의 셋(자산 조언 `POST /api/portfolio/advice`,
+개인 리서치 `POST /api/research/reports`, 예측 질문 답변 `POST /api/forecast/ask`)은 로그인한 계정이
+요청할 때만 돈다. 공개 화면 요청은 LLM을 부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
 닮았지만 각자 소유다 — 봇이 번역기나 리서치 분석기의 조립을 바꿔도 이 파일은
 움직이지 않는다.
 """
@@ -20,6 +21,10 @@ from services.web.core.config import (
     POLYMARKET_ANNOTATE_NUM_PREDICT,
     POLYMARKET_ANNOTATE_PROMPT_FILE,
     POLYMARKET_ANNOTATE_TIMEOUT,
+    POLYMARKET_ASK_MAX_PICKS,
+    POLYMARKET_ASK_NUM_PREDICT,
+    POLYMARKET_ASK_PROMPT_FILE,
+    POLYMARKET_ASK_TIMEOUT,
     POLYMARKET_BRIEF_NUM_PREDICT,
     POLYMARKET_BRIEF_PROMPT_FILE,
     POLYMARKET_BRIEF_TIMEOUT,
@@ -36,6 +41,7 @@ from services.web.core.config import (
 from services.web.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
 from services.web.llm.market_view import MarketViewAnalyzer
 from services.web.llm.polymarket_annotation import PolymarketAnnotator
+from services.web.llm.polymarket_answer import PolymarketAnswerer
 from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
 from services.web.llm.terminology import read_prompt
 
@@ -83,6 +89,17 @@ def build_polymarket_annotator() -> PolymarketAnnotator:
         ),
         prompt_file=POLYMARKET_ANNOTATE_PROMPT_FILE,
         num_predict=POLYMARKET_ANNOTATE_NUM_PREDICT,
+    )
+
+
+def build_polymarket_answerer() -> PolymarketAnswerer:
+    """예측 질문 답변기. 요청마다 새로 만든다 — 동시 질문끼리 백엔드의 마지막 사용량을 섞지 않게 한다."""
+    require_cloudflare_credentials()
+    return PolymarketAnswerer(
+        backend=build_backend("polymarket_ask", model=CLOUDFLARE_MODEL, timeout=POLYMARKET_ASK_TIMEOUT),
+        prompt_file=POLYMARKET_ASK_PROMPT_FILE,
+        num_predict=POLYMARKET_ASK_NUM_PREDICT,
+        max_picks=POLYMARKET_ASK_MAX_PICKS,
     )
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from services.web.core.clock import now
+from services.web.core.clock import now, today
 from services.web.core.config import POLYMARKET_MIN_HOURS_TO_END, POLYMARKET_WEB_DIR
 from services.web.polymarket import relevance
 from services.web.polymarket.dashboard.models import ends_before
@@ -60,6 +60,11 @@ def _freshness(manifest: dict[str, Any], status: dict[str, Any]) -> dict[str, An
     }
 
 
+def _volume(event: dict[str, Any]) -> float:
+    value = event.get("volume24hr")
+    return float(value) if isinstance(value, (int, float)) else -math.inf
+
+
 def make_etag(generation_id: str, route: str, query: dict[str, Any], variant: str = "json") -> str:
     canonical = "&".join(
         f"{key}={query[key]}" for key in sorted(query) if query[key] not in (None, "", False)
@@ -80,7 +85,7 @@ class PolymarketRepository:
         # 검색용 주석(`annotate.py`가 쓴다). current.json과 따로 바뀌므로 mtime도
         # 따로 본다. 없으면 제목·태그만으로 검색한다.
         self._index_mtime_ns: int | None = None
-        self._annotations: dict[str, tuple[str, str, str]] = {}
+        self._annotations: dict[str, tuple[str, str, str, str]] = {}
         self._index_lock = Lock()
 
     def load(self) -> dict[str, Any]:
@@ -108,7 +113,7 @@ class PolymarketRepository:
             self._mtime_ns = mtime_ns
         return self._manifest
 
-    def load_index(self) -> dict[str, tuple[str, str, str]]:
+    def load_index(self) -> dict[str, tuple[str, str, str, str]]:
         path = self.root / "search_index.json"
         try:
             mtime_ns = path.stat().st_mtime_ns
@@ -261,31 +266,16 @@ class PolymarketRepository:
             values = [event for event in values if event.get("event_type") == event_type]
         if status:
             values = [event for event in values if event.get("data_status") == status]
-        tokens = relevance.query_tokens(query) if query else []
-        ranks: dict[str, tuple[int, int]] = {}
-        if tokens:
-            compiled = relevance.compile_tokens(tokens)
-            needed = relevance.minimum_matches(tokens)
-            kept = []
-            for event in values:
-                rank = relevance.score(compiled, event, annotations.get(str(event.get("id"))))
-                if rank[0] >= needed:
-                    ranks[str(event.get("id"))] = rank
-                    kept.append(event)
-            values = kept
+        values, tokens, ranks = self._matching(values, query, annotations)
         # 질문이 있으면 관련도순이 기본이다. 질문 없이 관련도순을 고르면 매길
         # 관련도가 없으므로 거래량순으로 본다.
         sort = sort or ("relevance" if tokens else "volume24hr")
         if sort == "relevance" and not tokens:
             sort = "volume24hr"
 
-        def volume(event: dict[str, Any]) -> float:
-            value = event.get("volume24hr")
-            return float(value) if isinstance(value, (int, float)) else -math.inf
-
         def key(event: dict[str, Any]):
             if sort == "relevance":
-                return (*ranks[str(event.get("id"))], volume(event))
+                return (*relevance.order(ranks[str(event.get("id"))]), _volume(event))
             value = event.get(sort)
             if sort == "title":
                 return (value is None, str(value or "").casefold())
@@ -314,6 +304,52 @@ class PolymarketRepository:
             },
             "events": page_events,
         }
+
+    def _matching(
+        self,
+        values: list[dict[str, Any]],
+        query: str | None,
+        annotations: dict[str, tuple[str, str, str, str]],
+    ) -> tuple[list[dict[str, Any]], list[str], dict[str, relevance.Rank]]:
+        """질문 낱말이 절반 이상 맞은 event와 그 순위 재료. 질문 낱말이 없으면 거르지 않는다."""
+        tokens = relevance.query_tokens(query) if query else []
+        if not tokens:
+            return values, tokens, {}
+        groups = relevance.expand(tokens)
+        compiled = relevance.compile_tokens(groups)
+        needed = relevance.minimum_matches(groups)
+        window = relevance.query_window(str(query), today())
+        wanted = relevance.institutions(groups)
+        ranks: dict[str, relevance.Rank] = {}
+        kept = []
+        for event in values:
+            rank = relevance.score(
+                compiled, event, annotations.get(str(event.get("id"))),
+                needed=needed, window=window, wanted=wanted,
+            )
+            if rank is not None:
+                ranks[str(event.get("id"))] = rank
+                kept.append(event)
+        return kept, tokens, ranks
+
+    def candidates(self, query: str, *, limit: int) -> list[tuple[dict[str, Any], str | None]]:
+        """질의응답 후보: 확률을 읽을 수 있는 event 중 관련도순 상위 `limit`개와 그 한국어 요약.
+
+        답변 모델은 이 밖의 질문을 고를 수 없다. 그래서 여기 상위 `limit` 적중이 답의 상한이다
+        (`docs/polymarket-consensus-qa.md` 2절).
+        """
+        manifest = self.load()
+        annotations = self.load_index()
+        priced = [event for event in manifest.get("events", []) if event.get("price_status") == "ok"]
+        values, tokens, ranks = self._matching(priced, query, annotations)
+        if not tokens:
+            return []
+        values.sort(key=lambda event: (*relevance.order(ranks[str(event.get("id"))]), _volume(event)), reverse=True)
+        result = []
+        for event in values[:limit]:
+            annotation = annotations.get(str(event.get("id")))
+            result.append((event, annotation[2] if annotation and annotation[2] else None))
+        return result
 
     def detail(self, event_id: str) -> dict[str, Any] | None:
         # 반환값은 쓰지 않지만 호출은 필요하다 — load()가 _events_by_id를 갱신한다.

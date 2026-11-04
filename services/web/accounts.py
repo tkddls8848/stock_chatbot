@@ -129,7 +129,7 @@ class Accounts:
         def google(request: Request, next: str = "/portfolio"):
             if not self.configured:
                 raise HTTPException(503, "Google 로그인을 준비 중입니다.")
-            destination = next if next in {"/portfolio", "/research"} else "/portfolio"
+            destination = next if next in {"/portfolio", "/research", "/forecast"} else "/portfolio"
             state, browser, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(4))
             with self._lock:
                 self._prune()

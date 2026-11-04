@@ -13,7 +13,11 @@
 더해 상한을 넘으면 그 주기를 건너뛴다. 실패한 호출도 센다 — 세지 않으면
 반복 실패가 예산을 그대로 통과한다.
 
-계획서: `docs/polymarket-nl-search.md`
+**선택지 이름은 LLM 없이 주기마다 옮긴다**(`refresh_labels`). "엔비디아 시가총액"의 엔비디아는
+*Largest Company …* 제목이 아니라 선택지 이름에만 있다. 사다리에 칸이 늘면 이름도 바뀌므로
+제목 해시와 무관하게 매번 다시 본다. 예산을 넘겨 LLM 주석을 건너뛴 주기에도 돈다.
+
+계획서: `docs/polymarket-nl-search.md`, `docs/polymarket-consensus-qa.md`
 """
 
 from __future__ import annotations
@@ -33,6 +37,9 @@ from services.web.core.config import (
     POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS,
     POLYMARKET_ANNOTATE_NUM_PREDICT,
     POLYMARKET_ANNOTATE_STATUS_FILE,
+    POLYMARKET_LABEL_MAX_CHARS,
+    POLYMARKET_LABEL_MIN_VOLUME,
+    POLYMARKET_LABELS_PER_EVENT,
     POLYMARKET_SEARCH_INDEX_FILE,
     POLYMARKET_WEB_DIR,
 )
@@ -122,6 +129,58 @@ def pending_events(events: list[dict[str, Any]], index: dict[str, dict]) -> list
         and (index.get(str(event["id"])) or {}).get("h") != title_hash(str(event.get("title") or ""))
     ]
     return sorted(pending, key=lambda event: float(event.get("volume24hr") or 0.0), reverse=True)
+
+
+def outcome_labels(detail: dict[str, Any], *, limit: int = POLYMARKET_LABELS_PER_EVENT) -> list[str]:
+    """열린 선택지의 이름(대소문자만 다른 것은 하나로). 원문 그대로다 — 번역하지 않는다."""
+    labels: list[str] = []
+    seen: set[str] = set()
+    for market in detail.get("markets") or []:
+        if not isinstance(market, dict) or market.get("closed"):
+            continue
+        label = " ".join(str(market.get("outcome_label") or "").split())
+        if label and len(label) <= POLYMARKET_LABEL_MAX_CHARS and label.casefold() not in seen:
+            seen.add(label.casefold())
+            labels.append(label)
+    return labels[:limit]
+
+
+def label_targets(events: list[dict[str, Any]], *, min_volume: float = POLYMARKET_LABEL_MIN_VOLUME) -> list[dict]:
+    """선택지 이름을 색인할 event: 비스포츠·여러 선택지·하루 참여 규모 `min_volume` 이상.
+
+    이지선다는 선택지가 예·아니오뿐이라 뺀다. 스포츠는 선택지가 팀·선수 이름이라 색인이 커지는데
+    시장 상황 질문에 쓰이지 않는다.
+    """
+    return [
+        event for event in events
+        if isinstance(event, dict) and event.get("id") is not None
+        and event.get("category") != "sports" and event.get("event_type") != "binary"
+        and float(event.get("volume24hr") or 0.0) >= min_volume
+    ]
+
+
+def refresh_labels(root: Path, events: list[dict[str, Any]], index: dict[str, dict]) -> int:
+    """색인 행에 선택지 이름을 맞춘다. 바뀐 행 수를 돌려준다.
+
+    주석 행이 있는 event만 손댄다 — 행이 없으면 `pending_events`가 다음 LLM 대상으로 본다.
+    대상에서 빠진(참여 규모가 줄었거나 이지선다가 된) event의 이름은 지운다.
+    """
+    targets = {str(event["id"]): event for event in label_targets(events)}
+    changed = 0
+    for key, row in index.items():
+        labels: list[str] = []
+        if key in targets:
+            try:
+                labels = outcome_labels(read_detail(root, targets[key]))
+            except (OSError, ValueError, KeyError, TypeError):
+                labels = list(row.get("labels") or [])
+        if labels != list(row.get("labels") or []):
+            if labels:
+                row["labels"] = labels
+            else:
+                row.pop("labels", None)
+            changed += 1
+    return changed
 
 
 def _description(root: Path, event: dict[str, Any], limit: int) -> str:
@@ -235,11 +294,13 @@ def build(
         if result["state"] == "ok" and result["calls"] and result["failed_calls"] == result["calls"]:
             result["state"] = "failed"
 
+    result["labels_changed"] = refresh_labels(root, events, index)
     result["neurons"] = round(result["neurons"], 2)
     result["annotated"] = sum(1 for key in index if key in open_ids)
+    result["labeled"] = sum(1 for row in index.values() if row.get("labels"))
     result["pending"] = result["total"] - result["annotated"]
 
-    if result["annotated_now"] or pruned:
+    if result["annotated_now"] or pruned or result["labels_changed"]:
         write_json_atomic(
             index_path,
             {

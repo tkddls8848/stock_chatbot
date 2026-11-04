@@ -210,6 +210,35 @@ POLYMARKET_ANNOTATE_MAX_DAILY_NEURONS = 4000.0
 # 모델에 넘기는 설명(description) 길이. 제목만으로는 무엇을 거는지 모호한
 # event가 있어 앞부분만 붙인다. 뒷부분은 대개 판정 규칙의 세부다.
 POLYMARKET_ANNOTATE_DESCRIPTION_CHARS = 300
+# 선택지 이름 색인(LLM 없음). "엔비디아 시가총액"의 엔비디아는 *Largest Company …* 제목이 아니라
+# 선택지 이름에만 있다. 비스포츠·하루 참여 규모 이 값 이상인 여러 선택지 질문만 색인에 넣는다 —
+# 2026-11-04 실측 1,384건(전부 주석이 있다). 웹 프로세스 메모리(256M 중 196MB 사용) 때문에 좁힌다.
+POLYMARKET_LABEL_MIN_VOLUME = 1000.0
+POLYMARKET_LABELS_PER_EVENT = 40
+POLYMARKET_LABEL_MAX_CHARS = 60
+
+
+# ── 예측 컨센서스 질의응답(`/api/forecast/ask`) ────────────────────────────────
+# 로그인하고 동의한 계정의 자연어 질문에 지금 열린 예측 질문으로 답한다. 숫자는 서버가 쓰고
+# 모델은 후보 중 고르기와 숫자 없는 해설만 한다. 계획서는 docs/polymarket-consensus-qa.md.
+POLYMARKET_ASK_PROMPT_FILE = PROMPT_DIR / "polymarket_answer_ko.txt"
+POLYMARKET_ASK_QUESTION_MAX_CHARS = 200
+# 모델에 보이는 후보 수. 모델은 후보 밖의 질문을 고를 수 없으므로 찾기(상위 30 적중)가 답의 상한이다.
+POLYMARKET_ASK_CANDIDATES = 30
+POLYMARKET_ASK_MAX_PICKS = 5
+# 후보마다 모델에 보이는 선택지 수(확률순). 21칸짜리 가격 사다리도 등급 열 개면 모양이 보인다.
+POLYMARKET_ASK_OPTIONS_PER_EVENT = 10
+POLYMARKET_ASK_NUM_PREDICT = 700
+# 요청 안에서 기다린다. 전송 재시도(CLOUDFLARE_MAX_ATTEMPTS=2)를 합쳐도 1분 안에 끝나게 둔다.
+POLYMARKET_ASK_TIMEOUT = 30
+# 상한은 무료 한도가 아니라 남용을 막는 선이다(Workers Paid — 하루 10,000 Neurons 뒤로는 1,000당
+# 0.011달러). 질문당 약 30 Neurons라 서버 3,000회가 하루 1달러 안쪽이다.
+POLYMARKET_ASK_MAX_DAILY = 10
+POLYMARKET_ASK_SERVER_MAX_DAILY = 3000
+POLYMARKET_ASK_MAX_CONCURRENT = 2
+POLYMARKET_ASK_CACHE_SIZE = 256
+# 질의 로그(계정 식별값 없음)의 보존 일수. /privacy에 같은 값을 적었다.
+POLYMARKET_ASK_LOG_DAYS = 30
 
 
 # ── 개인 화면: 전체 자산 포트폴리오 어드바이저(/portfolio) ────────────────────

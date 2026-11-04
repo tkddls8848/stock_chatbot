@@ -1,7 +1,9 @@
 """현재 집단 예측 컨센서스 화면(`/forecast`).
 
-화면 문구에 출처 서비스 이름·베팅·거래 표현을 쓰지 않는다(`code_guide.md`)."""
+화면 문구에 출처 서비스 이름·베팅·거래 표현을 쓰지 않는다(`code_guide.md`).
+맨 위 "질문으로 컨센서스 보기"는 로그인·동의한 계정만 쓰는 질의응답이다(`polymarket/ask.py`)."""
 
+from services.web.core.config import POLYMARKET_ASK_LOG_DAYS, POLYMARKET_ASK_MAX_DAILY, POLYMARKET_ASK_QUESTION_MAX_CHARS
 from services.web.pages.shell import (
     I_BARS,
     I_CHART,
@@ -46,8 +48,11 @@ _POLYMARKET_MAIN = (
 .pm-pages{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--mut);font-size:var(--fs-sm)}.pm-detail{width:min(760px,calc(100% - 24px));max-height:85vh;border:0;border-top:3px double var(--rule);border-radius:0;background:var(--surface-1);color:var(--ink);padding:0;box-shadow:var(--elev-3)}
 .pm-detail::backdrop{background:rgba(22,24,29,.45)}.pm-detail-in{padding:22px}.pm-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:start}.pm-detail h2{font-family:var(--font-serif);font-size:22px;letter-spacing:-.02em;margin:0;overflow-wrap:anywhere}
 .pm-outcome{margin-top:10px}.pm-outcome-head{display:flex;justify-content:space-between;gap:10px;font-size:var(--fs-sm)}.pm-prog{height:9px;border-radius:0;background:var(--fill-2);overflow:hidden}.pm-prog i{display:block;height:100%;background:var(--acc);border-radius:0}.pm-source{font-size:var(--fs-xs);color:var(--mut);margin-top:14px}.pm-source a{color:var(--acc)}
+.pm-ask-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin:12px 0}.pm-ask-form input{min-height:var(--ctl);border:1px solid var(--line);border-radius:var(--r1);background:var(--surface-1);color:var(--ink);padding:8px 10px;font:inherit}
+.pm-ask-item{border-top:1px solid var(--line2);padding:14px 0}.pm-ask-h{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin-bottom:4px}.pm-ask-h b{font-size:var(--fs-lg);overflow-wrap:anywhere}
+.pm-ask-item .pm-btn{margin-top:10px}#pm-ask-answer>p.body-text{margin:10px 0 4px;line-height:1.75}
 @media(max-width:900px){.pm-rankgrid{grid-template-columns:1fr}.pm-controls{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:520px){.pm-controls{grid-template-columns:1fr}.pm-event{grid-template-columns:1fr}.pm-prob{text-align:left}.pm-bar{grid-template-columns:100px 1fr}.pm-bar-value{grid-column:2;text-align:left}.links{overflow-x:auto}.navin{padding-right:8px}.brand{display:none}}
+@media(max-width:520px){.pm-ask-form{grid-template-columns:1fr}.pm-controls{grid-template-columns:1fr}.pm-event{grid-template-columns:1fr}.pm-prob{text-align:left}.pm-bar{grid-template-columns:100px 1fr}.pm-bar-value{grid-column:2;text-align:left}.links{overflow-x:auto}.navin{padding-right:8px}.brand{display:none}}
 </style>"""
     + h1(I_BARS, "집단 예측 컨센서스")
     + "<div class='disc'>지금 열려 있는 해외 집단 예측 질문 전체를 분야별로 정리한 현재 시점 기록입니다. "
@@ -63,6 +68,32 @@ _POLYMARKET_MAIN = (
  <div class='st'><div class='l'>분야가 정해진 비율</div><div class='v' id='pm-category-cover'>–</div></div>
  <div class='st'><div class='l'>확률을 읽은 비율</div><div class='v' id='pm-price-cover'>–</div></div>
 </div>
+<section class='histbox' aria-labelledby='pm-ask-title'><div class='histh' id='pm-ask-title'><span class='phico'>"""
+    + icon(I_SPEC)
+    + """</span>질문으로 컨센서스 보기</div>
+ <p class='sub2'>궁금한 시장 상황을 물으면 지금 열린 예측 질문 중 맞는 것을 찾아 현재 확률로 답합니다. 맞는 질문이 없으면 없다고 답합니다.
+ 확률은 서버가 수집분에서 그대로 옮기고, AI는 질문 고르기와 짧은 해설만 맡습니다.</p>
+ <div id='pm-ask-login' hidden><p class='body-text'>질문은 로그인한 계정만 할 수 있습니다(계정당 하루 """
+    + str(POLYMARKET_ASK_MAX_DAILY)
+    + """회).</p><p><a class='action primary' href='/auth/google?next=/forecast'>Google 계정으로 로그인</a></p></div>
+ <div id='pm-ask-consent' hidden>
+  <p class='body-text'>질문하면 <b>입력한 질문 원문</b>을 지금 열린 예측 질문 후보(공개 자료)와 함께 <b>Cloudflare Workers AI</b>로 보내 답을 만듭니다.
+  계정 식별값과 내 자산은 보내지 않습니다. 질문 원문과 답에 쓴 예측 질문 번호는 계정과 연결하지 않고 """
+    + str(POLYMARKET_ASK_LOG_DAYS)
+    + """일 보관합니다.</p>
+  <p class='sub2'>질문에 실명·연락처 등 개인정보를 적지 마세요. <a href='/privacy'>개인정보 처리방침</a></p>
+  <label class='sub2'><input type='checkbox' id='pm-ask-agree'> 위 내용을 확인했고 질문을 AI 처리에 보내는 데 동의합니다.</label>
+  <p><button class='action primary' id='pm-ask-consent-btn' type='button' disabled>동의하고 시작</button></p>
+ </div>
+ <form class='pm-ask-form' id='pm-ask-form' hidden>
+  <input id='pm-ask-q' type='text' maxlength='"""
+    + str(POLYMARKET_ASK_QUESTION_MAX_CHARS)
+    + """' placeholder='예: 연준이 12월에 금리를 내릴까?' aria-label='예측 컨센서스에 물을 질문'>
+  <button class='action primary' id='pm-ask-btn' type='submit'>물어보기</button>
+ </form>
+ <p class='sub2' id='pm-ask-status' role='status' aria-live='polite'></p><div id='pm-ask-answer'></div>
+ <p class='sub2' id='pm-ask-consented' hidden>AI 처리에 동의함 · <button class='linklike' id='pm-ask-withdraw' type='button'>동의 철회</button></p>
+</section>
 <section class='histbox' aria-labelledby='pm-trend-title'><div class='histh' id='pm-trend-title'><span class='phico'>"""
     + icon(I_CHART)
     + """</span>오늘의 트렌드 이슈</div>
@@ -138,6 +169,18 @@ function knownParams(){const p=new URLSearchParams();document.querySelectorAll('
 async function loadEvents(){const p=knownParams();history.replaceState(null,'',location.pathname+(p.toString()?'?'+p:''));const r=await fetch('/api/forecast/events?'+p);if(!r.ok)throw new Error('events '+r.status);const d=await r.json();pmPages=d.page_count||0;const si=d.search_index||{};document.getElementById('pm-result-meta').textContent='검색 결과 '+Number(d.total||0).toLocaleString()+'건'+(si.total&&si.annotated<si.total?' · 한국어 검색 준비 '+Number(si.annotated||0).toLocaleString()+'/'+Number(si.total).toLocaleString()+'건 (나머지는 영문 제목으로만 찾습니다)':'');const list=document.getElementById('pm-event-list');list.innerHTML=(d.events||[]).map(e=>"<button type='button' class='pm-event' data-event='"+esc(e.id)+"'><span><span class='pm-event-title'>"+esc(e.title)+"</span>"+(e.summary?"<span class='pm-sum'>"+esc(e.summary)+"</span>":"")+"<span class='pm-meta'><span>"+esc(e.category_label)+"</span><span>"+esc(PM_TYPE[e.event_type]||e.event_type)+"</span><span class='pm-badge "+(e.data_status==='ok'?'ok':'bad')+"'>"+esc(PM_STATUS[e.data_status]||e.data_status)+"</span><span>24시간 "+money(e.volume24hr)+"</span><span>잔액 "+money(e.liquidity)+"</span></span></span><span class='pm-prob'>"+(e.leader?esc(side(e.leader))+' '+prob(e.leader_probability):'상세 보기')+"</span></button>").join('')||"<p class='empty'>조건에 맞는 질문이 없습니다.</p>";document.getElementById('pm-page').textContent=(d.page_count?d.page:0)+' / '+d.page_count;document.getElementById('pm-prev').disabled=d.page<=1;document.getElementById('pm-next').disabled=d.page>=d.page_count;bindDetails(list)}
 async function openDetail(id){const r=await fetch('/api/forecast/events/'+encodeURIComponent(id));if(!r.ok)return;const d=await r.json();document.getElementById('pm-detail-title').textContent=d.title;const outcomes=(d.markets||[]).map(m=>{const v=m.yes_probability;return "<div class='pm-outcome'><div class='pm-outcome-head'><b>"+esc(m.outcome_label||m.question||'결과')+"</b><span>"+esc(side(m.yes_label||'Yes'))+" "+prob(v)+" · "+esc(side(m.no_label||'No'))+" "+prob(m.no_probability)+"</span></div><div class='pm-prog'><i data-width='"+(v==null?0:Math.max(0,Math.min(100,v*100)))+"%'></i></div></div>"}).join('');document.getElementById('pm-detail-body').innerHTML="<p class='pm-meta'><span>"+esc(d.category_label)+"</span><span>"+esc(PM_TYPE[d.event_type]||d.event_type)+"</span><span>"+esc(PM_STATUS[d.data_status]||d.data_status)+"</span></p>"+(d.description?"<p class='body-text'>"+esc(d.description)+"</p>":'')+outcomes+"<p class='pm-source'>종료 "+esc(stamp(d.end_date))+"</p>";document.querySelectorAll('#pm-detail-body [data-width]').forEach(el=>{el.style.width=el.dataset.width});document.getElementById('pm-detail').showModal()}
 document.getElementById('pm-controls').addEventListener('change',()=>{pmPage=1;loadEvents()});let searchTimer;document.getElementById('pm-q').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{pmPage=1;loadEvents()},250)});document.getElementById('pm-prev').addEventListener('click',()=>{if(pmPage>1){pmPage--;loadEvents()}});document.getElementById('pm-next').addEventListener('click',()=>{if(pmPage<pmPages){pmPage++;loadEvents()}});document.getElementById('pm-detail-close').addEventListener('click',()=>document.getElementById('pm-detail').close());document.getElementById('pm-flag-toggle').addEventListener('click',e=>{pmFlagged=!pmFlagged;e.currentTarget.textContent=pmFlagged?'정상 질문만':'주의 질문 포함';loadSummary()});Promise.all([loadFilters(),loadSummary()]).then(loadEvents).then(()=>loadBrief().catch(()=>{document.getElementById('pm-brief-meta').textContent='컨센서스 정리를 읽지 못했습니다.'})).then(()=>loadTrending().catch(()=>{document.getElementById('pm-trend-meta').textContent='트렌드 집계를 읽지 못했습니다.'})).catch(()=>{const a=document.getElementById('pm-alert');a.className='pm-alert warn';a.textContent='현재 예측 컨센서스 자료를 읽지 못했습니다.'});
+const askEl=id=>document.getElementById(id);
+async function askApi(path,opt={}){const r=await fetch('/api/forecast/ask'+path,{credentials:'same-origin',...opt,headers:opt.body?{'Content-Type':'application/json'}:{}});let d={};try{d=await r.json()}catch(e){}if(!r.ok){const e=new Error(typeof d.detail==='string'?d.detail:'요청을 처리하지 못했습니다.');e.status=r.status;throw e}return d}
+function askUsage(u){askEl('pm-ask-status').textContent=u?'오늘 '+u.used+'/'+u.limit+'회 사용':''}
+function askShow(s){const ok=!!(s&&s.consented_at);askEl('pm-ask-login').hidden=!!s;askEl('pm-ask-consent').hidden=!s||ok;askEl('pm-ask-form').hidden=!ok;askEl('pm-ask-consented').hidden=!ok;askUsage(ok?s:null)}
+function askOption(o){return "<div class='pm-outcome'><div class='pm-outcome-head'><b>"+esc(o.label)+(o.focus?" <span class='pm-badge'>물은 선택지</span>":"")+"</b><span>"+prob(o.probability)+"</span></div><div class='pm-prog'><i data-width='"+Math.max(0,Math.min(100,o.probability*100)).toFixed(1)+"%'></i></div></div>"}
+function askItem(it){return "<div class='pm-ask-item'><div class='pm-ask-h'><b>"+esc(it.summary||it.title)+"</b>"+(it.direct?"":"<span class='pm-badge'>가까운 질문</span>")+"</div><div class='pm-meta'><span>"+esc(it.title)+"</span><span>"+esc(PM_TYPE[it.event_type]||'')+"</span><span>24시간 "+money(it.volume24hr)+"</span><span>종료 "+esc(stamp(it.end_date).slice(0,10))+"</span></div>"+(it.options||[]).map(askOption).join('')+"<button type='button' class='pm-btn' data-event='"+esc(it.id)+"'>선택지 전체 보기</button></div>"}
+function askRender(d){const box=askEl('pm-ask-answer');box.innerHTML=(d.commentary?"<p class='body-text'>"+esc(d.commentary)+"</p>":"")+(d.answerable?"":"<p class='pm-alert'>지금 열린 예측 질문 중 이 질문에 직접 맞는 것이 없습니다."+((d.items||[]).length?" 가까운 질문을 함께 보여 드립니다.":"")+"</p>")+(d.items||[]).map(askItem).join('')+"<p class='pm-source'>"+esc(stamp(d.generated_at))+" 수집분 기준(한국 시간) · 집단 예측 컨센서스 · 투자 조언 아님"+(d.cached?" · 같은 질문에 앞서 만든 답":"")+"</p>";box.querySelectorAll('[data-width]').forEach(x=>{x.style.width=x.dataset.width});bindDetails(box)}
+askApi('').then(askShow).catch(e=>{if(e.status===401)askShow(null);else askEl('pm-ask-status').textContent=e.message});
+askEl('pm-ask-agree').addEventListener('change',e=>{askEl('pm-ask-consent-btn').disabled=!e.target.checked});
+askEl('pm-ask-consent-btn').addEventListener('click',()=>askApi('/consent',{method:'PUT',body:JSON.stringify({agree:true})}).then(askShow).catch(e=>{askEl('pm-ask-status').textContent=e.message}));
+askEl('pm-ask-withdraw').addEventListener('click',()=>askApi('/consent',{method:'PUT',body:JSON.stringify({agree:false})}).then(s=>{askShow(s);askEl('pm-ask-answer').innerHTML=''}).catch(e=>{askEl('pm-ask-status').textContent=e.message}));
+askEl('pm-ask-form').addEventListener('submit',async e=>{e.preventDefault();const q=askEl('pm-ask-q').value.trim();if(q.length<2)return;const b=askEl('pm-ask-btn');b.disabled=true;askEl('pm-ask-answer').innerHTML='';askEl('pm-ask-status').textContent='답을 만드는 중입니다… 보통 10초 안팎 걸립니다.';try{const d=await askApi('',{method:'POST',body:JSON.stringify({question:q})});askRender(d);askUsage(d.usage)}catch(err){askEl('pm-ask-status').textContent=err.message;if(err.status===401)askShow(null)}finally{b.disabled=false}});
 </script>"""
 )
 

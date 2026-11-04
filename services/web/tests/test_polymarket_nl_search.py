@@ -59,7 +59,7 @@ def _write_current(root, events):
 def _row(summary="연준이 12월 회의에서 기준금리를 내릴지", keywords=None, subtopic="미국 통화정책"):
     return {
         "summary": summary,
-        "keywords": keywords or ["연준", "미국 금리", "금리 인하", "FOMC", "파월"],
+        "keywords": keywords or ["연준", "미국 금리", "금리 인하", "FOMC", "파월", "통화정책"],
         "subtopic": subtopic,
     }
 
@@ -404,7 +404,8 @@ def test_the_etag_changes_when_only_the_index_changes(tmp_path, monkeypatch):
     repository = _repository(tmp_path, [_event(1, "Fed?")], {})
     monkeypatch.setattr(server, "POLYMARKET_REPOSITORY", repository)
     client = TestClient(server.build_app())
-    first = client.get("/api/forecast/events", params={"q": "연준"})
+    # "연준"은 용어집으로 제목의 Fed에 닿는다. 색인(키워드 "통화정책")에만 있는 말로 찾는다.
+    first = client.get("/api/forecast/events", params={"q": "통화정책"})
     assert first.json()["total"] == 0
 
     index = tmp_path / "pm" / "search_index.json"
@@ -413,7 +414,7 @@ def test_the_etag_changes_when_only_the_index_changes(tmp_path, monkeypatch):
     stat = index.stat()
     os.utime(index, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     second = client.get(
-        "/api/forecast/events", params={"q": "연준"},
+        "/api/forecast/events", params={"q": "통화정책"},
         headers={"if-none-match": first.headers["etag"]},
     )
 
