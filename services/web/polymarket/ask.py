@@ -111,6 +111,10 @@ def _label(market: dict[str, Any]) -> str:
     return label[:_LABEL_MAX_CHARS]
 
 
+def _question(market: dict[str, Any]) -> str:
+    return " ".join(str(market.get("question") or market.get("outcome_label") or "").split())[:160]
+
+
 def priced_markets(detail: dict[str, Any]) -> list[dict[str, Any]]:
     """확률을 쓸 수 있는 선택지. 열리지 않은 칸(`active: False`)은 뺀다 — "Company H"·"Other" 같은 자리채움 칸이
     기본값 50%로 들어 있어, 두면 다지선다 위 셋·사다리의 50% 칸을 차지한다(2026-11-04 실측).
@@ -141,8 +145,11 @@ def build_row(number: int, event: dict[str, Any], summary: str | None, markets: 
         options = {1: "yes", 2: "no"}
     else:
         ranked = sorted(markets, key=_probability, reverse=True)[: config.POLYMARKET_ASK_OPTIONS_PER_EVENT]
-        shown = [{"m": m, "label": _label(market), "outlook": outlook(_probability(market))}
-                 for m, market in enumerate(ranked, start=1)]
+        # 여러 질문 묶음은 칸마다 따로 묻는 질문이라 짧은 이름("November 7")만 주면 모델이 등급을 거꾸로
+        # 읽었다("그때 끝난다", 2026-11-04 실측 두 번). 모델에는 칸의 전체 질문을 준다. 화면은 짧은 이름이다.
+        ladder = event.get("event_type") == "independent_multi"
+        shown = [{"m": m, "label": _question(market) if ladder else _label(market),
+                  "outlook": outlook(_probability(market))} for m, market in enumerate(ranked, start=1)]
         options = {m: str(market.get("id")) for m, market in enumerate(ranked, start=1)}
     model = {"n": number, "title": str(event.get("title") or ""), "summary": summary,
              "type": _TYPE.get(str(event.get("event_type")), "유형 미상"),
@@ -241,7 +248,10 @@ def _item(row: Row, pick: Pick, question: str, terms: list[relevance.Term],
 
 
 def assemble(question: str, manifest: dict[str, Any], rows: list[Row], answer: Answer) -> dict[str, Any]:
-    terms = relevance.compile_tokens(relevance.expand(relevance.query_tokens(question)))
+    # 숫자만 남은 낱말("15만"에서 조사처럼 "만"을 뗀 "15")은 이름 비교에서 뺀다 — "↓ 15,000"에 걸렸다.
+    # 숫자는 `asked_markets`가 단위까지 읽어 따로 맞춘다.
+    words = [token for token in relevance.query_tokens(question) if not token.isdigit()]
+    terms = relevance.compile_tokens(relevance.expand(words))
     window = relevance.query_window(question, today())
     items = [item for pick in answer.picks
              if (item := _item(rows[pick.n - 1], pick, question, terms, window)) is not None]
