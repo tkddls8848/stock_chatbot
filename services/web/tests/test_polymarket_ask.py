@@ -390,13 +390,15 @@ def test_korean_units_and_the_asked_period_mark_their_options():
     assert asked_markets("휴전 12월에 끝날까", [], ceasefire, window) == {"c2"}
 
 
-def test_a_ladder_shows_the_model_each_full_question_and_bare_numbers_do_not_match_names():
-    """사다리 칸은 모델에 전체 질문으로 간다(짧은 이름을 거꾸로 읽었다). "15만"의 "15"는 "↓ 15,000"에 걸리지 않는다."""
+def test_a_ladder_shows_the_model_its_question_pattern_and_bare_numbers_do_not_match_names():
+    """사다리는 모델에 칸 질문의 꼴을 준다(짧은 이름만 주자 거꾸로 읽었다). "15만"의 "15"는 "↓ 15,000"에 걸리지 않는다."""
     compact, detail = _event("i", "Israel x Iran ceasefire continues through...?", "independent_multi", [
         {**_market("n7", "November 7", 0.865), "question": "Israel x Iran ceasefire continues through November 7?"},
         {**_market("d31", "December 31", 0.365), "question": "Israel x Iran ceasefire continues through December 31?"}])
     row = build_row(1, compact, None, detail["markets"])
-    assert row.model["options"][0]["label"] == "Israel x Iran ceasefire continues through November 7?"
+    # 칸마다 전체 질문을 주면 입력이 불어 출력이 끊겼다 — 질문 꼴을 한 번만 주고 칸 이름은 짧게 둔다.
+    assert row.model["each"] == "Israel x Iran ceasefire continues through ___?"
+    assert row.model["options"][0]["label"] == "November 7"
     from services.web.polymarket.ask import Row, assemble
     bitcoin, prices = _event("b", "What price will Bitcoin hit in 2026?", "independent_multi", [
         _market("p1", "↑ 150,000", 0.017), _market("p2", "↓ 15,000", 0.007), _market("p3", "↓ 70,000", 0.425)])
@@ -404,6 +406,16 @@ def test_a_ladder_shows_the_model_each_full_question_and_bare_numbers_do_not_mat
     payload = assemble("비트코인 연말에 15만 달러 갈까?", {"generated_at": "t"}, [row],
                        Answer(True, [Pick(1, True, [])], "참여자들은 15만 달러 돌파를 낮게 봅니다."))
     assert {o["label"] for o in payload["items"][0]["options"] if o["focus"]} == {"↑ 150,000"}
+
+
+def test_the_question_pattern_does_not_cut_words():
+    from services.web.polymarket.ask import question_template
+    assert question_template([{"question": "Will WTI Crude Oil (WTI) hit (HIGH) $160 in November?"},
+                              {"question": "Will WTI Crude Oil (WTI) hit (LOW) $40 in November?"}]) == \
+        "Will WTI Crude Oil (WTI) hit (___ in November?"
+    assert question_template([{"question": "Will NVIDIA be the largest company?"},
+                              {"question": "Will Apple be the largest company?"}]) == "Will ___ be the largest company?"
+    assert question_template([{"question": "A?"}, {"question": "B?"}]) is None
 
 
 def test_a_model_that_marks_every_option_marks_none():

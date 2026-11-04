@@ -229,7 +229,9 @@ POLYMARKET_ASK_CANDIDATES = 30
 POLYMARKET_ASK_MAX_PICKS = 3
 # 후보마다 모델에 보이는 선택지 수(확률순). 21칸짜리 가격 사다리도 등급 열 개면 모양이 보인다.
 POLYMARKET_ASK_OPTIONS_PER_EVENT = 10
-POLYMARKET_ASK_NUM_PREDICT = 700
+# 응답은 번호와 두세 문장이라 보통 300토큰 안팎이다. 모델이 해설을 길게 쓴 날 끊기지 않게 여유를 둔다
+# (끊긴 응답은 실패다 — code_guide `finish_reason=length`).
+POLYMARKET_ASK_NUM_PREDICT = 900
 # 요청 안에서 기다린다. 전송 재시도(CLOUDFLARE_MAX_ATTEMPTS=2)를 합쳐도 1분 안에 끝나게 둔다.
 POLYMARKET_ASK_TIMEOUT = 30
 # 상한은 무료 한도가 아니라 남용을 막는 선이다(Workers Paid — 하루 10,000 Neurons 뒤로는 1,000당

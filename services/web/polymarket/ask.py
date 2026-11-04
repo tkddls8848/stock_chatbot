@@ -26,8 +26,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 import json
 import logging
+import os
 from pathlib import Path
 import re
+import string
 import threading
 import time
 import unicodedata
@@ -71,6 +73,7 @@ _LABEL_DATE = re.compile(r"(January|February|March|April|May|June|July|August|Se
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
            "November", "December")
 _NEAREST_RATIO = 0.25
+_ALNUM = string.ascii_letters + string.digits
 # 물은 선택지는 질문당 이만큼까지다. 모델이 이보다 많이 찍으면 짚은 것이 아니라 "전부"라서 버린다
 # (실측 2026-11-04: 휴전 날짜 사다리 11칸, 금값 7칸을 다 찍었다).
 _FOCUS_MAX = 2
@@ -111,8 +114,18 @@ def _label(market: dict[str, Any]) -> str:
     return label[:_LABEL_MAX_CHARS]
 
 
-def _question(market: dict[str, Any]) -> str:
-    return " ".join(str(market.get("question") or market.get("outcome_label") or "").split())[:160]
+def question_template(markets: list[dict[str, Any]]) -> str | None:
+    """칸 질문들의 공통 꼴. 앞뒤 공통 부분 사이를 ___로 둔다. 공통 부분이 짧으면 꼴이 아니라 None."""
+    questions = [" ".join(str(market.get("question") or "").split()) for market in markets]
+    if len(questions) < 2 or not all(questions):
+        return None
+    prefix = os.path.commonprefix(questions)
+    suffix = os.path.commonprefix([question[len(prefix):][::-1] for question in questions])[::-1]
+    # 낱말 가운데에서 자르지 않는다 — "$160"·"$40"의 끝 "0"은 공통 꼴이 아니다.
+    prefix, suffix = prefix.rstrip(_ALNUM), suffix.lstrip(_ALNUM)
+    if len(prefix.strip()) + len(suffix.strip()) < 10:
+        return None
+    return (prefix + "___" + suffix)[:200]
 
 
 def priced_markets(detail: dict[str, Any]) -> list[dict[str, Any]]:
@@ -145,11 +158,8 @@ def build_row(number: int, event: dict[str, Any], summary: str | None, markets: 
         options = {1: "yes", 2: "no"}
     else:
         ranked = sorted(markets, key=_probability, reverse=True)[: config.POLYMARKET_ASK_OPTIONS_PER_EVENT]
-        # 여러 질문 묶음은 칸마다 따로 묻는 질문이라 짧은 이름("November 7")만 주면 모델이 등급을 거꾸로
-        # 읽었다("그때 끝난다", 2026-11-04 실측 두 번). 모델에는 칸의 전체 질문을 준다. 화면은 짧은 이름이다.
-        ladder = event.get("event_type") == "independent_multi"
-        shown = [{"m": m, "label": _question(market) if ladder else _label(market),
-                  "outlook": outlook(_probability(market))} for m, market in enumerate(ranked, start=1)]
+        shown = [{"m": m, "label": _label(market), "outlook": outlook(_probability(market))}
+                 for m, market in enumerate(ranked, start=1)]
         options = {m: str(market.get("id")) for m, market in enumerate(ranked, start=1)}
     model = {"n": number, "title": str(event.get("title") or ""), "summary": summary,
              "type": _TYPE.get(str(event.get("event_type")), "유형 미상"),
@@ -157,6 +167,11 @@ def build_row(number: int, event: dict[str, Any], summary: str | None, markets: 
              "participation": _participation(event.get("volume24hr")), "options": shown}
     if not summary:
         del model["summary"]
+    # 여러 질문 묶음은 칸마다 따로 묻는 질문이라 짧은 이름("November 7")만 주면 모델이 등급을 거꾸로 읽었다
+    # ("그때 끝난다", 2026-11-04 실측 두 번). 칸마다 전체 질문을 주자 입력이 7,789토큰으로 불어 출력이 상한에서
+    # 끊겼다. 칸의 질문 꼴을 한 번만 준다("… continues through ___?").
+    if event.get("event_type") == "independent_multi" and (each := question_template(markets)):
+        model["each"] = each
     return Row(event, summary, markets, options, model)
 
 
