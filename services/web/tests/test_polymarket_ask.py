@@ -340,6 +340,38 @@ def test_a_ladder_shows_its_slope():
     assert labels == ["↑ $4,200", "↑ $4,500", "↓ $3,500"]
 
 
+def test_unopened_placeholder_options_are_never_shown_or_indexed(tmp_path):
+    """열리지 않은 자리채움 칸("Company H", 기본값 50%)이 다지선다 위 셋을 차지하던 것(2026-11-04 실측)."""
+    placeholder = {**_market("ph", "Company H", 0.5), "active": False}
+    compact, detail = _event("p", "Largest Company end of November 2026?", "exclusive_multi", [
+        _market("n", "NVIDIA", 0.76), _market("a", "Apple", 0.24), placeholder])
+    from services.web.polymarket.ask import priced_markets
+    markets = priced_markets(detail)
+    assert [o["label"] for o in shown_options(compact, markets, set())] == ["NVIDIA", "Apple"]
+    from services.web.polymarket.annotate import outcome_labels
+    assert outcome_labels(detail) == ["NVIDIA", "Apple"]
+
+
+def test_the_number_in_the_question_marks_its_option():
+    """모델이 물은 선택지를 짚지 않아도 "1500원"이 이름에 든 칸(↑1,500)은 늘 보인다. "2026년"은 기준이 아니다."""
+    compact, detail = _event("k", "Will USD/KRW hit __ in 2026?", "independent_multi", [
+        _market("u1", "↑1,800", 0.04), _market("u2", "↑1,500", 0.2), _market("d1", "↓1,300", 0.355),
+        _market("d2", "↓1,200", 0.12)])
+    from services.web.polymarket.ask import Row, assemble
+    row = Row(compact, None, detail["markets"], {}, {})
+    answer = Answer(True, [Pick(1, True, [])], "참여자들은 1500원 돌파를 낮게 봅니다.")
+    payload = assemble("2026년 원달러 환율 1500원 넘을까?", {"generated_at": "t"}, [row], answer)
+    options = {o["label"]: o["focus"] for o in payload["items"][0]["options"]}
+    assert options["↑1,500"] is True and not any(focus for label, focus in options.items() if label != "↑1,500")
+
+
+def test_related_questions_stay_at_two_even_with_a_direct_answer():
+    raw = json.dumps({"answerable": True, "commentary": "해설입니다 충분히 긴 문장입니다.", "picks": [
+        {"n": 1, "direct": True, "focus": []}, *({"n": n, "direct": False, "focus": []} for n in range(2, 6))]})
+    answer = parse_answer(raw, {n: set() for n in range(1, 6)}, max_picks=5)
+    assert [(p.n, p.direct) for p in answer.picks] == [(1, True), (2, False), (3, False)]
+
+
 # ── API ────────────────────────────────────────────────────────────────────
 
 class _FakeAnswerer:

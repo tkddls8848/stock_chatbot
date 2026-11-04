@@ -232,7 +232,7 @@ POLYMARKET_ASK_NUM_PREDICT = 700
 # 요청 안에서 기다린다. 전송 재시도(CLOUDFLARE_MAX_ATTEMPTS=2)를 합쳐도 1분 안에 끝나게 둔다.
 POLYMARKET_ASK_TIMEOUT = 30
 # 상한은 무료 한도가 아니라 남용을 막는 선이다(Workers Paid — 하루 10,000 Neurons 뒤로는 1,000당
-# 0.011달러). 질문당 약 30 Neurons라 서버 3,000회가 하루 1달러 안쪽이다.
+# 0.011달러). 질문당 13~49 Neurons(2026-11-04 실측 4문항)라 서버 3,000회가 하루 1.6달러 안쪽이다.
 POLYMARKET_ASK_MAX_DAILY = 10
 POLYMARKET_ASK_SERVER_MAX_DAILY = 3000
 POLYMARKET_ASK_MAX_CONCURRENT = 2

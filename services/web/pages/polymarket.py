@@ -180,7 +180,7 @@ askApi('').then(askShow).catch(e=>{if(e.status===401)askShow(null);else askEl('p
 askEl('pm-ask-agree').addEventListener('change',e=>{askEl('pm-ask-consent-btn').disabled=!e.target.checked});
 askEl('pm-ask-consent-btn').addEventListener('click',()=>askApi('/consent',{method:'PUT',body:JSON.stringify({agree:true})}).then(askShow).catch(e=>{askEl('pm-ask-status').textContent=e.message}));
 askEl('pm-ask-withdraw').addEventListener('click',()=>askApi('/consent',{method:'PUT',body:JSON.stringify({agree:false})}).then(s=>{askShow(s);askEl('pm-ask-answer').innerHTML=''}).catch(e=>{askEl('pm-ask-status').textContent=e.message}));
-askEl('pm-ask-form').addEventListener('submit',async e=>{e.preventDefault();const q=askEl('pm-ask-q').value.trim();if(q.length<2)return;const b=askEl('pm-ask-btn');b.disabled=true;askEl('pm-ask-answer').innerHTML='';askEl('pm-ask-status').textContent='답을 만드는 중입니다… 보통 10초 안팎 걸립니다.';try{const d=await askApi('',{method:'POST',body:JSON.stringify({question:q})});askRender(d);askUsage(d.usage)}catch(err){askEl('pm-ask-status').textContent=err.message;if(err.status===401)askShow(null)}finally{b.disabled=false}});
+askEl('pm-ask-form').addEventListener('submit',async e=>{e.preventDefault();const q=askEl('pm-ask-q').value.trim();if(q.length<2)return;const b=askEl('pm-ask-btn');b.disabled=true;askEl('pm-ask-answer').innerHTML='';askEl('pm-ask-status').textContent='답을 만드는 중입니다… 보통 몇 초 걸립니다.';try{const d=await askApi('',{method:'POST',body:JSON.stringify({question:q})});askRender(d);askUsage(d.usage)}catch(err){askEl('pm-ask-status').textContent=err.message;if(err.status===401)askShow(null)}finally{b.disabled=false}});
 </script>"""
 )
 

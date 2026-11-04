@@ -128,7 +128,8 @@ def outcome_labels(detail: dict[str, Any], *, limit: int = POLYMARKET_LABELS_PER
     labels: list[str] = []
     seen: set[str] = set()
     for market in detail.get("markets") or []:
-        if not isinstance(market, dict) or market.get("closed"):
+        # 열리지 않은 칸("Company H" 같은 자리채움)은 이름이 아니다.
+        if not isinstance(market, dict) or market.get("closed") or market.get("active") is False:
             continue
         label = " ".join(str(market.get("outcome_label") or "").split())
         if label and len(label) <= POLYMARKET_LABEL_MAX_CHARS and label.casefold() not in seen:

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 COMMENTARY_MIN_CHARS = 15
 COMMENTARY_MAX_CHARS = 400
-# 직접 맞는 질문이 없을 때 "가까운 질문"으로 함께 보일 수. 많이 보이면 없는 답을 있는 것처럼 읽는다.
+# "가까운 질문"으로 함께 보일 수. 많이 보이면 없는 답을 있는 것처럼 읽고, 있는 답도 목록에 묻힌다.
 RELATED_MAX = 2
 
 RESPONSE_SCHEMA: dict[str, Any] = {
@@ -107,12 +107,14 @@ def parse_answer(raw: str, options: dict[int, set[int]], *, max_picks: int) -> A
             continue
         focus = [m for m in dict.fromkeys(row.get("focus") or []) if _int(m) and m in options[number]]
         picks.append(Pick(number, bool(row.get("direct")) and answerable, focus))
-    if answerable:
-        if not any(pick.direct for pick in picks):
-            raise AnswerRejected("직접 맞는다고 한 질문이 없습니다", structural=True)
-        picks = picks[:max_picks]
-    else:
-        picks = picks[:RELATED_MAX]
+    if answerable and not any(pick.direct for pick in picks):
+        raise AnswerRejected("직접 맞는다고 한 질문이 없습니다", structural=True)
+    # 직접 답은 `max_picks`개까지, 가까운 질문은 직접 답이 있든 없든 RELATED_MAX개까지다(실측: 직접 하나에
+    # 가까운 넷이 붙어 답이 목록처럼 길어졌다).
+    direct = [pick for pick in picks if pick.direct][:max_picks]
+    related = [pick for pick in picks if not pick.direct][:RELATED_MAX]
+    kept = {id(pick) for pick in direct + related}
+    picks = [pick for pick in picks if id(pick) in kept][:max_picks]
     return Answer(answerable, picks, " ".join(str(payload.get("commentary") or "").split()))
 
 

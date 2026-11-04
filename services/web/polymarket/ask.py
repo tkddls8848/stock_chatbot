@@ -13,8 +13,8 @@
 
 **로그인하고 동의한 계정만 묻는다.** 질문 원문이 Cloudflare Workers AI로 간다 — 개인 리서치와 같은
 기준이다. 계정 하루 `POLYMARKET_ASK_MAX_DAILY`회·서버 하루 `POLYMARKET_ASK_SERVER_MAX_DAILY`회·동시
-`POLYMARKET_ASK_MAX_CONCURRENT`개이고, 실패한 호출도 센다(리서치와 같다). 답은 요청 안에서 만든다(보통 10초
-안팎) — 그동안 계정 잠금을 잡고 있어 한 계정의 질문은 하나씩 돈다.
+`POLYMARKET_ASK_MAX_CONCURRENT`개이고, 실패한 호출도 센다(리서치와 같다). 답은 요청 안에서 만든다(2026-11-04 실측
+1.3~2.2초) — 그동안 계정 잠금을 잡고 있어 한 계정의 질문은 하나씩 돈다.
 질의 로그는 계정 식별값 없이 질문문·고른 질문·비용만 날짜별 파일로 `POLYMARKET_ASK_LOG_DAYS`일 둔다.
 계획서: `docs/polymarket-consensus-qa.md`
 """
@@ -27,6 +27,7 @@ from datetime import timedelta
 import json
 import logging
 from pathlib import Path
+import re
 import threading
 import time
 import unicodedata
@@ -57,6 +58,10 @@ _BAND = (0.03, 0.97)
 # 다지선다의 셋째 줄은 이 확률 이상일 때만 세운다. 숫자가 아무것도 말하지 않는 줄로 자리를 채우지 않는다.
 _THIRD_MIN = 0.01
 _LABEL_MAX_CHARS = 80
+# 질문에 적은 기준 숫자("1500원")를 선택지 이름("↑1500")에서 찾는다. 세 자리 이상만 — "12월"·"3번"은 기준이 아니다.
+# "2026년"처럼 해를 말하는 숫자는 뺀다.
+_ASKED_NUMBER = re.compile(r"\d[\d,]{2,}(?:\.\d+)?(?!\s*년)")
+_LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
 class AskRequest(BaseModel):
@@ -95,9 +100,13 @@ def _label(market: dict[str, Any]) -> str:
 
 
 def priced_markets(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    """확률을 쓸 수 있는 선택지. 열리지 않은 칸(`active: False`)은 뺀다 — "Company H"·"Other" 같은 자리채움 칸이
+    기본값 50%로 들어 있어, 두면 다지선다 위 셋·사다리의 50% 칸을 차지한다(2026-11-04 실측).
+    """
     return [
         market for market in detail.get("markets") or []
-        if isinstance(market, dict) and not market.get("closed") and market.get("price_valid")
+        if isinstance(market, dict) and not market.get("closed") and market.get("active") is not False
+        and market.get("price_valid")
         and isinstance(market.get("yes_probability"), (int, float))
     ]
 
@@ -157,8 +166,16 @@ def shown_options(event: dict[str, Any], markets: list[dict[str, Any]], focus: s
              "focus": str(market.get("id")) in focus} for market in chosen]
 
 
-def _item(row: Row, pick: Pick) -> dict[str, Any] | None:
+def _asked_numbers(question: str) -> set[str]:
+    return {value.replace(",", "") for value in _ASKED_NUMBER.findall(question)}
+
+
+def _item(row: Row, pick: Pick, asked: set[str]) -> dict[str, Any] | None:
     focus = {row.options[m] for m in pick.focus if m in row.options}
+    # 모델이 물은 선택지를 짚지 않아도, 질문의 기준 숫자가 이름에 든 선택지는 늘 보인다.
+    if asked and not _binary(row.event, row.markets):
+        focus |= {str(market.get("id")) for market in row.markets
+                  if asked & {value.replace(",", "") for value in _LABEL_NUMBER.findall(_label(market))}}
     event = row.event
     item = {
         "id": str(event.get("id")),
@@ -177,7 +194,8 @@ def _item(row: Row, pick: Pick) -> dict[str, Any] | None:
 
 
 def assemble(question: str, manifest: dict[str, Any], rows: list[Row], answer: Answer) -> dict[str, Any]:
-    items = [item for pick in answer.picks if (item := _item(rows[pick.n - 1], pick)) is not None]
+    asked = _asked_numbers(question)
+    items = [item for pick in answer.picks if (item := _item(rows[pick.n - 1], pick, asked)) is not None]
     answerable = answer.answerable and any(item["direct"] for item in items)
     # 직접 답이라던 질문이 전부 빠졌으면 그 질문을 두고 쓴 해설도 내지 않는다.
     commentary = answer.commentary if answerable == answer.answerable else None
