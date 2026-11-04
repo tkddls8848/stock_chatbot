@@ -106,7 +106,7 @@ def test_failed_source_is_recorded_and_skipped():
     )
 
     assert [item["market"] for item in items] == ["US", "US", "US"]
-    assert "futu: 실패 1회" in registry.status_lines()[0]
+    assert registry.status_rows()[0][1:] == ("futu", "실패 1회")
 
 
 def test_raw_articles_are_used_without_translation():

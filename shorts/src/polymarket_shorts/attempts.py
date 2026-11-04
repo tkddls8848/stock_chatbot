@@ -14,25 +14,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-import json
 from pathlib import Path
 from typing import Any, Callable
 
 from .config import Settings
 from .core.clock import now
-from .core.storage import write_json
+from .core.storage import read_json, write_json
 from .review import ReviewError, operation_lock
 
 MAX_ATTEMPTS = 2
 ATTEMPTS_FILE = "attempts.json"
-
-
-def _read(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def run(settings: Settings, produce: Callable[[], dict[str, Any]]) -> dict[str, Any]:
@@ -40,7 +31,7 @@ def run(settings: Settings, produce: Callable[[], dict[str, Any]]) -> dict[str, 
     root = settings.output_dir / day
     path = root / ATTEMPTS_FILE
     with operation_lock(root, ".attempts.lock"):
-        record = {"date": day, **_read(path)}
+        record = {"date": day, **read_json(path)}
         if record.get("gave_up"):
             return {"status": "gave_up", "date": day}
         tried = record.setdefault("attempts", [])
@@ -61,7 +52,7 @@ def run(settings: Settings, produce: Callable[[], dict[str, Any]]) -> dict[str, 
         if not _failed(path, "쇼츠", f"{type(exc).__name__}: {exc}"):
             raise
         return {"status": "gave_up", "date": day, "stage": "쇼츠", "error": str(exc)}
-    record = _read(path)
+    record = read_json(path)
     if record and not record.get("succeeded_at"):
         record["succeeded_at"] = now().isoformat()
         write_json(path, record)
@@ -71,7 +62,7 @@ def run(settings: Settings, produce: Callable[[], dict[str, Any]]) -> dict[str, 
 def _failed(path: Path, stage: str, error: str) -> bool:
     """실패를 기록하고, 시도를 다 썼으면 포기로 표시해 True를 돌려준다."""
     with operation_lock(path.parent, ".attempts.lock"):
-        record = _read(path)
+        record = read_json(path)
         tried = record.get("attempts") or [{}]
         tried[-1].update(stage=stage, error=error[:500], failed_at=now().isoformat())
         record["attempts"] = tried
@@ -85,7 +76,7 @@ def failures(settings: Settings) -> list[dict[str, Any]]:
     rows = []
     if settings.output_dir.is_dir():
         for path in sorted(settings.output_dir.glob("*/" + ATTEMPTS_FILE)):
-            record = _read(path)
+            record = read_json(path)
             if record.get("gave_up") and not record.get("notified_at"):
                 last = (record.get("attempts") or [{}])[-1]
                 rows.append({"date": record.get("date") or path.parent.name,
@@ -103,7 +94,7 @@ def acknowledge(settings: Settings, day: str) -> dict[str, Any]:
     root = settings.output_dir / day
     path = root / ATTEMPTS_FILE
     with operation_lock(root, ".attempts.lock"):
-        record = _read(path)
+        record = read_json(path)
         if record.get("gave_up") and not record.get("notified_at"):
             record["notified_at"] = now().isoformat()
             write_json(path, record)

@@ -113,35 +113,26 @@ NEWS_PREFILTER_CPU_STATE_FILE = DATA_DIR / "news_prefilter" / "cpu_budget.json"
 RUNTIME_LOCK_FILE = DATA_DIR / "runtime" / "bot.lock"
 PROMPT_DIR        = Path(__file__).resolve().parents[1] / "prompts"
 
-# ── 번역 ──────────────────────────────────────────────
-TRANSLATION_ENABLED = True
-# 기사 본문이 200자 내외라 출력 토큰 상한도 함께 내렸다. 남겨 둘 이유가 없다 —
-# 이 값이 곧 한 기사의 최대 지연이다. 다만 잘리면 JSON 파싱이 실패해 그 기사가
-# 통째로 버려지므로, 제목·종목 배열까지 합친 봉투에 여유를 두고 잡았다.
-TRANSLATION_NUM_PREDICT = 768
-
 # ── Cloudflare Workers AI ─────────────────────────────
 # API 토큰은 .env에만 두고 커밋하지 않는다. 로그·예외에도 남기지 않는다.
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
 CLOUDFLARE_WORKER_AI_API_TOKEN = os.environ.get("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip()
 CLOUDFLARE_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
-# 번역과 분석은 같은 모델을 쓴다. 나눌 실익이 없다 — `qwen3-30b-a3b`는 이름과
-# 달리 MoE(활성 3B)라 단가가 3B 모델과 같다(입력 $0.0509/M, 출력 $0.335/M).
-# "가벼운 번역 / 무거운 분석"으로 나눠도 절감이 0이다.
+# 분석은 모두 같은 모델을 쓴다 — `qwen3-30b-a3b`는 이름과 달리 MoE(활성 3B)라
+# 단가가 3B 모델과 같다(입력 $0.0509/M, 출력 $0.335/M).
 # 값 자체는 env로 남긴다. 임계값과 달리 모델 이름은 Cloudflare가 폐기·개명하면
 # 외부 사정으로 무효가 되므로, 코드 배포 없이 고칠 수 있어야 한다.
 CLOUDFLARE_MODEL = os.environ.get(
     "CLOUDFLARE_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8"
 ).strip()
-CLOUDFLARE_TRANSLATION_TIMEOUT = 45
 CLOUDFLARE_MAX_ATTEMPTS = 2
 CLOUDFLARE_FAILURE_THRESHOLD = 3
 CLOUDFLARE_FAILURE_COOLDOWN_SECONDS = 300
 
 
-# /research 분석과 /market 다이제스트는 전용 플래그 없이 기능 키가 켜지면
+# 시장상황 보고서·/research 분석·/market 다이제스트는 전용 플래그 없이 기능 키가 켜지면
 # 항상 LLM을 쓴다. 그래서 자격증명 요구 여부는 FEATURES_ENABLED로 판단한다.
-_LLM_FEATURE_KEYS = frozenset({"research", "market_sentiment"})
+_LLM_FEATURE_KEYS = frozenset({"news_summary", "research", "market_sentiment"})
 # 브리핑 절 전체(BRIEFING_*)보다 먼저 정의한다 — 아래 검증기가 모듈 로딩
 # 중간(줄 141)에 곧바로 불려 그 시점에 이미 값이 있어야 한다.
 BRIEFING_LLM_ENABLED = True
@@ -149,11 +140,7 @@ BRIEFING_LLM_ENABLED = True
 
 def _validate_cloudflare_credentials() -> None:
     """자격증명 없이 기동해서 첫 뉴스 주기에 전부 실패하는 일을 막는다."""
-    if not (
-        TRANSLATION_ENABLED
-        or (FEATURES_ENABLED & _LLM_FEATURE_KEYS)
-        or BRIEFING_LLM_ENABLED
-    ):
+    if not (FEATURES_ENABLED & _LLM_FEATURE_KEYS or BRIEFING_LLM_ENABLED):
         return
     missing = [
         name
@@ -175,13 +162,6 @@ _validate_cloudflare_credentials()
 SENT_NEWS_RETENTION_DAYS = 7
 TELEGRAM_MESSAGE_LIMIT = 4096
 NEWS_DIGEST_MESSAGE_MAX_CHARS = 3500
-# 다이제스트 한 기사의 제목·본문 표시 상한. 프롬프트도 본문을 200자 내외로
-# 지시하지만 그것은 지시일 뿐이라, 모델이 길게 답하는 주기가 섞이면 메시지가
-# 다시 부풀고 chunk_message_items가 메시지 수만 늘린다. 표시 단계에서 상한을
-# 확정해 한 주기에 올라오는 총량을 예측 가능하게 둔다. 운영자가 조정하는 값이
-# 아니라 읽기 경험의 규약이므로 env가 아닌 상수다.
-NEWS_DIGEST_ARTICLE_MAX_CHARS = 220
-NEWS_DIGEST_TITLE_MAX_CHARS = 80
 NEWS_SOURCE_FETCH_TIMEOUT_SECONDS = 45.0
 NEWS_LIVE_MAX_AGE_HOURS = 48
 # 소스 한 곳을 얼마나 깊이 읽을지. 사전선별이 훑는 후보의 폭이고, 여기서
@@ -350,8 +330,6 @@ NEWS_SOURCE_FAILURE_THRESHOLD = 3
 # 주기가 60분이라 60분 쿨다운은 한 주기도 쉬지 못하고 곧바로 다시 불린다.
 # 연속 실패한 소스는 두 주기를 쉬게 둔다.
 NEWS_SOURCE_COOLDOWN_MINUTES = 120
-# 뉴스 메시지에 감성 점수 표기 여부.
-NEWS_SENTIMENT_ENABLED = True
 # ── 시황 리서치(/research) ────────────────────────────
 RESEARCH_ANALYSIS_PROMPT_FILE = PROMPT_DIR / "market_research_ko.txt"
 RESEARCH_ANALYSIS_TIMEOUT = 600
@@ -387,9 +365,6 @@ RESEARCH_MAX_NEW_ACTIONS = 6
 # 후보 상한 중 시장별 발굴에 남겨 둘 자리.
 RESEARCH_DISCOVERY_RESERVED_SLOTS = 8
 NON_URGENT_WORKER_COUNT = 3
-# 뉴스 주기가 도는 동안 비긴급 LLM 작업을 보류할 최대 시간(초). 한도를 넘으면
-# 굶지 않도록 그대로 진행한다. 0이면 보류하지 않는다.
-NON_URGENT_DEFER_TIMEOUT_SECONDS = 180
 RESEARCH_REMOVE_RELEVANCE_THRESHOLD = 0.35
 RESEARCH_HISTORY_LIMIT = 5
 # 강세 섹터 구성종목을 리서치 후보군에 추가

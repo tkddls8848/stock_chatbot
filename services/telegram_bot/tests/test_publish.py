@@ -48,7 +48,8 @@ def test_market_and_research_share_one_meta_file(public):
     research = json.loads((public / "research.json").read_text(encoding="utf-8"))
     assert research["sight"] == "반도체" and research["history"] == [{"summary": "이전"}]
     meta = json.loads((public / "meta.json").read_text(encoding="utf-8"))
-    assert {"market_generated_at", "research_generated_at"} <= set(meta)
+    # 리서치 시각은 공개 meta에 넣지 않는다 — 웹 `/api/meta`가 내보내지 않는 값이라 읽을 곳이 없다.
+    assert "market_generated_at" in meta and "research_generated_at" not in meta
 
 
 def test_news_keeps_only_public_fields_deduplicates_and_expires(public):

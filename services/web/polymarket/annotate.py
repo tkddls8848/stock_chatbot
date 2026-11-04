@@ -43,7 +43,7 @@ from services.web.core.config import (
     POLYMARKET_SEARCH_INDEX_FILE,
     POLYMARKET_WEB_DIR,
 )
-from services.web.core.storage import write_json_atomic
+from services.web.core.storage import read_json_object, write_json_atomic
 from services.web.llm import PolymarketAnnotationError, build_polymarket_annotator
 from services.web.polymarket.dashboard.storage import read_detail
 
@@ -62,14 +62,6 @@ NEURONS_PER_OUTPUT_TOKEN = 0.0304
 # 예약한 상한 전부가 나갔다고 본다. 과소 집계보다 과대 집계가 안전하다 —
 # 틀려도 그 주기를 쉬는 것이지 무료 한도를 넘기는 것이 아니다.
 CHARS_PER_TOKEN_ESTIMATE = 2
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _iso(value: str) -> datetime | None:
@@ -204,13 +196,13 @@ def build(
     description_chars: int = POLYMARKET_ANNOTATE_DESCRIPTION_CHARS,
     max_tokens: int = POLYMARKET_ANNOTATE_NUM_PREDICT,
 ) -> dict[str, Any]:
-    manifest = _read_json(root / "current.json")
+    manifest = read_json_object(root / "current.json")
     events = manifest.get("events")
     if not manifest.get("generation_id") or not isinstance(events, list):
         logger.warning("[POLYMARKET_ANNOTATE] current generation이 없어 종료한다.")
         return {"state": "no_generation"}
 
-    stored = _read_json(index_path)
+    stored = read_json_object(index_path)
     index: dict[str, dict] = {
         str(key): value for key, value in (stored.get("events") or {}).items()
         if isinstance(value, dict)
@@ -222,7 +214,7 @@ def build(
         del index[key]
 
     pending = pending_events(events, index)
-    status = _read_json(status_path)
+    status = read_json_object(status_path)
     samples, used = recent_neurons(status)
     started_at = now().isoformat()
     result: dict[str, Any] = {

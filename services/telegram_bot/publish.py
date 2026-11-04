@@ -187,4 +187,3 @@ def publish_research(
         },
         indent=2,
     )
-    _update_meta("research_generated_at", generated_at)

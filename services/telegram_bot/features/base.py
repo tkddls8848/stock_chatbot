@@ -79,4 +79,6 @@ class FeatureSpec:
     status_reports: tuple[StatusReportSpec, ...] = ()
     install_services: ServiceInstaller | None = None
     install_jobs: JobInstaller | None = None
+    # 자주 도는 감시 작업(함수 이름)의 정상 실행 로그를 버린다. 레지스트리가 필터 하나로 모아 건다.
+    quiet_jobs: tuple[str, ...] = ()
     data_files: tuple[str, ...] = ()

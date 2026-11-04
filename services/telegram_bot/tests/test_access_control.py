@@ -5,12 +5,10 @@ import pytest
 
 from services.telegram_bot.core import access
 import services.telegram_bot.handlers.commands as commands
-from services.telegram_bot.core.menu_status import set_menu_button_text
 from services.telegram_bot.features import ALL_FEATURES, build_feature_registry
 from services.telegram_bot.handlers.navigation import (
     handle_menu_callback,
     handle_menu_text,
-    research_menu,
 )
 from services.telegram_bot.handlers.commands import configure_telegram_menu
 
@@ -120,32 +118,6 @@ def test_menu_jobs_suppress_chat_status(monkeypatch):
         )
         asyncio.run(handler(update, SimpleNamespace(bot_data={})))
     assert replies == []
-
-
-def test_menu_status_changes_only_target_button():
-    class Message:
-        def __init__(self):
-            self.reply_markup = research_menu()
-
-        async def edit_reply_markup(self, reply_markup):
-            self.reply_markup = reply_markup
-
-    message = Message()
-    asyncio.run(
-        set_menu_button_text(
-            message,
-            "nav:research:run",
-            "◑ AI 분석 중",
-        )
-    )
-
-    buttons = {
-        button.callback_data: button.text
-        for row in message.reply_markup.inline_keyboard
-        for button in row
-    }
-    assert buttons["nav:research:run"] == "◑ AI 분석 중"
-    assert buttons["nav:research:show"] == "주제 보기"
 
 
 def test_persistent_web_admin_button_opens_the_hub_not_the_admin_menu():

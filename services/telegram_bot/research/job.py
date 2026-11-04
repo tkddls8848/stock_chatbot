@@ -25,7 +25,7 @@ from services.telegram_bot.core.config import (
     RESEARCH_MAX_CANDIDATES,
     TELEGRAM_CHAT_ID,
 )
-from services.telegram_bot.core.workers import ShutdownThreadPool, burst_job, run_non_urgent, wait_for_urgent_idle
+from services.telegram_bot.core.workers import ShutdownThreadPool, burst_job, run_non_urgent
 from services.telegram_bot.research.candidates import build_research_candidate_universe
 from services.telegram_bot.research.discovery import collect_extra_candidates
 from services.telegram_bot.research.results import collect_actions
@@ -142,9 +142,6 @@ async def _run_research(app: Application) -> dict[str, Any] | None:
         except Exception as error:
             logger.warning("[RESEARCH] 요약 컨텍스트 수집 실패: %s", error)
 
-    # 분석은 중간에 양보할 수 없는 단일 LLM 호출이라, 뉴스 주기가 도는 동안에는
-    # 시작을 미뤄 번역이 뒤에서 대기하지 않게 한다.
-    await wait_for_urgent_idle("리서치 분석")
     result = await asyncio.get_running_loop().run_in_executor(
         _RESEARCH_EXECUTOR,
         bot_data["market_view_analyzer"].analyze,

@@ -8,8 +8,11 @@ import logging
 from pathlib import Path
 
 from .config import Settings
-from .pipeline import produce_daily, produce_editorial, prune_old_days
 from .review import ReviewError, read_script
+
+# 제작 파이프라인(렌더·음성·LLM)은 제작 분기에서만 부른다. 텔레그램 봇이 1분마다 부르는 검토 감시
+# (`--review-pending`·`--review-tick`)가 파이프라인 import에 호출당 0.4~0.6 CPU초를 쓰고 있었다
+# (2026-11-04 실측, 하루 2,880번).
 
 
 _GATES = (
@@ -107,8 +110,10 @@ def main() -> None:
             from .attempts import run
             payload = run(settings, lambda: _produce_today(settings))
         elif args.plan:
+            from .pipeline import produce_editorial
             payload = asdict(produce_editorial(args.plan.resolve(), settings))
         elif args.interactive:
+            from .pipeline import produce_daily, prune_old_days
             prune_old_days(settings, datetime.now(settings.timezone).date())
             payload = asdict(produce_daily(
                 settings,
@@ -128,6 +133,8 @@ def main() -> None:
 
 
 def _produce_today(settings: Settings, *, production_date: date | None = None, force: bool = False) -> dict:
+    from .pipeline import produce_daily, prune_old_days
+
     # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
     prune_old_days(settings, datetime.now(settings.timezone).date())
     payload = asdict(produce_daily(settings, production_date=production_date, force=force))

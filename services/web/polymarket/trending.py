@@ -38,21 +38,13 @@ from services.web.core.config import (
     POLYMARKET_TRENDING_SPOTLIGHT_LIMIT,
     POLYMARKET_WEB_DIR,
 )
-from services.web.core.storage import write_json_atomic
+from services.web.core.storage import read_json_object, write_json_atomic
 from services.web.polymarket.dashboard.models import ends_before, title_probability
 from services.web.polymarket.dashboard.taxonomy import CATEGORY_TAGS
 
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _number(value: Any) -> float | None:
@@ -230,13 +222,13 @@ def build(
     move_floor: float = POLYMARKET_TRENDING_MOVE_FLOOR,
     list_limit: int = POLYMARKET_TRENDING_LIST_LIMIT,
 ) -> dict[str, Any] | None:
-    manifest = _read_json(root / "current.json")
+    manifest = read_json_object(root / "current.json")
     events = manifest.get("events")
     if not manifest.get("generation_id") or not isinstance(events, list):
         logger.warning("[POLYMARKET_TRENDING] current generation이 없어 종료한다.")
         return None
 
-    stored = _read_json(target)
+    stored = read_json_object(target)
     day = today().isoformat()
     stored_baseline = stored.get("baseline") if isinstance(stored.get("baseline"), dict) else {}
     stored_previous = stored.get("previous") if isinstance(stored.get("previous"), dict) else {}

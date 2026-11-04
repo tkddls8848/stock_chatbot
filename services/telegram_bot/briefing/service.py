@@ -26,7 +26,7 @@ from services.telegram_bot.core.config import (
     TELEGRAM_MESSAGE_LIMIT,
 )
 from services.telegram_bot.core.telegram_html import truncate_html
-from services.telegram_bot.core.workers import run_non_urgent, wait_for_urgent_idle
+from services.telegram_bot.core.workers import run_non_urgent
 from services.telegram_bot.research.news import collect_global_market_news_items
 from services.telegram_bot.state.news_log import aggregate_sentiment_by_code
 from services.telegram_bot.stocks.quotes import format_sector_summary_text
@@ -115,7 +115,6 @@ async def _write_llm_comment(app: Application, payload: dict) -> str:
     writer = app.bot_data.get("briefing_writer")
     if writer is None or not writer.enabled:
         return ""
-    await wait_for_urgent_idle("브리핑 LLM 코멘트")
     try:
         return await run_non_urgent(writer.write, payload)
     except Exception as e:
@@ -218,9 +217,17 @@ async def send_morning_briefing(app: Application, force: bool = False) -> None:
     await _deliver(app, sections, "모닝 브리핑")
 
 
-async def send_intraday_briefing(app: Application, force: bool = False) -> None:
+# 장중·마감 브리핑은 머리말과 이름표만 다르다. (머리말, 이름, 뉴스 칸 제목, 코멘트 칸 제목)
+_SESSION_BRIEFINGS = {
+    "intraday": ("📈 장중 브리핑", "장중 브리핑", "장중 주요 뉴스", "장중 관찰 포인트"),
+    "evening": ("🌙 마감 브리핑", "마감 브리핑", "마감 주요 뉴스", "마감 코멘트"),
+}
+
+
+async def _send_session_briefing(app: Application, kind: str, force: bool) -> None:
+    header, name, news_title, comment_title = _SESSION_BRIEFINGS[kind]
     if not force and await _is_holiday(app):
-        logger.info("[BRIEFING] 휴장일이라 장중 브리핑을 건너뜁니다.")
+        logger.info("[BRIEFING] 휴장일이라 %s을 건너뜁니다.", name)
         return
 
     wm = app.bot_data["watchlist_manager"]
@@ -233,7 +240,7 @@ async def send_intraday_briefing(app: Application, force: bool = False) -> None:
     comment = await _write_llm_comment(
         app,
         {
-            "kind": "intraday",
+            "kind": kind,
             "market_view": market_view,
             "sector_summary_context": sector_summary_context,
             "news_headlines": _news_headlines_payload(news_items),
@@ -241,60 +248,28 @@ async def send_intraday_briefing(app: Application, force: bool = False) -> None:
         },
     )
 
-    sections = [f"<b>📈 장중 브리핑</b> {_today_header()}"]
+    sections = [f"<b>{header}</b> {_today_header()}"]
     if sector_summary_text:
         sections.append(sector_summary_text)
-    news_section = _format_news_section(news_items, "장중 주요 뉴스")
+    news_section = _format_news_section(news_items, news_title)
     if news_section:
         sections.append(news_section)
     if sentiment_section:
         sections.append(sentiment_section)
     if comment:
-        sections.append(f"<b>장중 관찰 포인트</b>\n{html.escape(comment)}")
+        sections.append(f"<b>{comment_title}</b>\n{html.escape(comment)}")
     if len(sections) == 1:
         sections.append("표시할 데이터가 없습니다.")
 
-    await _deliver(app, sections, "장중 브리핑")
+    await _deliver(app, sections, name)
+
+
+async def send_intraday_briefing(app: Application, force: bool = False) -> None:
+    await _send_session_briefing(app, "intraday", force)
 
 
 async def send_evening_briefing(app: Application, force: bool = False) -> None:
-    if not force and await _is_holiday(app):
-        logger.info("[BRIEFING] 휴장일이라 마감 브리핑을 건너뜁니다.")
-        return
-
-    wm = app.bot_data["watchlist_manager"]
-    watchlist = await wm.get_all()
-    sector_summary_context, sector_summary_text = await _build_sector_summary_section(app, include_fund_flow=True)
-    market_view = app.bot_data["market_view_manager"].get_sight() or ""
-    news_items = await _collect_briefing_news(app)
-
-    sentiment_stats, sentiment_section = await _build_sentiment_section(app, watchlist)
-
-    comment = await _write_llm_comment(
-        app,
-        {
-            "kind": "evening",
-            "market_view": market_view,
-            "sector_summary_context": sector_summary_context,
-            "news_headlines": _news_headlines_payload(news_items),
-            "sentiment_stats": _sentiment_payload(sentiment_stats),
-        },
-    )
-
-    sections = [f"<b>🌙 마감 브리핑</b> {_today_header()}"]
-    if sector_summary_text:
-        sections.append(sector_summary_text)
-    news_section = _format_news_section(news_items, "마감 주요 뉴스")
-    if news_section:
-        sections.append(news_section)
-    if sentiment_section:
-        sections.append(sentiment_section)
-    if comment:
-        sections.append(f"<b>마감 코멘트</b>\n{html.escape(comment)}")
-    if len(sections) == 1:
-        sections.append("표시할 데이터가 없습니다.")
-
-    await _deliver(app, sections, "마감 브리핑")
+    await _send_session_briefing(app, "evening", force)
 
 
 async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

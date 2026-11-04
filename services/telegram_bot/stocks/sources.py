@@ -13,11 +13,12 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 logger = logging.getLogger(__name__)
 
-_SINA_HQ_NODE_URL = (
+# 시세(`quotes.py`)의 상승률 순위도 같은 주소·헤더를 쓴다. 여기가 주인이다.
+SINA_HQ_NODE_URL = (
     "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
     "Market_Center.getHQNodeData"
 )
-_SINA_HEADERS = {
+SINA_HEADERS = {
     "Referer": "https://finance.sina.com.cn",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
 }
@@ -58,7 +59,7 @@ def _fetch_a_code_name_sina() -> pd.DataFrame:
     rows: list[dict[str, str]] = []
     for page in range(1, 121):
         response = requests.get(
-            _SINA_HQ_NODE_URL,
+            SINA_HQ_NODE_URL,
             params={
                 "page": page,
                 "num": 100,
@@ -68,7 +69,7 @@ def _fetch_a_code_name_sina() -> pd.DataFrame:
                 "symbol": "",
                 "_s_r_a": "init",
             },
-            headers=_SINA_HEADERS,
+            headers=SINA_HEADERS,
             timeout=20,
         )
         response.raise_for_status()

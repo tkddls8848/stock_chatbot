@@ -15,5 +15,6 @@ FEATURE = FeatureSpec(
     commands=(CommandSpec("shorts", "쇼츠 상태·제작·수정·검수", cmd_shorts, usage=USAGE),),
     callbacks=(CallbackSpec(("shr:",), review_callback),),
     install_jobs=install_jobs,
+    quiet_jobs=("poll_reviews",),
     data_files=("storage/shorts/",),
 )

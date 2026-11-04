@@ -40,27 +40,24 @@ def write_text_atomic(path: Path, data: str) -> None:
         raise
 
 
-def write_bytes_atomic(path: Path, data: bytes) -> None:
-    """`path`를 바이트 산출물로 원자 교체한다 (PNG 등)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        with open(temporary, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-
-
 def write_json_atomic(path: Path, payload: Any, *, indent: int | None = None) -> None:
     write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=indent))
 
 
 class FileLockTimeout(RuntimeError):
     """다른 프로세스가 잠금을 오래 쥐고 있다."""
+
+
+def read_json_object(path: Path) -> dict[str, Any]:
+    """JSON 객체 파일을 읽는다. 없거나 깨졌거나 객체가 아니면 빈 dict다 — 읽는 쪽이 "자료 없음"으로 다룬다.
+
+    웹의 one-shot·화면·뉴스레터가 같은 6줄을 각자 들고 있던 것을 여기로 모았다(2026-11-04).
+    """
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 @contextmanager

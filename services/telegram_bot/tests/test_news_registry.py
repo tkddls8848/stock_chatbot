@@ -85,12 +85,12 @@ def test_success_resets_failure_streak():
     assert [s.key for s in registry.active_specs()] == ["gnews_us", "gnews_kr"]
 
 
-def test_status_lines_report_states():
+def test_status_rows_report_states():
     registry = _registry(failure_threshold=1, cooldown_minutes=60)
     registry.record_failure("gnews_kr", "boom")
-    lines = registry.status_lines()
-    assert lines[0] == "gnews_us: 정상"
-    assert lines[1].startswith("gnews_kr: 쿨다운")
+    rows = registry.status_rows()
+    assert rows[0][1:] == ("gnews_us", "정상")
+    assert rows[1][1] == "gnews_kr" and rows[1][2].startswith("쿨다운")
 
 
 def test_flash_wire_sources_are_retired():

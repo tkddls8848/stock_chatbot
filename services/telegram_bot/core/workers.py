@@ -1,9 +1,7 @@
-"""뉴스 긴급 경로와 분리된 비긴급 작업 실행기.
+"""오래 걸리는 블로킹 작업(시세·종목 DB·LLM 호출)을 이벤트 루프 밖에서 돌리는 실행기.
 
-리서치 분석처럼 오래 걸리는 단일 호출이 뉴스 주기와 겹치면, 원격 추론이라도
-동시 요청이 늘어 속도 제한(429)에 걸리기 쉽고 뉴스 전송이 늦어진다. 그래서
-스레드 분리와 별개로, 뉴스 주기가 도는 동안에는 비긴급 LLM 작업의 *시작*을
-보류시킨다(`urgent_phase` / `wait_for_urgent_idle`).
+예전에는 뉴스 번역 주기 동안 비긴급 LLM 작업의 시작을 보류하는 게이트(`urgent_phase`)가
+있었다. 번역 경로를 지운 뒤 그 구간에 들어가는 곳이 없어 대기는 늘 즉시 통과했고, 같이 지웠다.
 """
 
 import asyncio
@@ -17,7 +15,7 @@ from functools import partial, wraps
 from queue import Empty, Queue
 from typing import Any, Callable
 
-from services.telegram_bot.core.config import NON_URGENT_DEFER_TIMEOUT_SECONDS, NON_URGENT_WORKER_COUNT
+from services.telegram_bot.core.config import NON_URGENT_WORKER_COUNT
 
 logger = logging.getLogger(__name__)
 
@@ -191,51 +189,3 @@ def burst_job(label: str):
         return wrapped
 
     return decorate
-
-
-# ── 긴급 구간 게이트 ──────────────────────────────────
-# 봇과 같은 이벤트 루프에서만 쓰이므로 별도 락 없이 카운터로 중첩을 센다.
-
-_urgent_depth = 0
-_urgent_idle = asyncio.Event()
-_urgent_idle.set()
-
-
-@asynccontextmanager
-async def urgent_phase():
-    """긴급 구간(뉴스 수집·번역 주기)을 표시한다. 중첩 호출을 허용한다."""
-    global _urgent_depth
-    _urgent_depth += 1
-    _urgent_idle.clear()
-    try:
-        yield
-    finally:
-        _urgent_depth = max(0, _urgent_depth - 1)
-        if _urgent_depth == 0:
-            _urgent_idle.set()
-
-
-async def wait_for_urgent_idle(
-    label: str,
-    timeout: float | None = None,
-) -> bool:
-    """긴급 구간이 끝날 때까지 기다린다.
-
-    LLM을 쓰는 비긴급 작업이 호출한다. 대기가 한도를 넘으면 굶기지 않도록
-    그대로 진행한다(True=유휴 확인, False=한도 초과 후 강행).
-    """
-    if _urgent_idle.is_set():
-        return True
-
-    limit = NON_URGENT_DEFER_TIMEOUT_SECONDS if timeout is None else timeout
-    if limit <= 0:
-        return False
-
-    logger.info("[WORKERS] 뉴스 주기 진행 중 - %s 보류 (최대 %.0f초)", label, limit)
-    try:
-        await asyncio.wait_for(_urgent_idle.wait(), timeout=limit)
-    except asyncio.TimeoutError:
-        logger.warning("[WORKERS] %s 보류 한도 초과, 그대로 진행합니다.", label)
-        return False
-    logger.info("[WORKERS] 뉴스 주기 종료 - %s 재개", label)
-    return True

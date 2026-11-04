@@ -25,7 +25,7 @@ from services.web.core.config import (
     POLYMARKET_WEB_MAX_DAILY_CPU_SECONDS,
     POLYMARKET_WEB_MAX_DAILY_REQUESTS,
 )
-from services.web.core.storage import write_json_atomic
+from services.web.core.storage import read_json_object, write_json_atomic
 from services.web.polymarket.dashboard.client import EventsClient
 from services.web.polymarket.dashboard.models import normalize_event
 from services.web.polymarket.dashboard.storage import write_generation
@@ -54,14 +54,6 @@ def _resource_usage() -> tuple[float | None, int | None]:
         return None, None
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return float(usage.ru_utime + usage.ru_stime), int(usage.ru_maxrss)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _iso(value: str) -> datetime | None:
@@ -148,7 +140,7 @@ def refresh(*, root: Path = POLYMARKET_WEB_DIR) -> dict[str, Any]:
     cpu_before, _rss_before = _resource_usage()
     attempted_at = now().isoformat()
     status_path = root / "status.json"
-    previous = _read_json(status_path)
+    previous = read_json_object(status_path)
     status = _base_status(previous, attempted_at)
 
     usage = recent_usage(previous)

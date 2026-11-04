@@ -72,8 +72,7 @@ class _Response:
 
 def test_web_status_reads_the_public_api(monkeypatch):
     payloads = {
-        "/api/meta": {"market_generated_at": "2026-09-24T07:40:03+09:00",
-                      "research_generated_at": "2026-09-24T08:21:10+09:00"},
+        "/api/meta": {"market_generated_at": "2026-09-24T07:40:03+09:00"},
         "/api/forecast/health": {"freshness": {"state": "normal", "last_success_at": "2026-09-24T06:01:00+09:00"},
                                    "last_result": "success"},
         "/api/forecast/sector-brief": {"written_at": "2026-09-24T06:03:00+09:00"},
@@ -90,7 +89,8 @@ def test_web_status_reads_the_public_api(monkeypatch):
 
     # 표의 맞춤 칸(기호·시각·건수)은 ASCII만, 한글 항목은 맨 끝 칸이다(2026-10-08).
     assert "🟢 09/24 07:40  시장 감성\n" in text
-    assert "🟢 09/24 08:21  리서치\n" in text
+    # 리서치 줄은 없다 — 웹 `/api/meta`가 리서치 시각을 내보내지 않아 늘 "자료 없음"이던 줄이다.
+    assert "리서치" not in text
     assert "자료 없음</pre>" in text   # 뉴스 검색 자료 시각이 없다
     # 정상 결과(success)는 "마지막 시도"를 덧붙이지 않는다.
     assert "🟢 09/24 06:01   수집 · 제때 갱신\n" in text and "마지막 시도" not in text

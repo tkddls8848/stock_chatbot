@@ -181,31 +181,20 @@ class NewsSourceRegistry:
 
     def record_rate_limited(self, key: str, error: str) -> None:
         """Immediately cool down a source that explicitly returned HTTP 429."""
-        health = self._health.get(key)
-        if health is None:
-            return
-        health.consecutive_failures = self._failure_threshold
-        health.last_error = error[:200]
-        health.cooldown_until = now() + self._cooldown
-        logger.warning(
-            "[NEWS] 소스 %s 요청 제한(429): %s까지 쿨다운",
-            key,
-            health.cooldown_until.strftime("%H:%M:%S"),
-        )
+        self._cool_down(key, error, "[NEWS] 소스 %s 요청 제한(429): %s까지 쿨다운")
 
     def record_unavailable(self, key: str, error: str) -> None:
         """Cool down a public source that is unreachable or does not respond."""
+        self._cool_down(key, error, "[NEWS] source %s unavailable; cooldown until %s")
+
+    def _cool_down(self, key: str, error: str, message: str) -> None:
         health = self._health.get(key)
         if health is None:
             return
         health.consecutive_failures = self._failure_threshold
         health.last_error = error[:200]
         health.cooldown_until = now() + self._cooldown
-        logger.warning(
-            "[NEWS] source %s unavailable; cooldown until %s",
-            key,
-            health.cooldown_until.strftime("%H:%M:%S"),
-        )
+        logger.warning(message, key, health.cooldown_until.strftime("%H:%M:%S"))
 
     def status_rows(self) -> list[tuple[str, str, str]]:
         """/system 상태 표의 (기호, 소스 키, 상태) 줄. 쿨다운은 실패가 문턱을 넘은 뒤라 더 무겁게 보인다."""
@@ -220,7 +209,3 @@ class NewsSourceRegistry:
             else:
                 rows.append((MARK_OK, spec.key, "정상"))
         return rows
-
-    def status_lines(self) -> list[str]:
-        """/system 표시용 소스 상태 요약."""
-        return [f"{key}: {state}" for _, key, state in self.status_rows()]

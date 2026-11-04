@@ -74,13 +74,6 @@ class Settings:
     # 추론 모델(deepseek-v4 등)의 reasoning_effort. "none"이면 생각 단계를 끈다 — 켜 두면
     # 생각이 토큰 상한과 시간을 먹어 원고가 잘린다(실측 2026-09-28). 비우면 보내지 않는다.
     editor_reasoning_effort: str = "none"
-    # 그날 이슈에 맞춘 배경 생성. 끄거나 실패하면 저장된 기본 배경을 쓴다.
-    generated_backgrounds: bool = True
-    image_model: str = "@cf/black-forest-labs/flux-1-schnell"
-    # 그린 배경에 사람·글자가 있는지 보는 비전 모델. Llama 3.2 Vision은 계정의 라이선스
-    # 동의가 필요하고 Gemma는 이 계정에 열려 있지 않아 LLaVA를 쓴다(2026-09-27 실측).
-    background_check: bool = True
-    vision_model: str = "@cf/llava-hf/llava-1.5-7b-hf"
     # 최근 며칠 안에 다룬 이벤트·주제는 후보에서 뺀다(매일 같은 이슈 반복 방지).
     repeat_days: int = 7
     # 웹 로그인과 같은 Google OAuth 클라이언트(웹 애플리케이션)다. YouTube 업로드 권한은 클라이언트가 아니라

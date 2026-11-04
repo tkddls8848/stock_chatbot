@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 from typing import Sequence
 
-from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
 from .scenario import Scenario, Scene
 from .tts import Word, locate
@@ -78,7 +78,7 @@ SAFE_BOTTOM = HEIGHT - 380              # 1540. 이 아래는 Shorts UI 구역
 SAFE_LEFT = 72
 SAFE_RIGHT = WIDTH - 72                 # 1008. 카드 테두리까지는 버튼 줄과 겹쳐도 된다
 BODY_RIGHT = WIDTH - 202                # 878. 카드 안 내용과 칩은 버튼 줄을 피해 여기까지만 쓴다
-TAG_Y, TAG_HEIGHT = 196, 64
+TAG_Y = 196
 TITLE_TOP, TITLE_BOTTOM = 290, 580
 PROGRESS_Y = 606                        # 질문 순서 점
 CARD_TOP, CARD_BOTTOM = 690, 1150       # 카드 테두리. 번호 탭은 위로 걸친다
@@ -98,23 +98,6 @@ OPTION_BAR_TOP = .82
 OPTION_BAR = 20
 FOOTER_Y = 1302                         # 고지문과 자료 기준. 자막 바로 위다
 CAPTION_MARGIN_V = HEIGHT - SAFE_BOTTOM  # 380. 자막 아래 끝을 안전 영역 바닥에 붙인다
-
-# ── 배경 ─────────────────────────────────────────────
-# 사진은 흐리고 어둡게 깔아 결만 남기고(`_backdrop`), 그 위에 세로 어둠과 머리말 뒤의 빛 번짐을
-# 얹는다(`_atmosphere`). (y, 불투명도)이고 사이는 선형이다.
-# 2026-10-07 운영자 지적: 흐림(14px)과 어둠이 세서 매일 새로 그리는 배경이 보이지 않았다. 사진은 거의 그대로
-# 살리고(가는 흐림만 남겨 AI 그림의 잔결을 누른다), 글자가 앉는 자리 뒤에만 부드러운 그늘을 깐다(`_shade`).
-_SCRIM = ((0, .30), (420, .30), (900, .38), (1500, .46), (HEIGHT, .40))
-_SCRIM_RGB = (6, 9, 13)
-BACKDROP_BLUR = 1.2
-BACKDROP_BRIGHTNESS = .9
-
-# 장면마다 같은 사진을 다르게 본다. 확대 여유 안에서 크롭 위치를 옮기고, 짝수
-# 장면은 좌우를 뒤집고, 장면의 accent 색으로 색조를 입힌다 — 새 미디어 소스도
-# 네트워크도 쓰지 않고 장면 성격에 따라 배경이 달라진다.
-_ZOOM = 1.16
-_TONE_STRENGTH = .5
-_BRIGHTNESS = (1.12, .95, 1.05, 1.0)
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, width: int) -> list[str]:
@@ -141,31 +124,6 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, wi
     return lines
 
 
-def _background(path: Path | None, *, index: int, total: int, accent: str) -> Image.Image:
-    """저장된 배경 한 장을 장면마다 다르게 보이도록 잡는다.
-
-    쓸 수 있는 그림이 둘뿐이라 2026-09-23 산출물은 네 장면이 모두 같은 도시
-    야경이었다. 장면별 `visual_query`가 고르는 파일은 그대로 두고, 여기서
-    **크롭 위치·좌우 방향·색조·밝기**를 장면 번호와 accent로 정한다. 새 자산도,
-    생성 호출도, 네트워크도 없이 장면이 바뀐 것이 눈에 보인다.
-    """
-    if path is None or not path.is_file():
-        return Image.new("RGB", (WIDTH, HEIGHT), _SCRIM_RGB)
-    with Image.open(path) as source:
-        wide = ImageOps.fit(source.convert("RGB"), (round(WIDTH * _ZOOM), round(HEIGHT * _ZOOM)),
-                            method=Image.Resampling.LANCZOS)
-    # 확대 여유를 장면 순서대로 가로는 왼쪽→오른쪽, 세로는 아래→위로 훑는다.
-    share = (index - 1) / (total - 1) if total > 1 else .5
-    left = round((wide.width - WIDTH) * share)
-    top = round((wide.height - HEIGHT) * (1 - share))
-    frame = wide.crop((left, top, left + WIDTH, top + HEIGHT))
-    if index % 2 == 0:
-        frame = ImageOps.mirror(frame)
-    tone = Image.new("RGB", frame.size, _COLORS.get(accent, _COLORS["gold"]))
-    frame = Image.blend(frame, ImageChops.multiply(frame, tone), _TONE_STRENGTH)
-    return ImageEnhance.Brightness(frame).enhance(_BRIGHTNESS[index % len(_BRIGHTNESS)])
-
-
 # 화면에 고정으로 찍히는 말.
 _CHROME = {"yes": "예", "no": "아니오", "site": "nunchi.live", "brand_tag": "집단 예측 컨센서스", "list_tag": "오늘의 질문",
            "list_title": "오늘의 질문 {n}",
@@ -173,7 +131,6 @@ _CHROME = {"yes": "예", "no": "아니오", "site": "nunchi.live", "brand_tag": 
            "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
            "footer_options": "막대는 표시한 답의 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
            "footer": "집단 예측 컨센서스 · 투자 조언 아님"}
-_BRAND = "NUNCHI"
 _LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
 
 
@@ -228,31 +185,6 @@ def _header(draw, font_path: Path, current: int, count: int) -> None:
         x += width + 12
 
 
-@lru_cache(maxsize=16)
-def _backdrop(path: Path | None, index: int, total: int, accent: str) -> Image.Image:
-    """배경 사진은 흐리고 어둡게 깔아 결만 남긴다. 글자와 카드가 사진 앞에 선다."""
-    frame = _background(path, index=index, total=total, accent=accent)
-    if path is None or not path.is_file():
-        return frame
-    return ImageEnhance.Brightness(frame.filter(ImageFilter.GaussianBlur(BACKDROP_BLUR))).enhance(BACKDROP_BRIGHTNESS)
-
-
-@lru_cache(maxsize=16)
-def _atmosphere(accent: str) -> Image.Image:
-    """글자 뒤의 어둠과 머리말 뒤에 고이는 빛."""
-    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-    for (top, start), (bottom, stop) in zip(_SCRIM, _SCRIM[1:]):
-        for y in range(top, min(bottom, HEIGHT)):
-            share = (y - top) / max(1, bottom - top)
-            alpha = min(1.0, start + (stop - start) * share)
-            draw.line((0, y, WIDTH, y), fill=(*_SCRIM_RGB, round(255 * alpha)))
-    glow = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((10, -110, WIDTH // 4 - 10, 120), fill=(*_rgb(accent), 120))
-    glow = glow.filter(ImageFilter.GaussianBlur(34)).resize((WIDTH, HEIGHT), Image.Resampling.BICUBIC)
-    return Image.alpha_composite(layer, glow)
-
-
 def _glow(image: Image.Image, paint, *, radius: int = 14, strength: float = 1.0) -> None:
     """`paint(draw)`로 그린 것을 빛 번짐과 함께 얹는다. 흐림은 그린 자리 둘레만 한다.
 
@@ -272,16 +204,6 @@ def _glow(image: Image.Image, paint, *, radius: int = 14, strength: float = 1.0)
         halo.putalpha(halo.getchannel("A").point(lambda value: round(value * strength)))
     image.alpha_composite(halo, (left, top))
     image.alpha_composite(piece, (left, top))
-
-
-def _shade(image: Image.Image, box, *, alpha: int = 150, radius: int = 60) -> None:
-    """글자 묶음 뒤에 가장자리가 번진 그늘을 깐다. 배경 사진은 살리고 글자만 떠오르게 한다."""
-    layer = Image.new("RGBA", (WIDTH // 4, HEIGHT // 4), (0, 0, 0, 0))
-    left, top, right, bottom = (round(value / 4) for value in box)
-    ImageDraw.Draw(layer).rounded_rectangle((left, top, right, bottom), radius=radius // 4,
-                                            fill=(*_SCRIM_RGB, alpha))
-    layer = layer.filter(ImageFilter.GaussianBlur(radius / 4)).resize(image.size, Image.Resampling.BICUBIC)
-    image.alpha_composite(layer)
 
 
 def _fit(draw, text: str, font_path: Path, width: int, sizes: Sequence[int], max_lines: int):
@@ -316,19 +238,6 @@ def _text_block(draw, text, font_path, box, *, size=48, color=None, center=False
                 y += spacing
             return
     raise RenderError("화면 텍스트가 안전 영역을 넘습니다: " + text[:70])
-
-
-def _tag(draw, text: str, font_path: Path, accent: str) -> None:
-    """맨 위 꼬리표. 어두운 반투명 띠에 왼쪽 색 막대, 채널 이름과 장면 분류를 한 줄로."""
-    font = _font(_bold(font_path), 30)
-    label = f"{_BRAND} · {text}" if text else _BRAND
-    while draw.textlength(label, font=font) > SAFE_RIGHT - SAFE_LEFT - 80 and len(label) > 8:
-        label = label[:-2] + "…"
-    width = draw.textlength(label, font=font) + 72
-    left = (WIDTH - width) / 2
-    draw.rounded_rectangle((left, TAG_Y, left + width, TAG_Y + TAG_HEIGHT), radius=12, fill=(255, 255, 255, 26))
-    draw.rounded_rectangle((left, TAG_Y, left + 10, TAG_Y + TAG_HEIGHT), radius=4, fill=accent)
-    _ink_text(draw, (left + 40, TAG_Y, left + width, TAG_Y + TAG_HEIGHT), label, font, _COLORS["ink"], center_x=False)
 
 
 def _headline(image, lines: Sequence[tuple[str, str]], font_path: Path, accent: str) -> None:
@@ -497,7 +406,7 @@ def _expanded_height(scene: Scene, option_row: int = OPTION_ROW, chips: bool = T
     return ROW_HEIGHT + len(scene.options) * option_row + (LIST_CHIPS + 20 if chips and scene.bullets else 0) + 16
 
 
-def _list_layout(scenes: Sequence[Scene], heights_open: Sequence[float]) -> tuple[int, bool]:
+def _list_layout(scenes: Sequence[Scene]) -> tuple[int, bool]:
     """펼친 줄의 선택지 줄 높이와 칩을 둘지. 질문이 많아 넘치면 선택지 줄을 줄이고, 그래도 넘치면 칩을 뺀다."""
     budget = LIST_BOTTOM - LIST_TOP - ROW_GAP * (len(scenes) - 1) - ROW_HEIGHT * (len(scenes) - 1)
     widest = max(scenes, key=lambda scene: len(scene.options))
@@ -533,9 +442,6 @@ def render_list_frame(
     previous: int | None,
     progress: float,
     shown: int | None,
-    background_path: Path | None = None,
-    index: int = 2,
-    total: int = 5,
 ) -> None:
     """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다."""
     chrome = _CHROME
@@ -544,7 +450,7 @@ def render_list_frame(
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     _header(draw, font_path, active + 2, len(scenes) + 2)
-    option_row, chips = _list_layout(scenes, ())
+    option_row, chips = _list_layout(scenes)
     eased = _ease(progress)
     y = LIST_TOP
     for number, row in enumerate(scenes):
@@ -607,7 +513,6 @@ def render_frame(
     font_path: Path,
     index: int,
     total: int,
-    background_path: Path | None = None,
     shown: int | None = None,
 ) -> None:
     chrome = _CHROME
@@ -954,8 +859,6 @@ def render_video(
     font_path: Path,
     blender_bin: str,
     ffprobe_bin: str,
-    max_duration: float,
-    background_paths: tuple[Path | None, ...] | None = None,
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
@@ -964,16 +867,11 @@ def render_video(
     captions = work_dir / "phrases.srt"
     _write_captions(scene_phrases, captions, font_path=font_path)
     images, timeline = [], []
-    selected = background_paths or tuple(None for _ in scenario.scenes)
-    if len(selected) != len(scenario.scenes):
-        raise RenderError("배경 수와 장면 수가 다릅니다")
     cursor, merging = 0.0, None
     body = [scene for scene in scenario.scenes if scene.kind == "consensus"]
     body_start = next((n for n, scene in enumerate(scenario.scenes) if scene.kind == "consensus"), None)
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
         listed = scene.kind == "consensus"
-        # 본론은 목록 한 장이다. 배경도 첫 질문의 것 하나로 둬 질문이 바뀔 때 화면이 갈리지 않는다.
-        background = selected[body_start] if listed else selected[index - 1]
         beats = _beats(scene, seconds)
         if listed:
             active = index - 1 - body_start
@@ -991,12 +889,10 @@ def render_video(
                 rows = list(body)
                 rows[active] = display_scene
                 render_list_frame(rows, frame, font_path=font_path, active=active,
-                                  previous=active - 1 if active > 0 else None, progress=progress, shown=shown,
-                                  background_path=background,
-                                  index=body_start + 1, total=len(scenario.scenes))
+                                  previous=active - 1 if active > 0 else None, progress=progress, shown=shown)
             else:
                 render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                             background_path=background, shown=shown)
+                             shown=shown)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업·펼침은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가 머무는 구간이다.
             # 앞 장면과 제목이 같을 수 있으므로 장면 번호로 구분한다.

@@ -27,7 +27,7 @@ from services.telegram_bot.core.config import (
     NEWS_PREFILTER_SIMILARITY_THRESHOLD,
     NEWS_PREFILTER_REPORTED_EVENT_COOLDOWN_HOURS,
 )
-from services.telegram_bot.core.workers import is_burst_active, wait_for_urgent_idle
+from services.telegram_bot.core.workers import is_burst_active
 from services.telegram_bot.features.base import FeatureSpec, StatusReportSpec
 from services.telegram_bot.features.news_prefilter.report import render_prefilter_status
 from services.telegram_bot.features.news_prefilter.service import NewsPrefilter
@@ -65,7 +65,7 @@ def _load_average_too_high() -> bool:
 
 
 async def run_prefilter_maintenance(app) -> None:
-    """새 자료 학습을 이어 수행하고 CPU 조각 사이에 긴급 작업·부하를 확인한다."""
+    """새 자료 학습을 이어 수행하고 CPU 조각 사이에 우선 작업·부하를 확인한다."""
     service: NewsPrefilter | None = app.bot_data.get("news_prefilter")
     if service is None:
         return
@@ -82,9 +82,6 @@ async def run_prefilter_maintenance(app) -> None:
     while slice_used < slice_limit:
         if is_burst_active():
             reason = "burst"
-            break
-        if not await wait_for_urgent_idle("뉴스 사전선별 보정", timeout=0):
-            reason = "urgent"
             break
         if _load_average_too_high():
             reason = "load"

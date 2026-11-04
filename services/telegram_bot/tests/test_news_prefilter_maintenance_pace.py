@@ -74,7 +74,6 @@ def test_maintenance_is_driven_by_work_not_old_daily_or_foreground_caps(monkeypa
 
     monkeypatch.setattr(prefilter_feature, "is_burst_active", lambda: False)
     monkeypatch.setattr(prefilter_feature, "_load_average_too_high", lambda: False)
-    monkeypatch.setattr(prefilter_feature, "wait_for_urgent_idle", idle)
     service = Service()
     asyncio.run(prefilter_feature.run_prefilter_maintenance(SimpleNamespace(bot_data={"news_prefilter": service})))
     assert service.calls == 3

@@ -122,7 +122,7 @@ def format_prefilter_report(report: dict) -> str:
         "invalid_time_split": "시간 분할 후 양성·음성 부족 (학습 각 10건, 검증 각 5건)",
         "search_complete": "현재 자료 32회 검증 완료, 새 라벨 대기",
         "slice_complete": "이번 CPU 조각 완료, 다음 주기에 이어 학습",
-        "burst": "리서치·보고서 우선 작업에 양보", "urgent": "긴급 작업에 양보",
+        "burst": "리서치·보고서 우선 작업에 양보",
         "load": "호스트 부하로 양보",
         "no_work": "수행할 작업 없음",
     }

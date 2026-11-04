@@ -484,22 +484,11 @@ Noto Sans CJK KR Bold 50px(`render.CAPTION_RENDER_SIZE`) 흰 글씨를 **상자 
 숫자(`18%`·`5,000달러` 등)만 강조색 초록으로 짚습니다(2026-10-08). 바탕이 짙은 남색 한 장이라 상자 없이도 읽힙니다.
 아래 끝은 y=1540, 좌우 190px 안전 영역 안에서 화면 가운데에 섭니다.
 
-**지금 화면은 아래 배경 그림을 쓰지 않습니다**(2026-10-08). 바탕은 렌더가 그리는 남색 한 장이라 생성한 그림은
-화면에 나오지 않습니다. 생성 단계는 걷어낼 때까지 아래처럼 그대로 돕니다.
-배경은 그날 이슈로 새로 그립니다(`media.backgrounds_for`). 원고가 쓴 글자 없는 장면
-묘사(`image_scene`)를 Cloudflare `image_model`(`flux-1-schnell`)로 그리고, 정사각형
-결과의 가운데를 9:16으로 잘라 씁니다. 도입은 첫 이슈 그림을 다시 쓰지 않고 도입용 풍경을
-따로 그립니다. 그린 뒤 `vision_model`(LLaVA)로 사람·글자가 보이는지 묻고, 보이면 최대
-3번까지 다시 그립니다. 끝까지 걸리거나 호출이 실패하면 `assets/backgrounds/`의 저장 배경
-(`global-trade.png`·`financial-city.png`)으로 갑니다 — 배경 한 장 때문에 제작을 멈추지 않습니다.
-그림은 날짜 폴더 `backgrounds/`에 묘사의 해시로 저장해 수정·재렌더가 같은 그림을 다시 씁니다.
-화면에 "AI 배경" 표기는 두지 않습니다(2026-09-28). FLUX.2 klein 4b도 비교했지만(2026-09-29)
-배경으로는 차이가 거의 없고 한 장에 수 분이 걸려 schnell을 유지합니다.
-저장 배경은 **장면마다 다르게 잡습니다** — 크롭 위치를 장면 순서대로 옮기고, 짝수 장면은
-좌우를 뒤집고, 색조를 그 장면의 accent(gold/blue/red)로 입힙니다(`render._background`).
-`generated_backgrounds=False`이면 생성하지 않고 저장 배경만 씁니다.
-`visuals_enabled=False`이면 기본 단색 배경을 사용하며, 이미지가 없거나
-손상됐을 때도 경고를 기록하고 단색 배경으로 진행합니다.
+**바탕은 렌더가 그리는 짙은 남색 한 장입니다**(2026-10-08, `render._plain_backdrop`). 그날 이슈로 배경 그림을
+그리던 단계(Cloudflare FLUX로 그리고 LLaVA로 사람·글자를 검사)는 화면에 나오지 않는 채 매일 돌고 있어
+걷었습니다(2026-11-04 — 2주 동안 그림 약 70장·검사 약 140번, 제작 한 번에 15~55초). 원고의 `image_scene`은
+장면의 `visual_query`가 되어 HyperFrames 내보내기가 `assets/backgrounds/`의 저장 배경
+(`global-trade.png`·`financial-city.png`)을 고를 때만 씁니다(`media.background_for`, `visuals_enabled`).
 HyperFrames 내보내기는 선택한 PNG를 프로젝트 `assets/`로 복사합니다.
 
 

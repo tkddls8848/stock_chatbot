@@ -6,7 +6,6 @@ from dataclasses import replace
 from PIL import Image, ImageDraw
 
 from polymarket_shorts import render
-from polymarket_shorts.media import ASSET_DIR
 from polymarket_shorts.render import (
     CAPTION_MARGIN_V, FOOTER_Y, HEIGHT, SAFE_BOTTOM, WIDTH, render_frame,
 )
@@ -104,7 +103,6 @@ def test_video_preserves_audio_even_over_target_and_adds_tail(tmp_path, monkeypa
         font_path=cjk_font,
         blender_bin="blender",
         ffprobe_bin="ffprobe",
-        max_duration=30,
     )
 
     manifest = json.loads((tmp_path / "blender-manifest.json").read_text(encoding="utf-8"))
@@ -146,7 +144,7 @@ def test_intro_and_outro_show_no_captions(tmp_path, monkeypatch, cjk_font):
              (Word(4.4, 5.2, "확인하세요."),))
     render.render_video(Scenario("2026-10-10", "g1", "now", scenes), audio_path=audio, scene_words=words,
                         output_path=tmp_path / "short.mp4", work_dir=tmp_path, font_path=cjk_font,
-                        blender_bin="blender", ffprobe_bin="ffprobe", max_duration=30)
+                        blender_bin="blender", ffprobe_bin="ffprobe")
     starts = [row["start"] for row in captured["subtitles"]]
     assert len(starts) == 1 and 1.5 < starts[0] < 2.1
 
@@ -410,13 +408,13 @@ def test_pending_choices_keep_a_dim_name_and_an_empty_gauge_so_nothing_jumps(tmp
 
 
 @requires_cjk_font
-def test_the_backdrop_is_one_plain_navy_sheet_even_when_a_photograph_is_given(tmp_path, cjk_font):
-    """사진 배경은 흐리게 깔아도 장면마다 화면이 갈렸다. 바탕은 짙은 남색 한 장이다(참고: 조코딩 쇼츠, 2026-10-08)."""
+def test_the_backdrop_is_one_plain_navy_sheet(tmp_path, cjk_font):
+    """사진 배경은 흐리게 깔아도 장면마다 화면이 갈렸다. 바탕은 짙은 남색 한 장이다(참고: 조코딩 쇼츠, 2026-10-08).
+    그날 이슈로 배경을 그리던 단계는 화면에 나오지 않아 걷었다(2026-11-04)."""
     target = tmp_path / "frame.png"
     scene = Scene("outro", "확률은 예측입니다", "마무리", "판정 규칙은 직접 확인하세요.", "멘트")
 
-    render_frame(scene, target, font_path=cjk_font, index=4, total=4,
-                 background_path=ASSET_DIR / "global-trade.png")
+    render_frame(scene, target, font_path=cjk_font, index=4, total=4)
 
     plain = render._plain_backdrop()
     with Image.open(target) as image:
@@ -424,20 +422,6 @@ def test_the_backdrop_is_one_plain_navy_sheet_even_when_a_photograph_is_given(tm
         # 머리말·고지문이 없는 높이만 본다.
         for y in (1450, 1700, 1900):
             assert all(frame.getpixel((x, y)) == plain.getpixel((x, y)) for x in range(0, WIDTH, 40)), y
-
-
-@requires_cjk_font
-def test_each_scene_sees_the_same_asset_differently(tmp_path, cjk_font):
-    """배경 소스가 둘뿐이라 장면마다 크롭·방향·색조로 변주한다."""
-    asset = ASSET_DIR / "financial-city.png"
-    frames = [render._background(asset, index=n, total=4, accent=accent)
-              for n, accent in enumerate(("gold", "blue", "red", "gold"), start=1)]
-
-    samples = [tuple(frame.getpixel((x, y)) for x in (120, 540, 960) for y in (400, 1200, 1800))
-               for frame in frames]
-    assert len(set(samples)) == len(samples)
-    # 배경이 없으면 단색으로 떨어지되 크기는 같다.
-    assert render._background(None, index=1, total=4, accent="gold").size == (WIDTH, HEIGHT)
 
 
 def test_captions_are_large_bold_and_sit_in_the_lower_third(tmp_path):

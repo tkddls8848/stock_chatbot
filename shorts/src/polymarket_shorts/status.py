@@ -7,24 +7,16 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 from .config import Settings
+from .core.storage import read_json
 from .review import REVIEW_FILE, ReviewError
 from .workflow import current_target
 
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
-
-
-def _read(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def latest_root(settings: Settings) -> Path | None:
@@ -39,7 +31,7 @@ def current_status(settings: Settings, *, root: Path | None = None) -> dict[str,
     root = root or latest_root(settings)
     if root is None:
         return {"state": "empty", "output_dir": str(settings.output_dir), "uploaded": False, "url": None}
-    selection = _read(root / "selection.json")
+    selection = read_json(root / "selection.json")
     payload: dict[str, Any] = {
         "state": "ok",
         "date": root.name,
@@ -56,7 +48,7 @@ def current_status(settings: Settings, *, root: Path | None = None) -> dict[str,
         target = current_target(root)
     except ReviewError as error:
         return {**payload, "state": "error", "failure": str(error)}
-    record = _read(target / REVIEW_FILE)
+    record = read_json(target / REVIEW_FILE)
     from .youtube import uploaded_record
     try:
         uploaded = uploaded_record(target, record)
@@ -73,6 +65,6 @@ def current_status(settings: Settings, *, root: Path | None = None) -> dict[str,
         "video_path": str(video) if video.is_file() else None,
         "video_bytes": video.stat().st_size if video.is_file() else None,
         "metadata": record.get("youtube") or {},
-        "approval": _read(root / "approval.json"),
+        "approval": read_json(root / "approval.json"),
     })
     return payload

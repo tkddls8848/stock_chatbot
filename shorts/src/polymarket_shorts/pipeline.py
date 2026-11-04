@@ -12,10 +12,10 @@ from zoneinfo import ZoneInfo
 
 from .client import PolymarketWebClient, SourceError
 from .config import Settings
+from .core.storage import read_json
 from .highlights import HighlightError, select_issues, write_issues
 from .llm import LLMError
 from .markets import _topic, shortlist, prepare_issue
-from .media import backgrounds_for
 from .render import find_font, probe_duration, render_video
 from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
@@ -53,7 +53,7 @@ def _produce_editorial(plan_path: Path, settings: Settings) -> ProductionResult:
         scenes=tuple(Scene(**{k: v for k, v in row.items() if k in names}) for row in rows),
     )
     result = produce_revision(scenario, editorial_metadata(plan, scenario), plan_path.parent, settings)
-    production = _read_json(plan_path.parent / "production.json")
+    production = read_json(plan_path.parent / "production.json")
     production["source_plan"] = str(plan_path)
     write_json(plan_path.parent / "production.json", production)
     return result
@@ -71,12 +71,12 @@ def recently_featured(settings: Settings, today: date) -> tuple[set[str], set[st
     topics: set[str] = set()
     for back in range(1, settings.repeat_days + 1):
         day_dir = settings.output_dir / (today - timedelta(days=back)).isoformat()
-        source = _read_json(day_dir / "source.json")
+        source = read_json(day_dir / "source.json")
         for issue in source.get("issues") or []:
             if isinstance(issue, dict) and issue.get("id"):
                 ids.add(str(issue["id"]))
                 topics.add(_topic(str(issue.get("title") or "")))
-        for scene in _read_json(day_dir / "scenario.json").get("scenes") or []:
+        for scene in read_json(day_dir / "scenario.json").get("scenes") or []:
             if isinstance(scene, dict) and scene.get("event_id"):
                 ids.add(str(scene["event_id"]))
     topics.discard("")
@@ -211,7 +211,6 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         save()
 
 
-
 def _backfill(issues: list[dict], scripts: list[dict], missing: int, candidates: list[dict], settings: Settings,
               audit: dict, save, gather, write) -> tuple[list[dict], list[dict]]:
     """원고 검증에서 빠진 수만큼 남은 후보에서 다시 골라 원고를 쓴다(한 번만, 운영자 지시 2026-10-10).
@@ -259,16 +258,11 @@ def produce_revision(
         [scene.narration for scene in scenario.scenes], audio_path=audio, words_path=spoken,
         voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
     )
-    backgrounds = (
-        backgrounds_for(scenario.scenes, target / "backgrounds", settings) if settings.visuals_enabled
-        else tuple(None for _ in scenario.scenes)
-    )
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
         scenario, audio_path=audio, scene_words=scene_words, output_path=video,
         work_dir=work, font_path=find_font(),
         blender_bin=settings.blender_bin, ffprobe_bin=settings.ffprobe_bin,
-        max_duration=settings.max_duration_seconds, background_paths=backgrounds,
     )
     script = write_review(
         target, scenario=scenario, metadata=metadata, video=video,
@@ -293,14 +287,6 @@ class ProductionResult:
     date: str
     video_path: str | None = None
     review_path: str | None = None
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def editorial_metadata(plan: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
@@ -362,7 +348,7 @@ def produce_daily(
 
 def _produce_daily(settings: Settings, *, today: date, force: bool) -> ProductionResult:
     day = today.isoformat()
-    state = _read_json(settings.state_file)
+    state = read_json(settings.state_file)
     previous = (state.get("days") or {}).get(day) if isinstance(state.get("days"), dict) else None
     if previous and not force:
         return ProductionResult(
@@ -379,10 +365,6 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
     video_path = day_dir / f"polymarket-{day}.mp4"
     scenario_path = day_dir / "scenario.json"
     metadata = metadata_for(scenario)
-    backgrounds = (
-        backgrounds_for(scenario.scenes, day_dir / "backgrounds", settings) if settings.visuals_enabled
-        else tuple(None for _ in scenario.scenes)
-    )
 
     with tempfile.TemporaryDirectory(prefix=f".{day}-", dir=settings.output_dir) as raw_work:
         work = Path(raw_work)
@@ -411,13 +393,9 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
             font_path=find_font(),
             blender_bin=settings.blender_bin,
             ffprobe_bin=settings.ffprobe_bin,
-            max_duration=settings.max_duration_seconds,
-            background_paths=backgrounds,
         )
 
     scenario_payload = {**scenario.to_dict(), "duration_seconds": round(duration, 3)}
-    scenario_payload["visuals"] = [{"asset": path.name, "source": "GPT Image / built-in", "generated": True}
-                                   if path else None for path in backgrounds]
     write_json(scenario_path, scenario_payload)
     # 게시 문구와 멘트는 review.md 한 장에서 검수한다.
     script = write_review(

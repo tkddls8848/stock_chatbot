@@ -9,7 +9,6 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/srv/stock-chatbot
 Environment=PYTHONUNBUFFERED=1
-Environment=MPLBACKEND=Agg
 Environment=WEBPUB_HOST=127.0.0.1
 Environment=WEBPUB_PORT=8788
 ExecStart=/srv/stock-chatbot/venv/bin/python -m services.web.server

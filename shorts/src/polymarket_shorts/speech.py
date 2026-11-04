@@ -99,15 +99,6 @@ def end_sentence(text: str) -> str:
     return body if body.endswith((".", "!", "?", "…")) else f"{body}."
 
 
-def _with_direction(word: str) -> str:
-    """방향격 조사. 받침이 없거나 ㄹ 받침이면 '로', 그 밖의 받침이면 '으로'."""
-    last = word.strip()[-1:]
-    if not last or not _is_hangul(last):
-        return f"{word}으로"
-    jong = (ord(last) - _HANGUL_BASE) % _JONGSEONG
-    return f"{word}로" if jong in (0, 8) else f"{word}으로"
-
-
 # 숫자로 끝나는 말의 받침(읽는 소리 기준). 0 영·1 일·3 삼·6 육·7 칠·8 팔은 받침이 있다.
 _DIGIT_HAS_JONG = {"0": True, "1": True, "2": False, "3": True, "4": False, "5": False,
                    "6": True, "7": True, "8": True, "9": False, "%": False}

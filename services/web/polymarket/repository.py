@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import hashlib
-import json
 import math
 from pathlib import Path
 from threading import Lock
@@ -15,16 +14,9 @@ from services.web.core.config import POLYMARKET_MIN_HOURS_TO_END, POLYMARKET_WEB
 from services.web.polymarket import relevance
 from services.web.polymarket.dashboard.models import ends_before
 from services.web.polymarket.dashboard.storage import read_detail
+from services.web.core.storage import read_json_object
 
 DEFAULT_ROOT = POLYMARKET_WEB_DIR
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _parse_stamp(value: Any) -> datetime | None:
@@ -99,7 +91,7 @@ class PolymarketRepository:
         with self._lock:
             if mtime_ns == self._mtime_ns:
                 return self._manifest
-            manifest = _read_json(path)
+            manifest = read_json_object(path)
             events = manifest.get("events", [])
             if not manifest.get("generation_id") or not isinstance(events, list):
                 return self._manifest
@@ -124,7 +116,7 @@ class PolymarketRepository:
         with self._index_lock:
             if mtime_ns == self._index_mtime_ns:
                 return self._annotations
-            rows = _read_json(path).get("events")
+            rows = read_json_object(path).get("events")
             if not isinstance(rows, dict):
                 # 읽다 만 파일이면 직전 색인을 그대로 쓴다.
                 return self._annotations
@@ -143,7 +135,7 @@ class PolymarketRepository:
 
     def health(self) -> dict[str, Any]:
         manifest = self.load()
-        status = _read_json(self.root / "status.json")
+        status = read_json_object(self.root / "status.json")
         return {
             "available": bool(manifest),
             "generation_id": manifest.get("generation_id"),

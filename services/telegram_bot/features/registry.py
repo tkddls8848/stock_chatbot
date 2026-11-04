@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+import logging
 from typing import Iterable
 
 from telegram import BotCommand
@@ -20,6 +21,22 @@ from services.telegram_bot.features.base import FeatureSpec
 
 class FeatureConfigurationError(ValueError):
     pass
+
+
+class QuietJobLog(logging.Filter):
+    """감시 작업의 정상 실행 줄만 버린다(`FeatureSpec.quiet_jobs`).
+
+    APScheduler는 실행마다 "Running job"·"executed successfully" 두 줄을 INFO로 남겨, 30초 할당량 감시
+    하나가 하루 5,760줄(실측 2026-09-26), 1분 쇼츠 검토 감시가 2,880줄을 쓴다. 다른 작업의 실행 줄과
+    이 작업들의 경고·오류는 그대로 둔다.
+    """
+
+    def __init__(self, names: Iterable[str]):
+        super().__init__()
+        self._names = tuple(names)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno > logging.INFO or not any(name in record.getMessage() for name in self._names)
 
 
 class FeatureRegistry:
@@ -146,6 +163,9 @@ class FeatureRegistry:
                 feature.install_services(app)
 
     def install_jobs(self, scheduler, app: Application) -> None:
+        quiet = tuple(name for feature in self._enabled_specs for name in feature.quiet_jobs)
+        if quiet:
+            logging.getLogger("apscheduler.executors.default").addFilter(QuietJobLog(quiet))
         for feature in self._enabled_specs:
             if feature.install_jobs is not None:
                 feature.install_jobs(scheduler, app)

@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -20,16 +19,9 @@ from typing import Any
 
 from services.web.core.clock import ensure_jst
 from services.web.search import MARKETS
+from services.web.core.storage import read_json_object
 
 _DISCLAIMER = "참고 정보이며 투자 권유가 아닙니다. 결정과 책임은 본인에게 있습니다."
-
-
-def _read(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _stamp(value: Any) -> datetime | None:
@@ -41,11 +33,11 @@ def _stamp(value: Any) -> datetime | None:
 
 def _sections(public_dir: Path, moment: datetime, *, window_hours: int,
               max_market_age_hours: int, headlines: int) -> list[dict[str, Any]]:
-    market = _read(public_dir / "market.json")
+    market = read_json_object(public_dir / "market.json")
     generated = _stamp(market.get("generated_at"))
     markets = market.get("markets") if generated and moment - generated <= timedelta(hours=max_market_age_hours) else {}
     since = moment - timedelta(hours=window_hours)
-    documents = [d for d in _read(public_dir / "news.json").get("documents", []) if isinstance(d, dict)]
+    documents = [d for d in read_json_object(public_dir / "news.json").get("documents", []) if isinstance(d, dict)]
 
     sections = []
     for code, name in MARKETS.items():

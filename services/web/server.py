@@ -31,6 +31,7 @@ from services.web.pages.privacy import PRIVACY_HTML
 from services.web.pages.search import SEARCH_HTML
 from services.web.pages.errors import ERROR_HTML
 from services.web.core.config import PUBLIC_DIR
+from services.web.core.storage import read_json_object
 from services.web.core import config
 from services.web.accounts import Accounts
 from services.web.newsletter.routes import build_newsletter_router, build_unsubscribe_router
@@ -105,11 +106,7 @@ def _error_response(request: Request, status: int) -> Response:
 
 
 def _read_json(name: str) -> dict[str, Any]:
-    try:
-        value = json.loads((PUBLIC_DIR / name).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
+    return read_json_object(PUBLIC_DIR / name)
 
 
 def build_accounts() -> Accounts:

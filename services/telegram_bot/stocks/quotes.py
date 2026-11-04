@@ -25,6 +25,8 @@ import pandas as pd
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from services.telegram_bot.stocks.sources import SINA_HEADERS, SINA_HQ_NODE_URL
+
 logger = logging.getLogger(__name__)
 
 _TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
@@ -32,15 +34,7 @@ _SINA_MONEYFLOW_URL = (
     "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
     "MoneyFlow.ssi_ssfx_flzjtj"
 )
-_HTTP_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36",
-    "Referer": "https://finance.sina.com.cn",
-}
 _TENCENT_BATCH_SIZE = 60
-_SINA_RANKED_URL = (
-    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-    "Market_Center.getHQNodeData"
-)
 _LIMIT_UP_PAGE_SIZE = 100
 _LIMIT_UP_MAX_PAGES = 8
 # 상승률 순위를 이 밑까지만 읽는다. 가장 좁은 가격제한폭이 ST의 5%라 그 아래에는 涨停이 없다.
@@ -277,7 +271,7 @@ class QuoteService:
                 batch = symbols[i : i + _TENCENT_BATCH_SIZE]
                 r = requests.get(
                     _TENCENT_QUOTE_URL + ",".join(batch),
-                    headers=_HTTP_HEADERS,
+                    headers=SINA_HEADERS,
                     timeout=10,
                 )
                 r.raise_for_status()
@@ -366,7 +360,7 @@ class QuoteService:
             r = requests.get(
                 _SINA_MONEYFLOW_URL,
                 params={"daima": symbol},
-                headers=_HTTP_HEADERS,
+                headers=SINA_HEADERS,
                 timeout=10,
             )
             r.raise_for_status()
@@ -441,10 +435,10 @@ class QuoteService:
         hits: list[dict[str, Any]] = []
         for page in range(1, _LIMIT_UP_MAX_PAGES + 1):
             r = requests.get(
-                _SINA_RANKED_URL,
+                SINA_HQ_NODE_URL,
                 params={"page": page, "num": _LIMIT_UP_PAGE_SIZE, "sort": "changepercent",
                         "asc": 0, "node": "hs_a"},
-                headers=_HTTP_HEADERS,
+                headers=SINA_HEADERS,
                 timeout=10,
             )
             r.raise_for_status()

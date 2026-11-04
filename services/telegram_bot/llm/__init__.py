@@ -1,4 +1,4 @@
-"""LLM 서비스: 뉴스 번역, 시황 분석, 일별 시장 감성, 브리핑 코멘트(Cloudflare Workers AI)."""
+"""LLM 서비스: 시장상황 보고서, 리서치 분석, 일별 시장 감성, 브리핑 코멘트(Cloudflare Workers AI)."""
 
 from services.telegram_bot.llm.briefing_writer import BriefingWriter
 from services.telegram_bot.llm.factory import (
@@ -6,12 +6,10 @@ from services.telegram_bot.llm.factory import (
     build_market_digest_analyzer,
     build_market_view_analyzer,
     build_news_report_analyzer,
-    build_translation_service,
 )
 from services.telegram_bot.llm.market_digest import MarketDigestAnalyzer, MarketDigestError
 from services.telegram_bot.llm.market_view import MarketViewAnalyzer
 from services.telegram_bot.llm.news_report import NewsReportAnalyzer, NewsReportError
-from services.telegram_bot.llm.translator import TranslationQualityError, TranslationService
 
 __all__ = [
     "BriefingWriter",
@@ -20,11 +18,8 @@ __all__ = [
     "MarketViewAnalyzer",
     "NewsReportAnalyzer",
     "NewsReportError",
-    "TranslationQualityError",
-    "TranslationService",
     "build_briefing_writer",
     "build_market_digest_analyzer",
     "build_market_view_analyzer",
     "build_news_report_analyzer",
-    "build_translation_service",
 ]

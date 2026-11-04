@@ -18,7 +18,6 @@ from services.telegram_bot.core.config import (
     CLOUDFLARE_FAILURE_COOLDOWN_SECONDS,
     CLOUDFLARE_FAILURE_THRESHOLD,
     CLOUDFLARE_MAX_ATTEMPTS,
-    CLOUDFLARE_TRANSLATION_TIMEOUT,
     MARKET_DIGEST_COUNT_TOLERANCE_RATIO,
     MARKET_DIGEST_NUM_PREDICT,
     MARKET_DIGEST_PROMPT_FILE,
@@ -29,21 +28,17 @@ from services.telegram_bot.core.config import (
     NEWS_REPORT_NUM_PREDICT,
     NEWS_REPORT_PROMPT_FILE,
     NEWS_REPORT_TIMEOUT,
-    PROMPT_DIR,
     RESEARCH_ANALYSIS_NUM_PREDICT,
     RESEARCH_ANALYSIS_PROMPT_FILE,
     RESEARCH_ANALYSIS_TIMEOUT,
     RESEARCH_MAX_NEW_ACTIONS,
     RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
-    TRANSLATION_ENABLED,
-    TRANSLATION_NUM_PREDICT,
 )
 from services.telegram_bot.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
 from services.telegram_bot.llm.briefing_writer import BriefingWriter
 from services.telegram_bot.llm.market_digest import MarketDigestAnalyzer
 from services.telegram_bot.llm.market_view import MarketViewAnalyzer
 from services.telegram_bot.llm.news_report import NewsReportAnalyzer
-from services.telegram_bot.llm.translator import TranslationService
 
 logger = logging.getLogger(__name__)
 
@@ -63,19 +58,6 @@ def build_backend(purpose: str, *, model: str, timeout: int) -> LLMBackend:
         max_attempts=CLOUDFLARE_MAX_ATTEMPTS,
         failure_threshold=CLOUDFLARE_FAILURE_THRESHOLD,
         cooldown_seconds=CLOUDFLARE_FAILURE_COOLDOWN_SECONDS,
-    )
-
-
-def build_translation_service() -> TranslationService:
-    return TranslationService(
-        backend=build_backend(
-            "translation",
-            model=CLOUDFLARE_MODEL,
-            timeout=CLOUDFLARE_TRANSLATION_TIMEOUT,
-        ),
-        enabled=TRANSLATION_ENABLED,
-        prompt_dir=PROMPT_DIR,
-        num_predict=TRANSLATION_NUM_PREDICT,
     )
 
 

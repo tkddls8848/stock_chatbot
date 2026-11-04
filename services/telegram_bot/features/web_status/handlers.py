@@ -135,7 +135,6 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
         return f"{title}\n{MARK_FAIL} 웹이 응답하지 않습니다(8788). stock-chatbot-web 서비스를 확인하세요."
     web = status_table([
         _dated(_stamp(meta.get("market_generated_at")), "시장 감성"),
-        _dated(_stamp(meta.get("research_generated_at")), "리서치"),
         _dated(_stamp(meta.get("news_generated_at")), "뉴스 검색(/search) 자료"),
     ])
 
