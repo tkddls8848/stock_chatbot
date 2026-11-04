@@ -375,6 +375,21 @@ def test_the_nearest_threshold_stands_in_when_the_asked_number_is_missing():
     assert asked_markets("환율 9000원 넘을까", terms, detail["markets"]) == set()
 
 
+def test_korean_units_and_the_asked_period_mark_their_options():
+    """"15만 달러"는 150,000·$150k에, "연말"은 그해 12월 날짜 칸에 닿는다. 날짜·횟수 숫자는 기준이 아니다."""
+    from services.web.polymarket.ask import asked_markets
+    price = [_market("p1", "↑ 150,000", 0.1), _market("p2", "↓ 70,000", 0.4)]
+    assert asked_markets("비트코인 15만 달러 갈까", [], price) == {"p1"}
+    assert asked_markets("비트코인 12월 3번째 주", [], price) == set()
+    dates = [_market("d1", "by December 31, 2026", 0.09), _market("d2", "by June 30, 2027", 0.4),
+             _market("d3", "by December 31, 2027", 0.6)]
+    window = relevance.query_window("비트코인 연말에 10만 달러 갈까", date(2026, 11, 4))
+    assert asked_markets("비트코인 연말에 10만 달러 갈까", [], dates, window) == {"d1"}
+    ceasefire = [_market("c1", "November 30", 0.5), _market("c2", "December 31", 0.365)]
+    window = relevance.query_window("휴전 12월에 끝날까", date(2026, 11, 4))
+    assert asked_markets("휴전 12월에 끝날까", [], ceasefire, window) == {"c2"}
+
+
 def test_a_model_that_marks_every_option_marks_none():
     """모델이 사다리 칸을 다 찍으면(실측: 휴전 날짜 11칸) 짚은 것이 아니다 — 규칙대로 셋만 보인다."""
     from services.web.polymarket.ask import Row, assemble

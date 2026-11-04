@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 import json
 import logging
 from pathlib import Path
@@ -38,7 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.web.accounts import Account, Accounts
 from services.web.core import config
-from services.web.core.clock import now
+from services.web.core.clock import now, today
 from services.web.core.storage import FileLockTimeout, file_lock, write_json_atomic
 from services.web.llm.backends import TokenUsage
 from services.web.llm.polymarket_answer import Answer, Pick, PolymarketAnswerError
@@ -59,10 +59,17 @@ _BAND = (0.03, 0.97)
 # 다지선다의 셋째 줄은 이 확률 이상일 때만 세운다. 숫자가 아무것도 말하지 않는 줄로 자리를 채우지 않는다.
 _THIRD_MIN = 0.01
 _LABEL_MAX_CHARS = 80
-# 질문에 적은 기준 숫자("1500원")를 선택지 이름("↑1,600")에서 찾는다. 세 자리 이상만 — "12월"·"3번"은 기준이
-# 아니다. "2026년"처럼 해를 말하는 숫자는 뺀다. 같은 숫자가 없으면 이 비율 안에서 가장 가까운 칸이다.
-_ASKED_NUMBER = re.compile(r"\d[\d,]{2,}(?:\.\d+)?(?!\s*년)")
-_LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# 질문에 적은 기준 숫자("1500원"·"15만 달러")를 선택지 이름("↑1,600"·"↑ 150,000"·"$150k")에서 찾는다. 날짜·횟수·
+# 순위("12월"·"2026년"·"3번"·"1위")는 기준이 아니고, 100보다 작은 수도 뺀다. 같은 숫자가 없으면 이 비율 안에서
+# 가장 가까운 칸이다.
+_ASKED_NUMBER = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|억|천|[kK])?(?!\s*(?:년|월|일|번|회|위|개|명|차|분|시|%))")
+_LABEL_NUMBER = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kKmMbB])?(?![a-zA-Z])")
+_UNIT = {"천": 1e3, "만": 1e4, "억": 1e8, "k": 1e3, "K": 1e3, "m": 1e6, "M": 1e6, "b": 1e9, "B": 1e9}
+# 선택지 이름의 날짜("by December 31, 2026"·"November 30"). 질문의 기간(`relevance.query_window`) 안이면 물은 칸이다.
+_LABEL_DATE = re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+                         r"\s+(\d{1,2})(?:,?\s+(\d{4}))?")
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December")
 _NEAREST_RATIO = 0.25
 # 물은 선택지는 질문당 이만큼까지다. 모델이 이보다 많이 찍으면 짚은 것이 아니라 "전부"라서 버린다
 # (실측 2026-11-04: 휴전 날짜 사다리 11칸, 금값 7칸을 다 찍었다).
@@ -172,15 +179,32 @@ def shown_options(event: dict[str, Any], markets: list[dict[str, Any]], focus: s
 
 
 def _numbers(text: str, pattern: re.Pattern[str]) -> list[float]:
-    return [float(value.replace(",", "")) for value in pattern.findall(text)]
+    return [float(value.replace(",", "")) * _UNIT.get(unit, 1.0) for value, unit in pattern.findall(text)]
 
 
-def asked_markets(question: str, terms: list[relevance.Term], markets: list[dict[str, Any]]) -> set[str]:
+def _label_dates(label: str, window: tuple[date, date]) -> list[date]:
+    """이름의 날짜. 해가 없으면 질문 기간의 해(들)로 읽는다 — "November 30"은 그해 11월 30일이다."""
+    found = []
+    for month, day, year in _LABEL_DATE.findall(label):
+        for candidate in ([int(year)] if year else sorted({window[0].year, window[1].year})):
+            try:
+                found.append(date(candidate, _MONTHS.index(month) + 1, int(day)))
+            except ValueError:
+                continue
+    return found
+
+
+def asked_markets(question: str, terms: list[relevance.Term], markets: list[dict[str, Any]],
+                  window: tuple[date, date] | None = None) -> set[str]:
     """질문이 이름을 댄 선택지(서버가 정한다). 질문 낱말(용어집 표기 포함)이 이름에 든 칸 — "인하"는 decrease,
-    "엔비디아"는 NVIDIA — 과, 질문의 기준 숫자와 같거나 가장 가까운 칸. 확률이 높은 순으로 `_FOCUS_MAX`개까지.
+    "엔비디아"는 NVIDIA —, 질문의 기준 숫자와 같거나 가장 가까운 칸, 질문의 기간("연말") 안의 날짜 칸.
+    확률이 높은 순으로 `_FOCUS_MAX`개까지.
     """
     named = [market for market in markets if relevance.mentions(_label(market), terms)]
-    for asked in _numbers(question, _ASKED_NUMBER):
+    if window is not None:
+        named += [market for market in markets
+                  if any(window[0] <= day <= window[1] for day in _label_dates(_label(market), window))]
+    for asked in (value for value in _numbers(question, _ASKED_NUMBER) if value >= 100):
         scored = [(min(abs(value - asked) for value in values), market) for market in markets
                   if (values := _numbers(_label(market), _LABEL_NUMBER))]
         if scored:
@@ -191,11 +215,12 @@ def asked_markets(question: str, terms: list[relevance.Term], markets: list[dict
     return {str(market.get("id")) for market in named[:_FOCUS_MAX]}
 
 
-def _item(row: Row, pick: Pick, question: str, terms: list[relevance.Term]) -> dict[str, Any] | None:
+def _item(row: Row, pick: Pick, question: str, terms: list[relevance.Term],
+          window: tuple[date, date] | None) -> dict[str, Any] | None:
     # 물은 선택지는 서버가 먼저 정하고, 서버가 못 찾았을 때만 모델이 짚은 칸(두 칸 이하)을 쓴다.
     focus: set[str] = set()
     if not _binary(row.event, row.markets):
-        focus = asked_markets(question, terms, row.markets)
+        focus = asked_markets(question, terms, row.markets, window)
     if not focus and len(pick.focus) <= _FOCUS_MAX:
         focus = {row.options[m] for m in pick.focus if m in row.options}
     event = row.event
@@ -217,7 +242,9 @@ def _item(row: Row, pick: Pick, question: str, terms: list[relevance.Term]) -> d
 
 def assemble(question: str, manifest: dict[str, Any], rows: list[Row], answer: Answer) -> dict[str, Any]:
     terms = relevance.compile_tokens(relevance.expand(relevance.query_tokens(question)))
-    items = [item for pick in answer.picks if (item := _item(rows[pick.n - 1], pick, question, terms)) is not None]
+    window = relevance.query_window(question, today())
+    items = [item for pick in answer.picks
+             if (item := _item(rows[pick.n - 1], pick, question, terms, window)) is not None]
     answerable = answer.answerable and any(item["direct"] for item in items)
     # 직접 답이라던 질문이 전부 빠졌으면 그 질문을 두고 쓴 해설도 내지 않는다.
     commentary = answer.commentary if answerable == answer.answerable else None
