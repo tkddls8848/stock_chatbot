@@ -190,7 +190,7 @@ def _by_probability(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def shown_markets(event_type: str, markets: list[dict[str, Any]], year: int | None = None) -> list[dict[str, Any]]:
-    """화면에 세울 선택지. 질문 유형마다 고르는 법이 다르다(운영자 결정 2026-10-29, `docs/option-display-plan.md`).
+    """화면에 세울 선택지. 질문 유형마다 고르는 법이 다르다(운영자 결정 2026-10-29).
 
     - 이지선다: 예·아니오 중 확률이 높은 답 하나. 아니오가 높으면 `side`가 "no"다(실측: 호르무즈 통행 정상화
       '예' 11.5%가 화면을 차지해, 많은 사람이 고른 답이 보이지 않았다).
