@@ -307,6 +307,12 @@ def _hit(field: str, term: Term, squeezed: str | None = None) -> bool:
     return any(token in field or compact in squeezed for token, compact in term.texts)
 
 
+def mentions(text: str, terms: list[Term]) -> bool:
+    """글에 검색 낱말 중 하나라도 들었는가(용어집 표기 포함). 질의응답이 물은 선택지를 찾을 때 쓴다."""
+    field = normalize(text)
+    return any(_hit(field, term) for term in terms)
+
+
 def _end_date(event: dict[str, Any]) -> date | None:
     try:
         return datetime.fromisoformat(str(event.get("end_date"))).date()

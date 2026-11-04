@@ -225,7 +225,8 @@ POLYMARKET_ASK_PROMPT_FILE = PROMPT_DIR / "polymarket_answer_ko.txt"
 POLYMARKET_ASK_QUESTION_MAX_CHARS = 200
 # 모델에 보이는 후보 수. 모델은 후보 밖의 질문을 고를 수 없으므로 찾기(상위 30 적중)가 답의 상한이다.
 POLYMARKET_ASK_CANDIDATES = 30
-POLYMARKET_ASK_MAX_PICKS = 5
+# 직접 답 수. 5개를 두자 같은 주제의 다른 질문까지 직접 답으로 붙어 답이 목록이 됐다(실측 2026-11-04).
+POLYMARKET_ASK_MAX_PICKS = 3
 # 후보마다 모델에 보이는 선택지 수(확률순). 21칸짜리 가격 사다리도 등급 열 개면 모양이 보인다.
 POLYMARKET_ASK_OPTIONS_PER_EVENT = 10
 POLYMARKET_ASK_NUM_PREDICT = 700

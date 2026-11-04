@@ -45,6 +45,7 @@ from services.web.llm.polymarket_answer import Answer, Pick, PolymarketAnswerErr
 from services.web.llm.polymarket_brief import FORBIDDEN_COPY, outlook
 from services.web.polymarket.annotate import NEURONS_PER_INPUT_TOKEN, NEURONS_PER_OUTPUT_TOKEN
 from services.web.polymarket.dashboard.storage import read_detail
+from services.web.polymarket import relevance
 from services.web.polymarket.repository import PolymarketRepository
 
 logger = logging.getLogger(__name__)
@@ -58,10 +59,14 @@ _BAND = (0.03, 0.97)
 # 다지선다의 셋째 줄은 이 확률 이상일 때만 세운다. 숫자가 아무것도 말하지 않는 줄로 자리를 채우지 않는다.
 _THIRD_MIN = 0.01
 _LABEL_MAX_CHARS = 80
-# 질문에 적은 기준 숫자("1500원")를 선택지 이름("↑1500")에서 찾는다. 세 자리 이상만 — "12월"·"3번"은 기준이 아니다.
-# "2026년"처럼 해를 말하는 숫자는 뺀다.
+# 질문에 적은 기준 숫자("1500원")를 선택지 이름("↑1,600")에서 찾는다. 세 자리 이상만 — "12월"·"3번"은 기준이
+# 아니다. "2026년"처럼 해를 말하는 숫자는 뺀다. 같은 숫자가 없으면 이 비율 안에서 가장 가까운 칸이다.
 _ASKED_NUMBER = re.compile(r"\d[\d,]{2,}(?:\.\d+)?(?!\s*년)")
 _LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_NEAREST_RATIO = 0.25
+# 물은 선택지는 질문당 이만큼까지다. 모델이 이보다 많이 찍으면 짚은 것이 아니라 "전부"라서 버린다
+# (실측 2026-11-04: 휴전 날짜 사다리 11칸, 금값 7칸을 다 찍었다).
+_FOCUS_MAX = 2
 
 
 class AskRequest(BaseModel):
@@ -166,16 +171,33 @@ def shown_options(event: dict[str, Any], markets: list[dict[str, Any]], focus: s
              "focus": str(market.get("id")) in focus} for market in chosen]
 
 
-def _asked_numbers(question: str) -> set[str]:
-    return {value.replace(",", "") for value in _ASKED_NUMBER.findall(question)}
+def _numbers(text: str, pattern: re.Pattern[str]) -> list[float]:
+    return [float(value.replace(",", "")) for value in pattern.findall(text)]
 
 
-def _item(row: Row, pick: Pick, asked: set[str]) -> dict[str, Any] | None:
-    focus = {row.options[m] for m in pick.focus if m in row.options}
-    # 모델이 물은 선택지를 짚지 않아도, 질문의 기준 숫자가 이름에 든 선택지는 늘 보인다.
-    if asked and not _binary(row.event, row.markets):
-        focus |= {str(market.get("id")) for market in row.markets
-                  if asked & {value.replace(",", "") for value in _LABEL_NUMBER.findall(_label(market))}}
+def asked_markets(question: str, terms: list[relevance.Term], markets: list[dict[str, Any]]) -> set[str]:
+    """질문이 이름을 댄 선택지(서버가 정한다). 질문 낱말(용어집 표기 포함)이 이름에 든 칸 — "인하"는 decrease,
+    "엔비디아"는 NVIDIA — 과, 질문의 기준 숫자와 같거나 가장 가까운 칸. 확률이 높은 순으로 `_FOCUS_MAX`개까지.
+    """
+    named = [market for market in markets if relevance.mentions(_label(market), terms)]
+    for asked in _numbers(question, _ASKED_NUMBER):
+        scored = [(min(abs(value - asked) for value in values), market) for market in markets
+                  if (values := _numbers(_label(market), _LABEL_NUMBER))]
+        if scored:
+            gap, nearest = min(scored, key=lambda pair: pair[0])
+            if gap <= asked * _NEAREST_RATIO:
+                named += [market for distance, market in scored if distance == gap]
+    named = sorted({str(market.get("id")): market for market in named}.values(), key=_probability, reverse=True)
+    return {str(market.get("id")) for market in named[:_FOCUS_MAX]}
+
+
+def _item(row: Row, pick: Pick, question: str, terms: list[relevance.Term]) -> dict[str, Any] | None:
+    # 물은 선택지는 서버가 먼저 정하고, 서버가 못 찾았을 때만 모델이 짚은 칸(두 칸 이하)을 쓴다.
+    focus: set[str] = set()
+    if not _binary(row.event, row.markets):
+        focus = asked_markets(question, terms, row.markets)
+    if not focus and len(pick.focus) <= _FOCUS_MAX:
+        focus = {row.options[m] for m in pick.focus if m in row.options}
     event = row.event
     item = {
         "id": str(event.get("id")),
@@ -194,8 +216,8 @@ def _item(row: Row, pick: Pick, asked: set[str]) -> dict[str, Any] | None:
 
 
 def assemble(question: str, manifest: dict[str, Any], rows: list[Row], answer: Answer) -> dict[str, Any]:
-    asked = _asked_numbers(question)
-    items = [item for pick in answer.picks if (item := _item(rows[pick.n - 1], pick, asked)) is not None]
+    terms = relevance.compile_tokens(relevance.expand(relevance.query_tokens(question)))
+    items = [item for pick in answer.picks if (item := _item(rows[pick.n - 1], pick, question, terms)) is not None]
     answerable = answer.answerable and any(item["direct"] for item in items)
     # 직접 답이라던 질문이 전부 빠졌으면 그 질문을 두고 쓴 해설도 내지 않는다.
     commentary = answer.commentary if answerable == answer.answerable else None

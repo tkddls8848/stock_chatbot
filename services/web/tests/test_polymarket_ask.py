@@ -365,6 +365,27 @@ def test_the_number_in_the_question_marks_its_option():
     assert options["↑1,500"] is True and not any(focus for label, focus in options.items() if label != "↑1,500")
 
 
+def test_the_nearest_threshold_stands_in_when_the_asked_number_is_missing():
+    """"1500원"에 맞는 칸이 없으면 25% 안에서 가장 가까운 칸(↑1,600)이다. 규모가 다른 숫자에는 붙지 않는다."""
+    compact, detail = _event("k", "Will USD/KRW hit __ in 2026?", "independent_multi", [
+        _market("u1", "↑1,600", 0.09), _market("u2", "↑1,800", 0.04), _market("d1", "↓1,300", 0.355)])
+    from services.web.polymarket.ask import asked_markets
+    terms = relevance.compile_tokens(relevance.expand(relevance.query_tokens("원달러 환율 1500원 넘을까")))
+    assert asked_markets("원달러 환율 1500원 넘을까", terms, detail["markets"]) == {"u1"}
+    assert asked_markets("환율 9000원 넘을까", terms, detail["markets"]) == set()
+
+
+def test_a_model_that_marks_every_option_marks_none():
+    """모델이 사다리 칸을 다 찍으면(실측: 휴전 날짜 11칸) 짚은 것이 아니다 — 규칙대로 셋만 보인다."""
+    from services.web.polymarket.ask import Row, assemble
+    compact, detail = GOLD
+    row = Row(compact, None, detail["markets"], {m: market["id"] for m, market in enumerate(detail["markets"], 1)}, {})
+    answer = Answer(True, [Pick(1, True, [1, 2, 3, 4, 5])], "참여자들은 금값 상승을 엇갈리게 봅니다.")
+    payload = assemble("금값 사상 최고치 찍을까?", {"generated_at": "t"}, [row], answer)
+    assert [(o["label"], o["focus"]) for o in payload["items"][0]["options"]] == [
+        ("↑ $4,200", False), ("↑ $4,500", False), ("↓ $3,500", False)]
+
+
 def test_related_questions_stay_at_two_even_with_a_direct_answer():
     raw = json.dumps({"answerable": True, "commentary": "해설입니다 충분히 긴 문장입니다.", "picks": [
         {"n": 1, "direct": True, "focus": []}, *({"n": n, "direct": False, "focus": []} for n in range(2, 6))]})
@@ -434,9 +455,10 @@ def test_the_answer_carries_server_numbers_and_the_asked_option(api):
     assert body["commentary"].startswith("12월 회의는")
     item = body["items"][0]
     assert item["title"] == "Fed Decision in December?" and item["summary"].startswith("연준이 12월")
+    # "인하"는 용어집으로 decrease에 닿아 인하 칸 둘이 물은 선택지로 보인다(서버가 정한다).
     assert [(o["label"], o["probability"], o["focus"]) for o in item["options"]] == [
         ("25 bps increase", 0.755, False), ("No change", 0.235, False), ("50+ bps increase", 0.015, False),
-        ("25 bps decrease", 0.0045, True)]
+        ("25 bps decrease", 0.0045, True), ("50+ bps decrease", 0.0035, True)]
     assert body["generated_at"] == "2026-11-04T16:00:00+09:00" and body["usage"] == {"used": 1, "limit": 10}
     question, candidates = answerer.calls[0]
     assert question == "연준 12월 금리 인하 확률은?"
