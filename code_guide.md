@@ -481,6 +481,15 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/ko.json`(날짜·영상 ID·제목)을
   쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
   `/`의 CSP만 그 출처의 `frame-src`를 연다.
+  **쇼츠 TTS는 ElevenLabs Jian을 우선 사용한다**(운영자 결정 2026-11-08). 루트 `.env`의
+  `ELEVENLABS_API_KEY`만 읽으며 `.env.example`에는 빈 예시만 둔다. 모델은 `eleven_multilingual_v2`,
+  음성은 `KNy9usSxeZXzNA3l10Jy`, 기본 속도 1.12·안정성 0.65·유사도 0.75·style 0·speaker boost 끔이다.
+  키 누락·크레딧 부족·권한/네트워크/API 오류·잘못된 음성이나 문자 시각이면 기존 SunHi(+0%)로
+  전체 원고를 생성한다. 성공한 뒤 두 번째 음성을 만들지 않고, 양쪽 실패는 제작 실패다.
+  숫자·퍼센트·기호는 발음용 원고에서 풀고 숫자와 단위는 붙여 읽는다. 화면 원고를 바꾸지 않고
+  문자 시각을 원고 위치로 되돌려 자막·장면 전환을 맞춘다. ElevenLabs 음성은 쉼 편집·재배속·
+  음색 보정·음량 증폭 없이 보존하며, 길이보다 음성의 완전성을 우선한다. SunHi의 기존 호흡 처리는 유지한다.
+  실제 제공자·설정·대체 사유는 `production.json`의 `tts`에 남기며 키·API 오류 본문은 로그에 쓰지 않는다.
   **영어판 쇼츠는 만들지 않는다**(운영자 결정 2026-10-10 — `english.py`·`SHORTS_ENGLISH_EDITION`을 지웠다).
   알림에 붙은 검토번호(`<날짜>-ko-<수정본>`)로 날짜·수정본을 지정한다. 가운데 `ko`는 영어판을 두던 때의 칸이고,
   이미 전달한 원고 버튼·승인 기록이 이 형식이라 그대로 둔다.

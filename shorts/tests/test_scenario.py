@@ -120,7 +120,7 @@ def test_the_closing_scene_is_a_short_notice_that_matches_what_is_spoken(issue_s
     assert outro.body == "자세한 내용은 nunchi.live에서 확인하세요."
     # 짧은 고지 두 줄이고, 마무리 멘트가 같은 말을 한다(주소는 소리로 "눈치 닷 라이브").
     assert len(outro.body) < 50
-    assert "눈치 닷 라이브" in outro.narration and "질문마다 판정 조건이" in outro.narration
+    assert "눈치 닷 라이브" in outro.narration and "질문에 따른 자세한 내용은" in outro.narration
 
 
 def test_the_screen_never_shows_a_line_the_voice_does_not_say(issue_source):

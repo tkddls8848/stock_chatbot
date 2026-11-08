@@ -66,6 +66,11 @@ class Settings:
     max_groups: int = 5
     tts_voice: str = "ko-KR-SunHiNeural"
     tts_rate: str = "+0%"
+    elevenlabs_api_key: str = field(default="", repr=False)
+    elevenlabs_voice: str = "KNy9usSxeZXzNA3l10Jy"  # Jian
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_speed: float = 1.12
+    elevenlabs_stability: float = 0.65
     visuals_enabled: bool = True
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
@@ -108,6 +113,7 @@ class Settings:
             blender_bin=_media_binary("blender"),
             editor_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip(),
             editor_api_token=os.getenv("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip(),
+            elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", "").strip(),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
             youtube_refresh_token=os.getenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "").strip(),

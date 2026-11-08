@@ -15,13 +15,13 @@ NARRATION_GAIN = 1.3
 
 def compose(*, images: list[dict], subtitles: list[dict],
             audio_path: Path, output_path: Path, work_dir: Path,
-            duration: float, blender_bin: str) -> None:
+            duration: float, blender_bin: str, narration_gain: float = NARRATION_GAIN) -> None:
     """화면 카드(`images`)·자막 그림(`subtitles`, 화면 크기 투명 PNG)과 음성을 합친다."""
     manifest = work_dir / "blender-manifest.json"
     manifest.write_text(json.dumps({
         "width": WIDTH, "height": HEIGHT, "fps": 30, "duration": duration,
         "audio": str(audio_path.resolve()), "output": str(output_path.resolve()),
-        "narration_gain": NARRATION_GAIN,
+        "narration_gain": narration_gain,
         "tail_seconds": .6, "clone_padding_seconds": 1,
         "images": images, "subtitles": subtitles,
     }, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")

@@ -254,15 +254,18 @@ def produce_revision(
     # 편집 단위는 장면으로 유지하지만 최종 음성은 전체 원고를 한 번에 합성한다.
     # 장면별 TTS를 잘라 이어 붙이면 경계마다 음색과 호흡이 다시 시작된다.
     audio, spoken = work / "narration.mp3", work / "narration.words.jsonl"
+    synthesis_info: dict = {}
     scene_words = synthesize(
         [scene.narration for scene in scenario.scenes], audio_path=audio, words_path=spoken,
         voice=settings.tts_voice, rate=settings.tts_rate, ffmpeg_bin=settings.ffmpeg_bin,
+        settings=settings, synthesis_info=synthesis_info,
     )
     video = target / f"nunchi-editorial-{scenario.date}.mp4"
     duration = render_video(
         scenario, audio_path=audio, scene_words=scene_words, output_path=video,
         work_dir=work, font_path=find_font(),
         blender_bin=settings.blender_bin, ffprobe_bin=settings.ffprobe_bin,
+        narration_gain=1.0 if synthesis_info.get("provider") == "elevenlabs" else 1.3,
     )
     script = write_review(
         target, scenario=scenario, metadata=metadata, video=video,
@@ -272,7 +275,7 @@ def produce_revision(
     write_json(target / "production.json", {
         "title": metadata["title"], "generation_id": scenario.generation_id,
         "duration_seconds": duration, "voice": settings.tts_voice, "rate": settings.tts_rate,
-        "synthesis": "continuous",
+        "synthesis": "continuous", "tts": synthesis_info,
         "audio": str(audio), "words": str(spoken), "video": str(video),
     })
     return ProductionResult(
@@ -370,6 +373,7 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
         work = Path(raw_work)
         audio = work / "narration.mp3"
         spoken = work / "narration.words.jsonl"
+        synthesis_info: dict = {}
         scene_words = synthesize(
             [scene.narration for scene in scenario.scenes],
             audio_path=audio,
@@ -377,6 +381,7 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
             voice=settings.tts_voice,
             rate=settings.tts_rate,
             ffmpeg_bin=settings.ffmpeg_bin,
+            settings=settings, synthesis_info=synthesis_info,
         )
         measured = probe_duration(audio, ffprobe_bin=settings.ffprobe_bin)
         if measured > settings.max_duration_seconds:
@@ -393,8 +398,13 @@ def _produce_daily(settings: Settings, *, today: date, force: bool) -> Productio
             font_path=find_font(),
             blender_bin=settings.blender_bin,
             ffprobe_bin=settings.ffprobe_bin,
+            narration_gain=1.0 if synthesis_info.get("provider") == "elevenlabs" else 1.3,
         )
 
+    write_json(day_dir / "production.json", {
+        "voice": settings.tts_voice, "rate": settings.tts_rate,
+        "synthesis": "continuous", "tts": synthesis_info,
+    })
     scenario_payload = {**scenario.to_dict(), "duration_seconds": round(duration, 3)}
     write_json(scenario_path, scenario_payload)
     # 게시 문구와 멘트는 review.md 한 장에서 검수한다.

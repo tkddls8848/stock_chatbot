@@ -9,11 +9,14 @@ import json
 import re
 import logging
 import subprocess
+import tempfile
 
 import edge_tts
 from edge_tts.exceptions import EdgeTTSException
 
 from . import edge_token
+from . import elevenlabs_tts
+from .config import Settings
 
 # 서버가 v1 토큰을 거절한다(2026-10-10~). 상류가 고친 판을 내면 지운다 — edge_token.py 머리말.
 edge_token.install()
@@ -62,7 +65,7 @@ class TTSError(RuntimeError):
 
 @dataclass(frozen=True)
 class Word:
-    """edge-tts가 보고한 한 단어의 실제 발화 구간."""
+    """TTS가 보고한 한 단어의 실제 발화 구간과 자막에서 찾을 글."""
 
     start: float
     end: float
@@ -77,6 +80,8 @@ def synthesize(
     voice: str,
     rate: str,
     ffmpeg_bin: str = "ffmpeg",
+    settings: Settings | None = None,
+    synthesis_info: dict | None = None,
 ) -> tuple[tuple[Word, ...], ...]:
     """장면 원고 전체를 한 번에 합성하고 장면별 단어 시각을 돌려준다.
 
@@ -91,6 +96,39 @@ def synthesize(
     호흡이 다시 시작된다. 장면 사이 호흡만 뒤에서 넓힌다.
     """
     script = "\n".join(narrations)
+    info = synthesis_info if synthesis_info is not None else {}
+    info.clear()
+    if settings is not None and settings.elevenlabs_api_key:
+        try:
+            # 기존 편집 속도는 기본 Jian 속도에 대한 상대 조정이다. SunHi는 종전 값을 쓴다.
+            speed = max(0.7, min(1.2, settings.elevenlabs_speed * (1 + int(rate.rstrip("%")) / 100)))
+            audio, aligned = elevenlabs_tts.generate(
+                spoken_text(script), api_key=settings.elevenlabs_api_key,
+                voice=settings.elevenlabs_voice, model=settings.elevenlabs_model,
+                speed=speed, stability=settings.elevenlabs_stability,
+            )
+            scenes = _split_by_scene(narrations, [Word(*word) for word in aligned])
+            # 실패한 응답은 기존 음성에 덮어쓰지 않는다. 디코딩만 검사하고 원본 MP3를 보존한다.
+            with tempfile.TemporaryDirectory(prefix=".tts-", dir=audio_path.parent) as work:
+                candidate = Path(work) / "narration.mp3"
+                candidate.write_bytes(audio)
+                samples = _decode(candidate, ffmpeg_bin)
+                if not samples or len(samples) / _SAMPLE_RATE + 0.25 < aligned[-1][1]:
+                    raise elevenlabs_tts.ElevenTTSError("truncated_audio")
+                candidate.replace(audio_path)
+            _write_words(words_path, scenes)
+            info.update(provider="elevenlabs", voice=settings.elevenlabs_voice,
+                        model=settings.elevenlabs_model, speed=speed,
+                        stability=settings.elevenlabs_stability)
+            logger.info("음성 생성: ElevenLabs Jian, speed=%s stability=%s", speed, settings.elevenlabs_stability)
+            return scenes  # ElevenLabs는 쉼 편집·속도 보정·재인코딩을 하지 않는다.
+        except (elevenlabs_tts.ElevenTTSError, TTSError, OSError, ValueError) as exc:
+            reason = str(exc) if isinstance(exc, elevenlabs_tts.ElevenTTSError) else type(exc).__name__
+            info["fallback_reason"] = reason
+            logger.warning("ElevenLabs 생성 불가 (%s), Microsoft SunHi로 전환합니다", reason)
+    elif settings is not None:
+        info["fallback_reason"] = "missing_api_key"
+        logger.info("ElevenLabs 키 없음, Microsoft SunHi로 생성합니다")
     try:
         asyncio.run(
             edge_tts.Communicate(
@@ -106,6 +144,7 @@ def synthesize(
     scenes = _split_by_scene(narrations, words)
     scenes = _pace_breaths(audio_path, scenes, narrations, ffmpeg_bin=ffmpeg_bin)
     _write_words(words_path, scenes)
+    info.update(provider="edge", voice=voice, rate=rate)
     return scenes
 
 

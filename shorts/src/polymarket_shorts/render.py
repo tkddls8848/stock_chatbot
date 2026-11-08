@@ -859,6 +859,7 @@ def render_video(
     font_path: Path,
     blender_bin: str,
     ffprobe_bin: str,
+    narration_gain: float = 1.3,
 ) -> float:
     # 목표 길이는 편집 참고값이다. 음성 전체와 마지막 여운을 먼저 보존한다.
     duration = probe_duration(audio_path, ffprobe_bin=ffprobe_bin) + 0.6
@@ -917,7 +918,8 @@ def render_video(
         _caption_frame(_caption_lines(draw, phrase.text, font), caption, font_path=font_path)
         subtitles.append({"start": phrase.start, "end": phrase.end, "path": str(caption.resolve())})
     compose(images=images, subtitles=subtitles, audio_path=audio_path,
-            output_path=output_path, work_dir=work_dir, duration=duration, blender_bin=blender_bin)
+            output_path=output_path, work_dir=work_dir, duration=duration, blender_bin=blender_bin,
+            narration_gain=narration_gain)
     output_path.with_suffix(".timeline.json").write_text(
         json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
     )

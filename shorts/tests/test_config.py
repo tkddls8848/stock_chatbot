@@ -47,3 +47,14 @@ def test_env_holds_only_secrets_and_tuning_stays_in_code(monkeypatch):
     assert settings.editor_model == "@cf/deepseek-ai/deepseek-v4-flash-0731"
     assert settings.auto_publish is True and settings.youtube_privacy == "public"
     assert settings.youtube_refresh_token == "refresh-secret" and "refresh-secret" not in repr(settings)
+
+
+def test_elevenlabs_secret_and_fixed_voice_settings(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "eleven-secret")
+    settings = config.Settings.from_env()
+    assert settings.elevenlabs_api_key == "eleven-secret"
+    assert "eleven-secret" not in repr(settings)
+    assert settings.elevenlabs_voice == "KNy9usSxeZXzNA3l10Jy"
+    assert settings.elevenlabs_speed == 1.12
+    assert settings.elevenlabs_stability == 0.65
+    assert settings.tts_voice == "ko-KR-SunHiNeural" and settings.tts_rate == "+0%"

@@ -165,12 +165,15 @@ def test_revision_renderer_uses_edited_script_and_persists_preview(draft, monkey
         assert text == [scene.narration for scene in scenario.scenes]
         assert audio_path.name == "narration.mp3"
         assert words_path.name == "narration.words.jsonl"
+        assert kwargs["settings"] is settings
+        kwargs["synthesis_info"].update(provider="elevenlabs", voice="Jian")
         audio_path.write_bytes(b"continuous-audio")
         words_path.write_text("", encoding="utf-8")
         return ()
     def render(actual, **kwargs):
         assert actual == scenario
         assert "audio_scene_durations" not in kwargs
+        assert kwargs["narration_gain"] == 1.0  # Jian 원본에 SunHi용 증폭을 적용하지 않는다.
         kwargs["output_path"].write_bytes(b"rendered")
         return 30.0
     monkeypatch.setattr(pipeline, "synthesize", audio)
@@ -183,6 +186,7 @@ def test_revision_renderer_uses_edited_script_and_persists_preview(draft, monkey
     production = json.loads((target / "production.json").read_text(encoding="utf-8"))
     assert production["rate"] == settings.tts_rate
     assert production["synthesis"] == "continuous"
+    assert production["tts"] == {"provider": "elevenlabs", "voice": "Jian"}
 
 
 def test_conversation_edits_and_completes_local_review(draft, monkeypatch, capsys):
