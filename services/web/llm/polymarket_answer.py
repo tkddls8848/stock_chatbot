@@ -33,21 +33,24 @@ RELATED_MAX = 2
 
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "answerable": {"type": "boolean"},
         "picks": {
             "type": "array",
+            "maxItems": 5,
             "items": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "n": {"type": "integer"},
                     "direct": {"type": "boolean"},
-                    "focus": {"type": "array", "items": {"type": "integer"}},
+                    "focus": {"type": "array", "maxItems": 2, "items": {"type": "integer"}},
                 },
                 "required": ["n", "direct", "focus"],
             },
         },
-        "commentary": {"type": "string"},
+        "commentary": {"type": "string", "maxLength": 250},
     },
     "required": ["answerable", "picks", "commentary"],
 }
