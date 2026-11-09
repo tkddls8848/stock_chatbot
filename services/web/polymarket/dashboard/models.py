@@ -356,6 +356,9 @@ def normalize_event(
         "liquidity_status": liquidity_status,
         "liquidity": liquidity,
         "volume24hr": _number(event.get("volume24hr")),
+        # 누적 참여 규모. 쇼츠가 오래 지켜볼 큰 판을 고를 때 목록만으로 견준다 —
+        # 상세를 수천 건 읽을 수 없다. 2026-11-09 실측 18,905건에서 0.35 MiB(12.3 → 12.6 MiB).
+        "volume": _number(event.get("volume")),
         "end_date": event.get("endDate"),
         "leader": consensus["leader"],
         "leader_probability": consensus["leader_probability"],
@@ -370,7 +373,6 @@ def normalize_event(
         "category_reason": taxonomy["category_reason"],
         "system_tags": taxonomy["system_tags"],
         "liquidity_source": liquidity_source,
-        "volume": _number(event.get("volume")),
         "market_count": len(markets),
         "runner_up_probability": consensus["runner_up_probability"],
         "description": str(event.get("description") or ""),

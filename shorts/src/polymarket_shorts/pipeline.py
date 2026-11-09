@@ -21,6 +21,7 @@ from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
 from .timely import related_news
 from .tts import synthesize
+from .watch import record_ledger
 
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,13 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
     client = PolymarketWebClient(settings.web_url)
     snapshot = client.snapshot()
     candidates, audit = shortlist(snapshot)
+    # 오래 지켜볼 판의 기록은 영상이 나오지 않는 날에도 쌓여야 흐름이 끊기지 않는다. 그래서 선정 전에 쓰고,
+    # 실패해도 제작을 멈추지 않되 감사 기록에 남긴다.
+    try:
+        audit["watch_ledger"] = record_ledger(settings, today, snapshot, client)
+    except OSError as exc:
+        logger.warning("추적 기록을 쓰지 못했습니다: %s", exc)
+        audit["watch_ledger"] = {"error": str(exc)}
     used_ids, used_topics = recently_featured(settings, today)
     fresh = [row for row in candidates
              if str(row["id"]) not in used_ids and row.get("topic_key") not in used_topics]

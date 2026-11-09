@@ -500,6 +500,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **쇼츠의 도입·마무리 화면은 자막을 띄우지 않는다**(운영자 결정 2026-10-10, `render.UNCAPTIONED`). 고정 머리말이
   같은 말을 이미 보이므로, 머리말을 안전 영역 가운데(`HEADLINE_CENTER`)에 크게 세우고 고지문을 안전 영역 바닥으로
   내린다. 멘트(음성)는 그대로다.
+  **쇼츠는 오래 지켜볼 큰 판의 일일 기록을 남긴다**(운영자 결정 2026-11-09 — 매일 새 주제만 고르던 영상에 몇 주·몇 달
+  지켜볼 판의 흐름을 더한다. 계획: `shorts/docs/watch-topics.md`). 웹은 지난 확률을 내주지 않으므로 제작 때 읽은 목록을
+  `storage/shorts/watch/ledger/<날짜>.json`에 쓴다(`watch.record_ledger`, 120일 보관). 누적 참여 규모 상위 500개의
+  1위 확률과, 그중 종료까지 60일 이상 남은 상위 30개의 개별 질문 확률이다(상세 조회는 제작 예산 5회와 따로 30회).
+  누적 참여 규모(`volume`)는 이 비교를 위해 웹 목록(compact)에 올렸다. 기록 실패는 제작을 멈추지 않고
+  `selection.json`의 `watch_ledger`에 남는다.
   **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정
   2026-09-29). 일일 제작이 렌더 전에 오늘 포함 14일보다 오래된 `storage/shorts/<날짜>/`를
   통째로 지운다 — 영상은 YouTube에 있고, 클립·수정본이
@@ -833,13 +839,14 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   지우지 않는다. 공유 호스트와의 경계·계약 값과 앱 설치는 `infra/host-contract.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 여섯이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  현재 계획서는 일곱이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
   게시물 추적), `services/web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
   대시보드로),
   `services/web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
   이동 추적), `services/web/docs/polymarket-nl-search.md`(event 주석을 미리 달아 두는
   한국어 자연어 배팅 검색), `services/web/docs/polymarket-consensus-qa.md`(자연어 질문에
-  지금의 컨센서스로 답하는 질의응답). 뒤 넷은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
+  지금의 컨센서스로 답하는 질의응답), `shorts/docs/watch-topics.md`(쇼츠가 오래 지켜볼 큰 판을 골라 흐름을
+  이어 보이는 코너). 웹 계획서 중 뒤 넷은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
   계획서가 먼저 끝나 지워져도 나머지 계획은 남아야 한다.
   **계획서를 새로 파는 것은 주제가 기존 계획서와 독립일 때뿐이고, 다 끝나면 파일째
   지운다.** 종류를 섞지 않는다: 절차서에 할 일을

@@ -71,10 +71,11 @@ def test_daily_selection_audits_sources_and_bounds_model_calls(tmp_path, monkeyp
                 if len(calls) == 1 else {"scripts": [{**script, "news_hook": hook, "hook_news_id": "market:1"}]})
     monkeypatch.setattr(pipeline, "PolymarketWebClient", Client)
     monkeypatch.setattr(highlights, "chat_json", chat)
-    scenario = pipeline.prepare_daily(Settings.from_env(), date(2026, 9, 23), tmp_path)
+    scenario = pipeline.prepare_daily(replace(Settings.from_env(), output_dir=tmp_path / "shorts"), date(2026, 9, 23), tmp_path)
     audit = json.loads((tmp_path / "selection.json").read_text(encoding="utf-8"))
     assert audit["llm_calls"] == len(calls) == 2
     assert audit["requests"] == {"details": 1, "news": 1}
+    assert audit["watch_ledger"]["events"] == 1 and audit["watch_ledger"]["details"] == 0
     assert audit["produced_issues"] == 1
     assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))["issues"][0]["markets"][0]["id"] == "m1"
     assert len(scenario.scenes) == 3
@@ -110,7 +111,7 @@ def test_failed_selection_records_error_and_does_not_fall_back_to_summary(tmp_pa
         raise HighlightError("bad selection")
     monkeypatch.setattr(pipeline, "select_issues", reject)
     with pytest.raises(HighlightError):
-        pipeline.prepare_daily(Settings.from_env(), date(2026, 9, 23), tmp_path)
+        pipeline.prepare_daily(replace(Settings.from_env(), output_dir=tmp_path / "shorts"), date(2026, 9, 23), tmp_path)
     audit = json.loads((tmp_path / "selection.json").read_text(encoding="utf-8"))
     assert audit["status"] == "failed" and audit["error"] == "bad selection"
     assert audit["llm_calls"] == 1
@@ -123,7 +124,7 @@ def test_prune_old_days_keeps_two_weeks_of_folders(tmp_path):
     output = tmp_path / "output"
     settings = replace(Settings.from_env(), output_dir=output, repeat_days=7)
     old, kept = output / "2026-09-15", output / "2026-09-16"
-    for folder in (old, kept, output / "state"):
+    for folder in (old, kept, output / "state", output / "watch"):
         (folder / "media").mkdir(parents=True)
         (folder / "media" / "video.mp4").write_bytes(b"x")
 
@@ -133,6 +134,8 @@ def test_prune_old_days_keeps_two_weeks_of_folders(tmp_path):
     assert removed == [old]
     assert not old.exists()
     assert kept.is_dir() and (output / "state").is_dir()
+    # 추적 기록은 제작일 폴더가 아니라 자기 보관 기간(`watch.LEDGER_RETENTION_DAYS`)을 따른다.
+    assert (output / "watch").is_dir()
 
 
 def test_prune_old_days_never_drops_folders_repeat_avoidance_reads(tmp_path):

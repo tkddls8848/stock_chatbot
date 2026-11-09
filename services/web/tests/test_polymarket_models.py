@@ -787,6 +787,7 @@ def test_compact_gains_no_new_field():
         "liquidity_status",
         "liquidity",
         "volume24hr",
+        "volume",
         "end_date",
         "leader",
         "leader_probability",

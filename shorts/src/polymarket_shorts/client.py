@@ -16,6 +16,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE, MAX_PAGES, MAX_DETAILS, MAX_NEWS_ITEMS = 100, 100, 5, 3
+# 일일 기록(`watch.record_ledger`)이 오래 지켜볼 판의 개별 질문 가격을 읽는 상한. 제작 상세 예산과 따로 센다.
+MAX_LEDGER_DETAILS = 30
 # 우리가 모은 시장 뉴스(공개 웹 `/api/search`)를 읽는 기간과 쪽수 상한. 검색은 한 쪽 20건이고
 # 사흘치가 실측 200건 안팎이다(2026-10-08: 이틀 152건). 상한을 넘으면 최신 쪽만 쓴다.
 MARKET_NEWS_DAYS, MAX_MARKET_NEWS_PAGES = 3, 20
@@ -41,7 +43,8 @@ class PolymarketWebClient:
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
         self.session = session or requests.Session()
-        self.requests = {"summary": 0, "pages": 0, "trending": 0, "details": 0, "news": 0, "market_news": 0}
+        self.requests = {"summary": 0, "pages": 0, "trending": 0, "details": 0, "ledger_details": 0,
+                         "news": 0, "market_news": 0}
 
     def _get(self, path: str) -> dict[str, Any]:
         url = urljoin(self.base_url, path.lstrip("/"))
@@ -112,10 +115,11 @@ class PolymarketWebClient:
             trending = {}
         return Snapshot(summary, tuple(events), trending)
 
-    def detail(self, event_id: str, generation_id: str) -> dict[str, Any]:
-        if self.requests["details"] >= MAX_DETAILS:
+    def detail(self, event_id: str, generation_id: str, *, ledger: bool = False) -> dict[str, Any]:
+        key, budget = ("ledger_details", MAX_LEDGER_DETAILS) if ledger else ("details", MAX_DETAILS)
+        if self.requests[key] >= budget:
             raise SourceError("상세 조회 예산을 넘었습니다")
-        self.requests["details"] += 1
+        self.requests[key] += 1
         result = self._get("api/forecast/events/" + quote(event_id, safe=""))
         if str(result.get("generation_id")) != generation_id or str(result.get("id")) != event_id:
             raise SourceError("상세 조회 중 generation 또는 이벤트 ID가 바뀌었습니다")
