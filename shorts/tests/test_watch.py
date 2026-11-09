@@ -54,14 +54,14 @@ def test_record_reads_markets_only_for_long_horizon_events(tmp_path, event_facto
             ]}
 
     client = Client()
-    summary = record_ledger(settings, date(2026, 11, 9), _snapshot(event_factory), client)
+    written = record_ledger(settings, date(2026, 11, 9), _snapshot(event_factory), client)
 
     # "soon"은 종료까지 45일이 안 돼 개별 질문을 읽지 않는다.
     assert client.calls == ["big", "small", "missing"]
-    written = json.loads((folder / "2026-11-09.json").read_text(encoding="utf-8"))
+    assert json.loads((folder / "2026-11-09.json").read_text(encoding="utf-8")) == written
     assert written["details"]["big"] == [{"id": "m1", "label": "December 31", "yes": .24}]
     assert written["detail_failures"] == [{"id": "small", "reason": "웹 API를 읽지 못했습니다"}]
-    assert summary == {"path": str(folder / "2026-11-09.json"), "events": 4, "details": 2, "detail_failures": 1}
+    assert len(written["events"]) == 4 and set(written["details"]) == {"big", "missing"}
     # 넉 달(120일)이 지난 기록만 지우고 날짜 이름이 아닌 파일은 건드리지 않는다.
     assert not (folder / "2026-07-01.json").exists()
     assert (folder / "2026-07-20.json").exists() and (folder / "notes.json").exists()
@@ -87,3 +87,24 @@ def test_client_counts_ledger_details_apart_from_production_budget():
         client.detail("e1", "g1")
     assert client.requests["ledger_details"] == MAX_LEDGER_DETAILS
     assert client.requests["details"] == MAX_DETAILS
+
+
+def test_record_reads_tracked_events_first_and_keeps_room_for_new_ones(tmp_path, event_factory):
+    from polymarket_shorts.client import MAX_LEDGER_DETAILS
+    from polymarket_shorts.core.storage import write_json
+    from polymarket_shorts.watch import SLOTS
+
+    settings = replace(Settings.from_env(), output_dir=tmp_path / "shorts")
+    write_json(tmp_path / "shorts" / "watch" / "topics.json", {"tracked": [{"event_id": "e40"}]})
+    events = tuple(event_factory(f"e{index}", volume=1e8 - index, end_date="2027-07-01T00:00:00Z")
+                   for index in range(41))
+
+    class Client:
+        calls = []
+        def detail(self, identity, generation, *, ledger=False):
+            self.calls.append(identity)
+            return {"markets": []}
+
+    client = Client()
+    record_ledger(settings, date(2026, 11, 9), Snapshot(SUMMARY, events, {}), client)
+    assert client.calls[0] == "e40" and len(client.calls) == MAX_LEDGER_DETAILS - SLOTS

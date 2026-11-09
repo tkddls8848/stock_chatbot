@@ -18,7 +18,7 @@ from .review import ReviewError, read_script
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
     "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
-    "failure_ack", "scheduled",
+    "failure_ack", "scheduled", "watch",
 )
 
 
@@ -47,6 +47,8 @@ def main() -> None:
     parser.add_argument("--failure-ack", metavar="DATE", help="예약 제작 포기 알림을 전달했다고 기록")
     # systemd 타이머만 쓴다. 하루 시도 횟수를 세고 다 쓰면 재시작을 끊는다(attempts.py).
     parser.add_argument("--scheduled", action="store_true", help="매일 예약 제작(하루 두 번까지 시도)")
+    # 영상 없이 추적 기록·주제만 지금 갱신한다. 매일 제작 때도 같은 일을 한다(watch.py).
+    parser.add_argument("--watch", action="store_true", help="추적 주제를 지금 갱신하고 상태 JSON 출력")
     args = parser.parse_args()
     if args.review_token and args.edit is None:
         parser.error("--review-token은 --edit와 함께 씁니다")
@@ -80,6 +82,14 @@ def main() -> None:
             else:
                 result = approval.approve(settings, args.review_approve)
             print(json.dumps(result, ensure_ascii=False))
+            return
+        if args.watch:
+            from .client import PolymarketWebClient, PriceHistory
+            from .watch import refresh_watch
+            client = PolymarketWebClient(settings.web_url)
+            today = datetime.now(settings.timezone).date()
+            print(json.dumps(refresh_watch(settings, today, client.snapshot(), client, PriceHistory()),
+                             ensure_ascii=False))
             return
         if args.youtube_auth:
             from .youtube import authorize

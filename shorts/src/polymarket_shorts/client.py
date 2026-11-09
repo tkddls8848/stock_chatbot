@@ -1,10 +1,11 @@
-"""수집된 공개 API만 읽고, 선정 이슈에 한해 상세·뉴스를 조회한다."""
+"""수집된 공개 웹 API만 읽고, 선정 이슈에 한해 상세·뉴스를 조회한다. 추적 주제의 지난 확률만 원 출처에서 받는다(`PriceHistory`)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import html
+import json
 import logging
 import math
 import re
@@ -21,6 +22,12 @@ MAX_LEDGER_DETAILS = 30
 # 우리가 모은 시장 뉴스(공개 웹 `/api/search`)를 읽는 기간과 쪽수 상한. 검색은 한 쪽 20건이고
 # 사흘치가 실측 200건 안팎이다(2026-10-08: 이틀 152건). 상한을 넘으면 최신 쪽만 쓴다.
 MARKET_NEWS_DAYS, MAX_MARKET_NEWS_PAGES = 3, 20
+
+
+# 추적 주제의 지난 확률을 원 출처에서 받는 주소와 기간. 둘 다 키 없는 공개 읽기 API다.
+GAMMA_URL, CLOB_URL, HISTORY_DAYS = "https://gamma-api.polymarket.com/", "https://clob.polymarket.com/", 30
+# 한 이벤트에서 이력을 받는 개별 질문 수 상한(질문마다 한 번 호출한다).
+MAX_HISTORY_MARKETS = 10
 
 
 class SourceError(RuntimeError):
@@ -190,3 +197,58 @@ class PolymarketWebClient:
         except (requests.RequestException, ElementTree.ParseError, ValueError) as exc:
             logger.warning("관련 뉴스 검색 미완료: %s", type(exc).__name__)
             return []
+
+
+class PriceHistory:
+    """추적 주제가 정해진 날, 개별 질문의 지난 `HISTORY_DAYS`일 일별 '예' 확률을 원 출처에서 한 번 받는다.
+
+    쇼츠의 다른 자료는 전부 공개 웹을 거치지만 웹은 지난 확률을 남기지 않는다. 일일 기록만 기다리면 새 주제의
+    추이선을 한 달 뒤에야 그릴 수 있어 이 자리만 원 출처를 직접 읽는다(운영자 결정 2026-11-09). Gamma에서 질문의
+    가격 토큰을 찾고 CLOB 가격 이력에서 하루 한 점을 받는다. 같은 한국 날짜의 점이 여럿이면 마지막 점을 쓴다.
+    """
+
+    def __init__(self, *, timeout: float = 20, session: Any | None = None):
+        self.timeout = timeout
+        self.session = session or requests.Session()
+        self.requests = 0
+
+    def _get(self, url: str) -> Any:
+        self.requests += 1
+        try:
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise SourceError(f"가격 이력을 읽지 못했습니다: {url.split('?')[0]}") from exc
+
+    def daily(self, market_ids: list[str], *, until: datetime) -> dict[str, dict[str, float]]:
+        """{개별 질문 ID: {YYYY-MM-DD: 예 확률}}. 토큰을 찾지 못한 질문은 빠진다."""
+        market_ids = market_ids[:MAX_HISTORY_MARKETS]
+        if not market_ids:
+            return {}
+        rows = self._get(urljoin(GAMMA_URL, "markets?" + urlencode(
+            [("id", value) for value in market_ids] + [("limit", len(market_ids))])))
+        tokens = {}
+        for row in rows if isinstance(rows, list) else []:
+            try:
+                tokens[str(row["id"])] = str(json.loads(row["clobTokenIds"])[0])
+            except (KeyError, TypeError, ValueError, IndexError):
+                continue
+        start = int((until - timedelta(days=HISTORY_DAYS + 1)).timestamp())
+        zone = until.tzinfo
+        result: dict[str, dict[str, float]] = {}
+        for market_id in market_ids:
+            if market_id not in tokens:
+                continue
+            payload = self._get(urljoin(CLOB_URL, "prices-history?" + urlencode({
+                "market": tokens[market_id], "startTs": start, "endTs": int(until.timestamp()), "fidelity": 1440})))
+            points: dict[str, float] = {}
+            for point in (payload.get("history") if isinstance(payload, dict) else None) or []:
+                try:
+                    stamp, price = int(point["t"]), float(point["p"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if 0 <= price <= 1:
+                    points[datetime.fromtimestamp(stamp, zone).date().isoformat()] = price
+            result[market_id] = points
+        return result

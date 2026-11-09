@@ -10,7 +10,7 @@ import tempfile
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .client import PolymarketWebClient, SourceError
+from .client import PolymarketWebClient, PriceHistory, SourceError
 from .config import Settings
 from .core.storage import read_json
 from .highlights import HighlightError, select_issues, write_issues
@@ -21,7 +21,7 @@ from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
 from .timely import related_news
 from .tts import synthesize
-from .watch import record_ledger
+from .watch import refresh_watch
 
 
 logger = logging.getLogger(__name__)
@@ -128,11 +128,7 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
     candidates, audit = shortlist(snapshot)
     # 오래 지켜볼 판의 기록은 영상이 나오지 않는 날에도 쌓여야 흐름이 끊기지 않는다. 그래서 선정 전에 쓰고,
     # 실패해도 제작을 멈추지 않되 감사 기록에 남긴다.
-    try:
-        audit["watch_ledger"] = record_ledger(settings, today, snapshot, client)
-    except OSError as exc:
-        logger.warning("추적 기록을 쓰지 못했습니다: %s", exc)
-        audit["watch_ledger"] = {"error": str(exc)}
+    audit["watch"] = refresh_watch(settings, today, snapshot, client, PriceHistory())
     used_ids, used_topics = recently_featured(settings, today)
     fresh = [row for row in candidates
              if str(row["id"]) not in used_ids and row.get("topic_key") not in used_topics]

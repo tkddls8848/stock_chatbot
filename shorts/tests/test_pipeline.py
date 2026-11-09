@@ -75,7 +75,9 @@ def test_daily_selection_audits_sources_and_bounds_model_calls(tmp_path, monkeyp
     audit = json.loads((tmp_path / "selection.json").read_text(encoding="utf-8"))
     assert audit["llm_calls"] == len(calls) == 2
     assert audit["requests"] == {"details": 1, "news": 1}
-    assert audit["watch_ledger"]["events"] == 1 and audit["watch_ledger"]["details"] == 0
+    assert audit["watch"]["ledger"] == {"events": 1, "details": 0, "detail_failures": 0}
+    # 종료까지 45일이 안 되는 판뿐이라 추적 후보도, 중요도를 묻는 모델 호출도 없다.
+    assert audit["watch"]["tracking"]["eligible"] == 0 and audit["watch"]["tracking"]["llm_calls"] == 0
     assert audit["produced_issues"] == 1
     assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))["issues"][0]["markets"][0]["id"] == "m1"
     assert len(scenario.scenes) == 3

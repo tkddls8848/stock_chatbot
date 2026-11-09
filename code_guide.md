@@ -119,7 +119,7 @@ services/              파이썬 도메인 둘(봇·공개 웹). 폴더일 뿐 �
 
 shorts/                쇼츠 영상 자동 생성(운영은 텔레그램 `/shorts`). 자기 pyproject·venv를 가진 별개 패키지이고
                        이 저장소 코드를 import하지 않는다 — 공개 웹의
-                       `/api/forecast/*`와 수집 뉴스 `/api/search`를 HTTP로만 읽는다
+                       `/api/forecast/*`와 수집 뉴스 `/api/search`를 HTTP로 읽는다(추적 주제의 지난 확률만 원 출처)
   src/  docs/  tests/
 
 infra/                 인프라 코드 전부. 네 도메인이 한 인스턴스에 얹힌다
@@ -504,8 +504,10 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   지켜볼 판의 흐름을 더한다. 계획: `shorts/docs/watch-topics.md`). 웹은 지난 확률을 내주지 않으므로 제작 때 읽은 목록을
   `storage/shorts/watch/ledger/<날짜>.json`에 쓴다(`watch.record_ledger`, 120일 보관). 누적 참여 규모 상위 500개의
   1위 확률과, 그중 종료까지 45일 이상 남은 상위 30개의 개별 질문 확률이다(상세 조회는 제작 예산 5회와 따로 30회).
-  누적 참여 규모(`volume`)는 이 비교를 위해 웹 목록(compact)에 올렸다. 기록 실패는 제작을 멈추지 않고
-  `selection.json`의 `watch_ledger`에 남는다.
+  누적 참여 규모(`volume`)는 이 비교를 위해 웹 목록(compact)에 올렸다. 같은 단계에서 추적 주제(최대 둘)를 고쳐
+  `watch/topics.json`에 두고(`watch.update_tracking`), 새 주제는 지난 30일 확률을 **원 출처에서 직접** 받아
+  `watch/history/`를 채운다(`client.PriceHistory`, Gamma·CLOB 공개 API — 쇼츠가 공개 웹을 거치지 않는 유일한 자리다.
+  웹이 지난 확률을 남기지 않아서다). 어느 단계의 실패도 제작을 멈추지 않고 `selection.json`의 `watch`에 남는다.
   **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정
   2026-09-29). 일일 제작이 렌더 전에 오늘 포함 14일보다 오래된 `storage/shorts/<날짜>/`를
   통째로 지운다 — 영상은 YouTube에 있고, 클립·수정본이
