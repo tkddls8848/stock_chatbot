@@ -56,7 +56,7 @@ def test_record_reads_markets_only_for_long_horizon_events(tmp_path, event_facto
     client = Client()
     summary = record_ledger(settings, date(2026, 11, 9), _snapshot(event_factory), client)
 
-    # "soon"은 종료까지 60일이 안 돼 개별 질문을 읽지 않는다.
+    # "soon"은 종료까지 45일이 안 돼 개별 질문을 읽지 않는다.
     assert client.calls == ["big", "small", "missing"]
     written = json.loads((folder / "2026-11-09.json").read_text(encoding="utf-8"))
     assert written["details"]["big"] == [{"id": "m1", "label": "December 31", "yes": .24}]

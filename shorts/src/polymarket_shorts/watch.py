@@ -26,7 +26,8 @@ from .markets import _topic, number, sector
 
 SCHEMA_VERSION = 1
 LEDGER_EVENTS = 500
-LONG_HORIZON_DAYS = 60
+# 추적 주제의 자격 하한(최소 유지 30일 + 여유)과 같다 — 후보가 될 판만 개별 질문까지 남긴다.
+LONG_HORIZON_DAYS = 45
 # 지난 기록으로 30일 추이와 선정 점수(최근 7일)를 계산한다. 넉넉히 넉 달을 둔다.
 LEDGER_RETENTION_DAYS = 120
 # 시장과 무관한 판. 웹 트렌드가 빼는 분야와 같은 취지다.

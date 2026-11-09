@@ -503,7 +503,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   **쇼츠는 오래 지켜볼 큰 판의 일일 기록을 남긴다**(운영자 결정 2026-11-09 — 매일 새 주제만 고르던 영상에 몇 주·몇 달
   지켜볼 판의 흐름을 더한다. 계획: `shorts/docs/watch-topics.md`). 웹은 지난 확률을 내주지 않으므로 제작 때 읽은 목록을
   `storage/shorts/watch/ledger/<날짜>.json`에 쓴다(`watch.record_ledger`, 120일 보관). 누적 참여 규모 상위 500개의
-  1위 확률과, 그중 종료까지 60일 이상 남은 상위 30개의 개별 질문 확률이다(상세 조회는 제작 예산 5회와 따로 30회).
+  1위 확률과, 그중 종료까지 45일 이상 남은 상위 30개의 개별 질문 확률이다(상세 조회는 제작 예산 5회와 따로 30회).
   누적 참여 규모(`volume`)는 이 비교를 위해 웹 목록(compact)에 올렸다. 기록 실패는 제작을 멈추지 않고
   `selection.json`의 `watch_ledger`에 남는다.
   **서버의 제작일 폴더는 2주만 보관한다**(`pipeline.RETENTION_DAYS=14`, 운영자 결정
