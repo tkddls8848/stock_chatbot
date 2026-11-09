@@ -234,21 +234,23 @@ class PriceHistory:
                 tokens[str(row["id"])] = str(json.loads(row["clobTokenIds"])[0])
             except (KeyError, TypeError, ValueError, IndexError):
                 continue
-        start = int((until - timedelta(days=HISTORY_DAYS + 1)).timestamp())
+        # CLOB는 startTs와 endTs를 함께 주면 하루 간격에서도 "기간이 너무 길다"며 거부한다(2026-11-10 실측).
+        # 시작만 주고 끝은 받은 뒤 자른다.
+        start, end = int((until - timedelta(days=HISTORY_DAYS + 1)).timestamp()), until.timestamp()
         zone = until.tzinfo
         result: dict[str, dict[str, float]] = {}
         for market_id in market_ids:
             if market_id not in tokens:
                 continue
             payload = self._get(urljoin(CLOB_URL, "prices-history?" + urlencode({
-                "market": tokens[market_id], "startTs": start, "endTs": int(until.timestamp()), "fidelity": 1440})))
+                "market": tokens[market_id], "startTs": start, "fidelity": 1440})))
             points: dict[str, float] = {}
             for point in (payload.get("history") if isinstance(payload, dict) else None) or []:
                 try:
                     stamp, price = int(point["t"]), float(point["p"])
                 except (KeyError, TypeError, ValueError):
                     continue
-                if 0 <= price <= 1:
+                if stamp <= end and 0 <= price <= 1:
                     points[datetime.fromtimestamp(stamp, zone).date().isoformat()] = price
             result[market_id] = points
         return result

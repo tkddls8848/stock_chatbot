@@ -198,12 +198,14 @@ def test_price_history_reads_tokens_then_daily_points():
             self.urls.append(url)
             if "gamma" in url:
                 return Response([{"id": "m1", "clobTokenIds": '["111", "222"]'}])
-            # 같은 한국 날짜의 점이 둘이면 뒤의 점이 남는다.
-            return Response({"history": [{"t": 1762700400, "p": .6}, {"t": 1762704000, "p": .65}]})
+            # 같은 한국 날짜의 점이 둘이면 뒤의 점이 남고, 기준 시각 뒤의 점은 버린다.
+            return Response({"history": [{"t": 1762700400, "p": .6}, {"t": 1762704000, "p": .65},
+                                         {"t": 1794236400, "p": .9}]})
 
     session = Session()
     until = datetime(2026, 11, 9, 20, tzinfo=timezone(timedelta(hours=9)))
     result = PriceHistory(session=session).daily(["m1", "m2"], until=until)
 
     assert "id=m1&id=m2" in session.urls[0] and "market=111" in session.urls[1] and len(session.urls) == 2
+    assert "endTs" not in session.urls[1]
     assert result == {"m1": {"2025-11-10": .65}}
