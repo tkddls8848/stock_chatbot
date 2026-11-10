@@ -72,6 +72,10 @@ class Settings:
     elevenlabs_speed: float = 1.12
     elevenlabs_stability: float = 0.65
     visuals_enabled: bool = True
+    # 질문마다 그리는 그림과, 그 그림에 사람·글자가 없는지 보는 검사 모델(Cloudflare Workers AI, `media.py`).
+    # 그림 모델은 2026-11-10 실측으로 골랐다 — 같은 묘사 넷에 flux-1-schnell은 둘에 가짜 글자를 그렸고 이 모델은 없었다.
+    image_model: str = "@cf/black-forest-labs/flux-2-klein-4b"
+    vision_model: str = "@cf/llava-hf/llava-1.5-7b-hf"
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
     # 이슈 선별·원고·자연어 편집 모델(Cloudflare Workers AI).

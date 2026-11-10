@@ -12,7 +12,7 @@ from polymarket_shorts.config import Settings
 from polymarket_shorts.core.storage import write_json
 from polymarket_shorts.highlights import HighlightError
 from polymarket_shorts.pipeline import metadata_for
-from polymarket_shorts.scenario import Scenario, Scene, build_scenario
+from polymarket_shorts.scenario import build_scenario
 from polymarket_shorts.watch import history_path, ledger_dir, watch_dir
 
 TODAY = date(2026, 11, 10)
@@ -312,7 +312,10 @@ def test_watch_beats_draw_the_line_first_and_show_the_number_when_spoken(issue_s
     assert sum(beat[1] for beat in beats[:-1]) == pytest.approx(12.0 * scene.options_at)
     assert sum(beat[1] for beat in beats) == pytest.approx(12.0)
     # 숫자가 바로 나오는 짧은 장면은 선을 그리는 움직임 없이 완성된 선으로 연다.
-    assert [beat[3:] for beat in render._watch_beats(replace(scene, options_at=.1), 5.0)] == [(0, 1.0), (1, 1.0)]
+    assert [beat[3:] for beat in render._watch_beats(replace(scene, options_at=.1), 1.0)] == [(0, 1.0), (1, 1.0)]
+    # 그 사이 길이면 선을 남은 시간에 맞춰 빨리 그린다.
+    quick = render._watch_beats(replace(scene, options_at=.1), 5.0)
+    assert 2 < len(quick) < render.TREND_STEPS and sum(beat[1] for beat in quick[:-1]) == pytest.approx(1.0)
 
 
 @requires_cjk_font

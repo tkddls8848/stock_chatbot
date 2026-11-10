@@ -17,6 +17,7 @@ from .corner import build as build_corner
 from .highlights import HighlightError, select_issues, write_issues
 from .llm import LLMError
 from .markets import _topic, shortlist, prepare_issue
+from .media import attach_pictures
 from .render import find_font, probe_duration, render_video
 from .review import operation_lock, write_json, write_review
 from .scenario import Scenario, Scene, build_scenario
@@ -217,6 +218,7 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
             issues, scripts = _backfill(issues, scripts, planned - len(issues), candidates, settings, audit,
                                         save, gather, write, share)
         scenario = build_scenario(snapshot, issues, scripts, production_date=today, tracked=tracked)
+        scenario, audit["pictures"] = attach_pictures(scenario, day_dir, settings)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
         save()
         write_json(day_dir / "scenario.json", scenario.to_dict())

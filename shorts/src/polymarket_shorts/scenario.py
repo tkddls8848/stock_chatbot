@@ -72,6 +72,10 @@ class Scene:
     options_at: float = 0.0
     # 추적 장면(`kind="watch"`)의 추이선. (날짜, 그날의 예 확률 0~1)을 이른 날부터 담는다.
     trend: tuple[tuple[str, float], ...] = ()
+    # 이 장면의 그림 파일(`media.attach_pictures`). `picture`는 화면 위쪽 그림 창에, `cut`은 추적 장면을 여는
+    # 전체 화면 컷에 쓴다. 비었거나 파일을 읽지 못하면 그림 없는 화면이다.
+    picture: str = ""
+    cut: str = ""
 
     def __post_init__(self) -> None:
         # 제작 원고(`scenario.json`)에서 되읽으면 리스트로 온다. 렌더가 카운트업
@@ -194,6 +198,9 @@ def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
                   *compared,
                   f"이벤트 종료 예정: {deadline:%Y-%m-%d %H:%M %z} (개별 판정 시각과 다를 수 있음)"),
         selection_note=f"추적 주제({view['theme']}) · {view['since']}부터 · 선정 점수 {view['score']}",
+        # 새 이슈 장면과 같은 꼴로 그림 묘사를 싣는다(`media.attach_pictures`).
+        visual_query=(f"{_VISUAL_QUERIES['general']}; topic: "
+                      f"{view.get('image_scene') or _SCENE_DEFAULTS['general']}"),
         event_id=view["event_id"], market_ids=(view["market_id"],),
     )
 
@@ -316,7 +323,7 @@ def build_scenario(
                      f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시",
                      f"주제어 · {' · '.join(keywords[:3])}" if keywords
                      else f"표시 선택지 · 유효 {issue['valid_market_count']}개 중 {len(options)}개"),
-            # 배경 생성이 그날 이슈를 그리도록 원제를 붙인다. 저장 배경 선택은 앞 낱말만 본다.
+            # 그림이 그날 이슈를 그리도록 원고의 그림 묘사를 붙인다(`media.attach_pictures`). 저장 배경 선택은 앞 낱말만 본다.
             visual_query=(f"{_VISUAL_QUERIES[issue['sector']]}; topic: "
                           f"{script.get('image_scene') or _SCENE_DEFAULTS[issue['sector']]}"),
             # 대표 수치는 화면이 그리는 첫 선택지와 같은 값에서 나온다 — 검수

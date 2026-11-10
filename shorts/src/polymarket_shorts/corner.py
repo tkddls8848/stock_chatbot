@@ -89,6 +89,8 @@ def _write_script(slot: dict[str, Any], markets: list[dict[str, Any]], settings:
     return {"headline": script["headline"], "question": script["question"], "context": script["context"],
             "labels": {label["id"]: {key: label[key] for key in ("label", "outlook") if key in label}
                        for label in script["market_labels"]},
+            # 이 주제의 그림을 그릴 묘사(`media.attach_pictures`). 검증에서 버려졌으면 None이다.
+            "image_scene": script.get("image_scene"),
             "written_on": today.isoformat()}
 
 
@@ -159,7 +161,7 @@ def build(settings: Settings, today: date) -> tuple[list[dict[str, Any]], dict[s
             "day": (today - date.fromisoformat(slot["since"])).days + 1, "first_time": first_time,
             "end_date": row["end_date"], "market_id": focus["id"], "market_question": focus["question"],
             "headline": script["headline"], "question": script["question"], "context": script["context"],
-            **script["labels"][focus["id"]],
+            "image_scene": script.get("image_scene"), **script["labels"][focus["id"]],
             "previous_leader": (script["labels"].get(previous) or {}).get("label") if previous else None,
             "long": long_form, **measured,
         })

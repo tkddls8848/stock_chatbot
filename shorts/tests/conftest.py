@@ -36,6 +36,19 @@ windows_only = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def no_picture_models(monkeypatch):
+    """그림 모델을 실제로 부르지 않는다. Cloudflare 자격증명이 `.env`에 있는 기기에서도 테스트가 네트워크를 타지
+    않게 막는다. 그림을 다루는 테스트는 `media._draw`·`media._flagged`를 자기 것으로 바꿔 끼운다."""
+    from polymarket_shorts import media
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("테스트가 그림 모델을 실제로 불렀다")
+    monkeypatch.setattr(media, "_run", forbidden)
+    monkeypatch.setattr(media, "_draw", forbidden)
+    monkeypatch.setattr(media, "_flagged", forbidden)
+
+
 @pytest.fixture
 def cjk_font() -> Path:
     """프로덕션과 같은 경로에서 찾은 한글 폰트."""

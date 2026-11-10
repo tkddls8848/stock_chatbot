@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 from typing import Sequence
 
-from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from .scenario import Scenario, Scene
 from .tts import Word, locate
@@ -165,6 +165,89 @@ def _plain_backdrop() -> Image.Image:
     ImageDraw.Draw(glow).ellipse((-40, 60, WIDTH // 4 + 40, HEIGHT // 4 - 60), fill=(*_BACKDROP_CENTER, 150))
     glow = glow.filter(ImageFilter.GaussianBlur(40)).resize((WIDTH, HEIGHT), Image.Resampling.BICUBIC)
     return Image.alpha_composite(base.convert("RGBA"), glow).convert("RGB")
+
+
+# ── 그림 창과 여는 컷 ─────────────────────────────────────
+# 질문마다 그 주제의 그림을 보인다(운영자 결정 2026-11-10, 그림은 `media.attach_pictures`가 장면에 붙인다).
+# 그림은 화면 위쪽의 둥근 창 안에만 놓여 숫자·자막과 겹치지 않는다 — 그림을 화면 전체 배경으로 깔던 때는 그 위의
+# 글자가 흐려져 걷어냈다(2026-10-08). 추적 장면은 창 아래쪽을 어둡게 눌러 제목을 얹고, 장면이 열릴 때 세로 그림이
+# 화면을 채우는 컷을 잠깐 먼저 보인다. 그림이 없거나 읽히지 않는 장면은 그림 없는 예전 화면 그대로다.
+PICTURE_TOP = 262                       # 머리 줄 바로 아래
+PICTURE_BOTTOM = 560                    # 그림 창의 아래 끝. 추적 장면에서는 제목 칸 자리다
+# 목록 화면은 창만큼 목록이 아래에서 시작한다. 큰 창을 두면 펼친 줄이 좁아지는 날은 낮은 창을 쓴다(`_list_window`).
+LIST_PICTURE_BOTTOM = 502
+LIST_PICTURE_GAP = 28
+LIST_PICTURE_ROOMY = 150                # 큰 창을 두려면 펼친 줄의 선택지 한 줄이 이만큼은 남아야 한다
+# 목록에 그림 창을 두는 질문 수의 한도. 넷부터는 창을 두면 펼친 줄의 선택지 셋이 들어가지 않는다.
+LIST_PICTURE_ROWS = 3
+PICTURE_RADIUS = 32
+CUT_SECONDS = 2.0                       # 여는 컷이 서는 시간
+CUT_TEXT_BOTTOM = 1300                  # 여는 컷의 제목 아래 끝. 그 아래는 자막 자리다
+
+
+@lru_cache(maxsize=32)
+def _picture(path: str, size: tuple[int, int]) -> Image.Image | None:
+    """그림 파일을 `size`에 꽉 차게 맞춘 것. 파일이 없거나 깨졌으면 None이다."""
+    if not path:
+        return None
+    try:
+        with Image.open(path) as image:
+            return ImageOps.fit(image.convert("RGB"), size, Image.Resampling.LANCZOS)
+    except (OSError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=32)
+def _picture_band(path: str, size: tuple[int, int], shaded: bool) -> Image.Image | None:
+    """모서리가 둥근 그림 창. `shaded`면 제목을 얹을 아래쪽을 어둡게 누른다."""
+    picture = _picture(path, size)
+    if picture is None:
+        return None
+    band = picture.convert("RGBA")
+    if shaded:
+        shade = Image.new("RGBA", size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(shade)
+        for y in range(size[1]):
+            share = min(1.0, max(0.0, (y / size[1] - .2) / .55))
+            draw.line((0, y, size[0], y), fill=(*_BACKDROP_BOTTOM, round(238 * share ** 1.15)))
+        band = Image.alpha_composite(band, shade)
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=PICTURE_RADIUS, fill=255)
+    band.putalpha(mask)
+    return band
+
+
+def _place_band(image, band: Image.Image, top: int) -> None:
+    image.alpha_composite(band, (SAFE_LEFT, top))
+    ImageDraw.Draw(image).rounded_rectangle((SAFE_LEFT, top, SAFE_LEFT + band.width - 1, top + band.height - 1),
+                                            radius=PICTURE_RADIUS, outline=_COLORS["line"], width=2)
+
+
+def _shadowed_lines(image, lines: Sequence[str], font, *, top: int, spacing: int, stroke: int) -> None:
+    """그림 위에 서는 가운데 정렬 제목. 흐린 그림자를 깔아 밝은 그림 위에서도 가장자리가 선다."""
+    draw = ImageDraw.Draw(image)
+    shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    placed = [((WIDTH - draw.textlength(line, font=font)) / 2, top + spacing * row) for row, line in enumerate(lines)]
+    for (x, y), line in zip(placed, lines):
+        shadow_draw.text((x + 2, y + 4), line, font=font, fill=(0, 0, 0, 210), stroke_width=stroke,
+                         stroke_fill=(0, 0, 0, 210))
+    box = shadow.getbbox()
+    if box:
+        box = (max(0, box[0] - 24), max(0, box[1] - 24), min(WIDTH, box[2] + 24), min(HEIGHT, box[3] + 24))
+        image.alpha_composite(shadow.crop(box).filter(ImageFilter.GaussianBlur(6)), box[:2])
+    for (x, y), line in zip(placed, lines):
+        draw.text((x, y), line, font=font, fill=_COLORS["ink"], stroke_width=stroke, stroke_fill=_COLORS["ink"])
+
+
+@lru_cache(maxsize=1)
+def _cut_veil() -> Image.Image:
+    """여는 컷의 그림 위에 까는 어둠. 그림의 대상이 놓이는 가운데 위쪽이 가장 옅고, 머리 줄과 제목·자막 쪽이 짙다."""
+    veil = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(veil)
+    for y in range(HEIGHT):
+        draw.line((0, y, WIDTH, y), fill=(*_BACKDROP_BOTTOM, min(238, round(64 + 190 * abs(y - 680) / 1000))))
+    return veil
 
 
 def _mono(size: int, fallback: Path) -> ImageFont.FreeTypeFont:
@@ -518,9 +601,23 @@ def _expanded_height(scene: Scene, option_row: int = OPTION_ROW, chips: bool = T
     return ROW_HEIGHT + len(scene.options) * option_row + (LIST_CHIPS + 20 if chips and scene.bullets else 0) + 16
 
 
-def _list_layout(scenes: Sequence[Scene]) -> tuple[int, bool]:
-    """펼친 줄의 선택지 줄 높이와 칩을 둘지. 질문이 많아 넘치면 선택지 줄을 줄이고, 그래도 넘치면 칩을 뺀다."""
-    budget = LIST_BOTTOM - LIST_TOP - ROW_GAP * (len(scenes) - 1) - ROW_HEIGHT * (len(scenes) - 1)
+def _list_window(scenes: Sequence[Scene]) -> tuple[int, list[Image.Image] | None]:
+    """목록 첫 줄의 위와 질문별 그림 창. 질문이 많거나 하나라도 그림이 없으면 창을 두지 않는다 — 질문에 따라
+    창이 생겼다 없어졌다 하면 목록이 위아래로 흔들린다."""
+    if len(scenes) > LIST_PICTURE_ROWS or any(_picture(scene.picture, (8, 8)) is None for scene in scenes):
+        return LIST_TOP, None
+    option_row, chips = _list_layout(scenes, PICTURE_BOTTOM + LIST_PICTURE_GAP)
+    bottom = PICTURE_BOTTOM if chips and option_row >= LIST_PICTURE_ROOMY else LIST_PICTURE_BOTTOM
+    size = (SAFE_RIGHT - SAFE_LEFT, bottom - PICTURE_TOP)
+    return bottom + LIST_PICTURE_GAP, [_picture_band(scene.picture, size, False) for scene in scenes]
+
+
+def _list_layout(scenes: Sequence[Scene], top: int = LIST_TOP) -> tuple[int, bool]:
+    """펼친 줄의 선택지 줄 높이와 칩을 둘지. 질문이 많아 넘치면 선택지 줄을 줄이고, 그래도 넘치면 칩을 뺀다.
+
+    `top`은 목록 첫 줄의 위다. 그림 창이 있으면 그만큼 내려온다.
+    """
+    budget = LIST_BOTTOM - top - ROW_GAP * (len(scenes) - 1) - ROW_HEIGHT * (len(scenes) - 1)
     widest = max(scenes, key=lambda scene: len(scene.options))
     for chips in (True, False):
         for option_row in range(OPTION_ROW, 119, -4):
@@ -559,6 +656,7 @@ def render_list_frame(
     """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다.
 
     `leading`은 목록 앞에 선 장면 수(도입과 추적 코너)다. 머리의 진행 점이 영상 전체에서의 자리를 가리키게 한다.
+    질문마다 그림이 있으면 목록 위에 지금 질문의 그림 창을 두고, 질문이 바뀌는 동안 앞 그림에서 새 그림으로 녹인다.
     """
     chrome = _CHROME
     scene = scenes[active]
@@ -566,9 +664,12 @@ def render_list_frame(
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     _header(draw, font_path, active + leading + 1, len(scenes) + leading + 1)
-    option_row, chips = _list_layout(scenes)
     eased = _ease(progress)
-    y = LIST_TOP
+    y, bands = _list_window(scenes)
+    option_row, chips = _list_layout(scenes, y)
+    if bands:
+        _place_band(image, bands[active] if previous is None or eased >= 1
+                    else Image.blend(bands[previous], bands[active], eased), PICTURE_TOP)
     for number, row in enumerate(scenes):
         row_accent = _accent(row)
         full = _expanded_height(row, option_row, chips)
@@ -650,7 +751,15 @@ def render_frame(
         _headline(image, ((chrome["close_top"], "ink"), (chrome["site"], "accent"), (chrome["close_note"], "plain")),
                   font_path, accent)
     elif scene.kind == "watch" and scene.trend and scene.options:
-        _title(draw, scene.title, font_path, bottom=WATCH_TITLE_BOTTOM)
+        band = _picture_band(scene.picture, (SAFE_RIGHT - SAFE_LEFT, PICTURE_BOTTOM - PICTURE_TOP), True)
+        if band:
+            _place_band(image, band, PICTURE_TOP)
+            font, lines = _fit(draw, scene.title, _bold(font_path), band.width - 72, range(72, 46, -4), 2)
+            spacing = round(font.size * 1.25)
+            _shadowed_lines(image, lines, font, top=PICTURE_BOTTOM - 34 - spacing * len(lines),
+                            spacing=spacing, stroke=1)
+        else:
+            _title(draw, scene.title, font_path, bottom=WATCH_TITLE_BOTTOM)
         _card(image, (SAFE_LEFT, WATCH_CARD_TOP, SAFE_RIGHT, CARD_BOTTOM), accent, font_path,
               tab=scene.kicker)
         _watch_card(image, scene, font_path, accent, shown=1 if shown is None else shown, reveal=reveal)
@@ -674,6 +783,27 @@ def render_frame(
     draw.text((SAFE_LEFT, footer + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
     framed = Image.alpha_composite(_plain_backdrop().convert("RGBA"), image).convert("RGB")
     framed.save(path, "PNG", compress_level=1)
+
+
+def render_cut_frame(scene: Scene, path: Path, *, font_path: Path, index: int, total: int) -> None:
+    """추적 장면을 여는 컷. 세로 그림이 화면을 채우고 코너 이름표와 제목만 선다."""
+    image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    _header(draw, font_path, index, total)
+    bold = _bold(font_path)
+    font, lines = _fit(draw, scene.title, bold, SAFE_RIGHT - SAFE_LEFT, range(104, 60, -4), 2)
+    spacing = round(font.size * 1.25)
+    top = CUT_TEXT_BOTTOM - spacing * len(lines)
+    tag_font = _font(bold, 44)
+    width = draw.textlength(scene.kicker, font=tag_font) + 56
+    tag = ((WIDTH - width) / 2, top - 112, (WIDTH + width) / 2, top - 36)
+    draw.rounded_rectangle(tag, radius=16, fill=_accent(scene))
+    _ink_text(draw, tag, scene.kicker, tag_font, _COLORS["on_accent"], stroke=1)
+    _shadowed_lines(image, lines, font, top=top, spacing=spacing, stroke=2)
+    picture = _picture(scene.cut, (WIDTH, HEIGHT))
+    base = (Image.alpha_composite(picture.convert("RGBA"), _cut_veil()) if picture
+            else _plain_backdrop().convert("RGBA"))
+    Image.alpha_composite(base, image).convert("RGB").save(path, "PNG", compress_level=1)
 
 
 def probe_duration(audio_path: Path, *, ffprobe_bin: str) -> float:
@@ -973,16 +1103,26 @@ def _beats(scene: Scene, seconds: float) -> list[Beat]:
     return [("open", opening, replace(scene, body=""), None), ("card", seconds - opening, scene, None)]
 
 
-def _watch_beats(scene: Scene, seconds: float) -> list[tuple]:
-    """추적 장면의 박자. 열리자마자 추이선이 왼쪽에서부터 그려지고, 확률을 말하기 시작할 때 오늘 숫자가 뜬다."""
+def _watch_beats(scene: Scene, seconds: float, *, cut: bool = False) -> list[tuple]:
+    """추적 장면의 박자. 열리자마자 추이선이 왼쪽에서부터 그려지고, 확률을 말하기 시작할 때 오늘 숫자가 뜬다.
+
+    `cut`이면 그 앞에 여는 컷이 먼저 선다. 컷은 여는 말의 절반을 넘지 않는다 — 숫자만 짧게 잇는 날에도 숫자가
+    뜨기 전에 추이선이 그려질 시간이 남는다. 남은 시간이 모자라면 선을 그만큼 빨리 그리고, 그것도 안 되면 다 그린
+    선으로 연다.
+    """
     opening = (min(max(seconds * scene.options_at, 1.0), seconds * .8)
                if scene.options_at else min(3.2, seconds * .35))
     rest = seconds - opening
-    if opening < TREND_SECONDS + .5:
-        return [("question", opening, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
-    step = TREND_SECONDS / TREND_STEPS
-    drawing = [("question", step, scene, 0, (n + 1) / (TREND_STEPS + 1)) for n in range(TREND_STEPS)]
-    return [*drawing, ("question", opening - TREND_SECONDS, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
+    lead = min(CUT_SECONDS, opening * .5) if cut else 0.0
+    beats = [("cut", lead, scene, 0, 0.0)] if cut else []
+    left = opening - lead
+    # 선을 다 그린 뒤 숫자가 뜨기까지 잠깐은 선이 서 있어야 한다.
+    drawn = min(TREND_SECONDS, left - .3)
+    if drawn < .6:
+        return [*beats, ("question", left, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
+    steps = round(TREND_STEPS * drawn / TREND_SECONDS)
+    drawing = [("question", drawn / steps, scene, 0, (n + 1) / (steps + 1)) for n in range(steps)]
+    return [*beats, *drawing, ("question", left - drawn, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
 
 
 def render_video(
@@ -1010,7 +1150,7 @@ def render_video(
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
         listed = scene.kind == "consensus"
         if scene.kind == "watch" and scene.trend and scene.options:
-            beats = _watch_beats(scene, seconds)
+            beats = _watch_beats(scene, seconds, cut=_picture(scene.cut, (WIDTH, HEIGHT)) is not None)
         elif listed:
             beats = _beats(scene, seconds)
             active = index - 1 - body_start
@@ -1024,7 +1164,9 @@ def render_video(
             beats = [(*beat, 1.0) for beat in _beats(scene, seconds)]
         for position, (beat, hold, display_scene, shown, progress) in enumerate(beats, start=1):
             frame = work_dir / f"frame-{index:02d}-{position:03d}-{beat}.png"
-            if listed:
+            if beat == "cut":
+                render_cut_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes))
+            elif listed:
                 rows = list(body)
                 rows[active] = display_scene
                 render_list_frame(rows, frame, font_path=font_path, active=active,

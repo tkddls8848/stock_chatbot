@@ -39,6 +39,8 @@ changes의 scene은 현재 장면의 1부터 시작하는 번호다. 수정하�
 accent(gold/blue/red), visual_query(shipping 또는 business strategy meeting).
 visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지=금융 도시다.
 장면 배경의 크롭·방향·색조는 장면 번호와 accent가 정하므로 따로 지정하지 않는다.
+picture는 그 장면의 그림 파일이다. 그림을 빼 달라는 요청이면 그 장면에 "picture":""를 넣는다. 빈 문자열만 받는다 —
+새 그림을 그리거나 다른 그림으로 바꿀 수는 없다. 이슈(consensus) 장면 하나의 그림을 빼면 목록 화면의 그림 창이 통째로 빠진다.
 이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
 화면을 검수용으로 옮겨 적은 글이고, takeaway는 화면에 넣지 않는 확인점이다.
 추적 장면(watch)의 화면은 지난 기록으로 그린 추이선이라 options와 수치를 바꿀 수 없다. 제목·멘트만 고친다.
@@ -286,7 +288,7 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
         )
     if not isinstance(rate, str) or not re.fullmatch(r"[+-]\d{1,2}%", rate) or not -30 <= int(rate[:-1]) <= 50:
         raise ReviewError("음성 속도는 -30%부터 +50%까지입니다")
-    allowed = _TEXT_FIELDS | _STYLE_FIELDS | {"options"}
+    allowed = _TEXT_FIELDS | _STYLE_FIELDS | {"options", "picture"}
     declared = _declarations(patch.get("source_edits", []), order, instruction)
     known, requested = _numbers([scenario.to_dict(), metadata]), _numbers(instruction)
     words = _EDIT_WORDS
@@ -313,6 +315,11 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
             raise ReviewError("지원하지 않는 색상입니다")
         if "visual_query" in values and values["visual_query"] not in {"shipping", "business strategy meeting"}:
             raise ReviewError("지원하지 않는 배경입니다")
+        if values.get("picture"):
+            raise ReviewError("그림은 뺄 수만 있습니다")
+        if "picture" in values:
+            # 그림을 빼면 그 그림으로 여는 컷도 함께 뺀다.
+            values["cut"] = ""
         # 같은 값을 다시 적은 필드는 바꾼 것이 아니다 — 선언·출처 검사에서 뺀다.
         values = {k: v for k, v in values.items() if getattr(scene, k) != v}
         label = f"{number}번 장면"
