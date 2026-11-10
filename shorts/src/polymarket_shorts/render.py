@@ -171,7 +171,9 @@ def _plain_backdrop() -> Image.Image:
 # 질문마다 그 주제의 그림을 보인다(운영자 결정 2026-11-10, 그림은 `media.attach_pictures`가 장면에 붙인다).
 # 그림은 화면 위쪽의 둥근 창 안에만 놓여 숫자·자막과 겹치지 않는다 — 그림을 화면 전체 배경으로 깔던 때는 그 위의
 # 글자가 흐려져 걷어냈다(2026-10-08). 추적 장면은 창 아래쪽을 어둡게 눌러 제목을 얹고, 장면이 열릴 때 세로 그림이
-# 화면을 채우는 컷을 잠깐 먼저 보인다. 그림이 없거나 읽히지 않는 장면은 그림 없는 예전 화면 그대로다.
+# 화면을 채우는 컷을 잠깐 먼저 보인다. 그림이 없거나 읽히지 않는 추적 장면은 그림 없는 예전 화면 그대로이고,
+# 목록 화면은 그런 질문의 창을 그림 없이 그린다(`_plain_band`) — 한 질문 때문에 창이 통째로 빠지지 않는다
+# (운영자 지시 2026-11-11). 그림을 못 그린 날의 대체 그림은 `media.attach_pictures`가 먼저 채운다.
 PICTURE_TOP = 262                       # 머리 줄 바로 아래
 PICTURE_BOTTOM = 560                    # 그림 창의 아래 끝. 추적 장면에서는 제목 칸 자리다
 # 목록 화면은 창만큼 목록이 아래에서 시작한다. 큰 창을 두면 펼친 줄이 좁아지는 날은 낮은 창을 쓴다(`_list_window`).
@@ -215,6 +217,35 @@ def _picture_band(path: str, size: tuple[int, int], shaded: bool) -> Image.Image
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=PICTURE_RADIUS, fill=255)
     band.putalpha(mask)
     return band
+
+
+_KEYWORDS = "주제어 · "
+
+
+@lru_cache(maxsize=16)
+def _plain_band(words: str, size: tuple[int, int], font_path: Path) -> Image.Image:
+    """그림 없이 그리는 창. 카드 바탕에 강조색 빛을 옅게 깔고 그 질문의 주제어를 크게 세운다."""
+    band = Image.new("RGBA", size, (*_rgb(_COLORS["panel"]), 255))
+    glow = Image.new("RGBA", (size[0] // 4, size[1] // 4), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((glow.width * .2, -glow.height * .5, glow.width * .8, glow.height * .9),
+                                 fill=(*_rgb(_COLORS["brand"]), 46))
+    band.alpha_composite(glow.filter(ImageFilter.GaussianBlur(14)).resize(size, Image.Resampling.BICUBIC))
+    draw = ImageDraw.Draw(band)
+    font, lines = _fit(draw, words, _bold(font_path), size[0] - 96, range(84, 38, -4), 2)
+    spacing = round(font.size * 1.25)
+    for row, line in enumerate(lines):
+        y = (size[1] - spacing * len(lines)) / 2 + spacing * row
+        _ink_text(draw, (0, y, size[0], y + spacing), line, font, _COLORS["ink"], stroke=1)
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=PICTURE_RADIUS, fill=255)
+    band.putalpha(mask)
+    return band
+
+
+def _band_words(scene: Scene) -> str:
+    """그림 없는 창에 세울 말. 그 질문의 주제어 칩이 있으면 그것, 없으면 제목이다."""
+    return next((bullet.removeprefix(_KEYWORDS) for bullet in scene.bullets if bullet.startswith(_KEYWORDS)),
+                scene.title)
 
 
 def _place_band(image, band: Image.Image, top: int) -> None:
@@ -601,15 +632,21 @@ def _expanded_height(scene: Scene, option_row: int = OPTION_ROW, chips: bool = T
     return ROW_HEIGHT + len(scene.options) * option_row + (LIST_CHIPS + 20 if chips and scene.bullets else 0) + 16
 
 
-def _list_window(scenes: Sequence[Scene]) -> tuple[int, list[Image.Image] | None]:
-    """목록 첫 줄의 위와 질문별 그림 창. 질문이 많거나 하나라도 그림이 없으면 창을 두지 않는다 — 질문에 따라
-    창이 생겼다 없어졌다 하면 목록이 위아래로 흔들린다."""
-    if len(scenes) > LIST_PICTURE_ROWS or any(_picture(scene.picture, (8, 8)) is None for scene in scenes):
+def _list_window(scenes: Sequence[Scene], font_path: Path) -> tuple[int, list[Image.Image] | None]:
+    """목록 첫 줄의 위와 질문별 그림 창.
+
+    질문이 많거나 그림이 하나도 없으면 창을 두지 않는다. 그림이 있는 질문과 없는 질문이 섞이면 없는 질문의 창은
+    그림 없이 그린다 — 질문에 따라 창이 생겼다 없어졌다 하면 목록이 위아래로 흔들리고, 한 질문 때문에 다른
+    질문의 그림까지 빼면 그날 화면이 통째로 밋밋해진다.
+    """
+    if len(scenes) > LIST_PICTURE_ROWS or all(_picture(scene.picture, (8, 8)) is None for scene in scenes):
         return LIST_TOP, None
     option_row, chips = _list_layout(scenes, PICTURE_BOTTOM + LIST_PICTURE_GAP)
     bottom = PICTURE_BOTTOM if chips and option_row >= LIST_PICTURE_ROOMY else LIST_PICTURE_BOTTOM
     size = (SAFE_RIGHT - SAFE_LEFT, bottom - PICTURE_TOP)
-    return bottom + LIST_PICTURE_GAP, [_picture_band(scene.picture, size, False) for scene in scenes]
+    return bottom + LIST_PICTURE_GAP, [
+        _picture_band(scene.picture, size, False) or _plain_band(_band_words(scene), size, font_path)
+        for scene in scenes]
 
 
 def _list_layout(scenes: Sequence[Scene], top: int = LIST_TOP) -> tuple[int, bool]:
@@ -665,7 +702,7 @@ def render_list_frame(
     draw = ImageDraw.Draw(image)
     _header(draw, font_path, active + leading + 1, len(scenes) + leading + 1)
     eased = _ease(progress)
-    y, bands = _list_window(scenes)
+    y, bands = _list_window(scenes, font_path)
     option_row, chips = _list_layout(scenes, y)
     if bands:
         _place_band(image, bands[active] if previous is None or eased >= 1

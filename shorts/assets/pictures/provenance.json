@@ -1,0 +1,12 @@
+{
+  "generator": "Cloudflare Workers AI @cf/black-forest-labs/flux-2-klein-4b (2026-11-11), 사람·글자 검사(@cf/llava-hf/llava-1.5-7b-hf) 통과 뒤 눈으로 확인",
+  "use": "그날 그림을 그리지 못했을 때 쓰는 분야별 저장 그림(media.attach_pictures). wide는 그림 창(1248x400), tall은 여는 컷(720x1280)",
+  "prompt": "media._PROMPT에 scenario._SCENE_DEFAULTS의 분야별 묘사를 넣은 것",
+  "subjects": {
+    "composite": "container ships and port cranes along a harbor at dusk",
+    "macro": "a brass balance scale beside stacked gold coins on dark marble, soft window light",
+    "equities": "abstract glowing light trails over a night city seen from high above",
+    "geopolitics": "a vintage globe on a dark desk beside a ship compass and nautical map shapes",
+    "general": "a quiet financial district skyline at dusk seen from across a river"
+  }
+}

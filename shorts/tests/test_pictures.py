@@ -95,22 +95,55 @@ def test_a_picture_showing_people_or_text_is_redrawn_and_given_up_after_three(sc
 
     made, report = media.attach_pictures(scenario, tmp_path / "day", settings)
 
-    # 가로 그림은 두 번째에 통과했고, 세로 그림은 세 번 모두 걸려 여는 컷 없이 간다. 제작은 멈추지 않는다.
-    assert made.scenes[1].picture and made.scenes[1].cut == ""
-    assert report["pictures"][1]["outcome"] == "실패: 3번 모두 사람·글자가 보임"
-    assert not (watch_dir(settings) / "pictures" / "fed-tall.jpg").exists()
+    # 가로 그림은 두 번째에 통과했고, 세로 그림은 세 번 모두 걸려 저장 그림으로 간다. 여는 컷은 빠지지 않는다.
+    tall = watch_dir(settings) / "pictures" / "fed-tall.jpg"
+    assert made.scenes[1].picture and made.scenes[1].cut == str(tall)
+    assert report["pictures"][1]["outcome"] == "저장 그림(3번 모두 사람·글자가 보임)"
     assert len(drawn) == 2 + 3 + 1
+    # 같은 묘사로 매일 세 번씩 다시 그리지 않게 저장 그림을 그 주제의 그림으로 둔다.
+    assert tall.read_bytes() == (media.PICTURE_DIR / "general-tall.jpg").read_bytes()
+    assert made.scenes[1].evidence[-1].startswith("그림: 새로 그림 / 저장 그림(3번 모두")
+    media.attach_pictures(scenario, tmp_path / "day", settings)
+    assert len(drawn) == 6
 
 
-def test_a_failed_drawing_leaves_the_scene_as_it_was(scenario, settings, tmp_path, monkeypatch):
+def test_a_drawing_that_fails_is_replaced_by_the_stored_picture_of_its_field(scenario, settings, tmp_path, monkeypatch):
+    calls = []
     def fail(subject, size, settings):
+        calls.append(subject)
         raise requests.ConnectionError("down")
     monkeypatch.setattr(media, "_draw", fail)
 
     made, report = media.attach_pictures(scenario, tmp_path / "day", settings)
 
+    # 추적 장면은 일반 풍경, 연준 이슈는 거시 분야의 저장 그림이다. 화면의 그림 자리는 비지 않는다.
+    assert made.scenes[1].picture == str(media.PICTURE_DIR / "general-wide.jpg")
+    assert made.scenes[1].cut == str(media.PICTURE_DIR / "general-tall.jpg")
+    assert made.scenes[2].picture == str(media.PICTURE_DIR / "macro-wide.jpg")
+    assert all(row["outcome"] == "저장 그림(down)" for row in report["pictures"])
+    # 호출 실패는 그날만 대신한다. 추적 폴더에 남기지 않아 다음 제작 때 다시 그린다.
+    assert not (watch_dir(settings) / "pictures").exists() and len(calls) == 3
+
+
+def test_every_field_has_a_stored_picture_in_both_shapes():
+    from polymarket_shorts.scenario import _SCENE_DEFAULTS
+
+    for sector in _SCENE_DEFAULTS:
+        for shape, size in (("wide", media.WINDOW_SIZE), ("tall", media.CUT_SIZE)):
+            with Image.open(media.PICTURE_DIR / f"{sector}-{shape}.jpg") as image:
+                assert image.size == size, (sector, shape)
+
+
+def test_without_even_a_stored_picture_the_scene_goes_out_as_it_was(scenario, settings, tmp_path, monkeypatch):
+    def fail(subject, size, settings):
+        raise requests.ConnectionError("down")
+    monkeypatch.setattr(media, "_draw", fail)
+    monkeypatch.setattr(media, "PICTURE_DIR", tmp_path / "none")
+
+    made, report = media.attach_pictures(scenario, tmp_path / "day", settings)
+
     assert made.scenes == scenario.scenes
-    assert all(row["outcome"].startswith("실패: down") for row in report["pictures"])
+    assert all(row["outcome"] == "실패: down" for row in report["pictures"])
 
 
 def test_pictures_stop_when_they_have_taken_too_long(scenario, settings, tmp_path, painter, monkeypatch):
@@ -120,9 +153,11 @@ def test_pictures_stop_when_they_have_taken_too_long(scenario, settings, tmp_pat
 
     made, report = media.attach_pictures(scenario, tmp_path / "day", settings)
 
-    # 첫 장을 그린 뒤 한도를 넘겼다. 남은 그림은 묻지 않고 그림 없이 간다.
-    assert len(drawn) == 1 and made.scenes[1].picture and not made.scenes[1].cut and not made.scenes[2].picture
-    assert [row["outcome"] for row in report["pictures"][1:]] == ["실패: 그림에 쓸 시간을 넘김"] * 2
+    # 첫 장을 그린 뒤 한도를 넘겼다. 남은 그림은 묻지 않고 저장 그림으로 간다.
+    assert len(drawn) == 1 and made.scenes[1].picture.endswith("fed-wide.jpg")
+    assert made.scenes[1].cut == str(media.PICTURE_DIR / "general-tall.jpg")
+    assert made.scenes[2].picture == str(media.PICTURE_DIR / "macro-wide.jpg")
+    assert [row["outcome"] for row in report["pictures"][1:]] == ["저장 그림(그림에 쓸 시간을 넘김)"] * 2
 
 
 def test_nothing_is_drawn_without_credentials_or_for_a_crowded_list(scenario, settings, tmp_path, painter, issue_source):
@@ -307,19 +342,30 @@ def test_the_cut_takes_at_most_half_of_the_words_before_the_number(scenario):
 
 
 @requires_cjk_font
-def test_the_list_opens_a_picture_window_only_when_every_question_has_one(scenario, tmp_path, cjk_font):
+def test_the_list_keeps_its_picture_window_even_when_one_question_has_no_picture(scenario, tmp_path, cjk_font):
     row = scenario.scenes[2]
     first = replace(row, picture=_picture(tmp_path / "a.jpg", (200, 120, 40)))
     second = replace(row, title="둘째 질문", picture=_picture(tmp_path / "b.jpg", (40, 120, 200)))
     three = tuple((label, "40%", .4) for label in ("가", "나", "다"))
 
     # 선택지가 둘이면 큰 창, 셋이면 목록이 좁아지지 않게 낮은 창이다.
-    assert render._list_window([first, second])[0] == render.PICTURE_BOTTOM + render.LIST_PICTURE_GAP
-    assert render._list_window([first, replace(second, options=three)])[0] == \
+    assert render._list_window([first, second], cjk_font)[0] == render.PICTURE_BOTTOM + render.LIST_PICTURE_GAP
+    assert render._list_window([first, replace(second, options=three)], cjk_font)[0] == \
         render.LIST_PICTURE_BOTTOM + render.LIST_PICTURE_GAP
-    # 하나라도 그림이 없거나 질문이 넷이면 창을 두지 않는다.
-    assert render._list_window([first, row]) == (render.LIST_TOP, None)
-    assert render._list_window([first, second, first, second]) == (render.LIST_TOP, None)
+    # 그림이 하나도 없거나 질문이 넷이면 창을 두지 않는다.
+    assert render._list_window([row, row], cjk_font) == (render.LIST_TOP, None)
+    assert render._list_window([first, second, first, second], cjk_font) == (render.LIST_TOP, None)
+    # 한 질문만 그림이 없으면(파일을 잃었거나 검수에서 뺐거나) 창은 그대로 두고 그 질문만 그림 없이 주제어를 세운다.
+    lost = replace(second, picture=str(tmp_path / "missing.jpg"))
+    top, bands = render._list_window([first, lost], cjk_font)
+    assert top == render.PICTURE_BOTTOM + render.LIST_PICTURE_GAP and bands[0].size == bands[1].size
+    worded = _frame(tmp_path, "worded.png", lambda path: render.render_list_frame(
+        [first, lost], path, font_path=cjk_font, active=1, previous=0, progress=1.0, shown=None))
+    window = worded.crop((render.SAFE_LEFT + 4, render.PICTURE_TOP + 4, render.SAFE_RIGHT - 4, render.PICTURE_BOTTOM - 4))
+    colors = window.getcolors(maxcolors=1 << 20)
+    panel = tuple(int(render._COLORS["panel"][n:n + 2], 16) for n in (1, 3, 5))
+    assert any(min(color) > 235 for _, color in colors)  # 주제어 글자
+    assert sum(count for count, color in colors if max(abs(a - b) for a, b in zip(color, panel)) < 40) > .7 * window.width * window.height
 
     def draw(active, previous, progress):
         return lambda path: render.render_list_frame([first, second], path, font_path=cjk_font, active=active,
