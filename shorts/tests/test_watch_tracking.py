@@ -109,6 +109,53 @@ def test_choose_drops_an_open_but_ineligible_topic_after_a_week():
     assert changes == [{"action": "dropped", "topic_key": "a", "event_id": "a"}] and state["tracked"] == []
 
 
+def test_operator_pin_takes_a_slot_and_is_not_dropped_or_challenged():
+    def slot(name, theme, score, **changes):
+        return {"topic_key": f"topic {name}", "event_id": name, "title": name.upper(), "theme": theme,
+                "since": "2026-09-01", "score": score, "below_days": 0, **changes}
+    ranked = [_ranked("a", .9, "연준"), _ranked("c", .8, "유가"), _ranked("b", .6, "이란"), _ranked("d", .5, "연준")]
+
+    # 자리가 차 있으면 고정하지 않은 판 가운데 점수가 낮은 쪽을 밀어낸다. 같은 theme이어도 운영자의 뜻이 앞선다.
+    state = {"tracked": [slot("a", "연준", .9), slot("b", "이란", .6)]}
+    changes = choose(state, ranked, {"a", "b", "c", "d"}, TODAY, ["topic d"])
+    assert changes == [{"action": "pinned", "topic_key": "topic d", "event_id": "d"}]
+    assert [(row["event_id"], row["pinned"]) for row in state["tracked"]] == [("a", False), ("d", True)]
+
+    # 고정한 판은 자격에서 빠져도, 더 높은 도전 주제가 이어져도 그대로다.
+    state = {"tracked": [slot("a", "연준", .9), slot("b", "이란", .6, below_days=DROP_DAYS - 1)]}
+    assert choose(state, [], {"a", "b"}, TODAY, ["topic b"]) == []
+    assert state["tracked"][1]["below_days"] == DROP_DAYS and len(state["tracked"]) == 2
+    state = {"tracked": [slot("a", "연준", .9), slot("b", "이란", .6)]}
+    for offset in range(CHALLENGE_DAYS + 1):
+        assert choose(state, ranked, {"a", "b", "c"}, TODAY + timedelta(days=offset), ["topic b"]) == []
+    assert [row["event_id"] for row in state["tracked"]] == ["a", "b"] and state["challenger"] is None
+    # 고정을 풀면 다음 날부터 도전 주제를 다시 센다. 둘 다 고정이면 셋째 고정은 자리를 얻지 못한다.
+    choose(state, ranked, {"a", "b", "c"}, TODAY, [])
+    assert state["challenger"]["topic_key"] == "topic c" and not state["tracked"][1]["pinned"]
+    assert choose(state, ranked, {"a", "b", "c"}, TODAY, ["topic a", "topic b", "topic c"]) == []
+
+
+def test_pin_accepts_only_shown_candidates_up_to_the_slot_count(tmp_path):
+    from polymarket_shorts.core.storage import write_json
+    from polymarket_shorts.watch import WatchError, pin, pinned_topics, unpin, watch_dir
+
+    settings = replace(Settings.from_env(), output_dir=tmp_path / "shorts")
+    write_json(watch_dir(settings) / "topics.json", {
+        "tracked": [{"event_id": "jan", "topic_key": "fed decision"}],
+        "ranking": [{"id": "jan", "title": "Fed Decision in January?"},
+                    {"id": "iran", "title": "Will the U.S. invade Iran before 2027?"},
+                    {"id": "oil", "title": "Crude Oil all time high by...?"}]})
+
+    assert pin(settings, "iran") == ["u s invade iran"] == pin(settings, "iran")
+    assert pin(settings, "jan") == ["u s invade iran", "fed decision"]
+    with pytest.raises(WatchError, match="2개까지"):
+        pin(settings, "oil")
+    with pytest.raises(WatchError, match="후보 순위"):
+        pin(settings, "nope")
+    unpin(settings)
+    assert pinned_topics(settings) == []
+
+
 def test_challenger_needs_tenure_margin_and_a_consecutive_week():
     def tracked(since):
         return [{"topic_key": "topic a", "event_id": "a", "title": "A", "theme": "연준", "since": since, "score": .9,

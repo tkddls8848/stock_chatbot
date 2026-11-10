@@ -228,14 +228,90 @@ def to_spoken_question(question: str) -> str:
     return end_sentence(question)
 
 
-def opening_line(count: int, as_of=None) -> str:
+def opening_line(count: int, as_of=None, *, tracked: int = 0) -> str:
     """도입. 고정 시작 화면("오늘의 집단 예측 컨센서스 요약")과 같은 말로 열고, 볼 분량을 알린다.
 
     날짜를 말해야 며칠 뒤 본 사람도 숫자가 언제 것인지 안다(운영자 결정 2026-09-27).
     예전 "…이슈를 선정하였습니다"는 만드는 과정을 말해 첫마디부터 딱딱했다(2026-10-07).
+    `tracked`는 앞에 서는 추적 코너의 질문 수다 — 이어 보는 질문과 새 질문을 나눠 알린다.
     """
+    day = f"{as_of.month}월 {as_of.day}일" if as_of else "오늘의"
+    if tracked:
+        watched = "질문 하나의" if tracked == 1 else f"질문 {tracked}개의"
+        fresh = "새 질문 하나를" if count == 1 else f"새 질문 {count}개를"
+        return (f"{day} 집단 예측 컨센서스 요약입니다. "
+                f"오늘은 계속 지켜보는 {watched} 흐름을 먼저 보고, 금융시장과 관련된 {fresh} 짚어 보겠습니다.")
     # 하나뿐이면 "차례로"가 틀린 말이다(2026-10-08 시험: "질문 하나를 차례로 짚어 보겠습니다").
     subject = "질문 하나를" if count == 1 else f"질문 {count}개를 차례로"
-    day = f"{as_of.month}월 {as_of.day}일" if as_of else "오늘의"
     return (f"{day} 집단 예측 컨센서스 요약입니다. "
             f"오늘은 금융시장과 관련된 {subject} 짚어 보겠습니다.")
+
+
+# ── 추적 코너 ───────────────────────────────────────────
+# 매일 이어 보는 질문은 "지금 몇 %인가"보다 "어떻게 움직였는가"가 내용이다(`corner.py`). 숫자·기간 문장은 여기
+# 규칙이 쓰고, 왜 움직였는지는 말하지 않는다 — 기록에는 원인이 없다.
+NEW_ISSUES_LINE = "이제 오늘의 새 질문으로 넘어가겠습니다."
+# 30일 전과 이만큼(%포인트)도 다르지 않으면 "거의 같다"고 말한다. 1%포인트 안쪽의 흔들림을 오르내림으로 읽지 않는다.
+_FLAT_POINTS = 1.0
+# 최근 한 주의 움직임을 따로 말하는 문턱(%포인트).
+_WEEK_POINTS = 5.0
+
+
+def watch_opener(headline: str, position: int, *, first_time: bool) -> str:
+    """추적 장면을 여는 말. 처음 다루는 날은 앞으로 이어 볼 질문임을 알린다."""
+    watched = "계속 지켜볼" if first_time else "계속 지켜보는"
+    if position == 0:
+        return f"먼저 {'앞으로 ' if first_time else ''}{watched} 질문, {headline}부터 보겠습니다."
+    return f"{watched} 또 다른 질문은 {headline}입니다."
+
+
+def plain_number(value: float) -> str:
+    """소수 한 자리까지의 수. 끝의 0은 뗀다(71.5, 6, 0.5)."""
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _moved(delta: float) -> str:
+    return f"{plain_number(abs(delta))}%포인트 {'올랐' if delta > 0 else '내렸'}"
+
+
+def _with_direction(word: str) -> str:
+    """조사 '로/으로'. 받침이 없거나 ㄹ받침이면 '로'다. 숫자·%는 읽는 소리로 정한다."""
+    last = word.strip()[-1:]
+    if last in _DIGIT_HAS_JONG:
+        return f"{word}{'으로' if last in '036' else '로'}"
+    if not last or not _is_hangul(last):
+        return f"{word}로"
+    return f"{word}{'로' if (ord(last) - _HANGUL_BASE) % _JONGSEONG in (0, 8) else '으로'}"
+
+
+def speak_leader_change(previous: str, current: str) -> str:
+    """단일 답 묶음에서 가장 높은 답이 어제와 달라졌을 때."""
+    return f"가장 높은 답이 어제 {previous}에서 오늘 {_with_direction(current)} 바뀌었습니다."
+
+
+def speak_trend(now: float, base: float, base_days: int, yesterday: float | None, week: float | None) -> str:
+    """오늘 확률을 지난 기록과 견주는 문장. 값은 화면과 같은 퍼센트 수치(소수 한 자리)다.
+
+    "30일 전 65.5%에서 6%포인트 올랐지만, 어제보다는 6%포인트 내렸습니다."처럼 긴 흐름을 먼저, 어제 대비를 뒤에
+    둔다 — 하루 등락이 아니라 흐름이 코너의 내용이다. 두 방향이 같으면 "어제보다도", 다르면 "어제보다는"이다.
+    최근 한 주에 크게 움직였을 때만 한 문장을 더한다.
+    """
+    long_move = round(now - base, 1)
+    flat = abs(long_move) < _FLAT_POINTS
+    head = (f"{base_days}일 전 {plain_number(base)}%와 거의 같" if flat
+            else f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}")
+    if yesterday is None:
+        sentence = f"{head}습니다."
+    else:
+        day_move = round(now - yesterday, 1)
+        same_way = flat or day_move * long_move > 0
+        if day_move == 0:
+            sentence = f"{head}고, 어제와{'도' if flat else '는'} 같습니다."
+        else:
+            sentence = (f"{head}{'고' if same_way else '지만'}, "
+                        f"어제보다{'도' if same_way and not flat else '는'} {_moved(day_move)}습니다.")
+    if week is not None and base_days >= 14:
+        week_move = round(now - week, 1)
+        if abs(week_move) >= _WEEK_POINTS:
+            sentence += f" 일주일 전과 견주면 {_moved(week_move)}습니다."
+    return sentence

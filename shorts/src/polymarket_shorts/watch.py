@@ -12,6 +12,8 @@
 - **추적 주제(`topics.json`):** 기록으로 매일 순위를 다시 매기고, 자리가 비거나 조건이 이어질 때만 바꾼다.
   정해진 날에는 지난 30일 확률을 원 출처에서 받아(`client.PriceHistory`) `history/<이벤트 ID>.json`을 채우고,
   그 뒤로는 매일 기록에서 한 점씩 잇는다.
+- **운영자 고정(`pins.json`):** 텔레그램 `/shorts track pin`이 쓴다. 고정한 주제는 다음 갱신 때 자리를 얻고 자동으로
+  빠지거나 바뀌지 않는다. `topics.json`은 갱신만, `pins.json`은 고정 명령만 써서 둘이 서로를 덮지 않는다.
 
 영상 제작을 막지 않는다. 실패는 `selection.json`의 `watch`에 남기고 제작을 잇는다.
 """
@@ -23,7 +25,7 @@ import json
 import logging
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .client import MAX_LEDGER_DETAILS, PriceHistory, Snapshot, SourceError
 from .config import Settings
@@ -55,6 +57,12 @@ IMPORTANCE_TTL_DAYS = 14
 IMPORTANCE_BATCH = 60
 MIN_TENURE_DAYS, CHALLENGE_DAYS, CHALLENGE_MARGIN, DROP_DAYS = 30, 7, 1.2, 7
 LOG_LIMIT = 100
+# `topics.json`의 `ranking`에 남기는 후보 수. 운영자는 여기 보이는 판만 고정할 수 있다.
+RANKING_SHOWN = 10
+
+
+class WatchError(RuntimeError):
+    """운영자의 고정 요청을 받을 수 없을 때. 문구를 텔레그램에 그대로 보인다."""
 
 IMPORTANCE_PROMPT = """경제 영상 편집자입니다. 후보는 해외 집단 예측의 질문 묶음(이벤트)입니다.
 영상에서 몇 주 동안 이어서 지켜볼 판을 고르려고 합니다. 각 후보의 중요도를 0~3 정수로 매기세요.
@@ -114,8 +122,9 @@ def _markets(detail: dict[str, Any]) -> list[dict[str, Any]]:
         if (row.get("active") is not True or row.get("closed") is not False or row.get("price_valid") is not True
                 or yes is None or not row.get("id")):
             continue
+        # 질문 원문은 추적 코너의 글(`corner.py`)이 선택지 이름을 옮길 때 쓴다.
         result.append({"id": str(row["id"]), "label": str(row.get("outcome_label") or row.get("question") or "")[:200],
-                       "yes": yes})
+                       "question": str(row.get("question") or "")[:300], "yes": yes})
     return result
 
 
@@ -246,11 +255,14 @@ def _slot(row: dict[str, Any], today: date) -> dict[str, Any]:
             "event_type": row["event_type"], "since": today.isoformat(), "score": row["score"], "below_days": 0}
 
 
-def choose(state: dict[str, Any], ranked: list[dict[str, Any]], present: set[str], today: date) -> list[dict]:
+def choose(state: dict[str, Any], ranked: list[dict[str, Any]], present: set[str], today: date,
+           pins: Sequence[str] = ()) -> list[dict]:
     """추적 주제를 고친다. 바뀐 내용을 돌려준다. 규칙은 `docs/watch-topics.md` 3절이다.
 
     - 추적 중인 판이 마감되면 같은 주제의 다음 회차로 잇고, 없으면 자리를 비운다.
     - 아직 열려 있지만 자격에서 빠진 날이 `DROP_DAYS`일 이어지면 뺀다.
+    - 운영자가 고정한 주제(`pins`, topic_key)는 자리를 먼저 얻는다. 자리가 없으면 고정하지 않은 판 가운데 점수가
+      가장 낮은 판을 밀어낸다. 고정한 판은 자격 미달이나 도전 주제로 빠지지 않는다(마감은 예외).
     - 빈자리는 다른 theme의 1위로 채운다.
     - 최소 유지 기간이 지난 판보다 `CHALLENGE_MARGIN`배 높은 도전 주제가 `CHALLENGE_DAYS`일 이어지면 바꾼다.
     """
@@ -259,6 +271,7 @@ def choose(state: dict[str, Any], ranked: list[dict[str, Any]], present: set[str
     changes: list[dict] = []
     kept = []
     for slot in state.get("tracked") or []:
+        slot["pinned"] = slot["topic_key"] in pins
         current = by_id.get(slot["event_id"])
         if current is None and slot["event_id"] not in present:
             successor = by_topic.get(slot["topic_key"])
@@ -271,12 +284,23 @@ def choose(state: dict[str, Any], ranked: list[dict[str, Any]], present: set[str
             current = successor
         if current is None:
             slot["below_days"] = slot.get("below_days", 0) + 1
-            if slot["below_days"] >= DROP_DAYS:
+            if slot["below_days"] >= DROP_DAYS and not slot["pinned"]:
                 changes.append({"action": "dropped", "topic_key": slot["topic_key"], "event_id": slot["event_id"]})
                 continue
         else:
             slot.update(score=current["score"], below_days=0)
         kept.append(slot)
+    for topic in pins:
+        row = by_topic.get(topic)
+        if row is None or topic in {slot["topic_key"] for slot in kept}:
+            continue
+        loose = [slot for slot in kept if not slot["pinned"]]
+        if len(kept) >= SLOTS:
+            if not loose:
+                continue
+            kept.remove(min(loose, key=lambda slot: slot["score"]))
+        kept.append({**_slot(row, today), "pinned": True})
+        changes.append({"action": "pinned", "topic_key": topic, "event_id": row["id"]})
     for row in ranked:
         if len(kept) >= SLOTS:
             break
@@ -286,7 +310,8 @@ def choose(state: dict[str, Any], ranked: list[dict[str, Any]], present: set[str
         changes.append({"action": "selected", "topic_key": row["topic_key"], "event_id": row["id"]})
     challenge = state.get("challenger") or {}
     state["challenger"] = None
-    settled = [slot for slot in kept if (today - date.fromisoformat(slot["since"])).days >= MIN_TENURE_DAYS]
+    settled = [slot for slot in kept if not slot.get("pinned")
+               and (today - date.fromisoformat(slot["since"])).days >= MIN_TENURE_DAYS]
     if len(kept) == SLOTS and settled:
         weakest = min(settled, key=lambda slot: slot["score"])
         others = {slot["theme"] for slot in kept if slot is not weakest}
@@ -354,7 +379,7 @@ def update_tracking(settings: Settings, today: date, ledger: dict[str, Any], cli
     except LLMError as exc:
         logger.warning("추적 후보 중요도를 묻지 못했습니다: %s", exc)
     ranked = rank(rows, state["importance"])
-    changes = choose(state, ranked, {row["id"] for row in ledger.get("events") or []}, today)
+    changes = choose(state, ranked, {row["id"] for row in ledger.get("events") or []}, today, pinned_topics(settings))
     generated_at = datetime.fromisoformat(ledger["generated_at"])
     details = ledger.setdefault("details", {})
     for slot in state["tracked"]:
@@ -370,10 +395,38 @@ def update_tracking(settings: Settings, today: date, ledger: dict[str, Any], cli
     state["log"] = state["log"][-LOG_LIMIT:]
     state.update(schema_version=SCHEMA_VERSION, updated_on=today.isoformat(),
                  ranking=[{key: row[key] for key in ("id", "title", "theme", "importance", "score", "days_to_end")}
-                          for row in ranked[:10]])
+                          for row in ranked[:RANKING_SHOWN]])
     write_json(path, state)
     return {"eligible": len(rows), "ranked": len(ranked), "llm_calls": calls, "changes": changes,
             "tracked": [slot["title"] for slot in state["tracked"]]}
+
+
+def pinned_topics(settings: Settings) -> list[str]:
+    return [str(topic) for topic in read_json(watch_dir(settings) / "pins.json").get("topics") or []]
+
+
+def pin(settings: Settings, event_id: str) -> list[str]:
+    """운영자가 추적 주제를 고정한다. 다음 갱신(매일 제작 또는 `--watch`) 때 자리를 얻는다. 고정 목록을 돌려준다.
+
+    추적 중이거나 최근 후보 순위에 보인 판만 받는다 — 중요도·자격을 통과한 판이어야 갱신이 자리를 줄 수 있다.
+    """
+    state = read_json(watch_dir(settings) / "topics.json")
+    known = {str(row["id"]): _topic(row["title"]) for row in state.get("ranking") or []}
+    known.update({slot["event_id"]: slot["topic_key"] for slot in state.get("tracked") or []})
+    if event_id not in known:
+        raise WatchError("추적 중이거나 후보 순위에 있는 판만 고정할 수 있습니다. /shorts track으로 번호를 확인하세요")
+    topics = pinned_topics(settings)
+    if known[event_id] not in topics:
+        if len(topics) >= SLOTS:
+            raise WatchError(f"고정은 {SLOTS}개까지입니다. /shorts track auto로 먼저 푸세요")
+        topics.append(known[event_id])
+        write_json(watch_dir(settings) / "pins.json", {"topics": topics})
+    return topics
+
+
+def unpin(settings: Settings) -> None:
+    """고정을 모두 푼다. 추적 주제는 그대로 두고, 다음 갱신부터 자동 규칙을 다시 따른다."""
+    write_json(watch_dir(settings) / "pins.json", {"topics": []})
 
 
 def refresh_watch(settings: Settings, today: date, snapshot: Snapshot, client: Any,

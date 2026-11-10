@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from .client import PolymarketWebClient, PriceHistory, SourceError
 from .config import Settings
 from .core.storage import read_json
+from .corner import build as build_corner
 from .highlights import HighlightError, select_issues, write_issues
 from .llm import LLMError
 from .markets import _topic, shortlist, prepare_issue
@@ -129,11 +130,18 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
     # 오래 지켜볼 판의 기록은 영상이 나오지 않는 날에도 쌓여야 흐름이 끊기지 않는다. 그래서 선정 전에 쓰고,
     # 실패해도 제작을 멈추지 않되 감사 기록에 남긴다.
     audit["watch"] = refresh_watch(settings, today, snapshot, client, PriceHistory())
+    tracked = _corner(settings, today, audit)
     used_ids, used_topics = recently_featured(settings, today)
+    # 추적 코너가 매일 다루는 판과 같은 흐름의 판은 새 이슈로 다시 고르지 않는다. 코너 자신은 반복 회피의 대상이
+    # 아니다. 2026-11-10 시험에서 "연준 1월 결정"을 추적하는 날 새 이슈 둘 중 하나가 "연준 추가 금리 인상"이었다.
+    used_ids |= {view["event_id"] for view in tracked}
+    used_topics |= {view["topic_key"] for view in tracked}
+    if tracked:
+        used_topics |= set(audit["watch"]["corner"]["same_theme"])
     fresh = [row for row in candidates
              if str(row["id"]) not in used_ids and row.get("topic_key") not in used_topics]
     audit["recently_featured"] = [
-        {"id": row["id"], "title": row.get("title"), "reason": "최근 영상에서 다룬 이슈"}
+        {"id": row["id"], "title": row.get("title"), "reason": "최근 영상 또는 추적 코너에서 다룬 이슈"}
         for row in candidates if row not in fresh
     ]
     candidates = fresh
@@ -167,7 +175,7 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
                                 "matched": {issue["id"]: len(issue["market_news"]) for issue in gathered}}
         # 세대가 바뀌었으면 원고를 쓰기 전에 멈춘다.
         client.confirm(snapshot.generation_id)
-        write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": gathered})
+        write_json(day_dir / "source.json", {"summary": snapshot.summary, "issues": gathered, "tracked": tracked})
         return issues
 
     def write(issues: list[dict], total: int) -> tuple[list[dict], list[dict]]:
@@ -187,7 +195,11 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         if candidates:
             audit["llm_calls"] += 1
             save()
-        selected = select_issues(candidates, settings, rejected=audit["rejected"])
+        # 추적 코너가 서는 날은 새 이슈를 덜 고른다(추적 둘이면 둘, 하나면 셋). 추이선이 그려지는 시간과 장면 사이
+        # 쉼까지 치면 추적 장면 하나가 새 이슈 하나만큼 길어, 추적 둘에 새 이슈 셋을 넣은 시험 영상이 203초였다
+        # (2026-11-10, 목표 150초·쇼츠 한도 180초).
+        selected = select_issues(candidates, settings, rejected=audit["rejected"],
+                                 maximum=max(1, settings.max_groups - 1 - len(tracked)) if tracked else None)
         audit["selected"] = selected
         save()
         # 우리가 모은 시장 뉴스는 선정이 끝난 뒤 한 번만 읽는다 — 고를 이슈가 없으면 읽을 이유가 없다.
@@ -198,11 +210,13 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
             save()
             return None
         planned = len(issues)
-        issues, scripts = write(issues, planned)
+        # 원고 분량을 나눌 때 추적 장면도 하나씩 이슈 몫으로 친다.
+        share = len(tracked)
+        issues, scripts = write(issues, planned + share)
         if len(issues) < planned:
             issues, scripts = _backfill(issues, scripts, planned - len(issues), candidates, settings, audit,
-                                        save, gather, write)
-        scenario = build_scenario(snapshot, issues, scripts, production_date=today)
+                                        save, gather, write, share)
+        scenario = build_scenario(snapshot, issues, scripts, production_date=today, tracked=tracked)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
         save()
         write_json(day_dir / "scenario.json", scenario.to_dict())
@@ -215,8 +229,19 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         save()
 
 
+def _corner(settings: Settings, today: date, audit: dict) -> list[dict]:
+    """추적 코너의 재료. 어떤 실패도 제작을 멈추지 않는다 — 코너 없이 새 이슈만으로 만든다."""
+    try:
+        tracked, audit["watch"]["corner"] = build_corner(settings, today)
+    except (HighlightError, LLMError, OSError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("추적 코너를 만들지 못했습니다: %s", exc)
+        audit["watch"]["corner"] = {"error": str(exc)}
+        return []
+    return tracked
+
+
 def _backfill(issues: list[dict], scripts: list[dict], missing: int, candidates: list[dict], settings: Settings,
-              audit: dict, save, gather, write) -> tuple[list[dict], list[dict]]:
+              audit: dict, save, gather, write, share: int = 0) -> tuple[list[dict], list[dict]]:
     """원고 검증에서 빠진 수만큼 남은 후보에서 다시 골라 원고를 쓴다(한 번만, 운영자 지시 2026-10-10).
 
     빠진 이슈를 채우지 않아 10/9·10/10 영상이 이슈 하나로 끝났다. 이미 고른·뺀 이슈와 남은 이슈의 분야·주제는
@@ -240,7 +265,7 @@ def _backfill(issues: list[dict], scripts: list[dict], missing: int, candidates:
         added = gather(extra)
         if not added:
             return issues, scripts
-        added, more = write(added, len(issues) + len(added))
+        added, more = write(added, len(issues) + len(added) + share)
     except (HighlightError, LLMError, SourceError) as exc:
         record["error"] = str(exc)
         logger.warning("빈자리 채우기 실패, 통과한 이슈로 만든다: %s", exc)
@@ -327,12 +352,14 @@ CONTACT_LINE = "Business inquiries: tkddls8848@gmail.com"
 
 def metadata_for(scenario: Scenario) -> dict[str, Any]:
     labels = [scene.title for scene in scenario.scenes if scene.kind == "consensus"]
+    watched = [scene.title for scene in scenario.scenes if scene.kind == "watch"]
     return {
         "title": video_title(scenario.date),
         "description": (
             f"질문별 조건과 전체 컨센서스는 여기서 확인하세요 👉 {SITE_URL}\n{CONTACT_LINE}\n\n"
             "참여가 활발하고 금융시장과 관련이 깊은 집단 예측 컨센서스 이슈를 골랐습니다.\n\n"
-            f"오늘 다룬 이슈: {', '.join(labels)}\n"
+            + (f"계속 지켜보는 질문: {', '.join(watched)}\n" if watched else "")
+            + f"오늘 다룬 이슈: {', '.join(labels)}\n"
             f"정보 기준 시각: {info_time(scenario.source_written_at)}\n"
             "확률은 해외 집단 예측 참여자들의 전망을 모은 값이며, 사실 확정이나 "
             "투자 조언이 아닙니다.\n\n#집단예측 #컨센서스 #경제전망 #Shorts"

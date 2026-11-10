@@ -66,6 +66,50 @@ def test_status_escapes_titles_and_shows_the_next_schedule():
     assert "검수 대기" in text and "제목 &lt;b&gt;" in text and "다음 예약 제작" in text
 
 
+TRACK = {"updated_on": "2026-11-10", "pins": [], "tracked": [
+    {"event_id": "770451", "title": "Fed Decision in January?", "headline": "연준 1월 <금리> 결정", "theme": "연준 금리",
+     "since": "2026-11-10", "pinned": True, "label": "동결", "now": .715, "base": .655, "base_days": 30,
+     "yesterday": .775},
+    {"event_id": "80773", "title": "How high will inflation get in 2026?", "headline": None, "theme": "인플레이션",
+     "since": "2026-11-10", "pinned": False}],
+    "ranking": [{"id": "770451", "title": "Fed Decision in January?", "theme": "연준 금리", "score": .8995,
+                 "tracked": True},
+                {"id": "73130", "title": "Will the U.S. invade Iran before 2027?", "theme": "미-이란 전쟁",
+                 "score": .8425, "tracked": False}]}
+
+
+def test_track_shows_topics_with_their_move_and_the_numbered_ranking():
+    runner = FakeRunner({"--track": TRACK})
+    message, _ = _run(["track"], runner)
+
+    assert runner.calls == [["--track"]]
+    text = message.texts[0]
+    assert "1. 연준 1월 &lt;금리&gt; 결정 · 연준 금리 · 2026-11-10부터 · 고정" in text
+    assert "동결 71.5% · 30일 전 65.5% · 어제 77.5%" in text
+    # 글이 아직 없는 주제는 원제목으로 보이고, 견줄 기록이 없으면 숫자 줄을 빼고 보인다.
+    assert "2. How high will inflation get in 2026? · 인플레이션" in text
+    assert "1. ✅ Fed Decision in January? · 연준 금리 · 0.90" in text
+    assert "2. Will the U.S. invade Iran before 2027? · 미-이란 전쟁 · 0.84" in text
+
+
+def test_track_pin_maps_the_ranking_number_to_an_event_and_auto_clears():
+    runner = FakeRunner({"--track": TRACK, "--track-pin": TRACK, "--track-auto": TRACK})
+    _run(["track", "pin", "2"], runner)
+    assert runner.calls == [["--track"], ["--track-pin", "73130"]]
+
+    for bad in (["track", "pin"], ["track", "pin", "9"], ["track", "pin", "x"]):
+        runner = FakeRunner({"--track": TRACK})
+        message, _ = _run(bad, runner)
+        assert runner.calls == [["--track"]] and "번호" in message.texts[0]
+
+    runner = FakeRunner({"--track-auto": TRACK})
+    _run(["track", "auto"], runner)
+    assert runner.calls == [["--track-auto"]]
+    # 쇼츠가 거절한 고정(이미 둘 등)은 그 사유를 그대로 보인다.
+    message, _ = _run(["track", "auto"], FakeRunner(error=ShortsError("고정은 2개까지입니다")))
+    assert message.texts == ["쇼츠: 고정은 2개까지입니다"]
+
+
 def test_next_schedule_rolls_to_tomorrow_after_the_slot():
     before = datetime(2026, 9, 24, 19, 0, tzinfo=JST)
     after = datetime(2026, 9, 24, 20, 30, tzinfo=JST)

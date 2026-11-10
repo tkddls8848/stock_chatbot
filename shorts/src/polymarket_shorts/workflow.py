@@ -41,6 +41,7 @@ visual_query는 두 저장된 배경 중 선택하며 shipping=무역, 나머지
 장면 배경의 크롭·방향·색조는 장면 번호와 accent가 정하므로 따로 지정하지 않는다.
 이슈 장면의 화면은 options가 그린다(선택지 이름 + 큰 '예' 확률 + 막대). body는 그
 화면을 검수용으로 옮겨 적은 글이고, takeaway는 화면에 넣지 않는 확인점이다.
+추적 장면(watch)의 화면은 지난 기록으로 그린 추이선이라 options와 수치를 바꿀 수 없다. 제목·멘트만 고친다.
 선택지를 바꾸라는 요청이 있을 때만 이슈(consensus) 장면에 options를 넣는다. 형식은
 [{"label":"선택지 이름","yes":"70%"}]이고 1~3개, 화면 위에서부터의 순서다. 바꾸지 않는
 선택지도 함께 적는다. metric·metric_label·probability·body는 서버가 options로 다시 쓰므로
@@ -117,6 +118,8 @@ _SHARE = re.compile(r"(\d{1,3}(?:\.\d{1,3})?)\s*%")
 _SHOWN_COUNT = re.compile(r"(중 )\d+")
 # metadata_for가 설명란에 적는 다룬 이슈 목록 줄.
 _ISSUES_LINE = re.compile(r"^(오늘 다룬 이슈: ).*$", re.MULTILINE)
+# 같은 설명란의 추적 코너 줄. 코너 장면을 모두 빼면 줄째 지운다.
+_WATCHED_LINE = re.compile(r"^계속 지켜보는 질문: .*\n", re.MULTILINE)
 _EDIT_WORDS = {"yes": "예", "no": "아니오", "note": " · 검수 수정", "edit": "검수 수정", "options": "선택지", "request": "요청"}
 
 
@@ -353,6 +356,12 @@ def apply_edit(scenario: Scenario, metadata: dict, patch: dict, settings: Settin
         # 장면을 빼거나 이슈 제목을 바꾸면 설명란의 다룬 이슈 목록도 따라간다.
         updated_meta["description"] = _ISSUES_LINE.sub(
             lambda m: m[1] + ", ".join(titles), updated_meta["description"], count=1)
+    watched = [scene.title for scene in final if scene.kind == "watch"]
+    if watched != [scene.title for scene in scenario.scenes if scene.kind == "watch"] \
+            and isinstance(updated_meta.get("description"), str):
+        updated_meta["description"] = _WATCHED_LINE.sub(
+            lambda _: f"계속 지켜보는 질문: {', '.join(watched)}\n" if watched else "",
+            updated_meta["description"], count=1)
     for key, limit in (("title", 100), ("description", 5000)):
         value = updated_meta.get(key)
         if not isinstance(value, str) or not value.strip() or len(value) > limit or "<" in value or ">" in value:

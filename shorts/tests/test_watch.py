@@ -59,7 +59,7 @@ def test_record_reads_markets_only_for_long_horizon_events(tmp_path, event_facto
     # "soon"은 종료까지 45일이 안 돼 개별 질문을 읽지 않는다.
     assert client.calls == ["big", "small", "missing"]
     assert json.loads((folder / "2026-11-09.json").read_text(encoding="utf-8")) == written
-    assert written["details"]["big"] == [{"id": "m1", "label": "December 31", "yes": .24}]
+    assert written["details"]["big"] == [{"id": "m1", "label": "December 31", "question": "", "yes": .24}]
     assert written["detail_failures"] == [{"id": "small", "reason": "웹 API를 읽지 못했습니다"}]
     assert len(written["events"]) == 4 and set(written["details"]) == {"big", "missing"}
     # 넉 달(120일)이 지난 기록만 지우고 날짜 이름이 아닌 파일은 건드리지 않는다.

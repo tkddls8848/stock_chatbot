@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 import subprocess
@@ -130,6 +131,8 @@ _CHROME = {"yes": "예", "no": "아니오", "site": "nunchi.live", "brand_tag": 
            "open_top": "오늘의 집단 예측", "open_low": "컨센서스 요약", "open_note": "지금 시작합니다",
            "close_top": "자세한 내용은", "close_note": "에서 확인하세요",
            "footer_options": "막대는 표시한 답의 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
+           "footer_trend": "선은 표시한 답의 확률 추이 · 집단 예측 컨센서스 · 투자 조언 아님",
+           "days_ago": "{n}일 전보다",
            "footer": "집단 예측 컨센서스 · 투자 조언 아님"}
 _LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
 
@@ -278,11 +281,11 @@ def _ink_text(draw, box, text: str, font, fill, *, center_x: bool = True, stroke
     draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke, stroke_fill=fill)
 
 
-def _title(draw, title: str, font_path: Path) -> None:
+def _title(draw, title: str, font_path: Path, *, top: int = TITLE_TOP, bottom: int = TITLE_BOTTOM) -> None:
     """이슈 장면의 제목. 굵게 두 줄까지, 칸 안에서 가운데 선다."""
     font, lines = _fit(draw, title, _bold(font_path), SAFE_RIGHT - SAFE_LEFT, range(84, 50, -4), 2)
     spacing = round(font.size * 1.3)
-    y = TITLE_TOP + (TITLE_BOTTOM - TITLE_TOP - spacing * len(lines)) // 2
+    y = top + (bottom - top - spacing * len(lines)) // 2
     for line in lines:
         draw.text(((WIDTH - draw.textlength(line, font=font)) / 2, y), line, font=font,
                   fill=_COLORS["ink"], stroke_width=1, stroke_fill=_COLORS["ink"])
@@ -388,6 +391,115 @@ def _compact(value: str) -> str:
     return re.sub(r"유효 (\d+개) 중 (\d+개)", r"\1 중 \2", value)
 
 
+# ── 추적 코너 화면 ─────────────────────────────────────
+# 매일 이어 보는 질문은 막대 하나가 아니라 지난 30일 추이선으로 보인다(운영자 결정 2026-11-09, `corner.py`). 카드 위에는
+# 오늘 확률과 선의 첫날 대비 변화를, 아래에는 선을 둔다. 어제 대비는 칩 한 칸이다 — 하루 등락이 아니라 흐름이 내용이다.
+WATCH_TITLE_BOTTOM = 530                # 카드가 길어 제목 칸을 조금 줄인다
+WATCH_CARD_TOP = 630
+WATCH_PLOT = (890, 1066)                # 추이선이 놓이는 세로 범위
+WATCH_AXIS = 86                         # 오른쪽 눈금 글자 폭
+TREND_SECONDS = 1.2                     # 선이 왼쪽에서 오른쪽으로 그려지는 시간
+TREND_STEPS = 36
+_SUPERSAMPLE = 3                        # Pillow 선은 계단이 져서 크게 그린 뒤 줄인다
+
+
+def _trend_scale(values: Sequence[float]) -> tuple[float, float]:
+    """세로축 범위(퍼센트). 5 단위로 넉넉히 잡고 최소 10%포인트 폭을 둔다 — 1%포인트 흔들림이 절벽처럼 보이지 않게."""
+    low, high = min(values) * 100, max(values) * 100
+    bottom, top = 5 * (low // 5), 5 * -(-high // 5)
+    if top - bottom < 10:
+        middle = (low + high) / 2
+        bottom = max(0.0, 5 * round((middle - 5) / 5))
+        top = bottom + 10
+    if top > 100:
+        bottom, top = bottom - (top - 100), 100.0
+    return max(0.0, bottom), top
+
+
+def _trend_plot(scene: Scene, size: tuple[int, int], accent: str, reveal: float) -> Image.Image:
+    """추이선 그림. `reveal`(0~1)만큼만 왼쪽에서부터 그린다."""
+    width, height = (edge * _SUPERSAMPLE for edge in size)
+    layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    days = [date.fromisoformat(day).toordinal() for day, _ in scene.trend]
+    values = [value for _, value in scene.trend]
+    bottom, top = _trend_scale(values)
+    # 선 끝의 점과 그 둘레가 잘리지 않을 만큼 안쪽에 그린다.
+    pad, side = 10 * _SUPERSAMPLE, 24 * _SUPERSAMPLE
+    span = max(1, days[-1] - days[0])
+
+    def place(day: float, value: float) -> tuple[float, float]:
+        return (side + (day - days[0]) / span * (width - 2 * side),
+                pad + (top - value * 100) / (top - bottom) * (height - 2 * pad))
+
+    for step in range(3):
+        y = pad + step / 2 * (height - 2 * pad)
+        draw.line((0, y, width, y), fill=_COLORS["line"], width=_SUPERSAMPLE)
+    edge = days[0] + span * reveal
+    path = [place(day, value) for day, value in zip(days, values) if day <= edge]
+    if len(path) < len(days):
+        before, after = len(path) - 1, len(path)
+        share = (edge - days[before]) / (days[after] - days[before])
+        path.append(place(edge, values[before] + (values[after] - values[before]) * share))
+    if len(path) > 1:
+        floor = height - pad
+        draw.polygon([(path[0][0], floor), *path, (path[-1][0], floor)], fill=(*_rgb(accent), 34))
+        draw.line(path, fill=accent, width=7 * _SUPERSAMPLE, joint="curve")
+    radius = 13 * _SUPERSAMPLE
+    x, y = path[-1]
+    draw.ellipse((x - radius * 1.7, y - radius * 1.7, x + radius * 1.7, y + radius * 1.7), fill=(*_rgb(accent), 70))
+    draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=accent)
+    return layer.resize(size, Image.Resampling.LANCZOS)
+
+
+def _watch_card(image, scene: Scene, font_path: Path, accent: str, *, shown: int, reveal: float) -> None:
+    """추적 장면의 카드. 추이선은 `reveal`만큼 그리고, 오늘 확률과 변화 폭은 `shown`이 1일 때만 얹는다.
+
+    선은 장면이 열리자마자 그려진다 — 확률을 말할 때까지 빈 눈금만 세워 두면 긴 설명을 읽는 날 화면이 15초 넘게
+    멈춘다(2026-11-10 시험 영상). 숫자는 말이 닿을 때 뜬다.
+    """
+    draw = ImageDraw.Draw(image)
+    bold = _bold(font_path)
+    label, percent, _ = scene.options[0]
+    left, right = SAFE_LEFT + CARD_PAD, BODY_RIGHT
+    top = WATCH_CARD_TOP + 58
+    label_font, (label_line,) = _fit(draw, label, bold, right - left, range(40, 24, -2), 1)
+    draw.text((left, top), label_line, font=label_font, fill=_COLORS["ink"] if shown else _COLORS["muted"])
+    plot_left, plot_right = left, right - WATCH_AXIS
+    size = (plot_right - plot_left, WATCH_PLOT[1] - WATCH_PLOT[0])
+    bottom, upper = _trend_scale([value for _, value in scene.trend])
+    tick_font = _font(font_path, 24)
+    for step, value in enumerate((upper, (upper + bottom) / 2, bottom)):
+        y = WATCH_PLOT[0] + 10 + step / 2 * (size[1] - 20)
+        text = f"{value:.4g}%"
+        draw.text((right - draw.textlength(text, font=tick_font), y - 16), text, font=tick_font, fill=_COLORS["muted"])
+    start, end = (date.fromisoformat(scene.trend[position][0]) for position in (0, -1))
+    edge_font = _font(font_path, 26)
+    draw.text((plot_left, WATCH_PLOT[1] + 8), f"{start:%m.%d}", font=edge_font, fill=_COLORS["muted"])
+    last = f"{end:%m.%d}"
+    draw.text((plot_right - draw.textlength(last, font=edge_font), WATCH_PLOT[1] + 8), last, font=edge_font,
+              fill=_COLORS["muted"])
+    image.alpha_composite(_trend_plot(scene, size, accent, 1.0 if reveal >= 1 else _ease(reveal)),
+                          (plot_left, WATCH_PLOT[0]))
+    if not shown:
+        return
+    number = _font(bold, 112)
+    number_y = top + 52
+    draw.text((left, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
+    draw.text((left + draw.textlength(percent, font=number) + 18, number_y + 60), _CHROME["yes"],
+              font=_font(bold, 32), fill=_COLORS["muted"])
+    # 선의 첫날 대비 변화. 오르내림에 좋고 나쁨이 없어 색은 하나이고 방향은 세모로 보인다.
+    first = round(scene.trend[0][1] * 100, 1)
+    delta = round(round(scene.trend[-1][1] * 100, 1) - first, 1)
+    mark = "▲" if delta > 0 else "▼" if delta < 0 else "–"
+    moved = f"{mark} {f'{abs(delta):.1f}'.rstrip('0').rstrip('.')}%p"
+    moved_font, small = _font(bold, 50), _font(font_path, 26)
+    since = _CHROME["days_ago"].format(n=(end - start).days)
+    draw.text((right - draw.textlength(since, font=small), number_y + 14), since, font=small, fill=_COLORS["muted"])
+    draw.text((right - draw.textlength(moved, font=moved_font), number_y + 52), moved, font=moved_font,
+              fill=_COLORS["ink"])
+
+
 # ── 본론 목록 화면 ─────────────────────────────────────
 # 질문마다 화면을 통째로 갈아 끼우면 2분 남짓한 영상에서 화면이 네다섯 번 바뀌어 집중이 끊겼다(운영자 지적
 # 2026-10-08). 본론은 질문 전체가 놓인 목록 한 장이고, 지금 말하는 질문만 드롭다운처럼 아래로 펼쳐져 선택지·
@@ -442,14 +554,18 @@ def render_list_frame(
     previous: int | None,
     progress: float,
     shown: int | None,
+    leading: int = 1,
 ) -> None:
-    """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다."""
+    """본론 목록 한 장. `active` 줄이 `progress`(0~1)만큼 펼쳐지고 `previous` 줄은 그만큼 접힌다.
+
+    `leading`은 목록 앞에 선 장면 수(도입과 추적 코너)다. 머리의 진행 점이 영상 전체에서의 자리를 가리키게 한다.
+    """
     chrome = _CHROME
     scene = scenes[active]
     accent = _accent(scene)
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    _header(draw, font_path, active + 2, len(scenes) + 2)
+    _header(draw, font_path, active + leading + 1, len(scenes) + leading + 1)
     option_row, chips = _list_layout(scenes)
     eased = _ease(progress)
     y = LIST_TOP
@@ -514,7 +630,9 @@ def render_frame(
     index: int,
     total: int,
     shown: int | None = None,
+    reveal: float = 1.0,
 ) -> None:
+    """`reveal`은 추적 장면의 추이선이 그려진 정도(0~1)다. 그 장면의 `shown`은 오늘 확률을 띄울지(0·1)다."""
     chrome = _CHROME
     accent = _accent(scene)
     image = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
@@ -531,6 +649,12 @@ def render_frame(
     elif scene.kind == "outro":
         _headline(image, ((chrome["close_top"], "ink"), (chrome["site"], "accent"), (chrome["close_note"], "plain")),
                   font_path, accent)
+    elif scene.kind == "watch" and scene.trend and scene.options:
+        _title(draw, scene.title, font_path, bottom=WATCH_TITLE_BOTTOM)
+        _card(image, (SAFE_LEFT, WATCH_CARD_TOP, SAFE_RIGHT, CARD_BOTTOM), accent, font_path,
+              tab=scene.kicker)
+        _watch_card(image, scene, font_path, accent, shown=1 if shown is None else shown, reveal=reveal)
+        _chips(draw, scene.bullets, font_path)
     else:
         _title(draw, scene.title, font_path)
         if number and total > 2:
@@ -545,8 +669,8 @@ def render_frame(
         _chips(draw, scene.bullets, font_path)
 
     footer = HEADLINE_FOOTER_Y if scene.kind in UNCAPTIONED else FOOTER_Y
-    draw.text((SAFE_LEFT, footer), chrome["footer_options"] if scene.options else chrome["footer"],
-              font=_font(font_path, 23), fill=_COLORS["muted"])
+    note = "footer_trend" if scene.kind == "watch" and scene.trend else "footer_options" if scene.options else "footer"
+    draw.text((SAFE_LEFT, footer), chrome[note], font=_font(font_path, 23), fill=_COLORS["muted"])
     draw.text((SAFE_LEFT, footer + 34), scene.source_note, font=_font(font_path, 22), fill=accent)
     framed = Image.alpha_composite(_plain_backdrop().convert("RGBA"), image).convert("RGB")
     framed.save(path, "PNG", compress_level=1)
@@ -744,7 +868,7 @@ def _caption_lines(draw, text: str, font: ImageFont.FreeTypeFont) -> list[str]:
 
 
 # 단위가 붙은 수치만 짚는다. 날짜("10월 7일")·연도("2027년")까지 칠하면 강조가 흩어진다.
-_HIGHLIGHT = re.compile(r"[0-9][0-9,.]*\s?(?:%|포인트|달러|원|엔|위안|유로|bp|bps|배|회)")
+_HIGHLIGHT = re.compile(r"[0-9][0-9,.]*\s?(?:%(?:포인트)?|포인트|달러|원|엔|위안|유로|bp|bps|배|회)")
 
 
 def _caption_frame(lines: Sequence[str], path: Path, *, font_path: Path) -> None:
@@ -849,6 +973,18 @@ def _beats(scene: Scene, seconds: float) -> list[Beat]:
     return [("open", opening, replace(scene, body=""), None), ("card", seconds - opening, scene, None)]
 
 
+def _watch_beats(scene: Scene, seconds: float) -> list[tuple]:
+    """추적 장면의 박자. 열리자마자 추이선이 왼쪽에서부터 그려지고, 확률을 말하기 시작할 때 오늘 숫자가 뜬다."""
+    opening = (min(max(seconds * scene.options_at, 1.0), seconds * .8)
+               if scene.options_at else min(3.2, seconds * .35))
+    rest = seconds - opening
+    if opening < TREND_SECONDS + .5:
+        return [("question", opening, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
+    step = TREND_SECONDS / TREND_STEPS
+    drawing = [("question", step, scene, 0, (n + 1) / (TREND_STEPS + 1)) for n in range(TREND_STEPS)]
+    return [*drawing, ("question", opening - TREND_SECONDS, scene, 0, 1.0), ("trend", rest, scene, 1, 1.0)]
+
+
 def render_video(
     scenario: Scenario,
     *,
@@ -873,8 +1009,10 @@ def render_video(
     body_start = next((n for n, scene in enumerate(scenario.scenes) if scene.kind == "consensus"), None)
     for index, (scene, seconds) in enumerate(zip(scenario.scenes, scene_durations), start=1):
         listed = scene.kind == "consensus"
-        beats = _beats(scene, seconds)
-        if listed:
+        if scene.kind == "watch" and scene.trend and scene.options:
+            beats = _watch_beats(scene, seconds)
+        elif listed:
+            beats = _beats(scene, seconds)
             active = index - 1 - body_start
             # 질문이 바뀌면 먼저 새 줄이 펼쳐지고 앞 줄이 접힌다(첫 박자의 앞부분).
             name, hold, display, shown = beats[0]
@@ -883,17 +1021,18 @@ def render_video(
             opening = [(f"drop-{n}", step, display, shown, (n + 1) / DROP_STEPS) for n in range(DROP_STEPS)]
             beats = opening + [(name, hold - drop, display, shown, 1.0)] + [(*beat, 1.0) for beat in beats[1:]]
         else:
-            beats = [(*beat, 1.0) for beat in beats]
+            beats = [(*beat, 1.0) for beat in _beats(scene, seconds)]
         for position, (beat, hold, display_scene, shown, progress) in enumerate(beats, start=1):
             frame = work_dir / f"frame-{index:02d}-{position:03d}-{beat}.png"
             if listed:
                 rows = list(body)
                 rows[active] = display_scene
                 render_list_frame(rows, frame, font_path=font_path, active=active,
-                                  previous=active - 1 if active > 0 else None, progress=progress, shown=shown)
+                                  previous=active - 1 if active > 0 else None, progress=progress, shown=shown,
+                                  leading=body_start)
             else:
                 render_frame(display_scene, frame, font_path=font_path, index=index, total=len(scenario.scenes),
-                             shown=shown)
+                             shown=shown, reveal=progress)
             images.append({"path": str(frame.resolve()), "start": cursor, "duration": hold})
             # 카운트업·펼침은 한 프레임씩 기록하지 않는다 — 검수자가 보는 것은 수치가 머무는 구간이다.
             # 앞 장면과 제목이 같을 수 있으므로 장면 번호로 구분한다.

@@ -18,7 +18,7 @@ from .review import ReviewError, read_script
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
     "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
-    "failure_ack", "scheduled", "watch",
+    "failure_ack", "scheduled", "watch", "track", "track_pin", "track_auto",
 )
 
 
@@ -49,6 +49,10 @@ def main() -> None:
     parser.add_argument("--scheduled", action="store_true", help="매일 예약 제작(하루 두 번까지 시도)")
     # 영상 없이 추적 기록·주제만 지금 갱신한다. 매일 제작 때도 같은 일을 한다(watch.py).
     parser.add_argument("--watch", action="store_true", help="추적 주제를 지금 갱신하고 상태 JSON 출력")
+    # 텔레그램 `/shorts track`이 부른다. 고정은 다음 갱신(매일 제작 또는 --watch) 때 반영된다.
+    parser.add_argument("--track", action="store_true", help="추적 주제와 후보 순위 JSON")
+    parser.add_argument("--track-pin", metavar="EVENT_ID", help="추적 주제로 고정")
+    parser.add_argument("--track-auto", action="store_true", help="고정을 모두 풀고 자동 선정으로")
     args = parser.parse_args()
     if args.review_token and args.edit is None:
         parser.error("--review-token은 --edit와 함께 씁니다")
@@ -90,6 +94,17 @@ def main() -> None:
             today = datetime.now(settings.timezone).date()
             print(json.dumps(refresh_watch(settings, today, client.snapshot(), client, PriceHistory()),
                              ensure_ascii=False))
+            return
+        if args.track or args.track_pin or args.track_auto:
+            from . import corner, watch
+            try:
+                if args.track_pin:
+                    watch.pin(settings, args.track_pin)
+                elif args.track_auto:
+                    watch.unpin(settings)
+            except watch.WatchError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(json.dumps(corner.status(settings), ensure_ascii=False))
             return
         if args.youtube_auth:
             from .youtube import authorize

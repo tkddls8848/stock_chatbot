@@ -2,30 +2,32 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Sequence
 
 from .client import Snapshot
 from .speech import (
-    CLOSING_LINE, CLOSING_SCREEN, consensus_mood, end_sentence, opening_line, speak_markets, to_polite_text,
-    to_spoken_question, transition,
+    CLOSING_LINE, CLOSING_SCREEN, NEW_ISSUES_LINE, consensus_mood, end_sentence, opening_line, plain_number,
+    speak_leader_change, speak_markets, speak_trend, to_polite_text, to_spoken_question, transition, watch_opener,
 )
 
 _FOLLOWING = ("이번에는", "다음으로", "다음은", "이어서", "마지막으로")
 
 
-def _placed(opener: str | None, index: int, count: int) -> str | None:
+def _placed(opener: str | None, index: int, count: int, *, after_corner: bool = False) -> str | None:
     """원고를 쓴 뒤 이슈가 빠지면 여는 말의 자리가 바뀐다. 자리와 어긋난 여는 말을 고친다.
 
     첫 장면이 "이번에는 …로 넘어가 보겠습니다"로 열리거나(2026-10-08 시험: 둘 중 하나가 검증에서 빠졌다), 마지막이
     아닌 장면이 "마지막으로"로 열리면 틀린 말이다. 첫 장면의 이음말은 여는 말째 버리고(대체 문장이 없는 자리라 해설로
-    바로 간다), 중간 장면의 "마지막으로"는 그 말만 뗀다.
+    바로 간다), 중간 장면의 "마지막으로"는 그 말만 뗀다. 첫 질문이 아닌 장면의 "먼저"도 그 말만 뗀다 — 빈자리를 채운
+    이슈는 혼자 원고를 받아 "먼저 …부터 보겠습니다"로 열리고(2026-11-10 시험: 셋째 장면이 그랬다), 추적 코너
+    (`after_corner`) 뒤의 첫 새 이슈도 영상의 첫 질문이 아니다.
     """
     if not opener:
         return opener
     first = opener.split()[0].rstrip(",")
     if index == 0 and first in _FOLLOWING:
         return None
-    if first == "마지막으로" and index < count - 1:
+    if first == "마지막으로" and index < count - 1 or first == "먼저" and (index > 0 or after_corner):
         return opener.split(maxsplit=1)[1] if len(opener.split()) > 1 else None
     return opener
 
@@ -68,11 +70,14 @@ class Scene:
     market_ids: tuple[str, ...] = ()
     # 내레이션에서 확률을 말하기 시작하는 위치(0~1). 0이면 예전 고정 시점을 쓴다.
     options_at: float = 0.0
+    # 추적 장면(`kind="watch"`)의 추이선. (날짜, 그날의 예 확률 0~1)을 이른 날부터 담는다.
+    trend: tuple[tuple[str, float], ...] = ()
 
     def __post_init__(self) -> None:
         # 제작 원고(`scenario.json`)에서 되읽으면 리스트로 온다. 렌더가 카운트업
         # 프레임마다 조각을 이어 붙이므로 여기서 튜플로 굳힌다.
         object.__setattr__(self, "options", tuple(tuple(row) for row in self.options))
+        object.__setattr__(self, "trend", tuple(tuple(row) for row in self.trend))
 
 
 @dataclass(frozen=True)
@@ -135,10 +140,72 @@ _SCENE_DEFAULTS = {
 }
 
 
+def _points(value: float) -> float:
+    """화면·음성이 함께 쓰는 퍼센트 수치(소수 한 자리). 차이는 이 값끼리 뺀다 — 말한 두 숫자와 그 차가 어긋나지 않게."""
+    return round(value * 100, 1)
+
+
+def _signed(delta: float) -> str:
+    return f"{'+' if delta > 0 else '−' if delta < 0 else '±'}{plain_number(abs(delta))}%p"
+
+
+def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
+    """추적 주제 하나의 장면. 화면은 지난 30일 추이선이고 음성은 오늘 확률과 그 움직임이다(`corner.py`).
+
+    숫자와 기간은 기록에서 나온 값 그대로다. 해설은 처음 다루는 날과 크게 움직인 날(`view["long"]`)에만 읽고,
+    나머지 날은 숫자만 짧게 잇는다 — 같은 해설을 몇 주 동안 매일 되풀이하지 않는다. 질문 문장은 읽지 않는다.
+    바로 뒤의 확률 문장이 같은 전망을 말하고, 코너 한 장면이 새 이슈 하나만큼 길어지면 영상이 한도를 넘는다.
+    """
+    now, base = _points(view["now"]), _points(view["base"])
+    yesterday = None if view["yesterday"] is None else _points(view["yesterday"])
+    week = None if view["week"] is None else _points(view["week"])
+    shown = f"{plain_number(now)}%"
+    label, headline = view["label"], view["headline"]
+    lead = " ".join(part for part in (
+        watch_opener(headline, position, first_time=view["first_time"]),
+        end_sentence(to_polite_text(view["context"])) if view["long"] else "",
+    ) if part)
+    numbers = " ".join(part for part in (
+        speak_markets("binary", headline, [(label, shown, "", view.get("outlook"))]),
+        speak_leader_change(view["previous_leader"], label) if view.get("previous_leader") else "",
+        speak_trend(now, base, view["base_days"], yesterday, week),
+    ) if part)
+    narration = f"{lead} {numbers}"
+    deadline = datetime.fromisoformat(view["end_date"].replace("Z", "+00:00"))
+    first_day, last_day = view["points"][0][0], view["points"][-1][0]
+    compared = [f"{view['base_days']}일 전 {plain_number(base)}% → 오늘 {shown} ({_signed(round(now - base, 1))})"]
+    if yesterday is not None:
+        compared.append(f"어제 {plain_number(yesterday)}% ({_signed(round(now - yesterday, 1))})")
+    return Scene(
+        kind="watch", title=headline, kicker=f"계속 지켜보는 질문 · {view['day']}일째",
+        body="\n".join([f"{label} — 예 {shown}", *compared]),
+        options=((label, shown, view["now"]),), narration=narration, options_at=len(lead) / len(narration),
+        trend=tuple((day, value) for day, value in view["points"]),
+        bullets=(f"{view['base_days']}일 전 · {plain_number(base)}%",
+                 f"어제 · {plain_number(yesterday)}%" if yesterday is not None
+                 else f"기록 · {len(view['points'])}일",
+                 f"종료 예정 · {deadline:%Y-%m-%d} 세계 표준시"),
+        metric=shown, metric_label=label, probability=view["now"],
+        source_note=f"자료 기준 {shown_stamp}",
+        evidence=(f"이벤트 질문: {view['title']}", f"질문(읽지 않음): {view['question']}",
+                  f"시장 {view['market_id']}: {view['market_question']} / 예 {shown}",
+                  f"확률 기록: {first_day} ~ {last_day} · {len(view['points'])}일치(지난 기록은 원 출처의 일별 값, "
+                  "그 뒤는 제작 때 읽은 값)",
+                  *compared,
+                  f"이벤트 종료 예정: {deadline:%Y-%m-%d %H:%M %z} (개별 판정 시각과 다를 수 있음)"),
+        selection_note=f"추적 주제({view['theme']}) · {view['since']}부터 · 선정 점수 {view['score']}",
+        event_id=view["event_id"], market_ids=(view["market_id"],),
+    )
+
+
 def build_scenario(
     snapshot: Snapshot, issues: list[dict], scripts: list[dict], *, production_date: date,
+    tracked: Sequence[dict] = (),
 ) -> Scenario:
-    """베팅 질문과 확률을 ID로 결합한다. 분야 합계나 홈페이지 문단을 사용하지 않는다."""
+    """베팅 질문과 확률을 ID로 결합한다. 분야 합계나 홈페이지 문단을 사용하지 않는다.
+
+    `tracked`는 추적 코너의 재료(`corner.build`)다. 도입 바로 뒤, 새 이슈 앞에 선다.
+    """
     if not issues or len(issues) != len(scripts):
         raise ValueError("검증된 개별 이슈 원고가 필요합니다")
     source_stamp = snapshot.summary["generated_at"]
@@ -152,11 +219,12 @@ def build_scenario(
         # 질문을 띄워 바로 끌어들이고, 편수는 잔글씨 한 줄로 내린다.
         kind="intro", title=scripts[0]["headline"], kicker=f"오늘의 전망 · {production_date:%m.%d}",
         body=to_spoken_question(scripts[0]["question"]),
-        narration=opening_line(len(issues), production_date),
-        bullets=(f"오늘의 질문 · {len(issues)}개",),
+        narration=opening_line(len(issues), production_date, tracked=len(tracked)),
+        bullets=(f"오늘의 질문 · {len(issues) + len(tracked)}개",),
         source_note=f"자료 기준 {shown_stamp}",
         evidence=(issues[0]["title"],),
     )]
+    scenes.extend(_watch_scene(view, position, shown_stamp) for position, view in enumerate(tracked))
     moods: set[str] = set()
     opener_word = ""
     for index, (issue, script) in enumerate(zip(issues, scripts, strict=True)):
@@ -202,7 +270,7 @@ def build_scenario(
         # (운영자 결정 2026-09-27: 예전 순서는 확률 → 이유였다).
         # 장면을 여는 말은 원고가 이슈마다 다르게 쓴다(`lead_in`). 확률 뒤에는 숫자가 어떻게 갈렸는지 한 문장으로
         # 풀어 장면을 닫는다(2026-10-07). 대상을 대명사로 퉁치게 되는 경우는 풀이 없이 끝낸다(`speech.consensus_mood`).
-        opener = _placed(script.get("lead_in"), index, len(issues))
+        opener = _placed(script.get("lead_in"), index, len(issues), after_corner=bool(tracked))
         if opener:
             # 원고가 장면마다 같은 이음말로 열면("이번에는 …", "이번에는 …") 둘째부터 그 말을 뗀다.
             words = opener.split()
@@ -216,6 +284,8 @@ def build_scenario(
         # 여는 말 다음에 그날 실제 보도 한 문장(`news_hook`)을 넣어, 숫자를 읽기 전에 왜 지금 이 질문인지가
         # 들리게 한다(운영자 요청 2026-10-08). 맞는 기사가 없던 이슈는 예전처럼 해설로 바로 간다.
         lead = " ".join(part for part in (
+            # 추적 코너에서 새 이슈로 넘어가는 말.
+            NEW_ISSUES_LINE if tracked and index == 0 else "",
             # 여는 말이 "먼저 국제유가부터 보면,"처럼 쉼표로 끝나면 마침표를 붙이지 않고 다음 문장으로 잇는다 —
             # 장면마다 짧은 평서문이 마침표로 끊기면 기계가 읽는 것처럼 들렸다(운영자 지적 2026-10-08).
             _joined(opener) if opener else transition(index, issue["sector_label"]),

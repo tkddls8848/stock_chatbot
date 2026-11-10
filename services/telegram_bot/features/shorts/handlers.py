@@ -9,6 +9,7 @@
 | `/shorts review` · `/shorts hold [검토번호]` | 원고 보기 · 자동 승인 보류 |
 | `/shorts done` | 현재 수정본을 검수 완료로 기록하고 업로드 |
 | `/shorts upload` | 검수 완료본 업로드 재시도 |
+| `/shorts track` (`pin 번호` · `auto`) | 계속 지켜보는 질문과 후보 순위 · 직접 고정 · 자동 선정으로 |
 
 제작·수정은 수 분이 걸려 접수 안내 뒤 백그라운드로 돌고 끝나면 알린다. 잠금 하나로
 줄을 세운다 — 제작과 수정이 겹치면 같은 산출물 폴더를 서로 덮는다(예약 제작과의
@@ -43,7 +44,7 @@ from services.telegram_bot.features.shorts.review import (
 
 logger = logging.getLogger(__name__)
 
-USAGE = "/shorts · /shorts run [force] · /shorts review · /shorts preview · /shorts edit [검토번호] 수정할 내용 · /shorts hold [검토번호] · /shorts done [검토번호] · /shorts upload"
+USAGE = "/shorts · /shorts run [force] · /shorts review · /shorts preview · /shorts edit [검토번호] 수정할 내용 · /shorts hold [검토번호] · /shorts done [검토번호] · /shorts upload · /shorts track [pin 번호|auto]"
 _TOKEN = re.compile(r"^\d{4}-\d{2}-\d{2}-ko-[0-9a-f]{32}$")
 _REVIEW = {"pending": "검수 대기", "reviewed": "검수 완료", "superseded": "새 수정본으로 대체됨"}
 _SELECTION = {"no_suitable_issues": "적합한 이슈 없음", "failed": "제작 실패", "script_ready": "원고 준비됨"}
@@ -93,6 +94,55 @@ def status_text(status: dict[str, Any], *, busy: bool) -> str:
     return "\n".join(lines)
 
 
+def _share(value: Any) -> str:
+    return f"{float(value) * 100:.1f}".rstrip("0").rstrip(".") + "%"
+
+
+def track_text(status: dict[str, Any]) -> str:
+    """쇼츠 CLI `--track`의 추적 주제와 후보 순위. 고정은 후보 순위의 번호로 받는다."""
+    lines = [f"<b>📌 계속 지켜보는 질문</b> · {html.escape(str(status.get('updated_on') or '기록 없음'))} 기준"]
+    tracked = status.get("tracked") or []
+    if not tracked:
+        lines.append("아직 정해진 질문이 없습니다. 다음 제작 때 정합니다.")
+    for number, item in enumerate(tracked, start=1):
+        name = html.escape(str(item.get("headline") or item.get("title") or "-"))
+        head = f"{number}. {name} · {html.escape(str(item.get('theme') or '-'))} · {html.escape(str(item.get('since') or ''))}부터"
+        lines.append(head + (" · 고정" if item.get("pinned") else ""))
+        if item.get("now") is not None:
+            move = f"   {html.escape(str(item.get('label') or '예'))} {_share(item['now'])} · {item.get('base_days')}일 전 {_share(item['base'])}"
+            if item.get("yesterday") is not None:
+                move += f" · 어제 {_share(item['yesterday'])}"
+            lines.append(move)
+    ranking = status.get("ranking") or []
+    if ranking:
+        lines += ["", "<b>후보 순위</b>"]
+        lines += [f"{number}. {'✅ ' if row.get('tracked') else ''}{html.escape(str(row.get('title') or '-'))}"
+                  f" · {html.escape(str(row.get('theme') or '-'))} · {float(row.get('score') or 0):.2f}"
+                  for number, row in enumerate(ranking, start=1)]
+        lines += ["", "고정: /shorts track pin 번호 (둘까지) · 자동 선정으로: /shorts track auto",
+                  "고정과 해제는 다음 제작부터 반영됩니다."]
+    return "\n".join(lines)
+
+
+async def _track(message, runner, args: list[str]) -> None:
+    action = args[0].lower() if args else ""
+    if action == "pin":
+        ranking = (await runner.call(["--track"], timeout=SHORTS_STATUS_TIMEOUT_SECONDS)).get("ranking") or []
+        if len(args) < 2 or not args[1].isdigit() or not 1 <= int(args[1]) <= len(ranking):
+            await message.reply_text("후보 순위의 번호를 적어 주세요. 예: /shorts track pin 3")
+            return
+        command = ["--track-pin", str(ranking[int(args[1]) - 1]["id"])]
+    elif action == "auto":
+        command = ["--track-auto"]
+    elif action:
+        await message.reply_text("/shorts track · /shorts track pin 번호 · /shorts track auto")
+        return
+    else:
+        command = ["--track"]
+    status = await runner.call(command, timeout=SHORTS_STATUS_TIMEOUT_SECONDS)
+    await message.reply_text(track_text(status), parse_mode="HTML")
+
+
 def shorts_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ 지금 제작", callback_data="nav:shorts:run"),
@@ -101,6 +151,7 @@ def shorts_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("✅ 검수 완료", callback_data="nav:shorts:done")],
         [InlineKeyboardButton("📜 원고 검토", callback_data="nav:shorts:review"),
          InlineKeyboardButton("⏸ 보류", callback_data="nav:shorts:hold")],
+        [InlineKeyboardButton("📌 지켜보는 질문", callback_data="nav:shorts:track")],
         [InlineKeyboardButton("🏠 처음", callback_data="nav:home")],
     ])
 
@@ -253,6 +304,8 @@ async def cmd_shorts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         elif command == "upload":
             await _background(message, context, "YouTube 업로드", ["--upload"],
                               SHORTS_RUN_TIMEOUT_SECONDS, preview=False)
+        elif command == "track":
+            await _track(message, runner, args[1:])
         else:
             await message.reply_text(USAGE)
     except ShortsError as error:
