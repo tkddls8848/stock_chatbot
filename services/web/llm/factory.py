@@ -1,9 +1,9 @@
 """웹의 LLM 조립 지점.
 
-**웹이 LLM을 부르는 곳은 다섯이다** — 예측 컨센서스 one-shot 둘(섹터 줄글 브리프,
-자연어 검색용 event 주석)은 순회 뒤에 돌고, 개인 화면의 셋(자산 조언 `POST /api/portfolio/advice`,
-개인 리서치 `POST /api/research/reports`, 예측 질문 답변 `POST /api/forecast/ask`)은 로그인한 계정이
-요청할 때만 돈다. 공개 화면 요청은 LLM을 부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
+**웹이 LLM을 부르는 곳은 여섯이다** — 예측 컨센서스 one-shot 둘(섹터 줄글 브리프,
+자연어 검색용 event 주석)은 순회 뒤에 돌고, 개인 화면의 넷(자산 조언 `POST /api/portfolio/advice`,
+개인 리서치 `POST /api/research/reports`, 뷰 검증 `POST /api/research/view`, 예측 질문 답변
+`POST /api/forecast/ask`)은 로그인한 계정이 요청할 때만 돈다. 공개 화면 요청은 LLM을 부르지 않는다. 봇 쪽 팩토리(`services/telegram_bot/llm/factory.py`)와 모양이
 닮았지만 각자 소유다 — 봇이 번역기나 리서치 분석기의 조립을 바꿔도 이 파일은
 움직이지 않는다.
 """
@@ -36,6 +36,14 @@ from services.web.core.config import (
     RESEARCH_PROMPT_FILE,
     RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
     RESEARCH_TIMEOUT,
+    VIEW_CHECK_CLAIMS_NUM_PREDICT,
+    VIEW_CHECK_CLAIMS_PROMPT_FILE,
+    VIEW_CHECK_JUDGE_NUM_PREDICT,
+    VIEW_CHECK_JUDGE_PROMPT_FILE,
+    VIEW_CHECK_MODEL,
+    VIEW_CHECK_POSITIONS_NUM_PREDICT,
+    VIEW_CHECK_POSITIONS_PROMPT_FILE,
+    VIEW_CHECK_TIMEOUT,
     require_cloudflare_credentials,
 )
 from services.web.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
@@ -44,6 +52,7 @@ from services.web.llm.polymarket_annotation import PolymarketAnnotator
 from services.web.llm.polymarket_answer import PolymarketAnswerer
 from services.web.llm.polymarket_brief import PolymarketBriefAnalyzer
 from services.web.llm.terminology import read_prompt
+from services.web.llm.viewcheck import ViewChecker
 
 logger = logging.getLogger(__name__)
 
@@ -130,4 +139,20 @@ def build_research_analyzer() -> MarketViewAnalyzer:
         prompt_file=RESEARCH_PROMPT_FILE,
         max_new_actions=RESEARCH_MAX_NEW_ACTIONS,
         remove_relevance_threshold=RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
+    )
+
+
+def build_view_checker() -> ViewChecker:
+    """뷰 검증기. 검증마다 새로 만든다 — 세 단계의 사용량을 그 검증의 것으로만 모은다.
+
+    이 기능만 `VIEW_CHECK_MODEL`(추론 모델)을 쓴다. 기본 모델은 방향 추론을 틀린다(`core/config.py`)."""
+    require_cloudflare_credentials()
+    return ViewChecker(
+        backend=build_backend("view_check", model=VIEW_CHECK_MODEL, timeout=VIEW_CHECK_TIMEOUT),
+        claims_prompt=VIEW_CHECK_CLAIMS_PROMPT_FILE,
+        judge_prompt=VIEW_CHECK_JUDGE_PROMPT_FILE,
+        positions_prompt=VIEW_CHECK_POSITIONS_PROMPT_FILE,
+        claims_tokens=VIEW_CHECK_CLAIMS_NUM_PREDICT,
+        judge_tokens=VIEW_CHECK_JUDGE_NUM_PREDICT,
+        positions_tokens=VIEW_CHECK_POSITIONS_NUM_PREDICT,
     )

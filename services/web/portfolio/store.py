@@ -81,12 +81,17 @@ class AssetStore:
 
 _US_TICKER = re.compile(r"[A-Z][A-Z0-9.-]{0,14}")
 # 거래소 선택지. 봇의 종목 DB(`stocks/universe.py`의 `stock_key`)와 같은 정규 코드를 만든다.
+# NYSEARCA·CBOE는 미국 ETF가 상장하는 곳이다 — 뷰 검증의 포지션(`viewcheck/instruments.py`)을 관심종목에 담는다.
 EXCHANGES = {
     "CN": ("SH", "SZ"),
     "HK": ("HKEX",),
     "KR": ("KOSPI", "KOSDAQ"),
-    "US": ("NASDAQ", "NYSE"),
+    "US": ("NASDAQ", "NYSE", "NYSEARCA", "CBOE"),
 }
+# 관심종목 파일에 들어갈 수 있는 정규 코드. 화면에서 받은 코드와 모델이 낸 코드를 같은 식으로 거른다.
+CANONICAL_CODE = re.compile(
+    r"\d{6}|\d{5}|KR:(?:" + "|".join(EXCHANGES["KR"]) + r"):\d{6}"
+    r"|US:(?:" + "|".join(EXCHANGES["US"]) + r"):[A-Z][A-Z0-9.-]{0,14}")
 
 
 def canonical_code(market: str, exchange: str, raw: str) -> str | None:

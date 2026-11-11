@@ -25,7 +25,10 @@ MAX_PARAGRAPH_CHARS = 1200
 MIN_PARAGRAPH_CHARS = 60
 
 # 출처 서비스 이름은 화면에 쓰지 않는다(`code_guide.md`). 모델이 입력 밖에서 끌어올 수 있어 막는다.
-FORBIDDEN_COPY = re.compile(r"(?i)polymarket|폴리마켓|예측\s*시장|베팅|배팅|돈을\s*걸|수익\s*(?:기회|보장)|이득|매수|매도|가입\s*하세요")
+# 이름만 따로 둔다 — 뷰 검증(`llm/viewcheck.py`)은 사용자의 뷰를 다시 쓰므로 "매수세" 같은 말은 받고 이름만 막는다.
+SOURCE_NAME_PATTERN = r"polymarket|폴리마켓|예측\s*시장|베팅|배팅|돈을\s*걸"
+SOURCE_NAME = re.compile(r"(?i)" + SOURCE_NAME_PATTERN)
+FORBIDDEN_COPY = re.compile(r"(?i)" + SOURCE_NAME_PATTERN + r"|수익\s*(?:기회|보장)|이득|매수|매도|가입\s*하세요")
 # 첫 문장이 "전망이 어디서 갈리는가 / 무엇에 무게가 실리는가 / 왜 판단하기 어려운가"
 # 중 하나를 말했는지 보는 단서다. 프롬프트가 요구하는 세 갈래를 그대로 덮는다 —
 # 목록이 좁으면 같은 뜻을 다른 낱말로 쓴 정상 문장이 반려된다(실측: "…판단이

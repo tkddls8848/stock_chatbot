@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 import uuid
 from datetime import datetime
@@ -35,14 +34,12 @@ from services.web.accounts import Account, Accounts, account_lock
 from services.web.core import config
 from services.web.core.clock import now
 from services.web.core.storage import FileLockTimeout, file_lock, write_json_atomic
-from services.web.portfolio.store import WatchlistStore
+from services.web.portfolio.store import CANONICAL_CODE, WatchlistStore
 
 logger = logging.getLogger(__name__)
 
 # 계정 리서치 파일 형식. 예전 검색형 리서치(형식 없음)는 읽지 않는다 — 현재 형식만 지원한다.
 FORMAT = 2
-_CANONICAL_CODE = re.compile(
-    r"\d{6}|\d{5}|KR:(KOSPI|KOSDAQ):\d{6}|US:(NASDAQ|NYSE):[A-Z][A-Z0-9.-]{0,14}")
 _SLOTS = threading.BoundedSemaphore(config.RESEARCH_MAX_CONCURRENT)
 
 
@@ -75,7 +72,8 @@ def _current(value: Any) -> dict | None:
     return value if isinstance(value, dict) and value.get("format") == FORMAT else None
 
 
-def _profile(root: Path) -> dict[str, Any]:
+def load_profile(root: Path) -> dict[str, Any]:
+    """계정의 뷰(주제)와 AI 분석 동의. 뷰 검증(`viewcheck/routes.py`)도 같은 주제·같은 동의로 돈다."""
     return _current(read(root / "research/profile.json", None)) or {
         "format": FORMAT, "topic": "", "consented_at": None}
 
@@ -163,18 +161,20 @@ def build_research_router(
         root = account.root
         inputs = load_inputs(inputs_path)
         return {
-            "profile": _profile(root),
+            "profile": load_profile(root),
             "report": _current(read(root / "research/latest.json", None)),
             "run": _run_state(root),
             "history": (_current(read(root / "research/history.json", None)) or {}).get("items", []),
             "inputs": {"ready": inputs is not None,
                        "generated_at": inputs.get("generated_at") if inputs else None},
             "limits": {"daily": config.RESEARCH_MAX_DAILY},
+            # 뷰 검증은 운영자 계정에만 있다. 화면은 이 값이 참일 때만 그 섹션을 보이고 API를 부른다.
+            "view_check": account.key in config.VIEW_CHECK_ACCOUNT_KEYS,
         }
 
     @router.put("/profile")
     def profile(body: ResearchProfile, account: Account = Depends(accounts.context)):
-        current = _profile(account.root)
+        current = load_profile(account.root)
         topic = " ".join(body.topic.split())
         if topic != current["topic"]:
             # 주제가 바뀌면 이전 분석과 비교하지 않는다(봇 `set_sight`와 같다).
@@ -185,14 +185,14 @@ def build_research_router(
 
     @router.put("/consent")
     def consent(body: ConsentRequest, account: Account = Depends(accounts.context)):
-        value = {**_profile(account.root), "consented_at": now().isoformat(timespec="seconds") if body.agree else None}
+        value = {**load_profile(account.root), "consented_at": now().isoformat(timespec="seconds") if body.agree else None}
         write_json_atomic(account.root / "research/profile.json", value)
         return value
 
     @router.post("/reports", status_code=202)
     def report(account: Account = Depends(accounts.context)):
         root = account.root
-        current = _profile(root)
+        current = load_profile(root)
         if not current["consented_at"]:
             raise HTTPException(403, "주제와 관심종목 이름을 AI 분석에 보내는 데 먼저 동의해야 합니다.")
         topic = current["topic"].strip()
@@ -233,7 +233,7 @@ def build_research_router(
         actions = (report or {}).get("result", {}).get("actions", [])
         match = next((item for item in actions
                       if item.get("ticker") == body.ticker and item.get("action") == body.action), None)
-        if match is None or not _CANONICAL_CODE.fullmatch(body.ticker):
+        if match is None or not CANONICAL_CODE.fullmatch(body.ticker):
             raise HTTPException(422, "최근 리서치 결과의 제안이 아닙니다.")
         store = WatchlistStore(account.root / "watchlist.json")
         items = store.get()

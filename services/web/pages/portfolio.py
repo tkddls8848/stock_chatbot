@@ -92,7 +92,7 @@ _MAIN = (
    <p class='pf-msg'>내 리서치가 이 목록을 참고합니다. 다른 계정이나 운영자 봇과 공유되지 않습니다.</p>
    <div class='pf-scroll' tabindex='0' role='region' aria-label='관심종목 표'><table class='pf-table' aria-label='관심종목 목록'><tbody id='pf-watch'></tbody></table></div>
    <form id='pf-watch-form' class='pf-row pf-row-spaced'>
-    <select name='ex' aria-label='거래소'><option value='KR:KOSPI'>코스피</option><option value='KR:KOSDAQ'>코스닥</option><option value='US:NASDAQ'>나스닥</option><option value='US:NYSE'>뉴욕</option><option value='CN:SH'>상하이</option><option value='CN:SZ'>선전</option><option value='HK:HKEX'>홍콩</option></select>
+    <select name='ex' aria-label='거래소'><option value='KR:KOSPI'>코스피</option><option value='KR:KOSDAQ'>코스닥</option><option value='US:NASDAQ'>나스닥</option><option value='US:NYSE'>뉴욕</option><option value='US:NYSEARCA'>뉴욕 아르카(ETF)</option><option value='US:CBOE'>Cboe(ETF)</option><option value='CN:SH'>상하이</option><option value='CN:SZ'>선전</option><option value='HK:HKEX'>홍콩</option></select>
     <input name='code' placeholder='종목 코드' maxlength='20' aria-label='관심종목 코드' required>
     <input name='name' placeholder='이름' maxlength='60' aria-label='관심종목 이름' required>
     <button class='pf-btn' type='submit'>추가</button>
