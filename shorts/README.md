@@ -17,7 +17,8 @@
 
 `ELEVENLABS_API_KEY`를 저장소 루트 `.env`에 설정하면 ElevenLabs의 Jian
 (`KNy9usSxeZXzNA3l10Jy`, `eleven_multilingual_v2`)을 먼저 사용합니다.
-기본 속도는 1.12, 안정성은 0.65, 유사도는 0.75이며 style은 0, speaker boost는 끕니다.
+기본 속도는 1.16, 안정성은 0.75, 유사도는 0.85이며 style은 0, speaker boost는 끕니다(2026-11-11, 운영자가 톤이
+과잉친절하다고 해 속도·유사도를 올리고 억양 변화를 줄였습니다. 그 전은 1.12·0.65·0.75).
 키가 없거나 크레딧 부족·권한 오류·타임아웃·잘못된 음성/시각 응답이면 한 번 실패한 뒤
 기존 Microsoft `ko-KR-SunHiNeural`로 전체 원고를 생성합니다. 둘 다 실패하면 제작 실패로 처리합니다.
 정상적인 날에는 음성 합성을 한 번만 요청합니다. 편집의 `tts_rate`는 Jian 기본 속도에 대한 상대 조정이며,

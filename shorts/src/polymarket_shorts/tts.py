@@ -106,6 +106,7 @@ def synthesize(
                 spoken_text(script), api_key=settings.elevenlabs_api_key,
                 voice=settings.elevenlabs_voice, model=settings.elevenlabs_model,
                 speed=speed, stability=settings.elevenlabs_stability,
+                similarity=settings.elevenlabs_similarity,
             )
             scenes = _split_by_scene(narrations, [Word(*word) for word in aligned])
             # 실패한 응답은 기존 음성에 덮어쓰지 않는다. 디코딩만 검사하고 원본 MP3를 보존한다.
@@ -119,7 +120,8 @@ def synthesize(
             _write_words(words_path, scenes)
             info.update(provider="elevenlabs", voice=settings.elevenlabs_voice,
                         model=settings.elevenlabs_model, speed=speed,
-                        stability=settings.elevenlabs_stability)
+                        stability=settings.elevenlabs_stability,
+                        similarity=settings.elevenlabs_similarity)
             logger.info("음성 생성: ElevenLabs Jian, speed=%s stability=%s", speed, settings.elevenlabs_stability)
             return scenes  # ElevenLabs는 쉼 편집·속도 보정·재인코딩을 하지 않는다.
         except (elevenlabs_tts.ElevenTTSError, TTSError, OSError, ValueError) as exc:

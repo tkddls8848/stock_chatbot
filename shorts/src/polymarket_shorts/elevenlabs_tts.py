@@ -82,7 +82,7 @@ def pronunciation(script: str) -> tuple[str, list[int]]:
 
 
 def generate(script: str, *, api_key: str, voice: str, model: str,
-             speed: float, stability: float) -> tuple[bytes, list[tuple[float, float, str]]]:
+             speed: float, stability: float, similarity: float) -> tuple[bytes, list[tuple[float, float, str]]]:
     text, positions = pronunciation(script)
     try:
         response = requests.post(
@@ -91,7 +91,7 @@ def generate(script: str, *, api_key: str, voice: str, model: str,
             headers={"xi-api-key": api_key},
             json={"text": text, "model_id": model,
                   "voice_settings": {"speed": speed, "stability": stability,
-                                     "similarity_boost": 0.75, "style": 0.0,
+                                     "similarity_boost": similarity, "style": 0.0,
                                      "use_speaker_boost": False}},
             timeout=(10, 150), allow_redirects=False,
         )
