@@ -303,7 +303,7 @@ VIEW_CHECK_POSITIONS_PROMPT_FILE = PROMPT_DIR / "view_positions_ko.txt"
 # 비용을 가장 적게 쓰는 쪽으로 정한다(운영자 지시 2026-11-12). 가장 싼 구성(기본 모델 qwen3-30b에 추론 단계를 켠 것,
 # 한 번에 250 Neurons 안팎)은 여섯 번 중 세 번 틀렸다 — "금리가 오른다"에서 국채 역방향 상품 축소, "연준 동결"을
 # 받침으로 잘못 읽고 장기 국채 확대, "유가 안정"에서 원유 확대(2026-11-12 실측). 추론을 끄면 더 틀린다.
-# 방향을 맞춘 것 가운데 가장 싼 것이 gpt-oss-120b다(deepseek-v4.1-flash는 세 배 비싸고 네 번 중 한 번 끊겼다.
+# 방향을 맞춘 것 가운데 가장 싼 것이 gpt-oss-120b다(한 번에 800~1,000 Neurons, 약 0.01달러. deepseek-v4.1-flash는 세 배 비싸고 네 번 중 한 번 끊겼다.
 # mistral-small은 방향이 틀렸고 gemma-4·glm-5.3-flash는 추론이 출력 상한을 다 썼다).
 # Cloudflare가 이름을 바꾸면 이 상수를 고쳐 배포한다 — 틀린 방향을 내는 모델로 조용히 넘어가지 않게 env 대체를 두지 않는다.
 VIEW_CHECK_REASONING_MODEL = "@cf/openai/gpt-oss-120b"
