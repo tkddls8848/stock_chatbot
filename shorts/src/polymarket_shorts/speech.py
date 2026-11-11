@@ -251,7 +251,7 @@ def opening_line(count: int, as_of=None, *, tracked: int = 0) -> str:
 # 매일 이어 보는 질문은 "지금 몇 %인가"보다 "어떻게 움직였는가"가 내용이다(`corner.py`). 숫자·기간 문장은 여기
 # 규칙이 쓰고, 왜 움직였는지는 말하지 않는다 — 기록에는 원인이 없다.
 NEW_ISSUES_LINE = "이제 오늘의 새 질문으로 넘어가겠습니다."
-# 30일 전과 이만큼(%포인트)도 다르지 않으면 "거의 같다"고 말한다. 1%포인트 안쪽의 흔들림을 오르내림으로 읽지 않는다.
+# 30일 전과 이만큼(%포인트)도 다르지 않으면 "비슷한 수준"이라고 말한다. 1%포인트 안쪽의 흔들림을 오르내림으로 읽지 않는다.
 _FLAT_POINTS = 1.0
 # 최근 한 주의 움직임을 따로 말하는 문턱(%포인트).
 _WEEK_POINTS = 5.0
@@ -270,8 +270,11 @@ def plain_number(value: float) -> str:
     return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
-def _moved(delta: float) -> str:
-    return f"{plain_number(abs(delta))}%포인트 {'올랐' if delta > 0 else '내렸'}"
+def _moved(delta: float, *, daily: bool = False) -> str:
+    """움직인 폭과 방향. 낱말은 경제 방송이 쓰는 것이다(운영자 지시 2026-11-11) — 긴 흐름은 "상승했·하락했",
+    하루 변동은 "올랐·떨어졌". 예전의 "내렸습니다"는 확률을 두고는 사람이 잘 쓰지 않는 말이었다."""
+    words = ("올랐", "떨어졌") if daily else ("상승했", "하락했")
+    return f"{plain_number(abs(delta))}%포인트 {words[delta < 0]}"
 
 
 def _with_direction(word: str) -> str:
@@ -286,32 +289,35 @@ def _with_direction(word: str) -> str:
 
 def speak_leader_change(previous: str, current: str) -> str:
     """단일 답 묶음에서 가장 높은 답이 어제와 달라졌을 때."""
-    return f"가장 높은 답이 어제 {previous}에서 오늘 {_with_direction(current)} 바뀌었습니다."
+    return f"가장 유력한 전망이 어제 {previous}에서 오늘 {_with_direction(current)} 바뀌었습니다."
 
 
 def speak_trend(now: float, base: float, base_days: int, yesterday: float | None, week: float | None) -> str:
-    """오늘 확률을 지난 기록과 견주는 문장. 값은 화면과 같은 퍼센트 수치(소수 한 자리)다.
+    """오늘 확률을 지난 기록과 비교하는 문장. 값은 화면과 같은 퍼센트 수치(소수 한 자리)다.
 
-    "30일 전 65.5%에서 6%포인트 올랐지만, 어제보다는 6%포인트 내렸습니다."처럼 긴 흐름을 먼저, 어제 대비를 뒤에
-    둔다 — 하루 등락이 아니라 흐름이 코너의 내용이다. 두 방향이 같으면 "어제보다도", 다르면 "어제보다는"이다.
+    "30일 전 65.5%에서 6%포인트 상승했지만, 어제보다는 6%포인트 떨어졌습니다."처럼 긴 흐름을 먼저, 어제 대비를
+    뒤에 둔다 — 하루 등락이 아니라 흐름이 코너의 내용이다. 두 방향이 같으면 "어제보다도", 다르면 "어제보다는"이다.
     최근 한 주에 크게 움직였을 때만 한 문장을 더한다.
     """
     long_move = round(now - base, 1)
     flat = abs(long_move) < _FLAT_POINTS
-    head = (f"{base_days}일 전 {plain_number(base)}%와 거의 같" if flat
-            else f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}")
+    # (이어 말할 때의 꼴, 문장을 끝낼 때의 꼴)
+    head, closed = ((f"{base_days}일 전 {plain_number(base)}%와 비슷한 수준이", f"{base_days}일 전 {plain_number(base)}%와 비슷한 수준입니다.")
+                    if flat else
+                    (f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}",
+                     f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}습니다."))
     if yesterday is None:
-        sentence = f"{head}습니다."
+        sentence = closed
     else:
         day_move = round(now - yesterday, 1)
         same_way = flat or day_move * long_move > 0
         if day_move == 0:
-            sentence = f"{head}고, 어제와{'도' if flat else '는'} 같습니다."
+            sentence = f"{head}고, 어제와{'도' if flat else '는'} 변동이 없습니다."
         else:
             sentence = (f"{head}{'고' if same_way else '지만'}, "
-                        f"어제보다{'도' if same_way and not flat else '는'} {_moved(day_move)}습니다.")
+                        f"어제보다{'도' if same_way and not flat else '는'} {_moved(day_move, daily=True)}습니다.")
     if week is not None and base_days >= 14:
         week_move = round(now - week, 1)
         if abs(week_move) >= _WEEK_POINTS:
-            sentence += f" 일주일 전과 견주면 {_moved(week_move)}습니다."
+            sentence += f" 일주일 전과 비교하면 {_moved(week_move)}습니다."
     return sentence
