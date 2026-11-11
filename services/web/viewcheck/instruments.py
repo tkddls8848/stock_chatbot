@@ -254,11 +254,14 @@ def describe(item: Instrument) -> str:
 
 
 def for_model() -> list[dict]:
-    """포지션 단계 모델 입력. 주제마다 무엇을 따르는지와 상품 목록."""
+    """포지션 단계 모델 입력. 주제마다 무엇을 따르는지와 상품 목록.
+
+    상품은 한 줄씩 준다(`코드 | 이름 | 상장·종류 | 방향 | 다른 점`). 열쇠 여섯 개짜리 객체로 주면 같은 열쇠가
+    상품 수만큼 되풀이돼 입력 토큰(비용의 대부분)이 그만큼 는다.
+    """
     return [{
         "theme": theme.label, "moves": theme.moves,
-        "instruments": [{
-            "code": item.code, "name": item.name, "market": "한국" if item.market == "KR" else "미국",
-            "type": item.kind, "direction": describe(item), **({"note": item.note} if item.note else {}),
-        } for item in theme.instruments],
+        "instruments": [" | ".join(part for part in (
+            item.code, item.name, ("한국 " if item.market == "KR" else "미국 ") + item.kind, describe(item), item.note,
+        ) if part) for item in theme.instruments],
     } for theme in THEMES]

@@ -40,9 +40,9 @@ from services.web.core.config import (
     VIEW_CHECK_CLAIMS_PROMPT_FILE,
     VIEW_CHECK_JUDGE_NUM_PREDICT,
     VIEW_CHECK_JUDGE_PROMPT_FILE,
-    VIEW_CHECK_MODEL,
     VIEW_CHECK_POSITIONS_NUM_PREDICT,
     VIEW_CHECK_POSITIONS_PROMPT_FILE,
+    VIEW_CHECK_REASONING_MODEL,
     VIEW_CHECK_TIMEOUT,
     require_cloudflare_credentials,
 )
@@ -145,10 +145,13 @@ def build_research_analyzer() -> MarketViewAnalyzer:
 def build_view_checker() -> ViewChecker:
     """뷰 검증기. 검증마다 새로 만든다 — 세 단계의 사용량을 그 검증의 것으로만 모은다.
 
-    이 기능만 `VIEW_CHECK_MODEL`(추론 모델)을 쓴다. 기본 모델은 방향 추론을 틀린다(`core/config.py`)."""
+    전제 나누기는 기본 모델(`CLOUDFLARE_MODEL`)로, 판정·포지션만 추론 모델(`VIEW_CHECK_REASONING_MODEL`)로
+    부른다 — 기본 모델은 추론을 켜도 방향을 틀린다(`core/config.py`)."""
     require_cloudflare_credentials()
     return ViewChecker(
-        backend=build_backend("view_check", model=VIEW_CHECK_MODEL, timeout=VIEW_CHECK_TIMEOUT),
+        backend=build_backend("view_check", model=CLOUDFLARE_MODEL, timeout=VIEW_CHECK_TIMEOUT),
+        reasoner=build_backend("view_check_reasoning", model=VIEW_CHECK_REASONING_MODEL,
+                               timeout=VIEW_CHECK_TIMEOUT),
         claims_prompt=VIEW_CHECK_CLAIMS_PROMPT_FILE,
         judge_prompt=VIEW_CHECK_JUDGE_PROMPT_FILE,
         positions_prompt=VIEW_CHECK_POSITIONS_PROMPT_FILE,

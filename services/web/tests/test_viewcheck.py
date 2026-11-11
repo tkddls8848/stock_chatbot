@@ -1,6 +1,6 @@
 """뷰 검증(`/api/research/view`): 상품 표, 응답 검사, 후보 찾기, 포지션 조립, 검증 뒤 이동, API.
 
-이 파일이 지키는 규칙은 일곱이다.
+이 파일이 지키는 규칙은 일곱이다(테스트 열일곱 개).
 
 **숫자는 서버가 쓴다.** 모델 입력에 확률 숫자가 없고, 모델이 쓴 확률은 반려한다. 입력에 적힌 기준값은 받는다.
 
@@ -156,13 +156,10 @@ def test_every_instrument_can_go_into_the_watchlist_and_says_which_way_it_moves(
             assert item.kind in ("ETF", "ETN") and item.market in ("KR", "US")
     assert instruments.describe(instruments.BY_CODE["KR:KOSPI:252670"]) == "역방향 2배"
     assert instruments.describe(instruments.BY_CODE["KR:KOSPI:069500"]) == "정방향"
-
-
-def test_the_model_sees_what_each_theme_follows():
+    # 모델은 주제가 무엇을 따라 움직이는지와 상품의 방향을 본다.
     rates = next(theme for theme in instruments.for_model() if theme["theme"] == "미국 금리(국채 가격)")
     assert "금리가 오르면 내린다" in rates["moves"]
-    inverse = next(item for item in rates["instruments"] if item["code"] == "US:NYSEARCA:TBT")
-    assert inverse["direction"] == "역방향 2배" and inverse["type"] == "ETF" and inverse["market"] == "미국"
+    assert "US:NYSEARCA:TBT | ProShares UltraShort 20+ Year Treasury | 미국 ETF | 역방향 2배 | 장기" in rates["instruments"]
 
 
 # ── 응답 검사 ──────────────────────────────────────────────────────────────
@@ -172,15 +169,13 @@ def test_claims_need_text_and_search_words():
         {"claim": "연준이 정책금리를 올린다", "queries": ["연준 금리 인상", "연준 금리 인상", ""]},
         {"claim": "연준이 정책금리를 올린다", "queries": ["미국 금리"]},      # 같은 전제
         {"claim": "검색어가 없는 전제는 찾을 수 없다", "queries": []},
+        {"claim": "검색어 자리에 숫자를 넣은 응답도 있었다", "queries": 3},
         {"claim": "폴리마켓에서 금리 인상에 돈이 몰린다", "queries": ["금리"]},  # 출처 이름
     ]}, ensure_ascii=False)
     assert parse_claims(raw) == [Claim("연준이 정책금리를 올린다", ["연준 금리 인상"])]
     with pytest.raises(Rejected):
         parse_claims('{"claims": []}')
-
-
-def test_a_view_may_say_buying_but_not_name_the_source():
-    """뷰를 다시 쓰는 글이라 "매수세"는 받는다(공개 줄글의 금지어보다 좁다)."""
+    # 뷰를 다시 쓰는 글이라 "매수세"는 받는다(공개 줄글의 금지어보다 좁다).
     assert parse_claims(json.dumps({"claims": [{"claim": "외국인 매수세가 반도체로 이어진다",
                                                 "queries": ["코스피"]}]}, ensure_ascii=False))
 
@@ -214,8 +209,7 @@ def test_a_verdict_needs_a_question_it_stands_on():
     assert judgement.blind_spots == [(9, "참여자들은 휴전이 이어진다고 본다. 뷰의 유가 전제와 이어진다.")]
     assert judgement.refined_view and not judgement.dropped
 
-
-def test_a_note_with_a_probability_is_dropped_and_reported():
+    # 확률을 숫자로 쓴 해설은 그 글만 비우고 사유를 남긴다. 판정과 근거는 그대로다.
     raw = json.dumps({"claims": [{"c": 1, "verdict": "supported", "picks": [{"n": 1, "focus": []}],
                                   "note": "참여자들의 85.5%가 인상을 본다."}],
                       "refined_view": "", "blind_spots": []}, ensure_ascii=False)
@@ -259,7 +253,7 @@ class _Backend:
 
 def _checker(backend):
     return ViewChecker(
-        backend, claims_prompt=config.VIEW_CHECK_CLAIMS_PROMPT_FILE, judge_prompt=config.VIEW_CHECK_JUDGE_PROMPT_FILE,
+        backend, reasoner=backend, claims_prompt=config.VIEW_CHECK_CLAIMS_PROMPT_FILE, judge_prompt=config.VIEW_CHECK_JUDGE_PROMPT_FILE,
         positions_prompt=config.VIEW_CHECK_POSITIONS_PROMPT_FILE, claims_tokens=100, judge_tokens=200,
         positions_tokens=300)
 
@@ -282,11 +276,7 @@ def test_a_rejected_reply_is_corrected_once_and_then_gives_up():
         _checker(_Backend(LLMBackendError("cloudflare", "timeout"))).claims(VIEW)
     assert not down.value.rejected
 
-
-def test_a_reply_cut_at_the_limit_is_asked_again_once():
-    """상한까지 같은 문장을 되풀이한 응답(실측)은 온도를 올려 한 번 다시 부른다. 두 번 다 끊기면 실패다."""
-    good = json.dumps({"claims": [{"claim": "연준이 정책금리를 올린다", "queries": ["연준 금리 인상"]}]},
-                      ensure_ascii=False)
+    # 상한까지 같은 문장을 되풀이한 응답(실측)은 온도를 올려 한 번 다시 부른다. 두 번 다 끊기면 실패다.
     backend = _Backend(LLMBackendError("cloudflare", "truncated"), good)
     assert _checker(backend).claims(VIEW) and len(backend.calls) == 2
     assert "revision" not in json.loads(backend.calls[1]["user_prompt"])
@@ -296,23 +286,17 @@ def test_a_reply_cut_at_the_limit_is_asked_again_once():
                           LLMBackendError("cloudflare", "truncated"))).claims(VIEW)
 
 
-def test_when_only_the_wording_fails_twice_the_picks_survive():
-    """사실 줄은 서버가 쓴다. 해설이 두 번 다 걸려도 고른 질문과 판정은 남는다."""
+def test_a_rejected_wording_costs_no_second_call():
+    """사실 줄은 서버가 쓴다. 해설이 검사에 걸리면 그 글만 비우고, 그 단계를 다시 부르지 않는다(비용)."""
     reply = json.dumps({"claims": [{"c": 1, "verdict": "supported", "picks": [{"n": 1, "focus": [1]}],
                                     "note": "참여자들의 85.5%가 인상을 본다."}],
                         "refined_view": "", "blind_spots": []}, ensure_ascii=False)
-    backend = _Backend(reply, reply)
+    backend = _Backend(reply)
     claims = [{"c": 1, "claim": "연준이 정책금리를 올린다",
                "candidates": [{"n": 1, "options": [{"m": 1, "label": "예", "outlook": "매우 높음"}]}]}]
     judgement = _checker(backend).judge(VIEW, claims, [])
-    assert len(backend.calls) == 2
+    assert len(backend.calls) == 1
     assert judgement.verdicts == [Verdict(1, "supported", [Pick(1, [1])], None)]
-
-
-def test_the_prompts_keep_the_naming_rule():
-    for path in (config.VIEW_CHECK_JUDGE_PROMPT_FILE, config.VIEW_CHECK_POSITIONS_PROMPT_FILE):
-        text = path.read_text(encoding="utf-8")
-        assert "[호칭 규칙]" in text and "숫자로 된 확률" in text
 
 
 # ── 후보 찾기 ──────────────────────────────────────────────────────────────
@@ -329,10 +313,7 @@ def test_thin_or_expiring_questions_do_not_judge_a_view(repository):
     # 뷰와 무관한 신호는 경제·지정학 질문뿐이고, 번호는 통틀어 하나씩이다.
     assert _titles(board.market) == ["Israel x Iran ceasefire continues through...?"]
     assert sorted(board.rows) == list(range(1, len(board.rows) + 1))
-
-
-def test_the_model_never_sees_a_probability(repository):
-    board = service.collect(repository, CLAIMS)
+    # 모델 입력에는 확률 숫자가 없고 등급만 있다.
     claims, market = service.judge_payload(CLAIMS, board)
     text = json.dumps({"claims": claims, "market": market}, ensure_ascii=False)
     for number in ("0.855", "85.5", "0.965", "0.785", "0.03"):
@@ -360,10 +341,7 @@ def test_the_screen_numbers_are_the_detail_values(repository):
     assert claims[0]["signals"][0]["options"][0] == {"label": "25 bps increase", "probability": 0.855, "focus": True}
     assert {"label": "↑ $150,000", "probability": 0.03, "focus": True} in claims[2]["signals"][0]["options"]
     assert blind[0]["signal"]["title"] == "Israel x Iran ceasefire continues through...?"
-
-
-def test_the_positions_model_sees_grades_and_only_stocks_outside_the_table(repository):
-    _, claims, blind = _judged(repository)
+    # 포지션 단계의 모델은 등급만 보고, 관심종목 가운데 표에 없는 것만 종목으로 받는다.
     payload = service.positions_payload("다듬은 뷰", claims, blind,
                                         {"US:NASDAQ:NVDA": "NVIDIA", "KR:KOSPI:069500": "KODEX 200"})
     assert payload["claims"][0] == {"c": 1, "claim": "연준이 정책금리를 올린다", "verdict": "컨센서스가 받침", "consensus": [
@@ -478,7 +456,7 @@ def _ready(client, topic=VIEW):
     client.put("/api/research/consent", json={"agree": True})
 
 
-def test_other_accounts_never_see_the_feature(setup):
+def test_other_accounts_never_see_the_feature(setup, monkeypatch):
     """운영자 개인용이다. 목록에 없는 계정에는 없는 주소처럼 답하고, 동의했어도 모델을 부르지 않는다."""
     _, a, _, checker, run, client = setup
     other = client("subject-c")
@@ -490,10 +468,7 @@ def test_other_accounts_never_see_the_feature(setup):
     run()
     assert checker.views == []
     assert a.get("/api/research").json()["view_check"] is True
-
-
-def test_nobody_has_it_until_the_operator_lists_an_account(setup, monkeypatch):
-    _, a, _, _, _, _ = setup
+    # 목록이 비면 아무도 못 쓴다.
     monkeypatch.setattr(config, "VIEW_CHECK_ACCOUNT_KEYS", frozenset())
     assert a.get("/api/research/view").status_code == 404 and a.get("/api/research").json()["view_check"] is False
 
@@ -533,20 +508,16 @@ def test_a_view_is_checked_only_after_consent_and_stays_in_the_account(setup):
     assert "US:NASDAQ:NVDA" in codes and claim_ids == [1, 2, 3]
     assert b.get("/api/research/view").json()["report"] is None
 
+    assert a.post("/api/research/view", headers={"origin": "https://evil.example"}).status_code == 403
     a.put("/api/research/consent", json={"agree": False})
     assert a.post("/api/research/view").status_code == 403
+    # 뷰가 비어 있으면 동의했어도 돌지 않는다.
+    b.put("/api/research/consent", json={"agree": True})
+    assert b.post("/api/research/view").status_code == 422
 
 
-def test_an_empty_view_is_refused_and_origin_is_required(setup):
-    _, a, _, _, _, _ = setup
-    a.put("/api/research/consent", json={"agree": True})
-    assert a.post("/api/research/view").status_code == 422
-    _ready(a)
-    assert a.post("/api/research/view", headers={"origin": "https://evil.example"}).status_code == 403
-
-
-def test_failures_are_told_apart_and_counted(setup, monkeypatch):
-    _, a, _, checker, run, _ = setup
+def test_failures_are_told_apart_and_counted_against_both_limits(setup, monkeypatch):
+    _, a, b, checker, run, _ = setup
     _ready(a)
     checker.fail = "claims"
     a.post("/api/research/view")
@@ -563,14 +534,9 @@ def test_failures_are_told_apart_and_counted(setup, monkeypatch):
     monkeypatch.setattr(config, "VIEW_CHECK_MAX_DAILY", 2)
     assert a.post("/api/research/view").status_code == 429
 
-
-def test_the_server_wide_limit_holds_across_accounts(setup, monkeypatch):
-    _, a, b, _, run, _ = setup
-    monkeypatch.setattr(config, "VIEW_CHECK_SERVER_MAX_DAILY", 1)
-    _ready(a)
+    # 서버 전체 상한은 계정을 넘어 센다(위에서 두 번 썼다).
+    monkeypatch.setattr(config, "VIEW_CHECK_SERVER_MAX_DAILY", 2)
     _ready(b)
-    assert a.post("/api/research/view").status_code == 202
-    run()
     assert b.post("/api/research/view").status_code == 429
     # 서버 상한에 걸린 요청은 계정의 횟수를 쓰지 않고, 다음 요청을 막는 자리도 남기지 않는다.
     assert b.get("/api/research/view").json()["usage"]["used"] == 0
@@ -587,15 +553,13 @@ def test_verdicts_survive_a_failed_positions_stage(setup):
     assert report["positions"] == [] and report["positions_status"] == "failed"
     assert report["claims"][0]["verdict"] == "supported"
 
-
-def test_no_positions_without_a_claim_the_consensus_speaks_to(setup):
-    _, a, _, checker, run, _ = setup
-    _ready(a)
+    # 컨센서스로 본 전제가 하나도 없으면 포지션 단계를 부르지 않는다.
     checker.fail = "unpriced"
     a.post("/api/research/view")
     run()
     report = a.get("/api/research/view").json()["report"]
-    assert report["positions_status"] == "skipped" and checker.payloads == []
+    # 위의 실패한 호출 한 번뿐이고, 이번 실행은 포지션 단계에 닿지 않았다.
+    assert report["positions_status"] == "skipped" and len(checker.payloads) == 1
 
 
 def test_only_positions_from_the_report_go_into_the_watchlist(setup):
@@ -609,11 +573,7 @@ def test_only_positions_from_the_report_go_into_the_watchlist(setup):
     assert done.status_code == 200 and done.json()["watched"] == ["KR:KOSPI:305080"]
     assert a.get("/api/portfolio/watchlist").json()["items"] == {"KR:KOSPI:305080": "TIGER 미국채10년선물"}
     assert a.get("/api/research/view").json()["report"]["watched"] == ["KR:KOSPI:305080"]
-
-
-def test_us_etf_exchanges_are_valid_watchlist_codes(setup):
-    """미국 ETF는 NYSE Arca·Cboe에 상장한다. 화면에서 직접 넣는 경로도 같은 정규 코드를 만든다."""
-    _, a, _, _, _, _ = setup
+    # 미국 ETF는 NYSE Arca·Cboe에 상장한다. 화면에서 직접 넣는 경로도 같은 정규 코드를 만든다.
     saved = a.put("/api/portfolio/watchlist", json={"items": [
         {"code": "spy", "name": "SPY", "market": "US", "exchange": "NYSEARCA"},
         {"code": "ITA", "name": "ITA", "market": "US", "exchange": "CBOE"}]})

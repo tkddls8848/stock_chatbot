@@ -2,7 +2,7 @@
 
 **운영자 개인용이다**(`core/config.py`의 `VIEW_CHECK_ACCOUNT_KEYS`). 질의응답(`llm/polymarket_answer.py`)과 같은 원칙이다. 모델은 입력 번호로만 가리키고(전제 `c`, 후보 `n`,
 선택지 `m`, 상품 `code`) 확률은 등급으로만 본다. 화면의 숫자와 상품 이름은 서버(`viewcheck/service.py`)가
-붙인다. 호출마다 반려되면 한 번만 다시 부른다.
+붙인다. 응답을 통째로 쓸 수 없을 때만 한 번 다시 부르고, 글 하나가 검사에 걸리면 그 글만 비운다.
 
 검사가 질의응답과 다른 점은 둘이다.
 
@@ -133,7 +133,7 @@ class Judgement:
     verdicts: list[Verdict]
     refined_view: str | None
     blind_spots: list[tuple[int, str]]
-    # 글 하나가 검사에 걸려 비웠으면 그 사유. 한 번 다시 부를지 정하는 데만 쓴다.
+    # 글 하나가 검사에 걸려 비웠으면 그 사유. 로그에만 남긴다.
     dropped: list[str] = field(default_factory=list)
 
 
@@ -152,6 +152,11 @@ def _int(value: Any) -> bool:
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split())
+
+
+def _list(value: Any) -> list:
+    """목록이 아니면 빈 목록. 모델이 목록 자리에 숫자나 글을 넣어도 그 칸만 버린다(gpt-oss-20b 실측)."""
+    return value if isinstance(value, list) else []
 
 
 def _load(raw: str) -> dict[str, Any]:
@@ -189,12 +194,11 @@ def text_problem(text: str, limits: tuple[int, int], *, known: str = "") -> str 
 
 def parse_claims(raw: str) -> list[Claim]:
     claims: list[Claim] = []
-    rows = _load(raw).get("claims")
-    for row in rows if isinstance(rows, list) else []:
+    for row in _list(_load(raw).get("claims")):
         if not isinstance(row, dict):
             continue
         text = _text(row.get("claim"))
-        queries = [query for query in dict.fromkeys(_text(value) for value in row.get("queries") or [])
+        queries = [query for query in dict.fromkeys(_text(value) for value in _list(row.get("queries")))
                    if QUERY_CHARS[0] <= len(query) <= QUERY_CHARS[1]][:MAX_QUERIES]
         if (not CLAIM_CHARS[0] <= len(text) <= CLAIM_CHARS[1] or SOURCE_NAME.search(text) or not queries
                 or any(claim.text == text for claim in claims)):
@@ -224,11 +228,11 @@ def parse_judgement(raw: str, claim_ids: list[int], options: dict[int, set[int]]
             continue
         verdict = row.get("verdict") if row.get("verdict") in VERDICTS else "unpriced"
         picks: list[Pick] = []
-        for pick in row.get("picks") if isinstance(row.get("picks"), list) else []:
+        for pick in _list(row.get("picks")):
             n = pick.get("n") if isinstance(pick, dict) else None
             if not _int(n) or n not in options or any(kept.n == n for kept in picks):
                 continue
-            focus = [m for m in dict.fromkeys(pick.get("focus") or []) if _int(m) and m in options[n]]
+            focus = [m for m in dict.fromkeys(m for m in _list(pick.get("focus")) if _int(m)) if m in options[n]]
             picks.append(Pick(n, focus[:MAX_FOCUS]))
         picks = picks[:MAX_PICKS]
         # 근거로 든 질문이 없으면 판정이 아니다. 거꾸로 "확인 못 함"이면 근거를 보이지 않는다.
@@ -248,7 +252,7 @@ def parse_judgement(raw: str, claim_ids: list[int], options: dict[int, set[int]]
         dropped.append(f"refined_view: {problem}")
         refined = None
     blind: list[tuple[int, str]] = []
-    for row in payload.get("blind_spots") if isinstance(payload.get("blind_spots"), list) else []:
+    for row in _list(payload.get("blind_spots")):
         n = row.get("n") if isinstance(row, dict) else None
         note = _text(row.get("note")) if isinstance(row, dict) else ""
         # 뷰 밖의 신호만 받는다. 전제의 근거로 이미 쓴 질문을 "놓친 신호"로 다시 내지 않는다.
@@ -273,7 +277,7 @@ def parse_positions(raw: str, codes: set[str], claim_ids: list[int], *, known: s
         if not isinstance(row, dict):
             continue
         code = index.get(_text(row.get("code")).upper())
-        claims = [c for c in dict.fromkeys(row.get("claims") or []) if _int(c) and c in claim_ids]
+        claims = [c for c in dict.fromkeys(c for c in _list(row.get("claims")) if _int(c)) if c in claim_ids]
         if (code is None or row.get("stance") not in STANCES or not claims
                 or any(kept.code == code for kept in positions)):
             dropped.append("입력에 없는 code이거나 stance·claims가 맞지 않습니다")
@@ -291,11 +295,15 @@ def parse_positions(raw: str, codes: set[str], claim_ids: list[int], *, known: s
 
 
 class ViewChecker:
-    """세 단계를 같은 백엔드로 부른다. 한 번의 검증에 하나를 만들어 쓰고 `usages`로 비용을 모은다."""
+    """세 단계를 부른다. 한 번의 검증에 하나를 만들어 쓰고 `usages`로 비용을 모은다.
 
-    def __init__(self, backend: LLMBackend, *, claims_prompt: Path, judge_prompt: Path, positions_prompt: Path,
-                 claims_tokens: int, judge_tokens: int, positions_tokens: int):
-        self._backend = backend
+    전제 나누기는 `backend`(기본 모델)로, 판정과 포지션은 `reasoner`(추론 모델)로 부른다. 기본 모델은 방향을
+    거꾸로 낸다 — "금리가 오른다"에서 장기 국채 확대(2026-11-11 실측). 전제 나누기는 기본 모델로 충분하다.
+    """
+
+    def __init__(self, backend: LLMBackend, *, reasoner: LLMBackend, claims_prompt: Path, judge_prompt: Path,
+                 positions_prompt: Path, claims_tokens: int, judge_tokens: int, positions_tokens: int):
+        self._backends = {"claims": backend, "judge": reasoner, "positions": reasoner}
         self._prompts = {"claims": read_prompt(claims_prompt), "judge": read_prompt(judge_prompt),
                          "positions": read_prompt(positions_prompt)}
         self._tokens = {"claims": claims_tokens, "judge": judge_tokens, "positions": positions_tokens}
@@ -303,19 +311,19 @@ class ViewChecker:
 
     def _call(self, stage: str, payload: dict[str, Any], response_format: dict[str, Any],
               parse: Callable[[str], tuple[Any, list[str]]]) -> Any:
-        """한 번 부르고, 구조가 틀렸거나 글이 검사에 걸렸으면 사유를 붙여 한 번만 다시 부른다.
+        """한 번 부르고, 응답을 쓸 수 없을 때만(구조가 틀렸거나 상한에서 끊겼을 때) 한 번 다시 부른다.
 
-        두 번째에도 글만 걸렸으면 첫 결과보다 못하지 않은 쪽(걸린 글이 적은 쪽)을 쓴다 — 사실 줄은 서버가
-        쓰므로 해설이 비어도 결과가 된다.
+        **글 하나가 검사에 걸린 것으로는 다시 부르지 않는다.** 그 글만 비우고 나머지를 쓴다 — 사실 줄은 서버가
+        쓰므로 해설이 비어도 결과가 되고, 다시 부르면 그 단계의 비용이 통째로 한 번 더 든다(운영자 지시
+        2026-11-12: 비용을 가장 적게. 실측에서 해설 하나 때문에 판정 단계를 다시 불러 500 Neurons가 더 들었다).
         """
-        best: tuple[Any, list[str]] | None = None
         for attempt in range(2):
             try:
-                raw = self._backend.generate(
+                raw = self._backends[stage].generate(
                     system_prompt=self._prompts[stage],
                     user_prompt=json.dumps(payload, ensure_ascii=False),
                     max_tokens=self._tokens[stage],
-                    # 교정 때는 조금 올린다. 같은 온도에서는 같은 답이 다시 온다(질의응답과 같다).
+                    # 다시 부를 때는 조금 올린다. 같은 온도에서는 같은 답이 다시 온다(질의응답과 같다).
                     temperature=0.2 if attempt == 0 else 0.4,
                     response_format=response_format,
                 )
@@ -325,30 +333,25 @@ class ViewChecker:
                 if attempt == 0 and error.reason == "truncated":
                     logger.warning("[VIEW_CHECK] %s 응답이 상한에서 끊겨 1회 재시도", stage)
                     continue
-                if best is not None:
-                    break
                 raise ViewCheckError(str(error), stage=stage, rejected=False) from error
             finally:
-                self.usages.append(getattr(self._backend, "last_usage", None))
+                self.usages.append(getattr(self._backends[stage], "last_usage", None))
             try:
-                result = parse(raw)
+                result, dropped = parse(raw)
             except Rejected as rejected:
-                reason = str(rejected)
-            else:
-                if best is None or len(result[1]) < len(best[1]):
-                    best = result
-                if not result[1]:
+                if attempt:
                     break
-                reason = "; ".join(dict.fromkeys(result[1]))
-            if attempt == 0:
-                logger.warning("[VIEW_CHECK] %s 응답 반려로 1회 교정: %s", stage, reason)
+                logger.warning("[VIEW_CHECK] %s 응답 반려로 1회 교정: %s", stage, rejected)
                 # 직전 응답은 돌려주지 않는다 — 숫자가 들었으면 그 숫자를 다른 자리에 옮겨 붙인다.
                 payload = {**payload, "revision": {
-                    "reason": re.sub(r"\d+", "", reason),
+                    "reason": re.sub(r"\d+", "", str(rejected)),
                     "instruction": "직전 응답은 위 사유로 반려됐습니다. 원래 입력만 보고 응답 전체를 새로 쓰십시오."}}
-        if best is None:
-            raise ViewCheckError(f"{stage} correction exhausted", stage=stage, rejected=True)
-        return best[0]
+                continue
+            if dropped:
+                logger.info("[VIEW_CHECK] %s 응답에서 검사에 걸린 글을 비웠다: %s", stage,
+                            "; ".join(dict.fromkeys(dropped)))
+            return result
+        raise ViewCheckError(f"{stage} correction exhausted", stage=stage, rejected=True)
 
     def claims(self, view: str) -> list[Claim]:
         return self._call("claims", {"view": view}, CLAIMS_FORMAT, lambda raw: (parse_claims(raw), []))

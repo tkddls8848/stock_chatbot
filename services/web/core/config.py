@@ -7,9 +7,9 @@
 다른 쪽 장애가 되는 자리가 정확히 여기였다.
 
 설정 저장 방침은 봇과 같다. `.env`에는 비밀값·자격증명만 두고, 나머지 튜닝값은
-이 모듈의 리터럴 상수로 두어 변경 이력이 git에 남게 한다. 예외는 모델 이름 둘
-(`CLOUDFLARE_MODEL`, 뷰 검증의 `VIEW_CHECK_MODEL`)로, Cloudflare가 모델을 폐기·개명하면
-코드 배포 없이 즉시 고칠 수 있어야 한다.
+이 모듈의 리터럴 상수로 두어 변경 이력이 git에 남게 한다. 예외는
+`CLOUDFLARE_MODEL` 하나로, Cloudflare가 모델을 폐기·개명하면 코드 배포 없이
+즉시 고칠 수 있어야 한다.
 """
 
 import os
@@ -299,37 +299,39 @@ VIEW_CHECK_ACCOUNT_KEYS = frozenset(
 VIEW_CHECK_CLAIMS_PROMPT_FILE = PROMPT_DIR / "view_claims_ko.txt"
 VIEW_CHECK_JUDGE_PROMPT_FILE = PROMPT_DIR / "view_verdict_ko.txt"
 VIEW_CHECK_POSITIONS_PROMPT_FILE = PROMPT_DIR / "view_positions_ko.txt"
-# **이 기능만 다른 모델을 쓴다.** 기본 모델(`CLOUDFLARE_MODEL`, qwen3-30b)은 방향 추론을 틀렸다 — "금리가 오른다"는
-# 전제에서 장기 국채 비중 확대를 냈다(2026-11-11 실측). 같은 입력에 추론 모델 gpt-oss-120b는 국채 역방향·주식 축소를
-# 냈다(한 번에 55~100초, 1,000 Neurons 안팎 = 약 0.011달러).
-# deepseek-v4.1-flash는 글이 더 낫지만 추론이 길어 세 번 중 한 번이 출력 상한(12,000토큰)에서 끊겼다.
-# 모델 이름은 Cloudflare가 폐기·개명하므로 `CLOUDFLARE_MODEL`처럼 env로 바꿀 수 있게 둔다.
-VIEW_CHECK_MODEL = os.environ.get("VIEW_CHECK_MODEL", "@cf/openai/gpt-oss-120b").strip()
+# **판정·포지션 두 단계만 추론 모델을 쓴다. 전제 나누기는 기본 모델(`CLOUDFLARE_MODEL`)이다.**
+# 비용을 가장 적게 쓰는 쪽으로 정한다(운영자 지시 2026-11-12). 가장 싼 구성(기본 모델 qwen3-30b에 추론 단계를 켠 것,
+# 한 번에 250 Neurons 안팎)은 여섯 번 중 세 번 틀렸다 — "금리가 오른다"에서 국채 역방향 상품 축소, "연준 동결"을
+# 받침으로 잘못 읽고 장기 국채 확대, "유가 안정"에서 원유 확대(2026-11-12 실측). 추론을 끄면 더 틀린다.
+# 방향을 맞춘 것 가운데 가장 싼 것이 gpt-oss-120b다(deepseek-v4.1-flash는 세 배 비싸고 네 번 중 한 번 끊겼다.
+# mistral-small은 방향이 틀렸고 gemma-4·glm-5.3-flash는 추론이 출력 상한을 다 썼다).
+# Cloudflare가 이름을 바꾸면 이 상수를 고쳐 배포한다 — 틀린 방향을 내는 모델로 조용히 넘어가지 않게 env 대체를 두지 않는다.
+VIEW_CHECK_REASONING_MODEL = "@cf/openai/gpt-oss-120b"
 # 단계별 출력 예약. 추론 모델은 추론 토큰이 이 상한에 함께 들어간다(실측 출력 900~2,700토큰, 추론 포함).
 # 상한은 실측의 두 배쯤에 둔다 — 이 모델은 드물게 같은 문장을 되풀이하며 상한까지 쓴다(2026-11-12 실측:
 # 판정 단계가 8,000토큰을 반복으로 채워 832 Neurons를 버렸다). 끊긴 호출은 온도를 올려 한 번 다시 부른다
 # (`llm/viewcheck.py`). 출력 스키마가 항목 수와 글 길이를 묶지만 반복까지 막아 주지는 않았다.
-VIEW_CHECK_CLAIMS_NUM_PREDICT = 3000
+VIEW_CHECK_CLAIMS_NUM_PREDICT = 700
 VIEW_CHECK_JUDGE_NUM_PREDICT = 5000
 VIEW_CHECK_POSITIONS_NUM_PREDICT = 5000
-# 호출 하나의 제한 시간. 세 단계가 요청 밖 스레드에서 차례로 돈다(실측 단계당 15~60초, 느린 날 한 번에 4~5분).
+# 호출 하나의 제한 시간. 세 단계가 요청 밖 스레드에서 차례로 돈다(실측 단계당 2~60초, 느린 날 한 번에 4~5분).
 VIEW_CHECK_TIMEOUT = 150
-# 전제의 검색어 하나가 가져오는 후보 수와, 전제 하나에 모델이 보는 후보 수. 전제 다섯이면 후보 서른이다
-# (질의응답의 후보 수와 같다).
-VIEW_CHECK_CANDIDATES_PER_QUERY = 8
-VIEW_CHECK_CANDIDATES_PER_CLAIM = 6
+# 전제의 검색어 하나가 가져오는 후보 수와, 전제 하나에 모델이 보는 후보 수. 입력 토큰이 비용의 대부분이라
+# (판정 한 번의 입력이 9,000토큰 안팎) 후보를 넉넉히 주지 않는다.
+VIEW_CHECK_CANDIDATES_PER_QUERY = 6
+VIEW_CHECK_CANDIDATES_PER_CLAIM = 5
 # "유의미한" 질문의 하한: 하루 참여 규모가 이만큼이거나 참여 잔액이 이만큼이다. 둘 다 얇은 질문의 확률은
 # 몇 사람의 값이라 뷰를 판정할 근거가 못 된다. 마감이 임박한 질문은 `POLYMARKET_MIN_HOURS_TO_END`로 뺀다.
 VIEW_CHECK_MIN_VOLUME = 1000.0
 VIEW_CHECK_MIN_LIQUIDITY = 20000.0
 # 뷰와 무관하게 지금 참여가 몰린 경제·지정학 질문 수. "뷰가 놓친 신호"의 후보다.
-VIEW_CHECK_MARKET_SIGNALS = 8
+VIEW_CHECK_MARKET_SIGNALS = 6
 # 포지션 단계에 보내는 관심종목 수(앞에서부터).
 VIEW_CHECK_MAX_STOCKS = 40
 # 실행 상한. 계정당 하루(한국 시간 달력), 서버 전체 하루, 동시에 도는 검증 수. 실패한 실행도 센다.
-# 서버 상한은 비용의 선이다 — 한 번에 약 0.011달러라 100회가 하루 1달러 남짓이다.
+# 운영자 계정만 쓰므로 서버 상한은 오작동(같은 요청의 반복)을 막는 선이다.
 VIEW_CHECK_MAX_DAILY = 10
-VIEW_CHECK_SERVER_MAX_DAILY = 100
+VIEW_CHECK_SERVER_MAX_DAILY = 30
 VIEW_CHECK_MAX_CONCURRENT = 2
 # 웹이 검증 도중 재시작되면 "실행 중"이 남는다. 이보다 오래된 실행 중 표시는 실패로 본다.
 VIEW_CHECK_RUN_STALE_SECONDS = 900
