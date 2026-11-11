@@ -238,6 +238,8 @@ def test_market_terms_are_spoken_the_way_korean_finance_media_say_them():
 @pytest.mark.parametrize(("written", "spoken"), [
     ("NASDAQ 100", "나스닥 100"), ("Nasdaq 지수", "나스닥 지수"), ("KOSPI 2600", "코스피 2600"),
     ("Dow Jones 지수", "다우존스 지수"), ("DAXX 종목", "DAXX 종목"),   # 영문 낱말 중간은 그대로
+    # 금리 폭의 단위는 "비피"로 읽는다. 다른 낱말 속의 bp는 건드리지 않는다.
+    ("금리를 25bp 인상", "금리를 25비피 인상"), ("50bps 인하", "50비피 인하"), ("120bpm", "120bpm"),
 ])
 def test_index_names_left_in_english_are_spoken_in_korean(written, spoken):
     assert tts.spoken_text(written) == spoken

@@ -354,6 +354,7 @@ def test_watch_frame_grows_the_line_and_adds_the_number_last(tmp_path, cjk_font,
 def test_video_gives_tracked_scenes_their_own_frames_and_shifts_the_list_header(tmp_path, monkeypatch, issue_source,
                                                                                 cjk_font):
     from polymarket_shorts import blender_render
+    from polymarket_shorts import tts
     from polymarket_shorts.tts import Word
 
     snapshot, _, _, issue, script = issue_source
@@ -361,7 +362,7 @@ def test_video_gives_tracked_scenes_their_own_frames_and_shifts_the_list_header(
     words, clock = [], 0.0
     for scene in scenario.scenes:
         row = []
-        for text in scene.narration.split():
+        for text in tts.spoken_text(scene.narration).split():
             row.append(Word(clock, clock + .3, text.strip(".,?")))
             clock += .4
         words.append(tuple(row))

@@ -387,7 +387,7 @@ def test_the_list_keeps_its_picture_window_even_when_one_question_has_no_picture
 
 @requires_cjk_font
 def test_video_opens_a_tracked_scene_with_its_cut(scenario, tmp_path, monkeypatch, cjk_font):
-    from polymarket_shorts import blender_render
+    from polymarket_shorts import blender_render, tts
     from polymarket_shorts.tts import Word
 
     tall = _picture(tmp_path / "tall.jpg", size=(720, 1280))
@@ -396,7 +396,7 @@ def test_video_opens_a_tracked_scene_with_its_cut(scenario, tmp_path, monkeypatc
     words, clock = [], 0.0
     for scene in scenario.scenes:
         row = []
-        for text in scene.narration.split():
+        for text in tts.spoken_text(scene.narration).split():
             row.append(Word(clock, clock + .3, text.strip(".,?")))
             clock += .4
         words.append(tuple(row))

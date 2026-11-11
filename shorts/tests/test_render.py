@@ -318,9 +318,9 @@ def test_a_scene_without_choices_still_sets_its_title_before_the_words_land():
 
 
 def test_captions_never_cut_a_word_the_voice_reported_in_pieces():
-    """edge-tts는 "25bp"를 "25"와 "bp"로 나눠 돌려준다. 그 사이는 끊지 않는다."""
+    """edge-tts는 한 어절도 나눠 돌려준다("25bp"는 "비피"로 읽혀 "25"와 "비피"로 온다). 그 사이는 끊지 않는다."""
     narration = "10월 금리 변동 없음과 10월 금리 25bp 인상, 둘 다 정확히 반반입니다."
-    pieces = ("10월", "금리", "변동", "없음과", "10월", "금리", "25", "bp",
+    pieces = ("10월", "금리", "변동", "없음과", "10월", "금리", "25", "비피",
               "인상", "둘", "다", "정확히", "반반입니다")
     words = tuple(Word(n * .5, n * .5 + .4, text) for n, text in enumerate(pieces))
 
