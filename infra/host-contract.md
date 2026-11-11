@@ -25,7 +25,7 @@ apply한 쪽이 상대의 규칙을 통째로 지운다.
 | 리전 / AZ | `ap-northeast-1` / `ap-northeast-1a` | 호스트 | `server-ops.md` 0절 |
 | 인스턴스 / 요금제 | `orca-host-tokyo-v2` / `medium_3_0` (4GB) | 호스트 | `server-ops.md` 0절 |
 | 고정 IP / Tailscale 이름 | `16.76.30.47` / `orca-host-tokyo-v2.<tailnet>.ts.net` | 호스트 | `server-ops.md` 1절 |
-| 호스트 타임존 | `UTC` | 호스트 | 백업 cron 시각, `verify-app.sh` |
+| 호스트 타임존 | `UTC`(`Etc/UTC`로 보고돼도 같다) | 호스트 | 백업 cron 시각, `verify-app.sh` |
 | 자동 스냅샷 | 매일 19:00 UTC | 호스트 | 앱 백업을 그 앞(18:00 UTC)에 끝낸다 |
 | 공개 웹 80/443 | 호스트의 `enable_public_web` | 호스트 | Caddy(`caddy` 계정) → `127.0.0.1:8788` |
 | 실행 계정 | `ubuntu` 단일 계정(sudo 있음) | 호스트 | `scripts/lib.sh`, `systemd/`의 `User=`/`Group=` |

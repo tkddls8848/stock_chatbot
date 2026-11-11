@@ -62,8 +62,10 @@ check "Caddy 봇 차단 블록" bash -c \
 say "호스트 계약"
 # cron.d 는 타임존을 선언할 수 없어 호스트 설정을 그대로 따른다. 호스트가 UTC 가
 # 아니면 아래 백업 시각의 의미가 통째로 바뀌므로 여기서 먼저 본다.
+# 같은 시간대를 "Etc/UTC"로 보고하는 호스트가 있다(이 서버가 그렇다). 이름만 달라 매 배포가 실패로 찍혔다
+# (2026-11-11) — 늘 뜨는 실패는 진짜 실패를 가린다.
 check "호스트 타임존 $HOST_TIMEZONE" bash -c \
-    "[ \"\$(timedatectl show -p Timezone --value)\" = '$HOST_TIMEZONE' ]"
+    "case \"\$(timedatectl show -p Timezone --value)\" in '$HOST_TIMEZONE'|'Etc/$HOST_TIMEZONE') ;; *) exit 1 ;; esac"
 
 say "예약 작업"
 check "일일 앱 백업 cron" test -f /etc/cron.d/stock-chatbot-backup
