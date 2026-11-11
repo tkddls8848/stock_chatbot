@@ -65,7 +65,7 @@ def test_jian_success_preserves_audio_and_original_subtitle_positions(tmp_path, 
     assert '십이점오오퍼센트' in captured['json']['text']
     assert '칠십점오퍼센트' in captured['json']['text']
     assert captured['json']['voice_settings'] == {
-        'speed': 1.16, 'stability': .75, 'similarity_boost': .85, 'style': 0., 'use_speaker_boost': False}
+        'speed': 1.12, 'stability': .75, 'similarity_boost': .85, 'style': 0., 'use_speaker_boost': False}
     assert captured['headers'] == {'xi-api-key': 'secret-key'}
     assert captured['timeout'] == (10, 150) and captured['allow_redirects'] is False
     assert (tmp_path / 'narration.mp3').read_bytes() == b'complete mp3'

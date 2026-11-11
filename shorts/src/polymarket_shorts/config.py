@@ -69,10 +69,10 @@ class Settings:
     elevenlabs_api_key: str = field(default="", repr=False)
     elevenlabs_voice: str = "KNy9usSxeZXzNA3l10Jy"  # Jian
     elevenlabs_model: str = "eleven_multilingual_v2"
-    # 음성 톤(운영자 지시 2026-11-11: "과잉친절 같다, 전문성이 느껴지게 — 정확도와 속도를 조금 높이고 억양 변화를
-    # 조금 줄여"). 그 전 값은 속도 1.12·안정성 0.65·유사도 0.75였다. 안정성이 높을수록 억양 변화가 줄고, 유사도가
-    # 높을수록 원 음성에 가깝고 또렷해진다. 속도는 API 한도가 1.2다.
-    elevenlabs_speed: float = 1.16
+    # 음성 톤(운영자 지시 2026-11-11: "과잉친절 같다, 전문성이 느껴지게 — 정확도를 조금 높이고 억양 변화를 조금
+    # 줄여"). 그 전 값은 안정성 0.65·유사도 0.75였다. 안정성이 높을수록 억양 변화가 줄고, 유사도가 높을수록 원 음성에
+    # 가깝고 또렷해진다. 속도도 1.16으로 올렸다가 운영자가 샘플을 듣고 되돌렸다(API 한도는 1.2).
+    elevenlabs_speed: float = 1.12
     elevenlabs_stability: float = 0.75
     elevenlabs_similarity: float = 0.85
     visuals_enabled: bool = True

@@ -484,7 +484,7 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `/`의 CSP만 그 출처의 `frame-src`를 연다.
   **쇼츠 TTS는 ElevenLabs Jian을 우선 사용한다**(운영자 결정 2026-11-08). 루트 `.env`의
   `ELEVENLABS_API_KEY`만 읽으며 `.env.example`에는 빈 예시만 둔다. 모델은 `eleven_multilingual_v2`,
-  음성은 `KNy9usSxeZXzNA3l10Jy`, 기본 속도 1.16·안정성 0.75·유사도 0.85·style 0·speaker boost 끔이다(값과 사유는 `shorts` `config.py`).
+  음성은 `KNy9usSxeZXzNA3l10Jy`, 기본 속도 1.12·안정성 0.75·유사도 0.85·style 0·speaker boost 끔이다(값과 사유는 `shorts` `config.py`).
   키 누락·크레딧 부족·권한/네트워크/API 오류·잘못된 음성이나 문자 시각이면 기존 SunHi(+0%)로
   전체 원고를 생성한다. 성공한 뒤 두 번째 음성을 만들지 않고, 양쪽 실패는 제작 실패다.
   숫자·퍼센트·기호는 발음용 원고에서 풀고 숫자와 단위는 붙여 읽는다. 화면 원고를 바꾸지 않고
