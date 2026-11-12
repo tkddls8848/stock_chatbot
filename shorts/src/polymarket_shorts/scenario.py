@@ -6,8 +6,8 @@ from typing import Any, Sequence
 
 from .client import Snapshot
 from .speech import (
-    CLOSING_LINE, CLOSING_SCREEN, NEW_ISSUES_LINE, consensus_mood, end_sentence, opening_line, plain_number,
-    speak_leader_change, speak_markets, speak_trend, to_polite_text, to_spoken_question, transition, watch_opener,
+    CLOSING_LINE, CLOSING_SCREEN, NEW_ISSUES_LINE, end_sentence, opening_line, plain_number,
+    speak_leader_change, speak_markets, to_polite_text, to_spoken_question, transition, watch_opener,
 )
 
 _FOLLOWING = ("이번에는", "다음으로", "다음은", "이어서", "마지막으로")
@@ -154,15 +154,15 @@ def _signed(delta: float) -> str:
 
 
 def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
-    """추적 주제 하나의 장면. 화면은 지난 30일 추이선이고 음성은 오늘 확률과 그 움직임이다(`corner.py`).
+    """추적 주제 하나의 장면. 화면은 지난 30일 추이선이고 음성은 오늘 확률이다(`corner.py`).
 
-    숫자와 기간은 기록에서 나온 값 그대로다. 해설은 처음 다루는 날과 크게 움직인 날(`view["long"]`)에만 읽고,
-    나머지 날은 숫자만 짧게 잇는다 — 같은 해설을 몇 주 동안 매일 되풀이하지 않는다. 질문 문장은 읽지 않는다.
+    **언제보다 얼마 올랐다·떨어졌다는 말은 읽지 않는다**(운영자 지시 2026-11-13 — 추이가 그래프로 한눈에 보이는데
+    말로 되풀이할 필요가 없다). 30일 전·어제 대비 수치는 화면 글과 검수 기록에만 둔다. 해설은 처음 다루는 날과 크게
+    움직인 날(`view["long"]`)에만 읽고, 나머지 날은 오늘 확률만 짧게 잇는다. 질문 문장은 읽지 않는다.
     바로 뒤의 확률 문장이 같은 전망을 말하고, 코너 한 장면이 새 이슈 하나만큼 길어지면 영상이 한도를 넘는다.
     """
     now, base = _points(view["now"]), _points(view["base"])
     yesterday = None if view["yesterday"] is None else _points(view["yesterday"])
-    week = None if view["week"] is None else _points(view["week"])
     shown = f"{plain_number(now)}%"
     label, headline = view["label"], view["headline"]
     lead = " ".join(part for part in (
@@ -172,7 +172,6 @@ def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
     numbers = " ".join(part for part in (
         speak_markets("binary", headline, [(label, shown, "", view.get("outlook"))]),
         speak_leader_change(view["previous_leader"], label) if view.get("previous_leader") else "",
-        speak_trend(now, base, view["base_days"], yesterday, week),
     ) if part)
     narration = f"{lead} {numbers}"
     deadline = datetime.fromisoformat(view["end_date"].replace("Z", "+00:00"))
@@ -232,7 +231,6 @@ def build_scenario(
         evidence=(issues[0]["title"],),
     )]
     scenes.extend(_watch_scene(view, position, shown_stamp) for position, view in enumerate(tracked))
-    moods: set[str] = set()
     opener_word = ""
     for index, (issue, script) in enumerate(zip(issues, scripts, strict=True)):
         if issue["id"] != script["id"]:
@@ -275,8 +273,9 @@ def build_scenario(
         # 띄우면 보는 것과 듣는 것이 어긋난다. 고지문은 마무리에서 한 번이다.
         # 선정 이유(왜 이 이슈인가)를 먼저 말하고, 질문을 던진 뒤 확률로 답한다
         # (운영자 결정 2026-09-27: 예전 순서는 확률 → 이유였다).
-        # 장면을 여는 말은 원고가 이슈마다 다르게 쓴다(`lead_in`). 확률 뒤에는 숫자가 어떻게 갈렸는지 한 문장으로
-        # 풀어 장면을 닫는다(2026-10-07). 대상을 대명사로 퉁치게 되는 경우는 풀이 없이 끝낸다(`speech.consensus_mood`).
+        # 장면을 여는 말은 원고가 이슈마다 다르게 쓴다(`lead_in`). **확률을 읽은 뒤에는 아무 풀이도 붙이지 않는다**
+        # (운영자 지시 2026-11-13: "기준에 따라 엇갈립니다" 같은 말은 뜻도 없고 틀리게 쓰였으며 기계가 쓴 글로 들린다.
+        # 그 전에는 `speech.consensus_mood`가 "팽팽하게 갈립니다"·"기준에 따라 엇갈립니다"를 붙였다). 다시 넣지 않는다.
         opener = _placed(script.get("lead_in"), index, len(issues), after_corner=bool(tracked))
         if opener:
             # 원고가 장면마다 같은 이음말로 열면("이번에는 …", "이번에는 …") 둘째부터 그 말을 뗀다.
@@ -284,10 +283,6 @@ def build_scenario(
             if words[0] == opener_word and len(words) > 3:
                 opener = " ".join(words[1:])
             opener_word = words[0]
-        mood = consensus_mood(issue.get("event_type", ""), spoken)
-        # 같은 풀이를 두 장면에서 되풀이하지 않는다.
-        mood = "" if mood in moods else mood
-        moods.add(mood)
         # 여는 말 다음에 그날 실제 보도 한 문장(`news_hook`)을 넣어, 숫자를 읽기 전에 왜 지금 이 질문인지가
         # 들리게 한다(운영자 요청 2026-10-08). 맞는 기사가 없던 이슈는 예전처럼 해설로 바로 간다.
         lead = " ".join(part for part in (
@@ -300,10 +295,7 @@ def build_scenario(
             end_sentence(to_polite_text(script["context"])),
             to_spoken_question(script["question"]),
         ) if part)
-        markets_line = " ".join(part for part in (
-            speak_markets(issue.get("event_type", ""), script["headline"], spoken, side=side),
-            mood,
-        ) if part)
+        markets_line = speak_markets(issue.get("event_type", ""), script["headline"], spoken, side=side)
         narration = f"{lead} {markets_line}".strip()
         # 선택지가 화면에 뜨는 때를 확률을 말하기 시작하는 자리에 맞춘다(글자 비율).
         options_at = len(lead) / len(narration) if markets_line else 0.0

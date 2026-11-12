@@ -172,38 +172,6 @@ def _without_repeated_subject(rows: Sequence[Sequence]) -> list[Sequence]:
     return trimmed
 
 
-def consensus_mood(event_type: str, rows: Sequence[Sequence]) -> str:
-    """확률을 말한 뒤 숫자가 어떻게 갈렸는지 한 문장으로 푼다. 숫자는 다시 말하지 않는다.
-
-    숫자만 읽고 다음 이슈로 넘어가면 장면이 뚝 끊겼다(운영자 지적 2026-10-07). **다만 대상을 이름으로 대지
-    않고 "그쪽이 우세합니다"·"반대쪽이 더 많습니다"·"한쪽으로 쏠려 있습니다"처럼 대명사로 퉁치는 풀이는 쓰지
-    않는다 — 그럴 바에는 아무 말도 하지 않는다**(운영자 지시 2026-10-08). 그래서 대상을 가리키지 않고도 뜻이
-    서는 경우만 말한다: 이지선다가 35~65%로 팽팽할 때, 여러 선택지 중 앞서는 답이 없을 때, 기준이 여럿인
-    질문이 기준마다 엇갈리거나 기준을 바꿔도 같을 때. 나머지는 빈 문자열이다.
-    """
-    values = []
-    for row in rows:
-        try:
-            values.append(float(str(row[1]).rstrip("%")))
-        except ValueError:
-            return ""
-    if not values:
-        return ""
-    if event_type == "binary" or len(values) == 1 and event_type not in {"exclusive_multi", "independent_multi"}:
-        return "팽팽하게 갈립니다." if 35 < values[0] < 65 else ""
-    if event_type == "exclusive_multi":
-        # 1위가 60% 아래여도 2위와 크게 벌어져 있으면(59·21·20) "앞서는 답이 없다"는 틀린 말이다(Codex 검토 2026-10-08).
-        top, second = (sorted(values, reverse=True) + [0.0])[:2]
-        return "뚜렷하게 앞서는 답 없이 나뉩니다." if top < 60 and top - second < 15 else ""
-    # 기준(문턱)이 여럿인 질문은 모든 기준이 같은 쪽에 있으면 말하지 않는다. 18%·6.5%를 "크게 엇갈린다"고 하면
-    # 틀린 말이다(2026-10-07 시험 원고).
-    if min(values) >= 65 or max(values) <= 35:
-        return ""
-    if max(values) - min(values) < 10:
-        return "기준을 바꿔도 크게 달라지지 않습니다."
-    return "기준에 따라 엇갈립니다."
-
-
 # 장면을 여는 말은 원고(`lead_in`)가 이슈마다 다르게 쓴다. 이것은 원고에 없을 때 쓰는 대체 문장이다.
 # 예전 고정문 "다음은 ⟨분야⟩ 테마의 주요 컨센서스 현황을 살펴봅니다"는 장면마다 같은 틀로 반복되고
 # 분류명("기타 경제·금융")을 그대로 읽어, 대사가 문단을 이어 붙인 것처럼 들렸다(운영자 지적 2026-10-07).
@@ -248,13 +216,10 @@ def opening_line(count: int, as_of=None, *, tracked: int = 0) -> str:
 
 
 # ── 추적 코너 ───────────────────────────────────────────
-# 매일 이어 보는 질문은 "지금 몇 %인가"보다 "어떻게 움직였는가"가 내용이다(`corner.py`). 숫자·기간 문장은 여기
-# 규칙이 쓰고, 왜 움직였는지는 말하지 않는다 — 기록에는 원인이 없다.
+# 장면은 여는 말과 오늘 확률만 말한다. 30일 전·어제·일주일 전 대비 등락은 읽지 않는다 — 추이선이 화면에 그려져 있어
+# 한눈에 보이는 것을 말로 되풀이할 이유가 없다(운영자 지시 2026-11-13. 그 전에는 `speak_trend`가 "30일 전 65.5%에서
+# 6%포인트 상승했지만, 어제보다는…"을 장면마다 읽었다). 대비 수치는 화면 글과 검수 기록에만 남는다.
 NEW_ISSUES_LINE = "이제 오늘의 새 질문으로 넘어가겠습니다."
-# 30일 전과 이만큼(%포인트)도 다르지 않으면 "비슷한 수준"이라고 말한다. 1%포인트 안쪽의 흔들림을 오르내림으로 읽지 않는다.
-_FLAT_POINTS = 1.0
-# 최근 한 주의 움직임을 따로 말하는 문턱(%포인트).
-_WEEK_POINTS = 5.0
 
 
 def watch_opener(headline: str, position: int, *, first_time: bool) -> str:
@@ -270,13 +235,6 @@ def plain_number(value: float) -> str:
     return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
-def _moved(delta: float, *, daily: bool = False) -> str:
-    """움직인 폭과 방향. 낱말은 경제 방송이 쓰는 것이다(운영자 지시 2026-11-11) — 긴 흐름은 "상승했·하락했",
-    하루 변동은 "올랐·떨어졌". 예전의 "내렸습니다"는 확률을 두고는 사람이 잘 쓰지 않는 말이었다."""
-    words = ("올랐", "떨어졌") if daily else ("상승했", "하락했")
-    return f"{plain_number(abs(delta))}%포인트 {words[delta < 0]}"
-
-
 def _with_direction(word: str) -> str:
     """조사 '로/으로'. 받침이 없거나 ㄹ받침이면 '로'다. 숫자·%는 읽는 소리로 정한다."""
     last = word.strip()[-1:]
@@ -290,34 +248,3 @@ def _with_direction(word: str) -> str:
 def speak_leader_change(previous: str, current: str) -> str:
     """단일 답 묶음에서 가장 높은 답이 어제와 달라졌을 때."""
     return f"가장 유력한 전망이 어제 {previous}에서 오늘 {_with_direction(current)} 바뀌었습니다."
-
-
-def speak_trend(now: float, base: float, base_days: int, yesterday: float | None, week: float | None) -> str:
-    """오늘 확률을 지난 기록과 비교하는 문장. 값은 화면과 같은 퍼센트 수치(소수 한 자리)다.
-
-    "30일 전 65.5%에서 6%포인트 상승했지만, 어제보다는 6%포인트 떨어졌습니다."처럼 긴 흐름을 먼저, 어제 대비를
-    뒤에 둔다 — 하루 등락이 아니라 흐름이 코너의 내용이다. 두 방향이 같으면 "어제보다도", 다르면 "어제보다는"이다.
-    최근 한 주에 크게 움직였을 때만 한 문장을 더한다.
-    """
-    long_move = round(now - base, 1)
-    flat = abs(long_move) < _FLAT_POINTS
-    # (이어 말할 때의 꼴, 문장을 끝낼 때의 꼴)
-    head, closed = ((f"{base_days}일 전 {plain_number(base)}%와 비슷한 수준이", f"{base_days}일 전 {plain_number(base)}%와 비슷한 수준입니다.")
-                    if flat else
-                    (f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}",
-                     f"{base_days}일 전 {plain_number(base)}%에서 {_moved(long_move)}습니다."))
-    if yesterday is None:
-        sentence = closed
-    else:
-        day_move = round(now - yesterday, 1)
-        same_way = flat or day_move * long_move > 0
-        if day_move == 0:
-            sentence = f"{head}고, 어제와{'도' if flat else '는'} 변동이 없습니다."
-        else:
-            sentence = (f"{head}{'고' if same_way else '지만'}, "
-                        f"어제보다{'도' if same_way and not flat else '는'} {_moved(day_move, daily=True)}습니다.")
-    if week is not None and base_days >= 14:
-        week_move = round(now - week, 1)
-        if abs(week_move) >= _WEEK_POINTS:
-            sentence += f" 일주일 전과 비교하면 {_moved(week_move)}습니다."
-    return sentence

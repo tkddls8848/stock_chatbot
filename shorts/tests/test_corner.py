@@ -1,5 +1,6 @@
 """추적 코너: 기록 → 견줄 값 → 장면(`corner.py`, `scenario._watch_scene`, `render`의 추이선 화면)."""
 import json
+import re
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -192,23 +193,6 @@ def test_status_reports_tracked_topics_with_their_move_and_the_ranking(tmp_path,
     assert [(row["id"], row["tracked"]) for row in status["ranking"]] == [("fed", True), ("iran", False)]
 
 
-@pytest.mark.parametrize("values, expected", [
-    ((71.5, 65.5, 30, 77.5, None), "30일 전 65.5%에서 6%포인트 상승했지만, 어제보다는 6%포인트 떨어졌습니다."),
-    ((77.5, 64.5, 30, 76.5, None), "30일 전 64.5%에서 13%포인트 상승했고, 어제보다도 1%포인트 올랐습니다."),
-    ((65, 65.5, 28, 64, None), "28일 전 65.5%와 비슷한 수준이고, 어제보다는 1%포인트 올랐습니다."),
-    ((65, 65.5, 28, 65, None), "28일 전 65.5%와 비슷한 수준이고, 어제와도 변동이 없습니다."),
-    ((71.5, 65.5, 30, 71.5, None), "30일 전 65.5%에서 6%포인트 상승했고, 어제와는 변동이 없습니다."),
-    ((71.5, 65.5, 30, None, None), "30일 전 65.5%에서 6%포인트 상승했습니다."),
-    ((65, 65.5, 28, None, None), "28일 전 65.5%와 비슷한 수준입니다."),
-    ((9.5, 13, 30, 10.5, 17.5),
-     "30일 전 13%에서 3.5%포인트 하락했고, 어제보다도 1%포인트 떨어졌습니다. 일주일 전과 비교하면 8%포인트 하락했습니다."),
-    # 기록이 두 주가 안 되면 일주일 전 비교는 긴 흐름과 거의 같은 말이라 더하지 않는다.
-    ((9.5, 13, 10, 10.5, 17.5), "10일 전 13%에서 3.5%포인트 하락했고, 어제보다도 1%포인트 떨어졌습니다."),
-])
-def test_trend_sentence_puts_the_long_move_first_and_never_gives_a_cause(values, expected):
-    assert speech.speak_trend(*values) == expected
-
-
 def test_watch_words_pick_particles_by_sound():
     assert speech.speak_leader_change("25bp 인상", "동결") == "가장 유력한 전망이 어제 25bp 인상에서 오늘 동결로 바뀌었습니다."
     assert speech._with_direction("25bp 인상") == "25bp 인상으로" and speech._with_direction("4.5%") == "4.5%로"
@@ -239,10 +223,11 @@ def test_tracked_scenes_stand_after_the_intro_and_hand_over_to_new_issues(issue_
     assert [scene.kind for scene in scenario.scenes] == ["intro", "watch", "watch", "consensus", "outro"]
     assert "계속 지켜보는 질문 2개의 흐름을 먼저 보고, 금융시장과 관련된 새 질문 하나를" in scenario.scenes[0].narration
     short, long, fresh = scenario.scenes[1:4]
-    # 짧은 날은 여는 말 뒤에 바로 숫자다. 숫자와 그 차는 화면(칩·검수 문구)과 같은 값이다.
+    # 짧은 날은 여는 말 뒤에 오늘 확률뿐이다. 언제보다 얼마 올랐다·떨어졌다는 말은 읽지 않는다 — 추이선이 화면에
+    # 있다(운영자 지시 2026-11-13). 대비 수치는 화면 글(칩·검수 문구)에만 남는다.
     assert short.narration == ("먼저 계속 지켜보는 질문, 연준 1월 금리 결정부터 보겠습니다. "
-                               "컨센서스 참여자의 71.5%는 연준이 1월에 금리를 동결할 것을 기대하고 있습니다. "
-                               "30일 전 65.5%에서 6%포인트 상승했지만, 어제보다는 6%포인트 떨어졌습니다.")
+                               "컨센서스 참여자의 71.5%는 연준이 1월에 금리를 동결할 것을 기대하고 있습니다.")
+    assert not re.search("포인트|어제|일 전|일주일", short.narration + long.narration)
     assert short.kicker == "계속 지켜보는 질문 · 3일째" and short.options == (("동결", "71.5%", .715),)
     assert short.bullets == ("30일 전 · 65.5%", "어제 · 77.5%", "종료 예정 · 2027-01-28 세계 표준시")
     assert short.body == "동결 — 예 71.5%\n30일 전 65.5% → 오늘 71.5% (+6%p)\n어제 77.5% (−6%p)"

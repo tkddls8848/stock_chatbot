@@ -98,29 +98,6 @@ def test_no_choices_say_nothing():
     assert speech.speak_markets("binary", "", []) == ""
 
 
-@pytest.mark.parametrize(("event_type", "yes", "mood"), [
-    ("binary", ["91.5%"], ""),
-    ("binary", ["68%"], ""),
-    ("binary", ["50.95%"], "팽팽하게 갈립니다."),
-    ("binary", ["18%"], ""),
-    ("binary", ["6.5%"], ""),
-    ("independent_multi", ["91.5%", "89%"], ""),
-    ("independent_multi", ["68%", "50.95%"], "기준에 따라 엇갈립니다."),
-    ("independent_multi", ["18%", "6.5%"], ""),
-    ("independent_multi", ["55%", "48%"], "기준을 바꿔도 크게 달라지지 않습니다."),
-    ("independent_multi", ["78%", "70%"], ""),
-    ("exclusive_multi", ["60.5%", "18.6%"], ""),
-    ("exclusive_multi", ["35%", "30%"], "뚜렷하게 앞서는 답 없이 나뉩니다."),
-    ("exclusive_multi", ["59%", "21%", "20%"], ""),   # 1위가 크게 앞서면 "앞서는 답이 없다"는 틀린 말(Codex 검토)
-])
-def test_the_scene_closes_with_where_the_numbers_lean(event_type, yes, mood):
-    """숫자만 읽고 넘어가면 장면이 뚝 끊겼다(2026-10-07). 숫자는 다시 말하지 않는다.
-    대상을 대명사로 퉁치는 풀이("그쪽이 우세합니다")는 쓰지 않고 차라리 비운다(운영자 지시 2026-10-08)."""
-    rows = [(f"선택지{n}", value, "") for n, value in enumerate(yes)]
-    assert speech.consensus_mood(event_type, rows) == mood
-    assert not re.search(r"\d", mood)
-
-
 _PRONOUN = re.compile(r"그쪽|저쪽|반대쪽|한쪽|같은 쪽|그 반대|그렇게 될|그렇지 않을")
 
 
@@ -130,8 +107,8 @@ def test_rule_based_lines_never_point_with_a_pronoun(event_type):
     for yes in range(0, 101, 5):
         rows = [("10월 인하", f"{yes}%", f"{100 - yes}%"), ("12월 인하", f"{max(0, yes - 7)}%", "")]
         rows = rows[:1] if event_type == "binary" else rows
-        for text in (speech.consensus_mood(event_type, rows), speech.speak_markets(event_type, "연준 금리", rows)):
-            assert not _PRONOUN.search(text), text
+        text = speech.speak_markets(event_type, "연준 금리", rows)
+        assert not _PRONOUN.search(text), text
 
 
 def test_a_yes_no_showing_no_says_what_participants_do_not_expect():

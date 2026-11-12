@@ -127,7 +127,5 @@ def test_every_narration_prompt_lists_the_same_cliches():
              # 추적 코너의 문장들. "일주일 전과 견주면"이 매일 나갔다(운영자 지적 2026-11-11).
              speech.opening_line(2, tracked=2), speech.NEW_ISSUES_LINE, speech.speak_leader_change("동결", "25bp 인상"),
              speech.watch_opener("연준 1월 금리 결정", 0, first_time=True),
-             speech.watch_opener("연준 1월 금리 결정", 1, first_time=False),
-             speech.speak_trend(9.5, 13, 30, 9.5, 18.5), speech.speak_trend(71.5, 65.5, 30, 77.5, 60),
-             speech.speak_trend(65, 65.5, 28, None, None)]
+             speech.watch_opener("연준 1월 금리 결정", 1, first_time=False)]
     assert not [line for line in fixed if highlights._CLICHE.search(line)]
