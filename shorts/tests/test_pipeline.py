@@ -92,6 +92,20 @@ def test_daily_selection_audits_sources_and_bounds_model_calls(tmp_path, monkeyp
     assert scenario.scenes[1].bullets[2] == "주제어 · 연준"
 
 
+def test_script_over_the_shorts_length_drops_the_last_new_issue():
+    from types import SimpleNamespace
+    from polymarket_shorts import pipeline
+
+    def build(issues, scripts):
+        return SimpleNamespace(scenes=[SimpleNamespace(narration="가" * 400) for _ in issues])
+    issues, scripts, audit = [{"id": i} for i in "abc"], [{"id": i} for i in "abc"], {"rejected": []}
+    scenario = pipeline._fit(issues, scripts, audit, 1000, build)
+    assert [row["id"] for row in issues] == [row["id"] for row in scripts] == ["a", "b"] and len(scenario.scenes) == 2
+    assert audit["rejected"] == [{"id": "c", "reason": "대사 1200자가 쇼츠 길이 한도 1000자를 넘어 뺌"}]
+    # 이슈 하나는 한도를 넘어도 남긴다.
+    assert len(pipeline._fit([{"id": "a"}], [{"id": "a"}], audit, 300, build).scenes) == 1 and len(audit["rejected"]) == 1
+
+
 def test_no_suitable_issues_does_not_synthesize_or_mark_day_complete(tmp_path, monkeypatch):
     from polymarket_shorts import pipeline
     monkeypatch.setattr(pipeline, "prepare_daily", lambda *a: None)

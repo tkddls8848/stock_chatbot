@@ -62,6 +62,11 @@ class Settings:
     timezone: ZoneInfo = ZoneInfo("Asia/Seoul")
     max_duration_seconds: float = 150.0
     target_script_chars: int = 1000
+    # 대사 글자 수 상한. 넘으면 마지막 새 이슈부터 뺀다(`pipeline._fit`). YouTube는 180초를 넘는 영상을 쇼츠로 받지
+    # 않는데 길이를 업로드 때에야 재고 있어서, 2026-11-12 영상(대사 1,237자 · 189초)이 한 시간 검수 대기 뒤 거부됐다.
+    # 실측(Jian 속도 1.12, 11/8~11/12 다섯 편): 글자당 0.145~0.153초. 1,100자는 약 168초이고, 글자당 0.163초까지
+    # 180초 안이다. 음성이나 속도를 바꾸면 다시 잰다.
+    max_script_chars: int = 1100
     # 이슈 장면 수 상한. 화면·대사 구성이 5개까지만 맞춰져 있다.
     max_groups: int = 5
     tts_voice: str = "ko-KR-SunHiNeural"

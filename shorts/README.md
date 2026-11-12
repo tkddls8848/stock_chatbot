@@ -372,7 +372,7 @@ $env:PYTHONPATH='shorts/src'
 기존 웹 앱 API
   → generation·freshness 검증
   → 최신 컨센서스 최대 5개 선정(가능하면 2개 이상)
-  → 시나리오 구성(허용 상한 150초)
+  → 시나리오 구성(목표 150초 · 대사 1,100자를 넘으면 마지막 새 이슈부터 뺀다 — 쇼츠 한도 180초)
   → ElevenLabs Jian 우선 / 실패 시 Edge SunHi 음성·VTT 자막
   → Pillow 세로 장면 + Blender VSE 합성·인코딩
   → MP4·시나리오·검수 원고 저장

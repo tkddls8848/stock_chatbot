@@ -217,7 +217,9 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         if len(issues) < planned:
             issues, scripts = _backfill(issues, scripts, planned - len(issues), candidates, settings, audit,
                                         save, gather, write, share)
-        scenario = build_scenario(snapshot, issues, scripts, production_date=today, tracked=tracked)
+        scenario = _fit(
+            issues, scripts, audit, settings.max_script_chars,
+            lambda kept, written: build_scenario(snapshot, kept, written, production_date=today, tracked=tracked))
         scenario, audit["pictures"] = attach_pictures(scenario, day_dir, settings)
         audit.update({"status": "script_ready", "scripts": scripts, "produced_issues": len(issues)})
         save()
@@ -229,6 +231,22 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         raise
     finally:
         save()
+
+
+def _fit(issues: list[dict], scripts: list[dict], audit: dict, limit: int, build) -> Scenario:
+    """대사가 쇼츠 길이 한도를 넘으면 마지막 새 이슈부터 빼고 다시 짠다(`Settings.max_script_chars`).
+
+    음성을 만들기 전에 글자 수로 막는다 — 길이를 업로드 때 재면 그날 영상이 통째로 못 올라간다. 원고를 줄여
+    달라고 모델을 다시 부르지 않고, 이슈 하나는 한도를 넘어도 남긴다. 뺀 이슈는 `selection.json`에 남는다.
+    """
+    scenario = build(issues, scripts)
+    while len(issues) > 1 and (chars := sum(len(scene.narration) for scene in scenario.scenes)) > limit:
+        dropped = issues.pop()
+        scripts.pop()
+        logger.warning("대사 %d자가 쇼츠 길이 한도 %d자를 넘어 이슈 %s를 뺍니다", chars, limit, dropped["id"])
+        audit["rejected"].append({"id": dropped["id"], "reason": f"대사 {chars}자가 쇼츠 길이 한도 {limit}자를 넘어 뺌"})
+        scenario = build(issues, scripts)
+    return scenario
 
 
 def _corner(settings: Settings, today: date, audit: dict) -> list[dict]:
