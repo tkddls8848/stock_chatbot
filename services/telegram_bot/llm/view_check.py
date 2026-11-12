@@ -1,17 +1,18 @@
 """뷰 검증의 모델 호출 셋: 뷰를 전제로 나누기 → 전제를 컨센서스에 대조하기 → 포지션 아이디어.
 
-**운영자 개인용이다**(`core/config.py`의 `VIEW_CHECK_ACCOUNT_KEYS`). 질의응답(`llm/polymarket_answer.py`)과 같은 원칙이다. 모델은 입력 번호로만 가리키고(전제 `c`, 후보 `n`,
-선택지 `m`, 상품 `code`) 확률은 등급으로만 본다. 화면의 숫자와 상품 이름은 서버(`viewcheck/service.py`)가
-붙인다. 응답을 통째로 쓸 수 없을 때만 한 번 다시 부르고, 글 하나가 검사에 걸리면 그 글만 비운다.
+**운영자 개인용이다**(텔레그램 `/view`, `features/view_check/`). 모델은 입력 번호로만 가리키고(전제 `c`,
+후보 `n`, 선택지 `m`, 상품 `code`) 확률은 등급으로만 본다. 메시지의 숫자와 상품 이름은 봇
+(`features/view_check/service.py`)이 붙인다. 응답을 통째로 쓸 수 없을 때만 한 번 다시 부르고, 글 하나가
+검사에 걸리면 그 글만 비운다.
 
-검사가 질의응답과 다른 점은 둘이다.
+글 검사의 원칙은 둘이다.
 
-- **출처 이름만 막고 "매수"·"매도"라는 낱말은 받는다.** 여기서는 사용자의 뷰를 다시 쓴다 — "외국인
+- **출처 이름만 막고 "매수"·"매도"라는 낱말은 받는다.** 여기서는 운영자의 뷰를 다시 쓴다 — "외국인
   매수세가 이어진다"는 뷰를 낱말 때문에 반려할 수 없다. 대신 지시형 권유("사세요")와 보장 표현을 막는다.
 - **입력에 적힌 백분율은 다시 써도 된다.** 뷰의 "10년물 금리 5%"나 선택지 이름의 "4.76%"(국채 수익률 칸)는
   확률이 아니라 기준값이다. 입력에 없는 백분율은 모델이 만든 확률로 보고 반려한다.
 
-계획서: `services/web/docs/consensus-view-advisor.md`
+계획서: `services/telegram_bot/docs/consensus-view-advisor.md`
 """
 
 from __future__ import annotations
@@ -19,13 +20,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from services.web.llm.backends import LLMBackend, LLMBackendError, TokenUsage
-from services.web.llm.polymarket_brief import SOURCE_NAME, has_model_probability
-from services.web.llm.terminology import read_prompt
+from services.telegram_bot.llm.backends import LLMBackend, LLMBackendError, TokenUsage
+from services.telegram_bot.llm.terminology import read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,25 @@ REFINED_CHARS = (40, 450)
 REASON_CHARS = (30, 280)
 INVALIDATION_CHARS = (15, 180)
 
-# 지시형 권유와 보장. 포지션은 "검토할 아이디어"이지 주문이 아니다(`/terms`).
+# 출처 서비스 이름과 그것을 가리키는 말. 글에는 "컨센서스"라고만 쓴다(웹 공개 화면과 같은 호칭).
+SOURCE_NAME = re.compile(r"(?i)polymarket|폴리마켓|예측\s*시장|베팅|배팅|돈을\s*걸")
+# 모델이 쓴 확률 숫자(백분율·"퍼센트"·0.xx). 1차 장치는 입력이다 — 모델은 등급만 받는다. 여기서는 흔한
+# 표기만 막는다(웹 `llm/polymarket_brief.py`의 같은 검사를 옮겼다. 모듈끼리 코드를 공유하지 않는다).
+_NOT_PRO_WORD = r"(?!그램|젝트|세스|필|모션|듀서|덕션|토콜|야구|축구|골프|선수|게이머|드|틴|바이오|폴리오|미스|모|파일)"
+_MODEL_PERCENT = re.compile(
+    r"[%％٪‰‱]|퍼\s*센\s*트|퍼센티지|per\s?cent"
+    r"|\d\s*프로"
+    r"|(?<![\d.,])0?[.,]\d"
+    r"|(?<![가-힣])[영공일이삼사오육칠팔구십백]*[십백점][영공일이삼사오육칠팔구십백점]*\s*프로" + _NOT_PRO_WORD
+    + r"|[일이삼사오육칠팔구]\s*프로" + _NOT_PRO_WORD
+    + r"|(?:영|공|제로)\s*점\s*[\d영공일이삼사오육칠팔구]"
+    r"|\d\s*분\s*의|분\s*의\s*\d"
+    r"|(?:[영일이삼사오육칠팔구십백천만]\s*|(?:둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열))분\s*의\s*"
+    r"(?:[영일이삼사오육칠팔구십백천만]|하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열)"
+    r"|\d\s*[/⁄∕]\s*\d",
+    re.IGNORECASE,
+)
+# 지시형 권유와 보장. 포지션은 "검토할 아이디어"이지 주문이 아니다.
 SOLICITATION = re.compile(
     r"사세요|파세요|사십시오|파십시오|매수\s*하(?:세요|십시오)|매도\s*하(?:세요|십시오)|가입\s*하세요"
     r"|반드시\s*오릅|반드시\s*내립|무조건|수익\s*보장|원금\s*보장|지금이\s*기회"
@@ -173,6 +192,10 @@ def _load(raw: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise Rejected("JSON 객체가 아닙니다")
     return payload
+
+
+def has_model_probability(text: str) -> bool:
+    return bool(_MODEL_PERCENT.search(unicodedata.normalize("NFKC", text)))
 
 
 def text_problem(text: str, limits: tuple[int, int], *, known: str = "") -> str | None:
@@ -323,7 +346,7 @@ class ViewChecker:
                     system_prompt=self._prompts[stage],
                     user_prompt=json.dumps(payload, ensure_ascii=False),
                     max_tokens=self._tokens[stage],
-                    # 다시 부를 때는 조금 올린다. 같은 온도에서는 같은 답이 다시 온다(질의응답과 같다).
+                    # 다시 부를 때는 조금 올린다. 같은 온도에서는 같은 답이 다시 온다.
                     temperature=0.2 if attempt == 0 else 0.4,
                     response_format=response_format,
                 )
@@ -358,7 +381,7 @@ class ViewChecker:
 
     def judge(self, view: str, claims: list[dict[str, Any]], market: list[dict[str, Any]]) -> Judgement:
         """`claims`는 `[{c, claim, candidates: [후보]}]`, `market`은 뷰와 무관하게 참여가 몰린 후보다.
-        후보의 꼴은 질의응답과 같다(`polymarket/ask.py`의 `build_row`)."""
+        후보의 꼴은 `features/view_check/consensus.py`의 `build_row`가 만든다."""
         rows = [row for claim in claims for row in claim["candidates"]] + market
         options = {int(row["n"]): {int(option["m"]) for option in row["options"]} for row in rows}
         ids = [int(claim["c"]) for claim in claims]
@@ -373,7 +396,7 @@ class ViewChecker:
         return self._call("judge", payload, JUDGE_FORMAT, parse)
 
     def positions(self, payload: dict[str, Any], codes: set[str], claim_ids: list[int]) -> list[Position]:
-        """`payload`는 `viewcheck/service.py`의 `positions_payload`. `codes` 밖의 상품은 버린다."""
+        """`payload`는 `features/view_check/service.py`의 `positions_payload`. `codes` 밖의 상품은 버린다."""
         known = json.dumps(payload, ensure_ascii=False)
         return self._call("positions", payload, POSITIONS_FORMAT,
                           lambda raw: parse_positions(raw, codes, claim_ids, known=known))

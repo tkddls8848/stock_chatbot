@@ -1,6 +1,7 @@
 """Google 계정별 자산·관심종목·조언 REST API."""
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any, Literal
 
@@ -13,16 +14,10 @@ from services.web.core import config
 from services.web.core.clock import now
 from services.web.llm.factory import build_portfolio_advisor
 from services.web.portfolio.service import AdviceBusy, AdviceLimit, AdviceService
-from services.web.portfolio.store import (
-    CANONICAL_CODE,
-    AdviceStore,
-    AssetStore,
-    StoreError,
-    WatchlistStore,
-    canonical_code,
-)
+from services.web.portfolio.store import AdviceStore, AssetStore, StoreError, WatchlistStore, canonical_code
 from services.web.portfolio.watch import PublicFeed, build_watch
 
+_CANONICAL = re.compile(r"\d{6}|\d{5}|KR:(KOSPI|KOSDAQ):\d{6}|US:(NASDAQ|NYSE):[A-Z][A-Z0-9.-]{0,14}")
 _KIND_FIELDS = {
     "stock": ("market", "code"),
     "bond": ("bond_type", "rate_pct", "maturity"),
@@ -143,7 +138,7 @@ def build_router(*, accounts: Accounts, advice_factory=None, public_dir=None) ->
         for item in body.items:
             code = (canonical_code(item.market, item.exchange, item.code) if item.market
                     else item.code.strip().upper())
-            if code is None or not CANONICAL_CODE.fullmatch(code):
+            if code is None or not _CANONICAL.fullmatch(code):
                 raise HTTPException(status_code=422, detail=f"종목 코드를 알 수 없습니다: {item.code}")
             items[code] = item.name.strip()
         if len(items) > config.PORTFOLIO_MAX_WATCHLIST:

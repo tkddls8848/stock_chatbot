@@ -167,8 +167,7 @@ class CloudflareWorkersAIBackend:
         # 아예 비우므로 대안이 되지 못한다.
         self._suppress_thinking = "qwen3" in model.lower()
         # 마지막 호출이 응답에 담아 온 사용량. 응답을 받지 못한 호출은 None이다.
-        # 봇 쪽 백엔드에는 없다 — 공개 웹의 검색 주석 one-shot이 하루 Neurons
-        # 예산을 실측으로 세려고 웹 쪽에만 둔다.
+        # 공개 웹의 검색 주석 one-shot이 하루 Neurons 예산을 실측으로 센다.
         self.last_usage: TokenUsage | None = None
 
     @property

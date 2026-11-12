@@ -1,47 +1,62 @@
-"""뷰 검증의 서버 쪽: 전제마다 컨센서스 질문을 찾고, 숫자를 붙이고, 포지션을 조립한다.
+"""뷰 검증 한 번: 전제마다 컨센서스 질문을 찾고, 숫자를 붙이고, 포지션을 조립한다.
 
-모델(`llm/viewcheck.py`)이 하는 일은 셋뿐이다 — 뷰를 전제로 나누고, 후보 번호로 판정하고, 표의 상품
+모델(`llm/view_check.py`)이 하는 일은 셋뿐이다 — 뷰를 전제로 나누고, 후보 번호로 판정하고, 표의 상품
 코드로 포지션을 고른다. 그 사이를 여기서 잇는다.
 
-- **찾기**: 전제의 검색어를 질의응답과 같은 1차 검색(`repository.candidates`, LLM 없음)에 넣는다. 뷰 문장을
+- **찾기**: 전제의 검색어를 웹의 자연어 검색(`consensus.Consensus.search`, LLM 없음)에 넣는다. 뷰 문장을
   통째로 넣으면 한 건도 안 잡힌다(낱말 절반이 맞아야 후보다, 2026-11-11 실측 0건). 그래서 전제 단계가
   짧은 검색어를 낸다. 참여가 얇거나 곧 마감하는 질문은 판정 근거에서 뺀다.
-- **숫자**: 확률·상품 이름·주의 문구는 서버가 쓴다. 모델 입력에는 등급(`outlook`)만 간다.
+- **숫자**: 확률·상품 이름·주의 문구는 봇이 쓴다. 모델 입력에는 등급(`outlook`)만 간다.
 - **규칙**: 근거 전제가 전부 컨센서스와 어긋난 확대·축소 아이디어는 "지켜보기"로 내린다. 프롬프트가 같은
-  말을 하지만 모델이 어겨도 화면에는 나가지 않게 서버가 한 번 더 본다.
+  말을 하지만 모델이 어겨도 메시지에는 나가지 않게 한 번 더 본다.
 
-계획서: `services/web/docs/consensus-view-advisor.md`
+계획서: `services/telegram_bot/docs/consensus-view-advisor.md`
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from itertools import zip_longest
 from typing import Any
 
-from services.web.core import config
-from services.web.core.clock import now
-from services.web.llm.polymarket_brief import FORBIDDEN_COPY, outlook
-from services.web.llm.viewcheck import Claim, Judgement, Position
-from services.web.polymarket.ask import Row, build_row, option_probabilities, priced_markets, shown_options
-from services.web.polymarket.dashboard.models import ends_before
-from services.web.polymarket.dashboard.storage import read_detail
-from services.web.polymarket.dashboard.taxonomy import assign_brief_group
-from services.web.polymarket.repository import PolymarketRepository
-from services.web.viewcheck.instruments import BY_CODE, THEME_OF, describe, for_model
+from services.telegram_bot.core.clock import now
+from services.telegram_bot.core.config import (
+    VIEW_CHECK_CANDIDATES_PER_CLAIM,
+    VIEW_CHECK_CANDIDATES_PER_QUERY,
+    VIEW_CHECK_DRIFT_ALERT,
+    VIEW_CHECK_MARKET_CATEGORIES,
+    VIEW_CHECK_MARKET_PER_CATEGORY,
+    VIEW_CHECK_MARKET_SIGNALS,
+    VIEW_CHECK_MAX_STOCKS,
+    VIEW_CHECK_MIN_HOURS_TO_END,
+)
+from services.telegram_bot.features.view_check.consensus import (
+    Consensus,
+    ConsensusUnavailable,
+    Row,
+    build_row,
+    meaningful,
+    option_probabilities,
+    outlook,
+    priced_markets,
+    shown_options,
+    volume,
+)
+from services.telegram_bot.features.view_check.instruments import BY_CODE, THEME_OF, describe, for_model
+from services.telegram_bot.llm.view_check import SOURCE_NAME, Claim, Judgement, Position, ViewCheckError
 
+logger = logging.getLogger(__name__)
+
+FORMAT = 1
 VERDICT_LABEL = {"supported": "컨센서스가 받침", "contradicted": "컨센서스와 어긋남", "mixed": "엇갈림",
                  "unpriced": "확인할 질문 없음"}
 STANCE_LABEL = {"long": "비중 확대 검토", "reduce": "비중 축소 검토", "hedge": "헤지 검토", "wait": "지켜보기"}
-# 뷰와 무관한 신호를 한 분야가 다 차지하지 않게 한다(연준 회의 질문만 여덟 개가 되지 않게).
-_MARKET_PER_GROUP = 3
 CAUTION_GEARED = "레버리지·역방향 상품은 하루 수익률을 따릅니다. 오래 들고 가면 기초자산의 움직임과 어긋날 수 있습니다."
 CAUTION_ETN = "ETN은 만기가 있고 발행 증권사의 신용 위험을 집니다."
 CAUTION_DOWNGRADED = "근거로 든 전제가 전부 컨센서스와 어긋나 '지켜보기'로 내렸습니다."
 CAUTION_UNSUPPORTED = "컨센서스가 받쳐 준 전제 없이 뷰에만 기댄 아이디어입니다."
-DISCLAIMER = ("참고 정보이며 투자 권유나 투자 자문이 아닙니다. 컨센서스 확률은 참여자들의 기대일 뿐 결과를 "
-              "보장하지 않고, AI 판정은 틀릴 수 있습니다. 결정과 책임은 본인에게 있습니다.")
 
 
 @dataclass
@@ -53,73 +68,56 @@ class Board:
     rows: dict[int, Row]
 
 
-def _volume(event: dict[str, Any]) -> float:
-    value = event.get("volume24hr")
-    return float(value) if isinstance(value, (int, float)) else 0.0
-
-
-def meaningful(event: dict[str, Any], horizon: datetime) -> bool:
-    """판정 근거로 삼을 만큼 참여가 있고, 결과 확정을 향해 수렴하는 중이 아닌 질문."""
-    liquidity = event.get("liquidity")
-    enough = (_volume(event) >= config.VIEW_CHECK_MIN_VOLUME
-              or (isinstance(liquidity, (int, float)) and liquidity >= config.VIEW_CHECK_MIN_LIQUIDITY))
-    return (enough and not ends_before(event, horizon)
-            and event.get("category") not in config.POLYMARKET_TRENDING_EXCLUDED_CATEGORIES)
-
-
-def _row(repository: PolymarketRepository, number: int, event: dict[str, Any], summary: str | None) -> Row | None:
-    try:
-        markets = priced_markets(read_detail(repository.root, event))
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+def _row(consensus: Consensus, number: int, event: dict[str, Any]) -> Row | None:
+    detail = consensus.detail(str(event.get("id")))
+    markets = priced_markets(detail) if detail else []
     if not markets:
         return None
+    summary = str(event.get("summary") or "").strip() or None
     row = build_row(number, event, summary, markets)
-    # 원문 제목·요약·선택지 이름도 화면에 나간다. 출처 이름 같은 금지어가 든 질문은 후보에서 뺀다.
+    # 원문 제목·요약·선택지 이름도 메시지에 나간다. 출처 이름이 든 질문은 후보에서 뺀다.
     text = " ".join([str(event.get("title") or ""), summary or "", *(option["label"] for option in row.model["options"])])
-    return None if FORBIDDEN_COPY.search(text) else row
+    return None if SOURCE_NAME.search(text) else row
 
 
-def collect(repository: PolymarketRepository, claims: list[Claim]) -> Board:
+def collect(consensus: Consensus, claims: list[Claim]) -> Board:
     """전제별 후보와, 뷰와 무관하게 지금 참여가 몰린 경제·지정학 질문."""
-    manifest = repository.load()
-    horizon = now() + timedelta(hours=config.POLYMARKET_MIN_HOURS_TO_END)
+    horizon = now() + timedelta(hours=VIEW_CHECK_MIN_HOURS_TO_END)
     board = Board([], [], {})
     seen: set[str] = set()
 
-    def add(event: dict[str, Any], summary: str | None) -> Row | None:
-        row = _row(repository, len(board.rows) + 1, event, summary)
+    def add(event: dict[str, Any]) -> Row | None:
+        row = _row(consensus, len(board.rows) + 1, event)
         if row is not None:
             seen.add(str(event.get("id")))
             board.rows[len(board.rows) + 1] = row
         return row
 
     for claim in claims:
-        found = [[pair for pair in repository.candidates(query, limit=config.VIEW_CHECK_CANDIDATES_PER_QUERY)
-                  if meaningful(pair[0], horizon)] for query in claim.queries]
+        found = [[event for event in consensus.search(query, limit=VIEW_CHECK_CANDIDATES_PER_QUERY)
+                  if meaningful(event, horizon)] for query in claim.queries]
         kept: list[Row] = []
         # 검색어를 번갈아 가며 채운다 — 첫 검색어의 결과만으로 전제의 자리를 다 쓰지 않는다.
-        for pair in (pair for group in zip_longest(*found) for pair in group if pair is not None):
-            if len(kept) >= config.VIEW_CHECK_CANDIDATES_PER_CLAIM:
+        for event in (event for group in zip_longest(*found) for event in group if event is not None):
+            if len(kept) >= VIEW_CHECK_CANDIDATES_PER_CLAIM:
                 break
-            if str(pair[0].get("id")) not in seen and (row := add(*pair)) is not None:
+            if str(event.get("id")) not in seen and (row := add(event)) is not None:
                 kept.append(row)
         board.by_claim.append(kept)
 
-    annotations = repository.load_index()
-    per_group: dict[str, int] = {}
-    pool = sorted((event for event in manifest.get("events", [])
-                   if event.get("price_status") == "ok" and meaningful(event, horizon)), key=_volume, reverse=True)
-    for event in pool:
-        if len(board.market) >= config.VIEW_CHECK_MARKET_SIGNALS:
+    # 뷰와 무관한 신호를 한 분야가 다 차지하지 않게 분야마다 상한을 둔다(연준 회의 질문만으로 차지 않게).
+    pool = sorted(((category, event) for category in VIEW_CHECK_MARKET_CATEGORIES
+                   for event in consensus.busiest(category) if meaningful(event, horizon)),
+                  key=lambda pair: volume(pair[1]), reverse=True)
+    per_category: dict[str, int] = {}
+    for category, event in pool:
+        if len(board.market) >= VIEW_CHECK_MARKET_SIGNALS:
             break
-        group = assign_brief_group(event.get("tags") or [])
-        if group is None or str(event.get("id")) in seen or per_group.get(group["key"], 0) >= _MARKET_PER_GROUP:
+        if str(event.get("id")) in seen or per_category.get(category, 0) >= VIEW_CHECK_MARKET_PER_CATEGORY:
             continue
-        annotation = annotations.get(str(event.get("id")))
-        if (row := add(event, annotation[2] if annotation and annotation[2] else None)) is not None:
+        if (row := add(event)) is not None:
             board.market.append(row)
-            per_group[group["key"]] = per_group.get(group["key"], 0) + 1
+            per_category[category] = per_category.get(category, 0) + 1
     return board
 
 
@@ -131,11 +129,10 @@ def judge_payload(claims: list[Claim], board: Board) -> tuple[list[dict[str, Any
 
 
 def _signal(row: Row, focus: list[int]) -> dict[str, Any]:
-    """화면에 세울 질문 하나. 선택지와 확률은 detail 값 그대로다."""
+    """메시지에 세울 질문 하나. 선택지와 확률은 웹이 준 값 그대로다."""
     event = row.event
     return {
         "id": str(event.get("id")), "title": str(event.get("title") or ""), "summary": row.summary,
-        "category_label": event.get("category_label"), "event_type": event.get("event_type"),
         "end_date": event.get("end_date"), "volume24hr": event.get("volume24hr"),
         "options": shown_options(event, row.markets, {row.options[m] for m in focus if m in row.options}),
     }
@@ -169,12 +166,12 @@ def positions_payload(view: str, claims: list[dict[str, Any]], blind_spots: list
                    for claim in claims],
         "signals": [{**line, "note": spot["note"]} for spot in blind_spots for line in _consensus_line(spot["signal"])],
         "themes": for_model(),
-        "stocks": stocks[: config.VIEW_CHECK_MAX_STOCKS],
+        "stocks": stocks[:VIEW_CHECK_MAX_STOCKS],
     }
 
 
 def position_codes(watchlist: dict[str, str]) -> set[str]:
-    return set(BY_CODE) | set(list(watchlist)[: config.VIEW_CHECK_MAX_STOCKS])
+    return set(BY_CODE) | set(list(watchlist)[:VIEW_CHECK_MAX_STOCKS])
 
 
 def positions_report(positions: list[Position], claims: list[dict[str, Any]],
@@ -204,16 +201,15 @@ def positions_report(positions: list[Position], claims: list[dict[str, Any]],
         if instrument is not None and instrument.kind == "ETN":
             cautions.append(CAUTION_ETN)
         # 같은 주제·같은 방향·같은 배수의 다른 상품. 모델은 주제마다 하나만 고르고, 한국 상장과 미국 상장 가운데
-        # 무엇을 쓸지는 계좌 사정이라 서버가 표에서 나란히 보인다.
+        # 무엇을 쓸지는 계좌 사정이라 표에서 나란히 보인다.
         alternatives = [] if instrument is None else [
-            {"code": other.code, "name": other.name, "market": other.market, "kind": other.kind}
+            {"code": other.code, "name": other.name, "note": other.note}
             for other in THEME_OF[position.code].instruments
             if other.code != instrument.code and (other.side, other.leverage) == (instrument.side, instrument.leverage)]
         report.append({
             "code": position.code,
             "name": instrument.name if instrument else watchlist.get(position.code, position.code),
             "kind": instrument.kind if instrument else "주식",
-            "market": instrument.market if instrument else None,
             "theme": THEME_OF[position.code].label if instrument else None,
             "direction": describe(instrument) if instrument else None,
             "tracks": instrument.note if instrument else None,
@@ -223,24 +219,71 @@ def positions_report(positions: list[Position], claims: list[dict[str, Any]],
     return report
 
 
-def drift(repository: PolymarketRepository, report: dict[str, Any]) -> dict[str, Any]:
-    """검증 때 보인 선택지의 지금 확률. 질문이 닫혔거나 읽지 못하면 그 질문은 None이다.
+def check(view: str, watchlist: dict[str, str], consensus: Consensus, checker) -> dict[str, Any]:
+    """검증 한 번(블로킹). 전제를 못 찾았거나 판정 호출이 실패하면 `ViewCheckError`, 웹을 못 읽으면
+    `ConsensusUnavailable`.
 
-    화면이 검증 때 값과 빼서 "그 뒤 얼마나 움직였나"를 보인다. LLM을 부르지 않는다.
+    포지션 단계만 실패하면 판정까지는 그대로 낸다 — 검증은 포지션 없이도 쓸모가 있다.
     """
-    manifest = repository.load()
+    checker.usages.clear()
+    claims = checker.claims(view)
+    board = collect(consensus, claims)
+    claim_payload, market_payload = judge_payload(claims, board)
+    judgement = checker.judge(view, claim_payload, market_payload)
+    report_claims = claims_report(claims, judgement, board)
+    blind_spots = blind_spots_report(judgement, board)
+    positions, status = [], "skipped"
+    # 컨센서스로 본 전제가 하나도 없으면 포지션을 내지 않는다. 이 기능이 내는 것은 "검증한 뷰"의 포지션이다.
+    if any(claim["verdict"] != "unpriced" for claim in report_claims):
+        try:
+            picked = checker.positions(
+                positions_payload(judgement.refined_view or view, report_claims, blind_spots, watchlist),
+                position_codes(watchlist), [claim["c"] for claim in report_claims])
+            positions, status = positions_report(picked, report_claims, watchlist), "ok"
+        except ViewCheckError as error:
+            logger.warning("[VIEW_CHECK] 포지션 단계 실패: %s", error)
+            status = "failed"
+    neurons = [usage.neurons for usage in checker.usages if usage is not None and usage.neurons is not None]
+    return {
+        "format": FORMAT, "generated_at": now().isoformat(timespec="seconds"), "view": view,
+        "generation_id": consensus.generation_id,
+        "claims": report_claims, "refined_view": judgement.refined_view, "blind_spots": blind_spots,
+        "positions": positions, "positions_status": status,
+        # 이번 검증이 실제로 쓴 과금 단위(응답에 담겨 온 값의 합). 못 받았으면 None이다.
+        "neurons": round(sum(neurons)) if neurons else None,
+    }
+
+
+def drift(consensus: Consensus, report: dict[str, Any]) -> dict[str, dict[str, float] | None] | None:
+    """검증 때 보인 선택지의 지금 확률(질문 id → 선택지 이름 → 확률). LLM을 부르지 않는다.
+
+    질문이 닫혔으면 그 질문은 None이고, 웹을 읽지 못하면 전체가 None이다.
+    """
     signals = [signal for claim in report.get("claims", []) for signal in claim.get("signals", [])]
     signals += [spot["signal"] for spot in report.get("blind_spots", []) if spot.get("signal")]
     current: dict[str, dict[str, float] | None] = {}
-    for signal in signals:
-        key = str(signal.get("id"))
-        if key in current:
-            continue
-        try:
-            detail = repository.detail(key)
+    try:
+        for signal in signals:
+            key = str(signal.get("id"))
+            if key in current:
+                continue
+            detail = consensus.detail(key)
             markets = priced_markets(detail) if detail else []
             current[key] = option_probabilities(detail, markets) if markets else None
-        except (OSError, ValueError, KeyError, TypeError, IndexError):
-            current[key] = None
-    return {"generation_id": manifest.get("generation_id"), "generated_at": manifest.get("generated_at"),
-            "alert": config.VIEW_CHECK_DRIFT_ALERT, "now": current}
+    except ConsensusUnavailable as error:
+        logger.warning("[VIEW_CHECK] 컨센서스 이동을 읽지 못했다: %s", error)
+        return None
+    return current
+
+
+def moved(report: dict[str, Any], current: dict[str, dict[str, float] | None]) -> bool:
+    """검증 때 보인 선택지 가운데 하나라도 `VIEW_CHECK_DRIFT_ALERT` 넘게 움직였는가."""
+    signals = [signal for claim in report.get("claims", []) for signal in claim.get("signals", [])]
+    signals += [spot["signal"] for spot in report.get("blind_spots", []) if spot.get("signal")]
+    for signal in signals:
+        latest = current.get(str(signal.get("id"))) or {}
+        for option in signal.get("options", []):
+            value = latest.get(option["label"])
+            if value is not None and abs(value - option["probability"]) >= VIEW_CHECK_DRIFT_ALERT:
+                return True
+    return False

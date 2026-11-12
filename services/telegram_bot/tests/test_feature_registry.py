@@ -20,6 +20,7 @@ EXPECTED_FEATURES = {
     "system_admin",
     "web_status",
     "shorts",
+    "view_check",
 }
 
 

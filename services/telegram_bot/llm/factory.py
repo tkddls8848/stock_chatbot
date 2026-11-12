@@ -33,12 +33,21 @@ from services.telegram_bot.core.config import (
     RESEARCH_ANALYSIS_TIMEOUT,
     RESEARCH_MAX_NEW_ACTIONS,
     RESEARCH_REMOVE_RELEVANCE_THRESHOLD,
+    VIEW_CHECK_CLAIMS_NUM_PREDICT,
+    VIEW_CHECK_CLAIMS_PROMPT_FILE,
+    VIEW_CHECK_JUDGE_NUM_PREDICT,
+    VIEW_CHECK_JUDGE_PROMPT_FILE,
+    VIEW_CHECK_POSITIONS_NUM_PREDICT,
+    VIEW_CHECK_POSITIONS_PROMPT_FILE,
+    VIEW_CHECK_REASONING_MODEL,
+    VIEW_CHECK_TIMEOUT,
 )
 from services.telegram_bot.llm.backends import CloudflareWorkersAIBackend, LLMBackend, ResilientBackend
 from services.telegram_bot.llm.briefing_writer import BriefingWriter
 from services.telegram_bot.llm.market_digest import MarketDigestAnalyzer
 from services.telegram_bot.llm.market_view import MarketViewAnalyzer
 from services.telegram_bot.llm.news_report import NewsReportAnalyzer
+from services.telegram_bot.llm.view_check import ViewChecker
 
 logger = logging.getLogger(__name__)
 
@@ -115,4 +124,18 @@ def build_briefing_writer() -> BriefingWriter:
         enabled=BRIEFING_LLM_ENABLED,
         prompt_file=BRIEFING_PROMPT_FILE,
         num_predict=BRIEFING_NUM_PREDICT,
+    )
+
+
+def build_view_checker() -> ViewChecker:
+    """뷰 검증(`/view`). 전제 나누기는 기본 모델, 판정·포지션은 추론 모델이다(`VIEW_CHECK_REASONING_MODEL`)."""
+    return ViewChecker(
+        build_backend("view_check_claims", model=CLOUDFLARE_MODEL, timeout=VIEW_CHECK_TIMEOUT),
+        reasoner=build_backend("view_check", model=VIEW_CHECK_REASONING_MODEL, timeout=VIEW_CHECK_TIMEOUT),
+        claims_prompt=VIEW_CHECK_CLAIMS_PROMPT_FILE,
+        judge_prompt=VIEW_CHECK_JUDGE_PROMPT_FILE,
+        positions_prompt=VIEW_CHECK_POSITIONS_PROMPT_FILE,
+        claims_tokens=VIEW_CHECK_CLAIMS_NUM_PREDICT,
+        judge_tokens=VIEW_CHECK_JUDGE_NUM_PREDICT,
+        positions_tokens=VIEW_CHECK_POSITIONS_NUM_PREDICT,
     )

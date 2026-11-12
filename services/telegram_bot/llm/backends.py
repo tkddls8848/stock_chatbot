@@ -169,6 +169,9 @@ class CloudflareWorkersAIBackend:
         # 떨어진다. chat_template_kwargs의 enable_thinking=false는 content를
         # 아예 비우므로 대안이 되지 못한다.
         self._suppress_thinking = "qwen3" in model.lower()
+        # 마지막 호출이 응답에 담아 온 사용량. 응답을 받지 못한 호출은 None이다.
+        # 뷰 검증(`/view`)이 한 번에 쓴 Neurons를 결과에 적으려고 읽는다.
+        self.last_usage: TokenUsage | None = None
 
     @property
     def url(self) -> str:
@@ -193,6 +196,7 @@ class CloudflareWorkersAIBackend:
         호출 경로를 바꾸지 않는다.
         """
         started = time.monotonic()
+        self.last_usage = None
         if self._suppress_thinking:
             system_prompt = f"{system_prompt}\n/no_think"
         payload = {
@@ -252,6 +256,8 @@ class CloudflareWorkersAIBackend:
             )
 
         usage = self._usage(data)
+        # 절단된 응답도 과금된다. 실패로 올리기 전에 남긴다.
+        self.last_usage = usage
         if self._finish_reason(data) == "length":
             # 상한에 걸려 끊긴 응답은 성공이 아니다. 그대로 돌려주면 호출자는
             # 파싱 오류(`Unterminated string`)만 보고 원인을 못 찾는다
@@ -541,6 +547,11 @@ class ResilientBackend:
     @property
     def model(self) -> str:
         return self._backend.model
+
+    @property
+    def last_usage(self) -> TokenUsage | None:
+        """감싼 백엔드의 마지막 시도 사용량. 재시도했다면 앞 시도분은 빠진다."""
+        return getattr(self._backend, "last_usage", None)
 
     def circuit_status(self) -> str:
         if self._open_permanently:

@@ -200,14 +200,6 @@ def shown_options(event: dict[str, Any], markets: list[dict[str, Any]], focus: s
              "focus": str(market.get("id")) in focus} for market in chosen]
 
 
-def option_probabilities(event: dict[str, Any], markets: list[dict[str, Any]]) -> dict[str, float]:
-    """선택지 이름 → 지금 확률. 이름은 `shown_options`가 내는 것과 같다 — 뷰 검증(`viewcheck/service.py`)이
-    검증 때 보인 선택지를 나중 수집분에서 같은 이름으로 다시 찾는다."""
-    if _binary(event, markets):
-        return {"예": round(_probability(markets[0]), 4), "아니오": round(_no(markets[0]), 4)}
-    return {_label(market): round(_probability(market), 4) for market in markets}
-
-
 def _numbers(text: str, pattern: re.Pattern[str]) -> list[float]:
     return [float(value.replace(",", "")) * _UNIT.get(unit, 1.0) for value, unit in pattern.findall(text)]
 

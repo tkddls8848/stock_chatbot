@@ -59,6 +59,7 @@ FEATURES_ENABLED = frozenset(
         "system_admin",
         "web_status",
         "shorts",
+        "view_check",
     }
 )
 
@@ -132,7 +133,7 @@ CLOUDFLARE_FAILURE_COOLDOWN_SECONDS = 300
 
 # 시장상황 보고서·/research 분석·/market 다이제스트는 전용 플래그 없이 기능 키가 켜지면
 # 항상 LLM을 쓴다. 그래서 자격증명 요구 여부는 FEATURES_ENABLED로 판단한다.
-_LLM_FEATURE_KEYS = frozenset({"news_summary", "research", "market_sentiment"})
+_LLM_FEATURE_KEYS = frozenset({"news_summary", "research", "market_sentiment", "view_check"})
 # 브리핑 절 전체(BRIEFING_*)보다 먼저 정의한다 — 아래 검증기가 모듈 로딩
 # 중간(줄 141)에 곧바로 불려 그 시점에 이미 값이 있어야 한다.
 BRIEFING_LLM_ENABLED = True
@@ -496,6 +497,56 @@ WEB_STATUS_TIMEOUT_SECONDS = 5
 # 웹과 같은 루트 `.env`를 읽는다. 값은 화면·로그에 내지 않는다.
 SOURCE_PROBE_KEYS = {name: os.environ.get(name, "").strip() for name in ("FSS_API_KEY", "ECOS_API_KEY", "DATA_GO_KR_SERVICE_KEY")}
 SOURCE_PROBE_TIMEOUT_SECONDS = 8
+
+# ── 뷰 검증(/view) ──────────────────────────────────────────────────────
+# 운영자 개인용: 내 시장 뷰를 예측 컨센서스에 대조하고 다듬은 뷰로 ETF·ETN·관심종목 포지션 아이디어를 낸다
+# (`features/view_check/`, 계획서 `docs/consensus-view-advisor.md`). 특정 상품에 방향을 붙여 보이는 기능이라
+# 공개 웹에 두지 않고 허용된 채팅만 보는 이 방에 둔다(운영자 지시 2026-11-12).
+# 컨센서스는 `/web`처럼 같은 호스트의 공개 웹 GET API(`/api/forecast/*`)로 읽는다.
+VIEW_CHECK_API_BASE_URL = WEB_STATUS_BASE_URL
+VIEW_CHECK_API_TIMEOUT_SECONDS = 10
+VIEW_CHECK_STATE_FILE = DATA_DIR / "view_check" / "view_check.json"
+VIEW_CHECK_CLAIMS_PROMPT_FILE = PROMPT_DIR / "view_claims_ko.txt"
+VIEW_CHECK_JUDGE_PROMPT_FILE = PROMPT_DIR / "view_verdict_ko.txt"
+VIEW_CHECK_POSITIONS_PROMPT_FILE = PROMPT_DIR / "view_positions_ko.txt"
+# **비용을 가장 적게 쓰는 쪽으로 정한다**(운영자 지시 2026-11-12). 뷰를 전제로 나누는 단계는 기본 모델
+# (`CLOUDFLARE_MODEL`)이고, 판정·포지션 두 단계만 이 추론 모델을 쓴다. 기본 모델에 추론을 켠 가장 싼 구성
+# (한 번에 225~310 Neurons)은 여섯 번 중 세 번 방향을 틀렸고("금리가 오른다"에서 국채 역방향 상품 축소 등,
+# 2026-11-12 실측), gpt-oss-20b는 영어로 답하거나 포지션 단계가 끊겼다. 방향을 맞춘 것 가운데 가장 싼 것이
+# 이 모델이다(한 번에 800~1,000 Neurons, 약 0.01달러).
+VIEW_CHECK_REASONING_MODEL = "@cf/openai/gpt-oss-120b"
+# 추론 모델의 출력 예약에는 추론 토큰이 포함된다. 실측 출력은 판정 1,700~2,600·포지션 1,500~2,200토큰이다.
+# 8,000으로 두었을 때 같은 문장을 되풀이하다 상한까지 간 응답이 한 번에 832 Neurons를 썼다 — 정상 응답의 두 배
+# 남짓으로 묶고, 끊기면 한 번만 다시 부른다(`llm/view_check.py`).
+VIEW_CHECK_CLAIMS_NUM_PREDICT = 700
+VIEW_CHECK_JUDGE_NUM_PREDICT = 5000
+VIEW_CHECK_POSITIONS_NUM_PREDICT = 5000
+VIEW_CHECK_TIMEOUT = 150
+# 뷰 글의 길이(자). 너무 짧으면 나눌 전제가 없고, 길면 입력 토큰만 는다.
+VIEW_CHECK_VIEW_CHARS = (10, 600)
+# 검색어 하나가 올리는 후보 수와, 전제 하나에 붙이는 후보 수. 입력 토큰이 비용의 대부분이다.
+VIEW_CHECK_CANDIDATES_PER_QUERY = 6
+VIEW_CHECK_CANDIDATES_PER_CLAIM = 5
+# 모델에 보이는 선택지 수(확률 높은 순).
+VIEW_CHECK_OPTIONS_PER_EVENT = 10
+# 판정 근거로 삼는 최소 참여(24시간 참여 규모 또는 참여 잔액, 달러). 이보다 얇은 질문의 확률은
+# 몇 사람의 값이라 뷰를 판정할 근거가 못 된다.
+VIEW_CHECK_MIN_VOLUME = 1000.0
+VIEW_CHECK_MIN_LIQUIDITY = 20000.0
+# 이 시간 안에 끝나는 질문은 뺀다. 결과 확정을 향한 수렴은 컨센서스의 이동이 아니다(웹 화면 순위와 같은 값).
+VIEW_CHECK_MIN_HOURS_TO_END = 72
+# 경기·날씨는 참여가 커도 시장 컨센서스가 아니다.
+VIEW_CHECK_EXCLUDED_CATEGORIES = frozenset({"sports", "weather_climate"})
+# 뷰와 무관하게 지금 참여가 몰린 질문("뷰가 놓친 신호"의 후보)을 읽는 분야와 그 수.
+VIEW_CHECK_MARKET_CATEGORIES = ("economy_finance", "geopolitics", "composite")
+VIEW_CHECK_MARKET_SIGNALS = 6
+VIEW_CHECK_MARKET_PER_CATEGORY = 3
+# 포지션 단계에 보내는 관심종목 수.
+VIEW_CHECK_MAX_STOCKS = 40
+# 하루 실행 수(실패도 센다). 한 번에 약 0.01달러다.
+VIEW_CHECK_MAX_DAILY = 10
+# 검증 때 보인 선택지가 이만큼(확률 0~1) 넘게 움직였으면 다시 검증하라고 알린다.
+VIEW_CHECK_DRIFT_ALERT = 0.10
 BRIEFING_NEWS_MARKETS = ("CN", "HK", "US", "KR", "JP", "EU")
 BRIEFING_PROMPT_FILE = PROMPT_DIR / "briefing_ko.txt"
 BRIEFING_TIMEOUT = 180

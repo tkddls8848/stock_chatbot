@@ -1,9 +1,9 @@
-"""뷰 검증의 ETF·ETN 표(`viewcheck/instruments.py`)를 공개 상장 목록과 대조하는 독립 프로브.
+"""뷰 검증의 ETF·ETN 표(`features/view_check/instruments.py`)를 공개 상장 목록과 대조하는 독립 프로브.
 
 ETN은 만기가 있고 ETF도 이름이 바뀌거나 상장폐지된다. 표가 낡으면 없는 상품을 포지션으로 낸다.
 테스트 러너와 무관하게 손으로 돌린다(외부 호출이라 pytest에 넣지 않는다).
 
-    python -m services.web.tests.viewcheck_instruments_probe
+    python -m services.telegram_bot.tests.view_check_instruments_probe
 
 한국 상품은 네이버 금융의 ETF·ETN 목록에서 코드와 이름을, 미국 상품은 나스닥 심볼 디렉터리에서 티커·
 ETF 표시·상장 거래소를 본다. 어긋난 줄을 적고, 하나라도 있으면 종료 코드 1이다.
@@ -18,7 +18,7 @@ import sys
 
 import requests
 
-from services.web.viewcheck.instruments import BY_CODE
+from services.telegram_bot.features.view_check.instruments import BY_CODE
 
 KR_LISTS = {
     "ETF": ("https://finance.naver.com/api/sise/etfItemList.nhn", "etfItemList"),
