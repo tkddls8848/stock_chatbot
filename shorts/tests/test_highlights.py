@@ -273,12 +273,23 @@ _WATCHED = {"event_id": "fed", "title": "Fed Decision in January?", "market_ques
     ("베팅 참여자 다수가 1월 인상을 본다는 건 긴축 전제가 강하다는 뜻입니다.", False),
     ("기준에 따라 엇갈리는 만큼 1월 결정 방향은 아직 열려 있다는 뜻입니다.", False),
     ("1월 결정이 반반으로 갈려, 단기 국채 금리가 지표마다 흔들릴 수 있는 자리입니다.", False),
-    ("1월 인상이 기본 시나리오라는 뜻이어서 달러 강세와 미 국채 단기물 금리 상승, 성장주 밸류에이션 부담으로 이어질 수 있습니다.", False),
+    ("1월 인상이 기본 시나리오라는 뜻이어서 달러 강세와 미 국채 단기물 금리 상승, 성장주 밸류에이션 부담, 신흥국 통화 약세로 이어질 수 있습니다.", False),
 ])
 def test_a_watch_meaning_reads_the_level_without_numbers_trend_or_filler(meaning, kept):
     """추적 장면이 확률 뒤에 읽는 의미 문장(운영자 지시 2026-11-14). 틀린 주제만 빠지고 사유가 남는다."""
     written, errors = highlights.validate_meanings({"meanings": [{"id": "fed", "meaning": meaning}]}, [_WATCHED])
     assert (written == {"fed": meaning}) is kept and bool(errors) is not kept
+
+
+@pytest.mark.parametrize("now, meaning, kept", [
+    (.095, "1월 인상을 보는 쪽이 적다는 것은 인상을 꼬리 위험으로 본다는 것을 의미합니다.", True),
+    # 48%짜리 질문을 "소수"·"꼬리 위험"으로 읽으면 확률과 어긋난다(모델이 예시를 베꼈다, 2026-11-14).
+    (.48, "1월 인상을 보는 쪽이 적다는 것은 인상을 소수만 보는 꼬리 위험으로 본다는 것을 의미합니다.", False),
+    (.30, "1월 인상을 보는 쪽이 적다는 것은 인상을 꼬리 위험으로 본다는 것을 의미합니다.", False),
+])
+def test_a_watch_meaning_cannot_contradict_the_probability(now, meaning, kept):
+    written, _ = highlights.validate_meanings({"meanings": [{"id": "fed", "meaning": meaning}]}, [{**_WATCHED, "now": now}])
+    assert bool(written) is kept
 
 
 def test_the_code_not_the_model_says_which_way_the_majority_leans():
@@ -287,7 +298,7 @@ def test_the_code_not_the_model_says_which_way_the_majority_leans():
     hormuz = {"now": .055, "outlook": "통행량이 12월 31일까지 정상 수준을 회복할", "label": "정상 수준 회복"}
     assert highlights._majority(hormuz) == {
         "majority": "다수는 통행량이 12월 31일까지 정상 수준을 회복할 것을 기대하지 않는다", "weight": "압도적"}
-    assert highlights._majority({**_WATCHED, "now": .595})["weight"] == "근소"
+    assert [highlights._majority({**_WATCHED, "now": now})["weight"] for now in (.53, .595, .9)] == ["근소", "우세", "압도적"]
     assert highlights._majority({**_WATCHED, "now": .72})["majority"].endswith("인상할 것을 기대한다")
 
 

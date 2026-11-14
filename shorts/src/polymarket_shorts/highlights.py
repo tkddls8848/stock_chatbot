@@ -451,7 +451,7 @@ def _news_hook(row: dict, issue: dict) -> tuple[str, str] | None:
     source = " ".join([article["title"], article.get("original") or "", issue["title"],
                        *(market["question"] for market in issue["markets"])])
     try:
-        text = _text(text, "news_hook", 15, 80)
+        text = _text(text, "news_hook", 15, 90)
         _translation(text, source, "news_hook")
     except HighlightError:
         return None
@@ -477,9 +477,10 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         if not isinstance(row, dict) or row.get("id") != issue["id"]:
             raise HighlightError("원고의 이벤트 ID 또는 순서가 잘못됐습니다")
         clean = {"id": issue["id"]}
-        # 해설은 프롬프트가 65자 안으로 쓰게 하고 검증은 80자까지 받는다 — 조금 넘쳤다고 이슈를 잃지 않게(운영자 지시
-        # 2026-11-14: 추적 코너가 확률의 의미를 한 문장 더 읽는 만큼 새 이슈의 상황·맥락 설명을 줄인다. 그 전 상한 120자).
-        for field, low, high in (("headline", 4, 28), ("question", 5, 85), ("context", 10, 80)):
+        # 해설은 프롬프트가 65자로 쓰게 하지만(운영자 지시 2026-11-14: 추적 코너가 확률의 의미를 한 문장 더 읽는 만큼 새
+        # 이슈의 상황·맥락 설명을 줄인다) 검증은 예전 상한 120자 그대로다. 80자로 조였더니 모델이 81~95자를 써서 네 번 중
+        # 세 번 이슈가 통째로 빠졌다(2026-11-14 실측). 길이는 프롬프트가 줄이고, 넘친 날은 `pipeline._fit`이 막는다.
+        for field, low, high in (("headline", 4, 28), ("question", 5, 85), ("context", 10, 120)):
             source = " ".join([issue["title"], *(m["question"] for m in issue["markets"])])
             # 해설·확인점은 판정 기준을 가리킬 수 있어 description의 숫자까지 근거로 본다
             # (실측 2026-09-25: "IMF 포트워치의 7일 이동 평균" — 7은 description의
@@ -662,28 +663,33 @@ MEANING_PROMPT = """경제 영상의 "계속 지켜보는 질문" 코너에 들�
 [읽히는 자리] 프로그램이 바로 앞에서 "컨센서스 참여자의 ⟨yes⟩는 ⟨outlook⟩ 것을 기대하고 있습니다"를 읽습니다.
 meaning은 그 뒤에 이어 읽히는 한 문장으로, 오늘 확률 수준이 무슨 뜻인지 짚습니다.
 [무엇을 쓰나] majority는 프로그램이 확률에서 정한 다수 쪽 판단이고 weight는 그 무게(압도적·우세·근소)입니다. 확률을
-스스로 해석하지 말고 majority를 그대로 전제로 삼으세요. meaning은 ① 그 전제가 지금 어떤 자리인지(압도적·우세면 기본
-시나리오, 근소면 그 결론에 무엇이 걸려 있는지) ② 그 전제가 곧바로 닿는 자산·지표 하나에 어떤 기대나 위험이 실려 있는지를
-말합니다(정책 금리 → 단기 국채 금리·달러, 휴전 → 유가). majority가 정상화·휴전·타결 같은 좋은 일을 "기대하지 않는다"면
-지금의 차질·분쟁이 이어진다는 전제이고 그 위험은 여전히 자산 가격에 실려 있습니다. "꼬리 위험"은 고물가·침체·전쟁 같은
-나쁜 일을 소수만 볼 때에만 씁니다. 근소한 판을 "반반"·"갈린다"로 말하지 말고 그 결론에 무엇이 걸려 있는지 쓰세요.
+스스로 해석하지 말고 majority를 그대로 전제로 삼으세요. meaning은 그 전제가 무엇을 기대한다는 뜻인지를, 그 전제가 곧바로
+닿는 자산·지표 하나(정책 금리 → 단기 국채 금리·달러, 휴전 → 유가, 물가 → 물가 상승률 자체)에 비추어 풀어 말합니다.
+majority가 정상화·휴전·타결 같은 좋은 일을 "기대하지 않는다"면 지금의 차질·분쟁이 이어진다는 기대이고, 고물가·침체·전쟁 같은
+나쁜 일을 소수만 본다면 그 일은 "소수만 보는 꼬리 위험"입니다("꼬리 위험"은 나쁜 일에만 씁니다). 근소한 판을
+"반반"·"갈린다"로 말하지 말고 그 결론에 무엇이 걸려 있는지 쓰세요.
+[문장 꼴] "⟨오늘 수준을 이름으로 다시 짚는 말⟩은(는) ⟨그 뜻⟩을 의미합니다"로 씁니다(운영자가 고른 꼴). 끝맺음은
+"…을 의미합니다"입니다. "…에 실린 셈입니다" 같은 비유적 표현 대신 무엇을 기대한다는 뜻인지 곧바로 말하세요.
+누가 기대하는지는 바로 앞 문장이 말했으니 "…라는 기대를 의미합니다"로 줄이세요(굳이 쓰면 "시장 참여자"가 아니라
+"컨센서스 참여자"입니다). 영상 길이가 빠듯해 짧을수록 좋습니다.
 [논리] 두 단계 이상 이어 붙인 추론(물가 → 연준 인하 → 국채)은 쓰지 마세요. 질문에 없는 정책의 방향(인상·인하·완화·긴축)을
 스스로 정하지 마세요. 입력의 다른 주제는 같은 영상에 함께 나가므로, 다른 주제의 전망과 어긋나는 말은 실패입니다.
-[규칙] meaning은 한 문장, 25~55자, 합쇼체입니다. 확률·퍼센트를 다시 쓰지 마세요(숫자는 question·label·outlook에 있는
-것만). 언제보다 올랐다·내렸다, 어제·지난주·한 달 같은 비교를 쓰지 마세요 — 추이는 화면 그래프가 보여 줍니다.
-왜 그렇게 됐는지(원인), 입력에 없는 사건, 투자 권유는 쓰지 마세요. 가격이 오를·이어질 "전망"처럼 자산 가격의 방향을
-예측하지 말고, 그 기대가 어느 자산·지표에 실려 있는지("…에 긴축 기대가 실린 셈입니다")로 쓰세요.
+[규칙] meaning은 한 문장, 35~60자, 합쇼체입니다. 확률·퍼센트를 다시 쓰지 마세요(숫자는 question·label·outlook에 있는
+것만). 언제보다 올랐다·내렸다·높아졌다, 어제·지난주·한 달 같은 비교를 쓰지 마세요 — 추이는 화면 그래프가 보여 줍니다.
+왜 그렇게 됐는지(원인), 입력에 없는 사건, 투자 권유는 쓰지 마세요. 자산 가격이 오른다·이어진다는 "전망"을 단정하지 말고,
+컨센서스 참여자들이 무엇을 기대한다는 뜻인지로 쓰세요.
 context(이미 읽은 해설)와 같은 말을 되풀이하지 마세요. "셋 중 둘꼴"·"열에 하나꼴" 같은 비유도 쓰지 않습니다.
 "이는"·"이것은"·"그쪽"처럼 앞 문장을 지시어로 받지 말고 대상을 이름으로 다시 말하세요.
-예: 휴전이 연말까지 이어질 것을 다수가 기대하는 질문 → "휴전 유지가 기본 시나리오라, 유가에 실린 공급 차질 위험은 작게 보는 셈입니다."
-예: 수에즈 운하 운항 정상화를 소수만 기대하는 질문 → "운항 차질이 이어진다는 쪽이 다수라, 해상 운임에 공급망 부담이 계속 실린 셈입니다."
-예: 연내 금리 인하를 절반 가까이 기대하는 질문 → "연내 인하가 아직 확정되지 않은 만큼, 단기 국채 금리가 고용·물가 지표마다 크게 흔들릴 수 있는 자리입니다."
+예: 휴전이 연말까지 이어질 것을 다수가 기대하는 질문 → "휴전 유지가 기본 시나리오라는 것은 유가에 공급 차질 위험이 크지 않다는 기대를 의미합니다."
+예: 수에즈 운하 운항 정상화를 소수만 기대하는 질문 → "운항 정상화를 기대하는 쪽이 적다는 것은 해상 운임 부담이 계속된다는 기대를 의미합니다."
+예: 연내 침체를 소수만 기대하는 질문 → "연내 침체를 보는 쪽이 적다는 것은 침체를 소수만 보는 꼬리 위험으로 본다는 것을 의미합니다."
+예: 연내 금리 인하를 절반 가까이 기대하는 질문 → "연내 인하가 확정되지 않았다는 것은 단기 국채 금리가 고용·물가 지표마다 크게 흔들릴 수 있음을 의미합니다."
 """ + CLICHE_RULE + """JSON만 반환하세요: {"meanings":[{"id":"입력 id","meaning":"..."}]}. 모든 입력 주제에 하나씩 쓰세요."""
 
 # 추이를 말로 옮기는 비교어. 추이는 화면의 추이선이 보여 준다(운영자 지시 2026-11-13).
-_COMPARISON = re.compile(r"어제|전날|지난주|일주일|한 달|한달|지난달|30일|%p|포인트")
+_COMPARISON = re.compile(r"어제|전날|지난주|일주일|한 달|한달|지난달|30일|%p|포인트|높아졌|낮아졌|커졌|줄었")
 # 확률이 가운데쯤일 때 모델이 붙이는 빈말. "기준에 따라 엇갈립니다"와 같은 갈래다(운영자 지시 2026-11-13).
-_UNDECIDED = re.compile(r"반반|갈려|갈린|갈리|갈라|팽팽")
+_UNDECIDED = re.compile(r"반반|갈려|갈린|갈리|갈릴|갈라|팽팽")
 _SERVICE_NAMES = re.compile(r"polymarket|폴리마켓|베팅|배팅|예측\s*시장", re.IGNORECASE)
 
 
@@ -703,7 +709,7 @@ def validate_meanings(payload: dict, views: list[dict]) -> tuple[dict[str, str],
         source = " ".join(str(view.get(field) or "") for field in
                           ("title", "market_question", "question", "label", "outlook"))
         try:
-            text = _text(row.get("meaning"), "meaning", 15, 70)
+            text = _text(row.get("meaning"), "meaning", 15, 75)
             _translation(text, source, "meaning")
             _no_pointer(text, "meaning")
             _no_cliche(text, "meaning")
@@ -711,6 +717,13 @@ def validate_meanings(payload: dict, views: list[dict]) -> tuple[dict[str, str],
                 raise HighlightError(f"meaning에 추이를 말로 옮기는 비교어가 있습니다: {text}")
             if _UNDECIDED.search(text):
                 raise HighlightError(f"meaning에 결론을 말하지 않는 빈말이 있습니다: {text}")
+            # 확률과 어긋나는 낱말. 모델이 예시를 베껴 48%짜리 침체를 "소수만 보는 꼬리 위험"이라 썼다(2026-11-14 실측).
+            yes = view.get("now")
+            if isinstance(yes, (int, float)):
+                if "꼬리 위험" in text and yes > .15:
+                    raise HighlightError(f"meaning의 '꼬리 위험'은 15% 이하인 전망에만 씁니다: {text}")
+                if .4 <= yes <= .6 and re.search(r"소수|적다는|꼬리 위험|기본 시나리오", text):
+                    raise HighlightError(f"meaning이 결론이 나지 않은 확률을 한쪽으로 단정합니다: {text}")
             if _SERVICE_NAMES.search(text):
                 raise HighlightError(f"meaning에 쓰지 않는 호칭이 있습니다: {text}")
         except HighlightError as error:
@@ -732,7 +745,7 @@ def _majority(view: dict) -> dict[str, str]:
     share = view["now"] if expects else 1 - view["now"]
     subject = f"{view['outlook']} 것을" if view.get("outlook") else f"'{view['label']}'을(를)"
     return {"majority": f"다수는 {subject} {'기대한다' if expects else '기대하지 않는다'}",
-            "weight": "압도적" if share >= .85 else "우세" if share >= .6 else "근소"}
+            "weight": "압도적" if share >= .85 else "우세" if share >= .55 else "근소"}
 
 
 def write_meanings(views: list[dict], settings: Settings) -> tuple[dict[str, str], list[str]]:
