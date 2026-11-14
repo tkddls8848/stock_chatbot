@@ -73,7 +73,13 @@ def failure_text(item: dict) -> str:
 def upload_text(result: dict) -> str:
     outcome = result.get("status")
     if outcome in {"uploaded", "already_uploaded"}:
-        return "YouTube 업로드 완료: " + str(result.get("url") or "")
+        text = "YouTube 업로드 완료: " + str(result.get("url") or "")
+        comment = result.get("comment") or {}
+        if comment.get("status") == "posted":
+            text += "\n운영자 설명 댓글 게시 완료"
+        elif comment:
+            text += "\n댓글 미완료: " + str(comment.get("reason") or "댓글 기록을 확인하세요")
+        return text
     reasons = {
         "not_reviewed": "현재 수정본을 먼저 검수 완료하세요.",
         "no_credentials": ".env에 YouTube 자격 증명을 설정한 뒤 /shorts upload로 재시도하세요.",

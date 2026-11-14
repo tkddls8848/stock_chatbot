@@ -516,6 +516,11 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   남은 이슈와 같은 분야·주제는 후보에서 뺀다) 그 이슈만 원고를 쓴다(`pipeline._backfill`). 분량은 영상 전체 이슈
   수로 나눈다. 채우기는 한 번뿐이고, 실패하면 이미 통과한 이슈로 만든다. 경과는 `selection.json`의 `backfill`에 남는다.
   검증 기준 자체는 낮추지 않았다.
+  **게시 설명문은 운영자 채널 명의의 댓글에도 그대로 올린다**(운영자 지시 2026-11-14). 영상 업로드 성공을 먼저
+  저장한 뒤 같은 OAuth 계정이 영상 소유 채널인지 확인해 댓글을 게시한다. 댓글 결과는 `upload.json`의 해당 revision에
+  따로 남기며, `/shorts upload` 재실행은 영상을 다시 올리지 않고 실패한 댓글만 재시도한다. 댓글 POST의 응답을 잃으면
+  중복 방지를 위해 자동 재전송하지 않고 확인 필요로 남긴다. 기존 업로드 전용 토큰은 댓글 권한이 없으므로
+  `--youtube-auth`로 `youtube.force-ssl` 권한을 함께 다시 승인해야 한다.
   **웹 첫 화면은 "오늘의 영상"으로 최신 게시본 하나를 붙인다**(운영자 요청 2026-10-09). 웹은
   `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/ko.json`(날짜·영상 ID·제목)을
   쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고

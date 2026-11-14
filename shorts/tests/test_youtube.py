@@ -16,12 +16,14 @@ from polymarket_shorts.review import ReviewError, complete_review, operation_loc
 from polymarket_shorts.status import current_status
 
 _real_shorts_problem = youtube._shorts_problem
+_real_comment = youtube._comment
 
 
 @pytest.fixture(autouse=True)
 def _shorts_ok(monkeypatch):
     """가짜 영상 파일은 ffprobe로 읽을 수 없다. 쇼츠 조건 검사는 따로 시험한다."""
     monkeypatch.setattr(youtube, "_shorts_problem", lambda video, settings: None)
+    monkeypatch.setattr(youtube, "_comment", lambda *args: {"status": "posted"})
 
 
 @pytest.fixture
@@ -64,7 +66,8 @@ def test_upload_resumes_and_deduplicates(prepared, monkeypatch):
     mock = http(monkeypatch, response(payload={"access_token": "access"}), start(),
                 response(308, Range="bytes=0-3"), response(201, {"id": "video_1"}))
     result = youtube.upload(root, settings)
-    assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/shorts/video_1"}
+    assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/shorts/video_1",
+                      "comment": {"status": "posted"}}
     assert mock.call_args_list[-1].kwargs["data"] == b"456789"
     assert mock.call_args_list[-1].kwargs["headers"]["Content-Range"] == "bytes 4-9/10"
     metadata = mock.call_args_list[1].kwargs["json"]
@@ -383,3 +386,64 @@ def test_server_terminal_takes_the_pasted_redirect_address(prepared, monkeypatch
     monkeypatch.setattr(youtube, "AUTH_WAIT_SECONDS", .05)
     with pytest.raises(youtube.ReviewError, match="5분 안에"):
         youtube.authorize(settings)
+
+
+def comment_setup(prepared, monkeypatch):
+    root, settings = prepared
+    monkeypatch.setattr(youtube, "_comment", _real_comment)
+    record = json.loads((root / "review.json").read_text())
+    identifier = youtube.revision_id(root, record)
+    history = {"revisions": {identifier: {"video_id": "video_1"}}}
+    write_json(root / "upload.json", history)
+    return root, settings
+
+
+def comment_credentials(scope=youtube.COMMENT_SCOPE):
+    return response(payload={"access_token": "access", "scope": scope})
+
+
+def owner_responses():
+    return (response(payload={"items": [{"id": "owner"}]}),
+            response(payload={"items": [{"snippet": {"channelId": "owner"}}]}))
+
+
+def test_description_comment_uses_owner_and_is_not_posted_twice(prepared, monkeypatch):
+    root, settings = comment_setup(prepared, monkeypatch)
+    mock = http(monkeypatch, comment_credentials(), *owner_responses(), response(201, {"id": "comment_1"}))
+    result = youtube.upload(root, settings)
+    assert result["comment"]["status"] == "posted"
+    assert mock.call_args.kwargs["json"]["snippet"] == {
+        "channelId": "owner", "videoId": "video_1",
+        "topLevelComment": {"snippet": {"textOriginal": "집단 예측"}}}
+    assert youtube.upload(root, settings)["comment"]["id"] == "comment_1"
+    assert mock.call_count == 4
+
+
+@pytest.mark.parametrize("failure", [requests.Timeout("secret"), response(503), response(201, {})])
+def test_comment_uncertain_result_is_never_reposted(prepared, monkeypatch, failure):
+    root, settings = comment_setup(prepared, monkeypatch)
+    mock = http(monkeypatch, comment_credentials(), *owner_responses(), failure)
+    assert youtube.upload(root, settings)["comment"]["status"] == "uncertain"
+    assert youtube.upload(root, settings)["comment"]["status"] == "uncertain"
+    assert mock.call_count == 4
+    assert "secret" not in (root / "upload.json").read_text()
+
+
+def test_comment_permission_failure_can_retry_without_video_upload(prepared, monkeypatch):
+    root, settings = comment_setup(prepared, monkeypatch)
+    mock = http(monkeypatch, comment_credentials("https://www.googleapis.com/auth/youtube.upload"))
+    result = youtube.upload(root, settings)
+    assert result["status"] == "already_uploaded"
+    assert "--youtube-auth" in result["comment"]["reason"]
+    assert mock.call_count == 1
+    mock = http(monkeypatch, comment_credentials(), *owner_responses(), response(201, {"id": "comment_1"}))
+    assert youtube.upload(root, settings)["comment"]["status"] == "posted"
+    assert all(call.args[0] != "PUT" for call in mock.call_args_list)
+
+
+def test_comment_wrong_account_does_not_post(prepared, monkeypatch):
+    root, settings = comment_setup(prepared, monkeypatch)
+    mock = http(monkeypatch, comment_credentials(), response(payload={"items": [{"id": "other"}]}),
+                owner_responses()[1])
+    assert youtube.upload(root, settings)["comment"]["status"] == "failed"
+    assert mock.call_count == 3

@@ -217,3 +217,12 @@ def test_menu_edit_button_routes_through_pause_prompt(monkeypatch):
 def test_upload_message_carries_the_shorts_link():
     shorts = {"status": "uploaded", "url": "https://www.youtube.com/shorts/s1"}
     assert review.upload_text(shorts) == "YouTube 업로드 완료: https://www.youtube.com/shorts/s1"
+
+
+def test_upload_text_reports_comment_separately():
+    result = {"status": "uploaded", "url": "https://www.youtube.com/shorts/s1",
+              "comment": {"status": "failed", "reason": "댓글 권한 승인 필요"}}
+    assert "업로드 완료" in review.upload_text(result)
+    assert "댓글 미완료: 댓글 권한 승인 필요" in review.upload_text(result)
+    result["comment"] = {"status": "posted"}
+    assert "운영자 설명 댓글 게시 완료" in review.upload_text(result)

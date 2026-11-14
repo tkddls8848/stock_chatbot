@@ -25,7 +25,9 @@ from .workflow import current_target
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
-SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+COMMENT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+SCOPE = "https://www.googleapis.com/auth/youtube.upload " + COMMENT_SCOPE
+API_URL = "https://www.googleapis.com/youtube/v3"
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 logger = logging.getLogger(__name__)
 
@@ -243,19 +245,21 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
             entry = history.get("revisions", {}).get(identifier, {})
             if entry.get("video_id"):
                 return {"status": "already_uploaded", "video_id": entry["video_id"],
-                        "url": shorts_url(entry["video_id"])}
+                        "url": shorts_url(entry["video_id"]),
+                        "comment": _comment(target / "upload.json", history, identifier, metadata, settings)}
             problem = _shorts_problem(video, settings)
             if problem:
                 return {**empty, "status": "not_shorts", "reason": problem}
             if not all((settings.google_client_id, settings.google_client_secret, settings.youtube_refresh_token)):
                 return {**empty, "status": "no_credentials"}
             video_id = _send(target / "upload.json", history, identifier, metadata, video, settings)
+            comment = _comment(target / "upload.json", history, identifier, metadata, settings)
         try:
             publish_latest(root.parent, settings)
         except OSError:
             # 게시는 이미 끝났다. 웹 첫 화면은 다음 게시 때 따라잡는다.
             logger.warning("오늘의 영상 공개 파일을 쓰지 못했습니다", exc_info=True)
-        return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id)}
+        return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id), "comment": comment}
 
 
 def _send(path: Path, history: dict, identifier: str, metadata: dict, video: Path, settings: Settings) -> str:
@@ -281,6 +285,58 @@ def _send(path: Path, history: dict, identifier: str, metadata: dict, video: Pat
     entry.pop("session_url", None)
     write_json(path, history)
     return video_id
+
+
+def _comment(path: Path, history: dict, identifier: str, metadata: dict, settings: Settings) -> dict:
+    """운영자 채널로 설명을 한 번 게시한다. 결과 불명인 POST는 자동 재전송하지 않는다."""
+    entry = history["revisions"][identifier]
+    previous = entry.get("comment", {})
+    if previous.get("status") in {"posted", "uncertain"}:
+        return previous
+    result = {"status": "failed"}
+    try:
+        credentials = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token)
+        if COMMENT_SCOPE not in credentials.get("scope", "").split():
+            raise ReviewError("댓글 권한이 없습니다. 운영자 계정으로 --youtube-auth를 다시 승인하세요")
+        token = credentials.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise ReviewError("YouTube 액세스 토큰 발급 실패")
+        headers = {"Authorization": f"Bearer {token}"}
+        channels = _json(_request("GET", API_URL + "/channels", headers=headers,
+                                 params={"part": "id", "mine": "true"})).get("items", [])
+        videos = _json(_request("GET", API_URL + "/videos", headers=headers,
+                               params={"part": "snippet", "id": entry["video_id"]})).get("items", [])
+        channel = videos[0].get("snippet", {}).get("channelId") if videos else None
+        if not channel or channel not in {item.get("id") for item in channels}:
+            raise ReviewError("인증 계정이 영상 운영자 채널과 다릅니다")
+        # POST 전에 남긴다. 응답을 잃으면 수동 확인 전 재전송하지 않는다.
+        result = {"status": "uncertain", "reason": "댓글 게시 결과 확인 필요: 중복 방지를 위해 재전송하지 않습니다"}
+        entry["comment"] = result
+        write_json(path, history)
+        try:
+            response = requests.request("POST", API_URL + "/commentThreads", headers=headers,
+                                        params={"part": "snippet"}, json={"snippet": {
+                                            "channelId": channel, "videoId": entry["video_id"],
+                                            "topLevelComment": {"snippet": {
+                                                "textOriginal": metadata["snippet"]["description"]}}}},
+                                        timeout=(15, 120), allow_redirects=False)
+        except requests.RequestException:
+            return result
+        if 400 <= response.status_code < 500:
+            result = {"status": "failed"}
+        elif not 200 <= response.status_code < 300:
+            return result
+        body = _json(response)
+        comment_id = body.get("id")
+        if not isinstance(comment_id, str) or not comment_id:
+            raise ReviewError("댓글 ID를 확인하지 못했습니다")
+        result = {"status": "posted", "id": comment_id, "posted_at": now().isoformat()}
+    except ReviewError as exc:
+        result = {**result, "reason": str(exc)}
+        logger.warning("영상 게시 완료, 댓글 미완료: %s", exc)
+    entry["comment"] = result
+    write_json(path, history)
+    return result
 
 
 def publish_latest(base: Path, settings: Settings) -> dict | None:
