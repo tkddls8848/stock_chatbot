@@ -48,6 +48,20 @@ def _store(tmp_path, *, slot=None, markets=None, lines=None):
     return settings
 
 
+MEANING = "동결이 기본 시나리오라는 뜻이어서, 미 국채 단기물에 인하 기대가 적게 실린 셈입니다"
+
+
+@pytest.fixture(autouse=True)
+def meanings(monkeypatch):
+    """의미 문장 모델 호출(`highlights.write_meanings`)을 바꾼다. 받은 주제 id 목록을 호출마다 남긴다."""
+    calls = []
+    def write(views, settings):
+        calls.append([view["event_id"] for view in views])
+        return {str(view["event_id"]): MEANING for view in views}, []
+    monkeypatch.setattr(corner, "write_meanings", write)
+    return calls
+
+
 def _script(issues, settings, **kwargs):
     (issue,) = issues
     return [{"id": issue["id"], "headline": "연준 1월 금리 결정", "question": "연준이 1월에 금리를 어떻게 결정할까요?",
@@ -81,7 +95,7 @@ def test_focus_follows_the_leader_but_keeps_a_ladder_rung_while_it_is_open():
     assert corner._focus({"event_type": "independent_multi", "focus": "c"}, rungs)["id"] == "b"
 
 
-def test_build_writes_the_script_once_and_reads_long_only_when_it_matters(tmp_path, monkeypatch):
+def test_build_writes_the_script_once_and_reads_long_only_when_it_matters(tmp_path, monkeypatch, meanings):
     settings = _store(tmp_path)
     calls = []
     monkeypatch.setattr(corner, "write_issues", lambda *a, **kw: calls.append(a[0]) or _script(*a, **kw))
@@ -89,23 +103,29 @@ def test_build_writes_the_script_once_and_reads_long_only_when_it_matters(tmp_pa
     views, audit = corner.build(settings, TODAY)
 
     (view,) = views
-    assert audit == {"llm_calls": 1, "skipped": [], "scenes": 1, "same_theme": []}
+    # 이름·해설 글 한 번, 오늘 확률의 의미 문장 한 번(운영자 지시 2026-11-14).
+    assert audit == {"llm_calls": 2, "skipped": [], "scenes": 1, "same_theme": []}
+    assert view["meaning"] == MEANING
     # 단일 답 묶음은 1위가 바뀔 수 있어 상위 답의 이름을 함께 받는다.
     assert [market["id"] for market in calls[0][0]["markets"]] == ["hold", "hike"]
     assert (view["headline"], view["label"], view["outlook"]) == ("연준 1월 금리 결정", "동결", "연준이 1월에 금리를 동결할")
     assert view["long"] and view["first_time"] and view["day"] == 3 and view["previous_leader"] is None
     saved = json.loads((watch_dir(settings) / "topics.json").read_text(encoding="utf-8"))["tracked"][0]
     assert saved["focus"] == "hold" and saved["deep"] == {"date": "2026-11-10", "value": .715, "first": True}
+    assert saved["meaning"] == {"date": "2026-11-10", "market_id": "hold", "text": MEANING}
 
-    # 같은 날 다시 만들면 저장한 글을 쓰고 여전히 길게 읽는다. 다음 날부터는 숫자만 짧게 잇는다.
-    assert corner.build(settings, TODAY)[0][0]["long"] and len(calls) == 1
+    # 같은 날 다시 만들면 저장한 글·의미 문장을 쓰고 여전히 길게 읽는다. 다음 날부터는 숫자만 짧게 잇는다.
+    again, audit = corner.build(settings, TODAY)
+    assert again[0]["long"] and again[0]["meaning"] == MEANING
+    assert len(calls) == 1 and len(meanings) == 1 and audit["llm_calls"] == 0
     tomorrow = TODAY + timedelta(days=1)
     lines = {"hold": {"label": "No change", "points": {**FED, tomorrow.isoformat(): .73}}}
     write_json(history_path(settings, "fed"), {"markets": lines})
     ledger = json.loads((ledger_dir(settings) / "2026-11-10.json").read_text(encoding="utf-8"))
     write_json(ledger_dir(settings) / f"{tomorrow.isoformat()}.json", ledger)
     (later,), audit = corner.build(settings, tomorrow)
-    assert not later["long"] and not later["first_time"] and audit["llm_calls"] == 0
+    # 이름 글은 다시 쓰지 않는다. 확률이 바뀌었으니 의미 문장만 새로 쓴다.
+    assert not later["long"] and not later["first_time"] and audit["llm_calls"] == 1 and len(calls) == 1
     # 마지막으로 길게 다룬 뒤 10%포인트 넘게 움직이면 다시 길게 다룬다.
     lines["hold"]["points"][tomorrow.isoformat()] = .60
     write_json(history_path(settings, "fed"), {"markets": lines})
@@ -172,6 +192,14 @@ def test_build_skips_a_topic_for_the_day_and_says_why(tmp_path, monkeypatch):
     assert corner.build(long_name, TODAY)[1]["skipped"][0]["reason"] == "고른 질문의 이름이 화면 한 줄을 넘음"
     assert "script" not in json.loads((watch_dir(long_name) / "topics.json").read_text(encoding="utf-8"))["tracked"][0]
 
+    # 의미 문장을 못 쓴 날은 장면이 확률만 읽고 사유가 남는다 — 제작은 멈추지 않는다.
+    def fail(views, settings):
+        raise HighlightError("meanings는 목록이어야 합니다")
+    monkeypatch.setattr(corner, "write_issues", _script)
+    monkeypatch.setattr(corner, "write_meanings", fail)
+    (plain,), audit = corner.build(_store(tmp_path / "plain"), TODAY)
+    assert plain["meaning"] is None and audit["meaning_skipped"][0].startswith("의미 문장을 쓰지 못함")
+
     thin = _store(tmp_path / "thin", lines={"hold": {"label": "No change", "points": _points((1, .7), (0, .715))}})
     assert corner.build(thin, TODAY)[1]["skipped"] == [{"event_id": "fed", "reason": "지난 기록이 모자람"}]
     # 질문 원문이 없는 옛 기록으로는 글을 쓸 수 없다.
@@ -218,7 +246,8 @@ def test_tracked_scenes_stand_after_the_intro_and_hand_over_to_new_issues(issue_
     script = {**script, "lead_in": "먼저 연준의 10월 결정부터 보겠습니다."}
 
     scenario = build_scenario(snapshot, [issue], [script], production_date=TODAY,
-                              tracked=[_view(), _view(event_id="cpi", headline="미국 물가 상승률", long=True)])
+                              tracked=[_view(), _view(event_id="cpi", headline="미국 물가 상승률", long=True,
+                                                      meaning=MEANING)])
 
     assert [scene.kind for scene in scenario.scenes] == ["intro", "watch", "watch", "consensus", "outro"]
     assert "계속 지켜보는 질문 2개의 흐름을 먼저 보고, 금융시장과 관련된 새 질문 하나를" in scenario.scenes[0].narration
@@ -238,6 +267,8 @@ def test_tracked_scenes_stand_after_the_intro_and_hand_over_to_new_issues(issue_
     assert long.narration.startswith("계속 지켜보는 또 다른 질문은 미국 물가 상승률입니다. 연준의 1월 결정은")
     assert long.narration.index("방향에 닿습니다.") < long.narration.index("71.5%")
     assert "결정할까요?" not in long.narration and "질문(읽지 않음): 연준이 1월에 금리를 어떻게 결정할까요?" in long.evidence
+    # 확률 뒤에 그 수준이 뜻하는 바를 한 문장 읽는다(운영자 지시 2026-11-14). 화면 글에는 띄우지 않는다.
+    assert long.narration.endswith(f"동결할 것을 기대하고 있습니다. {MEANING}.") and MEANING not in long.body
     # 코너 뒤의 첫 새 이슈는 영상의 첫 질문이 아니다.
     assert fresh.narration.startswith("이제 오늘의 새 질문으로 넘어가겠습니다. 연준의 10월 결정부터 보겠습니다.")
     description = metadata_for(scenario)["description"]

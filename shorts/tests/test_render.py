@@ -256,7 +256,7 @@ def test_a_long_sentence_splits_evenly_instead_of_leaving_a_scrap():
         Word(start, start + .4, text)
         for start, text in zip(
             (0.0, 0.5, 1.0, 1.5, 2.2, 2.7, 3.2, 3.7, 4.0, 4.5),
-            ("반면", "9월", "WTI", "100달러", "이상", "쪽은", "다섯", "번에", "한", "번꼴로"),
+            ("반면", "9월", "더블유티아이", "100달러", "이상", "쪽은", "다섯", "번에", "한", "번꼴로"),
         )
     ) + (Word(5.0, 5.6, "봅니다"),)
 
@@ -371,15 +371,21 @@ def test_a_choice_is_drawn_as_a_name_a_big_probability_and_a_gauge(tmp_path, cjk
 
 @requires_cjk_font
 def test_a_yes_no_showing_no_labels_the_number_as_no(tmp_path, cjk_font, monkeypatch):
-    """아니오가 더 많은 이지선다는 큰 숫자 옆에 '아니오'를 붙인다. '예'를 붙이면 88.5%가 '예' 쪽으로 읽힌다."""
+    """아니오가 더 많은 이지선다는 '아니오'를 큰 숫자 앞에 같은 크기로 세운다. 숫자 뒤 작은 글씨로 두던 동안
+    "정상 수준 회복 / 94.5%"가 다수가 정상화를 기대한다는 말로 읽혔다(운영자 지적 2026-11-14)."""
     written = []
     original = render.ImageDraw.ImageDraw.text
     monkeypatch.setattr(render.ImageDraw.ImageDraw, "text",
-                        lambda self, xy, text, *a, **k: (written.append(text), original(self, xy, text, *a, **k))[1])
+                        lambda self, xy, text, *a, **k: (written.append((text, xy, k.get("font"))),
+                                                          original(self, xy, text, *a, **k))[1])
     scene = Scene("consensus", "호르무즈 해협", "01 · 지정학", "본문", "멘트",
                   options=(("통행량 정상화", "88.5%", .885),), side="no")
     render_frame(scene, tmp_path / "frame.png", font_path=cjk_font, index=2, total=4)
-    assert "아니오" in written and "예" not in written
+    texts = [text for text, _, _ in written]
+    assert "아니오" in texts and "예" not in texts
+    (_, answer_at, answer_font), = [row for row in written if row[0] == "아니오"]
+    (_, number_at, number_font), = [row for row in written if row[0] == "88.5%"]
+    assert answer_at[0] < number_at[0] and answer_at[1] == number_at[1] and answer_font.size == number_font.size
 
 
 @requires_cjk_font
@@ -435,7 +441,7 @@ def test_captions_are_large_bold_and_sit_in_the_lower_third(tmp_path):
 def test_a_spoken_phrase_fits_two_caption_lines():
     """자막이 커진 만큼 한 덩어리를 짧게 끊는다 — 세 줄이 되면 화면을 덮는다."""
     narration = "9월에 WTI 원유 가격은 얼마까지 갈까요? 원유 가격은 에너지 비용과 연결됩니다."
-    pieces = ("9월에", "WTI", "원유", "가격은", "얼마까지", "갈까요", "원유", "가격은",
+    pieces = ("9월에", "더블유티아이", "원유", "가격은", "얼마까지", "갈까요", "원유", "가격은",
               "에너지", "비용과", "연결됩니다")
     words = tuple(Word(n * .5, n * .5 + .4, text) for n, text in enumerate(pieces))
 

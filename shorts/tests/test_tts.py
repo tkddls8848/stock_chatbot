@@ -215,10 +215,10 @@ def test_scene_pauses_differ_by_where_the_break_falls():
 
 
 def test_english_in_parentheses_is_shown_but_not_spoken():
-    """괄호 속 영문은 화면·자막에만 둔다(2026-10-08). 음성은 "한국 ETF가"를 읽고, 자막 위치는 원고 기준이다."""
+    """괄호 속 영문은 화면·자막에만 둔다(2026-10-08). 음성은 "한국 이티에프가"를 읽고, 자막 위치는 원고 기준이다."""
     narration = "한국 ETF(EWY)가 186달러까지 내려갈까요? 금 선물 (GC) 가격입니다."
-    assert tts.spoken_text(narration) == "한국 ETF가 186달러까지 내려갈까요? 금 선물 가격입니다."
-    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["한국", "ETF가", "186달러까지", "금", "선물", "가격입니다"])]
+    assert tts.spoken_text(narration) == "한국 이티에프가 186달러까지 내려갈까요? 금 선물 가격입니다."
+    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["한국", "이티에프가", "186달러까지", "금", "선물", "가격입니다"])]
     starts = tts.locate(narration, words)
     assert [narration[at:at + 3] for at in starts] == ["한국 ", "ETF", "186", "금 선", "선물 ", "가격입"]
     # 자막은 원고를 다음 단어 위치까지 잘라 쓰므로 괄호가 그대로 남는다.
@@ -228,8 +228,8 @@ def test_english_in_parentheses_is_shown_but_not_spoken():
 def test_market_terms_are_spoken_the_way_korean_finance_media_say_them():
     """"S&P"는 "에스앤피"다 — 음성 엔진이 "에스앤드피"로 읽었다(운영자 지적 2026-10-08). 자막은 원래 표기를 둔다."""
     narration = "S&P 500 ETF(SPY)가 750달러 위로 마감할까요?"
-    assert tts.spoken_text(narration) == "에스앤피 500 ETF가 750달러 위로 마감할까요?"
-    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["에스앤피", "500", "ETF가", "750달러"])]
+    assert tts.spoken_text(narration) == "에스앤피 500 이티에프가 750달러 위로 마감할까요?"
+    words = [tts.Word(n, n + .3, text) for n, text in enumerate(["에스앤피", "500", "이티에프가", "750달러"])]
     starts = tts.locate(narration, words)
     assert starts[0] == 0 and narration[starts[0]:starts[1]].strip() == "S&P"
     assert narration[starts[2]:starts[3]].strip() == "ETF(SPY)가"
@@ -240,6 +240,8 @@ def test_market_terms_are_spoken_the_way_korean_finance_media_say_them():
     ("Dow Jones 지수", "다우존스 지수"), ("DAXX 종목", "DAXX 종목"),   # 영문 낱말 중간은 그대로
     # 금리 폭의 단위는 "비피"로 읽는다. 다른 낱말 속의 bp는 건드리지 않는다.
     ("금리를 25bp 인상", "금리를 25비피 인상"), ("50bps 인하", "50비피 인하"), ("120bpm", "120bpm"),
+    # 영문 약어는 방송이 읽는 철자 소리로 못박는다("ETF"를 "아이티에프"로 읽었다, 2026-11-13). 낱말 속은 그대로다.
+    ("AI 관련 ETF와", "에이아이 관련 이티에프와"), ("CEO 사임", "씨이오 사임"), ("OpenAI 지분", "OpenAI 지분"),
 ])
 def test_index_names_left_in_english_are_spoken_in_korean(written, spoken):
     assert tts.spoken_text(written) == spoken

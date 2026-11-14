@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import Settings
 from .llm import chat_json
+from .speech import plain_number
 from .timely import mentions, title_words
 
 
@@ -94,7 +95,7 @@ lead_in(12~60자)은 이 이슈 장면을 여는 한 문장입니다. 앞 장면
 그다음 이슈들은 "…로 넘어가 보겠습니다.", "이번에는 …입니다.", "…도 짚어 볼 만합니다."처럼 이슈마다 다른 말로 씁니다.
 분류 이름("기타 경제·금융", "주식·시장")을 읽지 말고 주제(예: "금값", "미국 국채 금리")를 부르세요.
 "첫째"·"둘째"처럼 번호로 세지 않습니다(화면에 번호가 있습니다).
-context(15~120자, 한 문장)는 왜 지금 이 질문을 보는지와, 해당 사건이 어떤 금융시장·경제 변수와 연결되는지를
+context(15~65자, 한 문장)는 왜 지금 이 질문을 보는지와, 해당 사건이 어떤 금융시장·경제 변수와 연결되는지를
 조건부로 설명합니다. 두 가지를 마침표로 끊지 말고 연결어미로 이어 한 문장으로 쓰세요.
 이 질문에만 맞는 연결을 쓰세요 — 해당 자산·기관·기한을 이름으로 부르고, 어느 금리 질문에나 붙일 수 있는 교과서식
 일반론("금리 인상은 기업의 자금조달 비용을 높입니다", "유가는 물가에 영향을 줍니다")은 실패입니다. 시청자는 이미 압니다.
@@ -117,7 +118,7 @@ watch_point(8~50자)는 확인할 다음 발표·조건을 제시하는 완전�
 """ + CLICHE_RULE + """question은 말로 묻듯 씁니다 — "얼마에 도달할 것인가?"가 아니라 "얼마까지 갈까요?"입니다.
 context는 이슈마다 끝맺음을 바꿔 같은 틀이 반복되지 않게 하세요("…와 연결됩니다"만 다섯 번 쓰지 않습니다).
 확률을 말로 푸는 일은 프로그램이 합니다. lead_in·context에 확률·참여 규모를 쓰지 마세요.
-news_hook(15~90자, 한 문장)은 숫자만 읽는 원고가 아니라 지금 흐름 속의 이야기로 들리게 하는 문장입니다.
+news_hook(15~70자, 한 문장)은 숫자만 읽는 원고가 아니라 지금 흐름 속의 이야기로 들리게 하는 문장입니다.
 입력의 market_news는 최근 사흘 동안 국내외 경제 뉴스로 실제 보도된 기사 제목(title, 원문 original)이고,
 when은 보도 시점(오늘·어제·그제), coverage는 같은 흐름을 다룬 다른 기사 수입니다.
 이 질문과 같은 대상(자산·기관·인물·사건)을 다룬 기사 하나를 골라 hook_news_id에 넣고, 그 제목이 전하는 사실을
@@ -450,7 +451,7 @@ def _news_hook(row: dict, issue: dict) -> tuple[str, str] | None:
     source = " ".join([article["title"], article.get("original") or "", issue["title"],
                        *(market["question"] for market in issue["markets"])])
     try:
-        text = _text(text, "news_hook", 15, 90)
+        text = _text(text, "news_hook", 15, 80)
         _translation(text, source, "news_hook")
     except HighlightError:
         return None
@@ -476,7 +477,9 @@ def validate_scripts(payload: dict, issues: list[dict]) -> list[dict]:
         if not isinstance(row, dict) or row.get("id") != issue["id"]:
             raise HighlightError("원고의 이벤트 ID 또는 순서가 잘못됐습니다")
         clean = {"id": issue["id"]}
-        for field, low, high in (("headline", 4, 28), ("question", 5, 85), ("context", 10, 120)):
+        # 해설은 프롬프트가 65자 안으로 쓰게 하고 검증은 80자까지 받는다 — 조금 넘쳤다고 이슈를 잃지 않게(운영자 지시
+        # 2026-11-14: 추적 코너가 확률의 의미를 한 문장 더 읽는 만큼 새 이슈의 상황·맥락 설명을 줄인다. 그 전 상한 120자).
+        for field, low, high in (("headline", 4, 28), ("question", 5, 85), ("context", 10, 80)):
             source = " ".join([issue["title"], *(m["question"] for m in issue["markets"])])
             # 해설·확인점은 판정 기준을 가리킬 수 있어 description의 숫자까지 근거로 본다
             # (실측 2026-09-25: "IMF 포트워치의 7일 이동 평균" — 7은 description의
@@ -644,3 +647,118 @@ def write_issues(issues: list[dict], settings: Settings, *, failures: dict | Non
         settings, system=prompt, user=json.dumps(source, ensure_ascii=False), max_tokens=3500,
         check=lambda payload: validate_scripts(payload, issues), salvage=salvage,
     )
+
+
+# ── 추적 코너의 의미 문장 ───────────────────────────────────
+# 추적 장면이 오늘 확률만 읽으면 현황을 읊는 데서 끝난다. 확률 문장 뒤에 그 수준이 금융시장에 무슨 뜻인지 한 문장을
+# 붙인다(운영자 지시 2026-11-14: "단순히 현황만 읊지 말고 의미를 짧게 짚어 주는 게 좋겠다"). 확률은 날마다 바뀌므로
+# 매일 쓰지만, 추적 주제 전부(최대 둘)를 한 번에 묻는다. 지난 확률은 넣지 않는다 — 넣으면 추이를 말로 옮기는데, 추이는
+# 화면의 추이선이 맡고 음성으로 되풀이하지 않는다(운영자 지시 2026-11-13).
+MEANING_PROMPT = """경제 영상의 "계속 지켜보는 질문" 코너에 들어갈 한 문장을 씁니다. 입력만 근거로 삼으세요.
+[시청자] 경제·정치 뉴스를 꾸준히 보는, 어느 정도 배경지식이 있는 사람입니다. 기본 개념을 풀어 설명하지 말고
+정확한 전문 용어를 그대로 쓰세요. 교과서식 일반론("금리 인상은 기업의 자금조달 비용을 높입니다")은 실패입니다.
+[호칭 규칙] 이 자료는 해외 집단 예측 서비스의 참여 현황이다. 서비스 이름(영문·한글 표기 모두)·예측시장·베팅·배팅이라는 말을
+쓰지 않고 "컨센서스"라고 부른다. "시장"은 실제 금융시장(주식·채권·외환·원자재)을 가리킬 때만 쓴다.
+[읽히는 자리] 프로그램이 바로 앞에서 "컨센서스 참여자의 ⟨yes⟩는 ⟨outlook⟩ 것을 기대하고 있습니다"를 읽습니다.
+meaning은 그 뒤에 이어 읽히는 한 문장으로, 오늘 확률 수준이 무슨 뜻인지 짚습니다.
+[무엇을 쓰나] majority는 프로그램이 확률에서 정한 다수 쪽 판단이고 weight는 그 무게(압도적·우세·근소)입니다. 확률을
+스스로 해석하지 말고 majority를 그대로 전제로 삼으세요. meaning은 ① 그 전제가 지금 어떤 자리인지(압도적·우세면 기본
+시나리오, 근소면 그 결론에 무엇이 걸려 있는지) ② 그 전제가 곧바로 닿는 자산·지표 하나에 어떤 기대나 위험이 실려 있는지를
+말합니다(정책 금리 → 단기 국채 금리·달러, 휴전 → 유가). majority가 정상화·휴전·타결 같은 좋은 일을 "기대하지 않는다"면
+지금의 차질·분쟁이 이어진다는 전제이고 그 위험은 여전히 자산 가격에 실려 있습니다. "꼬리 위험"은 고물가·침체·전쟁 같은
+나쁜 일을 소수만 볼 때에만 씁니다. 근소한 판을 "반반"·"갈린다"로 말하지 말고 그 결론에 무엇이 걸려 있는지 쓰세요.
+[논리] 두 단계 이상 이어 붙인 추론(물가 → 연준 인하 → 국채)은 쓰지 마세요. 질문에 없는 정책의 방향(인상·인하·완화·긴축)을
+스스로 정하지 마세요. 입력의 다른 주제는 같은 영상에 함께 나가므로, 다른 주제의 전망과 어긋나는 말은 실패입니다.
+[규칙] meaning은 한 문장, 25~55자, 합쇼체입니다. 확률·퍼센트를 다시 쓰지 마세요(숫자는 question·label·outlook에 있는
+것만). 언제보다 올랐다·내렸다, 어제·지난주·한 달 같은 비교를 쓰지 마세요 — 추이는 화면 그래프가 보여 줍니다.
+왜 그렇게 됐는지(원인), 입력에 없는 사건, 투자 권유는 쓰지 마세요. 가격이 오를·이어질 "전망"처럼 자산 가격의 방향을
+예측하지 말고, 그 기대가 어느 자산·지표에 실려 있는지("…에 긴축 기대가 실린 셈입니다")로 쓰세요.
+context(이미 읽은 해설)와 같은 말을 되풀이하지 마세요. "셋 중 둘꼴"·"열에 하나꼴" 같은 비유도 쓰지 않습니다.
+"이는"·"이것은"·"그쪽"처럼 앞 문장을 지시어로 받지 말고 대상을 이름으로 다시 말하세요.
+예: 휴전이 연말까지 이어질 것을 다수가 기대하는 질문 → "휴전 유지가 기본 시나리오라, 유가에 실린 공급 차질 위험은 작게 보는 셈입니다."
+예: 수에즈 운하 운항 정상화를 소수만 기대하는 질문 → "운항 차질이 이어진다는 쪽이 다수라, 해상 운임에 공급망 부담이 계속 실린 셈입니다."
+예: 연내 금리 인하를 절반 가까이 기대하는 질문 → "연내 인하가 아직 확정되지 않은 만큼, 단기 국채 금리가 고용·물가 지표마다 크게 흔들릴 수 있는 자리입니다."
+""" + CLICHE_RULE + """JSON만 반환하세요: {"meanings":[{"id":"입력 id","meaning":"..."}]}. 모든 입력 주제에 하나씩 쓰세요."""
+
+# 추이를 말로 옮기는 비교어. 추이는 화면의 추이선이 보여 준다(운영자 지시 2026-11-13).
+_COMPARISON = re.compile(r"어제|전날|지난주|일주일|한 달|한달|지난달|30일|%p|포인트")
+# 확률이 가운데쯤일 때 모델이 붙이는 빈말. "기준에 따라 엇갈립니다"와 같은 갈래다(운영자 지시 2026-11-13).
+_UNDECIDED = re.compile(r"반반|갈려|갈린|갈리|갈라|팽팽")
+_SERVICE_NAMES = re.compile(r"polymarket|폴리마켓|베팅|배팅|예측\s*시장", re.IGNORECASE)
+
+
+def validate_meanings(payload: dict, views: list[dict]) -> tuple[dict[str, str], list[str]]:
+    """맞는 의미 문장(event_id → 문장)과 틀린 항목의 사유. 틀린 항목만 버린다."""
+    rows = payload.get("meanings")
+    if not isinstance(rows, list):
+        raise HighlightError("meanings는 목록이어야 합니다")
+    known = {str(view["event_id"]): view for view in views}
+    kept: dict[str, str] = {}
+    errors: list[str] = []
+    for row in rows:
+        key = str(row.get("id")) if isinstance(row, dict) else ""
+        if key not in known or key in kept:
+            continue
+        view = known[key]
+        source = " ".join(str(view.get(field) or "") for field in
+                          ("title", "market_question", "question", "label", "outlook"))
+        try:
+            text = _text(row.get("meaning"), "meaning", 15, 70)
+            _translation(text, source, "meaning")
+            _no_pointer(text, "meaning")
+            _no_cliche(text, "meaning")
+            if _COMPARISON.search(text):
+                raise HighlightError(f"meaning에 추이를 말로 옮기는 비교어가 있습니다: {text}")
+            if _UNDECIDED.search(text):
+                raise HighlightError(f"meaning에 결론을 말하지 않는 빈말이 있습니다: {text}")
+            if _SERVICE_NAMES.search(text):
+                raise HighlightError(f"meaning에 쓰지 않는 호칭이 있습니다: {text}")
+        except HighlightError as error:
+            errors.append(f"주제 {key} {error}")
+            continue
+        kept[key] = text
+    errors.extend(f"주제 {key} 문장이 없습니다" for key in known if key not in kept
+                  and not any(error.startswith(f"주제 {key} ") for error in errors))
+    return kept, errors
+
+
+def _majority(view: dict) -> dict[str, str]:
+    """다수 쪽 판단과 그 무게를 코드가 정해 모델에 준다. 확률을 뒤집어 읽는 일은 모델에 맡기지 않는다.
+
+    맡겨 두었을 때 "호르무즈 통행 정상화 5.5%"를 세 번 모두 "공급 차질 우려는 크지 않다"로 거꾸로 읽었다(2026-11-14
+    실측) — 확률이 낮은 쪽이 좋은 일이면 다수는 차질이 이어진다고 보는 것이다. 퍼센트는 넣지 않는다(다시 쓰지 않게).
+    """
+    expects = view["now"] >= .5
+    share = view["now"] if expects else 1 - view["now"]
+    subject = f"{view['outlook']} 것을" if view.get("outlook") else f"'{view['label']}'을(를)"
+    return {"majority": f"다수는 {subject} {'기대한다' if expects else '기대하지 않는다'}",
+            "weight": "압도적" if share >= .85 else "우세" if share >= .6 else "근소"}
+
+
+def write_meanings(views: list[dict], settings: Settings) -> tuple[dict[str, str], list[str]]:
+    """추적 주제마다 오늘 확률이 뜻하는 바를 한 문장으로 쓴다. 호출은 한 번(검증에 걸리면 사유를 붙여 한 번 더)이다.
+
+    돌려주는 것은 맞는 문장과, 끝내 쓰지 못한 주제의 사유다. 문장이 없는 장면은 확률만 읽는다.
+    """
+    source = [{key: value for key, value in {
+        "id": str(view["event_id"]), "headline": view["headline"], "question": view["question"],
+        # 음성이 읽는 것과 같은 표기다(`scenario._points`·`speech.plain_number`).
+        "label": view["label"], "outlook": view.get("outlook"), "yes": f"{plain_number(round(view['now'] * 100, 1))}%",
+        **_majority(view),
+        "context": view.get("context"), "end_date": str(view.get("end_date") or "")[:10],
+    }.items() if value} for view in views]
+    user = json.dumps(source, ensure_ascii=False)
+    try:
+        kept, errors = validate_meanings(chat_json(settings, system=MEANING_PROMPT, user=user, max_tokens=600), views)
+    except HighlightError as error:
+        kept, errors = {}, [str(error)]
+    if not errors:
+        return kept, []
+    retry = (f"{user}\n\n직전 응답이 검증에 실패했습니다: {'; '.join(errors)}\n"
+             "틀린 주제의 meaning만 고쳐 같은 형식의 JSON 전체를 다시 반환하세요.")
+    try:
+        again, errors = validate_meanings(chat_json(settings, system=MEANING_PROMPT, user=retry, max_tokens=600), views)
+    except HighlightError as error:
+        return kept, [str(error)]
+    # 첫 응답에서 맞은 문장은 그대로 쓴다 — 교정이 맞던 문장을 새로 틀릴 수 있다.
+    return {**again, **kept}, [error for error in errors if not any(error.startswith(f"주제 {key} ") for key in kept)]

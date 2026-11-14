@@ -439,8 +439,8 @@ def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, sho
 
     예전 화면은 원자료 형식을 그대로 옮겨 "9월 WTI 90달러 이하: 예 99.95%,
     아니오 0.05%" 한 덩어리였다. 한쪽은 다른 쪽의 나머지이므로 화면은 확률 하나만
-    크게 세우고 막대로 그 크기를 보여 준다. 보통은 '예'이고, 이지선다에서 아니오가 더
-    많으면 아니오다(`Scene.side`, `yes`에 그 말이 온다).
+    크게 세우고 막대로 그 크기를 보여 준다. 보통은 '예'이고(숫자 뒤 작은 글씨), 이지선다에서 아니오가 더
+    많으면 아니오다(`Scene.side`, `yes`에 그 말이 온다) — 그때는 "아니오"를 숫자 앞에 같은 크기로 세운다.
 
     `shown`은 지금까지 등장한 줄 수다. 아직 말하지 않은 줄도 이름(흐린 색)과 빈 게이지를
     처음부터 그려 두어, 질문을 듣는 동안 무엇을 고르는지 보이고 이미 뜬 줄이 밀리지 않는다.
@@ -459,9 +459,18 @@ def _options_block(draw, scene: Scene, font_path: Path, accent: str, box, *, sho
             continue
         number = _font(bold, min(120, round(height * .47)))
         number_y = y + round(height * .24)
-        draw.text((x, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
-        draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(number.size * .52)),
-                  yes, font=_font(bold, 32), fill=_COLORS["muted"])
+        if scene.side == "no":
+            # 아니오가 더 많아 아니오 쪽 확률을 세운 이지선다는 "아니오"를 숫자 앞에 숫자와 같은 크기로 세운다. 숫자 뒤의
+            # 작은 회색 글씨로 두던 동안 "12월 31일까지 정상 수준 회복 / 94.5%"가 다수가 정상화를 기대한다는 말로
+            # 읽혔다 — 실제로는 '예' 5.5%였다(운영자 지적 2026-11-14, 11/13 호르무즈 영상).
+            draw.text((x, number_y), yes, font=number, fill=_COLORS["red"], stroke_width=1, stroke_fill=_COLORS["red"])
+            x += draw.textlength(f"{yes} ", font=number)
+            draw.text((x, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
+            x = box[0]
+        else:
+            draw.text((x, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
+            draw.text((x + draw.textlength(percent, font=number) + 18, number_y + round(number.size * .52)),
+                      yes, font=_font(bold, 32), fill=_COLORS["muted"])
         filled = round((right - x) * min(1.0, max(0.0, probability)))
         if filled > OPTION_BAR:
             draw.rounded_rectangle((x, bar_y, x + filled, bar_y + OPTION_BAR), radius=OPTION_BAR // 2,

@@ -70,7 +70,7 @@ def test_jian_success_preserves_audio_and_original_subtitle_positions(tmp_path, 
     assert captured['timeout'] == (10, 150) and captured['allow_redirects'] is False
     assert (tmp_path / 'narration.mp3').read_bytes() == b'complete mp3'
     assert len(scenes) == 2
-    assert [w.text for w in scenes[0]] == ['한국', 'ETF가', '12.55%입니다.']
+    assert [w.text for w in scenes[0]] == ['한국', '이티에프가', '12.55%입니다.']
     assert tts.locate(narrations[0], scenes[0]) == [0, 3, 13]
     assert scenes[0][-1].end < scenes[1][0].start
     assert info['provider'] == 'elevenlabs' and 'secret-key' not in str(info)

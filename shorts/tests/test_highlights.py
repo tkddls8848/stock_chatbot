@@ -256,3 +256,36 @@ def test_a_cliche_lead_in_is_dropped_for_the_fallback_line(issue_source):
     issue, script = issue_source[3:]
     (clean,) = validate_scripts({"scripts": [{**script, "lead_in": "금융시장과 맞닿은 연준 결정을 보겠습니다."}]}, [issue])
     assert "lead_in" not in clean
+
+
+_WATCHED = {"event_id": "fed", "title": "Fed Decision in January?", "market_question": "Will the Fed hike 25 bps in January?",
+            "question": "연준이 1월에 금리를 어떻게 결정할까요?", "label": "25bp 인상", "outlook": "연준이 1월에 금리를 25bp 인상할"}
+
+
+@pytest.mark.parametrize("meaning, kept", [
+    ("1월 인상이 기본 시나리오라는 뜻이어서, 달러와 미 국채 단기물에 긴축 기대가 실린 셈입니다.", True),
+    ("25bp 인상이 우세하다는 건 연준의 긴축이 끝나지 않았다는 전제가 강하다는 뜻입니다.", True),
+    # 확률은 프로그램이 바로 앞에서 읽는다. 추이는 화면 그래프가 맡는다(운영자 지시 2026-11-13).
+    ("참여자 59.5%가 인상을 본다는 건 긴축 전제가 강하다는 뜻입니다.", False),
+    ("한 달 새 인상 기대가 커졌다는 건 긴축 전제가 강해졌다는 뜻입니다.", False),
+    # 지시어·서비스 호칭·상투어·길이 초과는 그 주제만 뺀다.
+    ("이는 연준의 긴축이 끝나지 않았다는 전제가 우세하다는 뜻입니다.", False),
+    ("베팅 참여자 다수가 1월 인상을 본다는 건 긴축 전제가 강하다는 뜻입니다.", False),
+    ("기준에 따라 엇갈리는 만큼 1월 결정 방향은 아직 열려 있다는 뜻입니다.", False),
+    ("1월 결정이 반반으로 갈려, 단기 국채 금리가 지표마다 흔들릴 수 있는 자리입니다.", False),
+    ("1월 인상이 기본 시나리오라는 뜻이어서 달러 강세와 미 국채 단기물 금리 상승, 성장주 밸류에이션 부담으로 이어질 수 있습니다.", False),
+])
+def test_a_watch_meaning_reads_the_level_without_numbers_trend_or_filler(meaning, kept):
+    """추적 장면이 확률 뒤에 읽는 의미 문장(운영자 지시 2026-11-14). 틀린 주제만 빠지고 사유가 남는다."""
+    written, errors = highlights.validate_meanings({"meanings": [{"id": "fed", "meaning": meaning}]}, [_WATCHED])
+    assert (written == {"fed": meaning}) is kept and bool(errors) is not kept
+
+
+def test_the_code_not_the_model_says_which_way_the_majority_leans():
+    """확률이 낮은 '좋은 일'을 모델이 거꾸로 읽었다(호르무즈 정상화 5.5% → "공급 차질 우려는 크지 않다", 2026-11-14 실측).
+    다수 쪽과 무게는 코드가 정해 넘기고, 퍼센트는 넣지 않는다."""
+    hormuz = {"now": .055, "outlook": "통행량이 12월 31일까지 정상 수준을 회복할", "label": "정상 수준 회복"}
+    assert highlights._majority(hormuz) == {
+        "majority": "다수는 통행량이 12월 31일까지 정상 수준을 회복할 것을 기대하지 않는다", "weight": "압도적"}
+    assert highlights._majority({**_WATCHED, "now": .595})["weight"] == "근소"
+    assert highlights._majority({**_WATCHED, "now": .72})["majority"].endswith("인상할 것을 기대한다")

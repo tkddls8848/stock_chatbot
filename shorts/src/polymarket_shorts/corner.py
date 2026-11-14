@@ -3,7 +3,8 @@
 `watch.py`가 고른 주제(`topics.json`)와 그 일별 기록(`history/`)을 읽어, 주제마다 "지금 몇 %이고 지난 30일·어제와
 견줘 어떻게 움직였는가"를 낸다. 숫자와 기간은 전부 여기서 정하고, 모델은 이름과 맥락(제목·질문·선택지 이름·전망
 구절·해설)만 쓴다. 그 글은 주제가 바뀌지 않는 한 같아야 하므로 처음 한 번만 쓰고 `topics.json`에 넣어 둔다 — 매일
-다시 쓰면 같은 판의 이름이 날마다 달라지고 모델 호출도 는다.
+다시 쓰면 같은 판의 이름이 날마다 달라지고 모델 호출도 는다. 예외는 오늘 확률이 뜻하는 바를 짚는 의미 문장이다
+(`_attach_meanings`) — 확률이 날마다 바뀌므로 하루 한 번, 추적 주제 전부를 한 호출로 쓴다.
 
 코너는 영상 제작을 막지 않는다. 기록이 모자라거나 글을 쓰지 못한 주제는 그날만 빠지고 사유가 감사 기록에 남는다.
 """
@@ -16,7 +17,7 @@ from typing import Any
 
 from .config import Settings
 from .core.storage import read_json, write_json
-from .highlights import HighlightError, write_issues
+from .highlights import HighlightError, write_issues, write_meanings
 from .llm import LLMError
 from .watch import OPEN_HIGH, OPEN_LOW, history_path, ledger_dir, pinned_topics, watch_dir
 
@@ -165,6 +166,7 @@ def build(settings: Settings, today: date) -> tuple[list[dict[str, Any]], dict[s
             "previous_leader": (script["labels"].get(previous) or {}).get("label") if previous else None,
             "long": long_form, **measured,
         })
+    _attach_meanings(views, state.get("tracked") or [], settings, today, audit)
     if state.get("tracked"):
         write_json(path, state)
     audit["scenes"] = len(views)
@@ -173,6 +175,39 @@ def build(settings: Settings, today: date) -> tuple[list[dict[str, Any]], dict[s
     audit["same_theme"] = sorted(topic for topic, entry in (state.get("importance") or {}).items()
                                  if entry.get("theme") in themes)
     return views, audit
+
+
+def _attach_meanings(views: list[dict[str, Any]], slots: list[dict[str, Any]], settings: Settings, today: date,
+                     audit: dict[str, Any]) -> None:
+    """장면마다 오늘 확률이 뜻하는 바를 한 문장(`view["meaning"]`) 붙인다(운영자 지시 2026-11-14).
+
+    같은 날·같은 질문이면 `topics.json`에 남긴 문장을 다시 쓴다 — 같은 날 다시 만들어도 모델을 부르지 않고 같은 말을
+    한다. 나머지 주제는 한 번의 호출로 묻는다. 쓰지 못한 주제는 그날 확률만 읽고 사유가 감사 기록에 남는다.
+    """
+    by_id = {slot["event_id"]: slot for slot in slots}
+    pending = []
+    for view in views:
+        saved = by_id[view["event_id"]].get("meaning") or {}
+        fresh = saved.get("date") == today.isoformat() and saved.get("market_id") == view["market_id"]
+        view["meaning"] = saved.get("text") if fresh else None
+        if not view["meaning"]:
+            pending.append(view)
+    if not pending:
+        return
+    audit["llm_calls"] += 1
+    try:
+        written, errors = write_meanings(pending, settings)
+    except (HighlightError, LLMError) as exc:
+        logger.warning("추적 주제의 의미 문장을 쓰지 못했습니다: %s", exc)
+        written, errors = {}, [f"의미 문장을 쓰지 못함: {str(exc)[:200]}"]
+    for view in pending:
+        text = written.get(str(view["event_id"]))
+        if text:
+            view["meaning"] = text
+            by_id[view["event_id"]]["meaning"] = {"date": today.isoformat(), "market_id": view["market_id"],
+                                                  "text": text}
+    if errors:
+        audit["meaning_skipped"] = [error[:300] for error in errors]
 
 
 def status(settings: Settings) -> dict[str, Any]:

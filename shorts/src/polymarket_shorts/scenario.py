@@ -160,6 +160,9 @@ def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
     말로 되풀이할 필요가 없다). 30일 전·어제 대비 수치는 화면 글과 검수 기록에만 둔다. 해설은 처음 다루는 날과 크게
     움직인 날(`view["long"]`)에만 읽고, 나머지 날은 오늘 확률만 짧게 잇는다. 질문 문장은 읽지 않는다.
     바로 뒤의 확률 문장이 같은 전망을 말하고, 코너 한 장면이 새 이슈 하나만큼 길어지면 영상이 한도를 넘는다.
+    **확률 뒤에는 그 수준이 금융시장에 무슨 뜻인지 한 문장(`view["meaning"]`)을 읽는다**(운영자 지시 2026-11-14: 현황만
+    읊지 말고 의미를 짧게 짚는다. `corner._attach_meanings`). 화면에는 띄우지 않고 검수 근거에 남긴다. 늘어난 길이는 새
+    이슈의 해설·보도 문장을 줄여 메운다(`highlights.PROMPT`).
     """
     now, base = _points(view["now"]), _points(view["base"])
     yesterday = None if view["yesterday"] is None else _points(view["yesterday"])
@@ -169,9 +172,11 @@ def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
         watch_opener(headline, position, first_time=view["first_time"]),
         end_sentence(to_polite_text(view["context"])) if view["long"] else "",
     ) if part)
+    meaning = end_sentence(to_polite_text(view["meaning"])) if view.get("meaning") else ""
     numbers = " ".join(part for part in (
         speak_markets("binary", headline, [(label, shown, "", view.get("outlook"))]),
         speak_leader_change(view["previous_leader"], label) if view.get("previous_leader") else "",
+        meaning,
     ) if part)
     narration = f"{lead} {numbers}"
     deadline = datetime.fromisoformat(view["end_date"].replace("Z", "+00:00"))
@@ -195,6 +200,7 @@ def _watch_scene(view: dict, position: int, shown_stamp: str) -> Scene:
                   f"확률 기록: {first_day} ~ {last_day} · {len(view['points'])}일치(지난 기록은 원 출처의 일별 값, "
                   "그 뒤는 제작 때 읽은 값)",
                   *compared,
+                  *([f"의미(음성만): {meaning}"] if meaning else []),
                   f"이벤트 종료 예정: {deadline:%Y-%m-%d %H:%M %z} (개별 판정 시각과 다를 수 있음)"),
         selection_note=f"추적 주제({view['theme']}) · {view['since']}부터 · 선정 점수 {view['score']}",
         # 새 이슈 장면과 같은 꼴로 그림 묘사를 싣는다(`media.attach_pictures`).
