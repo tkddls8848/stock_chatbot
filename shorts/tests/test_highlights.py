@@ -258,7 +258,7 @@ def test_a_cliche_lead_in_is_dropped_for_the_fallback_line(issue_source):
     assert "lead_in" not in clean
 
 
-_WATCHED = {"event_id": "fed", "title": "Fed Decision in January?", "market_question": "Will the Fed hike 25 bps in January?",
+_WATCHED = {"event_id": "fed", "now": .595, "title": "Fed Decision in January?", "market_question": "Will the Fed hike 25 bps in January?",
             "question": "연준이 1월에 금리를 어떻게 결정할까요?", "label": "25bp 인상", "outlook": "연준이 1월에 금리를 25bp 인상할"}
 
 
@@ -317,3 +317,35 @@ def test_a_failed_correction_keeps_the_meaning_that_already_passed(monkeypatch):
              {**_WATCHED, "event_id": "cpi", "now": .095, "headline": "물가 상승률"}]
     kept, errors = highlights.write_meanings(views, Settings.from_env())
     assert kept == {"fed": good} and errors[0].startswith("교정 실패")
+
+
+def test_meaning_terms_follow_majority_weight_boundaries():
+    phrases = {
+        "소수": "1월 인상을 소수만 기대한다는 것은 긴축 부담이 크지 않다는 기대를 의미합니다.",
+        "적다는": "1월 인상을 기대하는 쪽이 적다는 것은 긴축 부담이 크지 않다는 기대를 의미합니다.",
+        "꼬리 위험": "1월 인상이 꼬리 위험이라는 것은 긴축 부담이 크지 않다는 기대를 의미합니다.",
+        "기본 시나리오": "1월 인상이 기본 시나리오라는 것은 단기 국채에 긴축 기대가 실린다는 것을 의미합니다.",
+    }
+    # .55·.85 경계의 양쪽과 반대 다수 방향을 함께 확인한다.
+    for now, allowed in [(.15, set(phrases) - {"기본 시나리오"}), (.1501, {"소수", "적다는"}),
+                         (.45, {"소수", "적다는"}), (.4501, set()), (.5, set()), (.5499, set()),
+                         (.55, {"소수", "적다는", "기본 시나리오"}),
+                         (.8499, {"소수", "적다는", "기본 시나리오"}),
+                         (.85, {"소수", "적다는", "기본 시나리오"})]:
+        for term, meaning in phrases.items():
+            kept, _ = highlights.validate_meanings(
+                {"meanings": [{"id": "fed", "meaning": meaning}]}, [{**_WATCHED, "now": now}])
+            assert bool(kept) == (term in allowed), (now, term)
+
+
+def test_high_translation_accepts_rising_but_rejects_falling():
+    source = "Will WTI hit (HIGH) $90?"
+    highlights._translation("90달러까지 상승", source, "label")
+    with pytest.raises(HighlightError, match="상승·하락"):
+        highlights._translation("90달러까지 하락", source, "label")
+
+
+def test_outlook_drops_pointers_but_keeps_the_named_subject():
+    for outlook in ("그쪽 대신 연준이 금리를 인상할", "이는 금리를 인상할", "이런 결정이 이어질"):
+        assert highlights._outlook(outlook, "Will the Fed hike rates?", set()) is None
+    assert highlights._outlook("연준이 금리를 인상할", "Will the Fed hike rates?", set()) == "연준이 금리를 인상할"

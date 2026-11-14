@@ -64,60 +64,48 @@ def test_evidence_and_checkpoint_are_separated_by_a_sentence_end():
 
 
 def test_every_narration_prompt_forbids_a_lone_one_syllable_determiner():
-    """멘트를 쓰는 곳이 셋이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
+    """멘트를 쓰는 곳이 둘이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
 
     홀로 선 `이`·`그`·`저`는 TTS가 한 음절로 스쳐 지나가 들리지 않는다.
     2026-09-15 편집본의 "86.5%. 이 숫자는"에서 실제로 그 증상이 나왔다.
     """
     from polymarket_shorts import highlights, workflow
-    from polymarket_shorts.config import PROJECT_DIR
 
     sources = {
         "highlights.PROMPT": highlights.PROMPT,
         "workflow.EDITOR_PROMPT": workflow.EDITOR_PROMPT,
-        "prompts/editorial_ko.txt": (PROJECT_DIR / "prompts" / "editorial_ko.txt").read_text(
-            encoding="utf-8"
-        ),
     }
     for name, text in sources.items():
         assert "한 글자 관형사" in text, f"{name}에 규칙이 없습니다"
 
 
 def test_every_narration_prompt_splits_the_screen_from_the_voice():
-    """멘트를 쓰는 곳이 셋이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
+    """멘트를 쓰는 곳이 둘이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
 
     2026-09-23 편집본이 "예 99.95%, 아니오 0.05%"를 그대로 낭독했다. 규칙 기반
     경로(`speech.py`)는 이미 막았지만, 모델이 쓰는 경로도 같은 기준이어야 한다.
     """
     from polymarket_shorts import highlights, workflow
-    from polymarket_shorts.config import PROJECT_DIR
 
     sources = {
         "highlights.PROMPT": highlights.PROMPT,
         "workflow.EDITOR_PROMPT": workflow.EDITOR_PROMPT,
-        "prompts/editorial_ko.txt": (PROJECT_DIR / "prompts" / "editorial_ko.txt").read_text(
-            encoding="utf-8"
-        ),
     }
     for name, text in sources.items():
         assert "말로 푸는" in text or "말하듯" in text or "말로 묻듯" in text, f"{name}에 구어체 규칙이 없습니다"
 
 
 def test_every_narration_prompt_lists_the_same_cliches():
-    """멘트를 쓰는 곳이 셋이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
+    """멘트를 쓰는 곳이 둘이라 한 곳만 고치면 나머지로 다시 새어 들어온다.
 
     "맞닿은"·"관통하는"·"가늠하는 잣대" 같은 글말 비유가 대사를 기계가 쓴 글처럼 들리게 했다(운영자 지시 2026-10-28).
-    목록은 `highlights.CLICHES` 하나이고, 편집 프롬프트·연출 기준도 같은 말을 모두 적어야 한다.
+    목록은 `highlights.CLICHES` 하나이고, 편집 프롬프트도 같은 말을 모두 적어야 한다.
     """
     from polymarket_shorts import highlights, speech, workflow
-    from polymarket_shorts.config import PROJECT_DIR
 
     sources = {
         "highlights.PROMPT": highlights.PROMPT,
         "workflow.EDITOR_PROMPT": workflow.EDITOR_PROMPT,
-        "prompts/editorial_ko.txt": (PROJECT_DIR / "prompts" / "editorial_ko.txt").read_text(
-            encoding="utf-8"
-        ),
     }
     for name, text in sources.items():
         missing = [word for word in highlights.CLICHES if word not in text]
