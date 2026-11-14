@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from .config import Settings
-from .llm import chat_json
+from .llm import LLMError, chat_json
 from .speech import plain_number
 from .timely import mentions, title_words
 
@@ -758,7 +758,8 @@ def write_meanings(views: list[dict], settings: Settings) -> tuple[dict[str, str
              "틀린 주제의 meaning만 고쳐 같은 형식의 JSON 전체를 다시 반환하세요.")
     try:
         again, errors = validate_meanings(chat_json(settings, system=MEANING_PROMPT, user=retry, max_tokens=600), views)
-    except HighlightError as error:
-        return kept, [str(error)]
+    except (HighlightError, LLMError) as error:
+        # 교정 호출이 끊기거나 실패해도 첫 응답에서 맞은 문장은 살린다 — 다른 주제의 교정 실패로 버리지 않는다.
+        return kept, [f"교정 실패: {str(error)[:200]}"]
     # 첫 응답에서 맞은 문장은 그대로 쓴다 — 교정이 맞던 문장을 새로 틀릴 수 있다.
     return {**again, **kept}, [error for error in errors if not any(error.startswith(f"주제 {key} ") for key in kept)]

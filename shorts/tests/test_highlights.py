@@ -289,3 +289,20 @@ def test_the_code_not_the_model_says_which_way_the_majority_leans():
         "majority": "다수는 통행량이 12월 31일까지 정상 수준을 회복할 것을 기대하지 않는다", "weight": "압도적"}
     assert highlights._majority({**_WATCHED, "now": .595})["weight"] == "근소"
     assert highlights._majority({**_WATCHED, "now": .72})["majority"].endswith("인상할 것을 기대한다")
+
+
+def test_a_failed_correction_keeps_the_meaning_that_already_passed(monkeypatch):
+    """첫 응답의 한 주제만 틀리고 교정 호출이 끊기면, 맞은 주제의 문장은 그대로 남는다(codex 검토 2026-11-14)."""
+    from polymarket_shorts.llm import TruncatedError
+    good = "25bp 인상이 우세하다는 건 연준의 긴축이 끝나지 않았다는 전제가 강하다는 뜻입니다."
+    answers = iter([{"meanings": [{"id": "fed", "meaning": good}, {"id": "cpi", "meaning": "한 달 새 물가 우려가 줄었습니다."}]}])
+    def chat(*args, **kwargs):
+        try:
+            return next(answers)
+        except StopIteration:
+            raise TruncatedError("응답이 상한에 걸려 끊겼습니다") from None
+    monkeypatch.setattr(highlights, "chat_json", chat)
+    views = [{**_WATCHED, "now": .595, "headline": "연준 1월 금리 결정"},
+             {**_WATCHED, "event_id": "cpi", "now": .095, "headline": "물가 상승률"}]
+    kept, errors = highlights.write_meanings(views, Settings.from_env())
+    assert kept == {"fed": good} and errors[0].startswith("교정 실패")
