@@ -10,7 +10,8 @@
 import asyncio
 import html
 import logging
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from xml.etree import ElementTree
 
@@ -20,6 +21,7 @@ from telegram.ext import ContextTypes
 
 from services.telegram_bot.core.clock import now, today
 from services.telegram_bot.core.config import (
+    STORAGE_DIR,
     SOURCE_PROBE_KEYS,
     SOURCE_PROBE_TIMEOUT_SECONDS,
     WEB_STATUS_BASE_URL,
@@ -132,7 +134,8 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
     title = f"<b>🌐 웹 상태</b> · {now():%m/%d %H:%M} 확인(한국 시간)"
     meta = _get("/api/meta", fetch)
     if meta is None:
-        return f"{title}\n{MARK_FAIL} 웹이 응답하지 않습니다(8788). stock-chatbot-web 서비스를 확인하세요."
+        return (f"{title}\n{MARK_FAIL} 웹이 응답하지 않습니다(8788). stock-chatbot-web 서비스를 확인하세요."
+                + "\n\n" + build_activity_status())
     web = status_table([
         _dated(_stamp(meta.get("market_generated_at")), "시장 감성"),
         _dated(_stamp(meta.get("news_generated_at")), "뉴스 검색(/search) 자료"),
@@ -171,14 +174,62 @@ def build_web_status(fetch: Callable[..., Any] = requests.get) -> str:
 
     return "\n\n".join([
         f"{title}\n{web}",
+        build_activity_status(),
         f"<b>예측 컨센서스</b>\n{status_table(rows)}{_notes(notes)}",
         f"<b>자산 진단 외부 자료</b> · 지금 확인\n{status_table(source_status_rows(fetch))}",
     ])
+
+
+
+def build_activity_status() -> str:
+    """웹이 굽는 숫자 요약만 읽는다. 개인 계정 파일·식별값은 봇으로 전달하지 않는다."""
+    title = "<b>웹 이용 통계</b>"
+    try:
+        data = json.loads((STORAGE_DIR / "web" / "activity_summary.json").read_text(encoding="utf-8"))
+        if data.get("version") != 1:
+            raise ValueError("Unknown activity format")
+        stamp = datetime.fromisoformat(data["updated_at"])
+        if stamp.tzinfo is None:
+            raise ValueError("Missing timezone")
+        stale = (now() - stamp).total_seconds() > 120
+        periods = data["periods"]
+        rows = [(MARK_WARN if stale else MARK_OK, _stamp(data["updated_at"]), "집계 시각"),
+                (MARK_OK, str(data["accounts"]), "현재 계정"),
+                (MARK_NONE, str(data["legacy_accounts"]), "최초 로그인일 미상 계정")]
+        for key, label in (("today", "오늘"), ("yesterday", "어제"), ("7d", "최근 7일"), ("30d", "최근 30일")):
+            row = periods[key]
+            rows.extend([(MARK_OK, str(row["new"]), label + " 신규 계정"),
+                         (MARK_OK, str(row["active"]), label + " 활성 계정"),
+                         (MARK_OK, str(row["views"]), label + " 페이지 조회")])
+        current = data["days"].get(today().isoformat(), {})
+        labels = {"news_search": "뉴스 검색 요청", "forecast_list": "예측 목록 요청",
+                  "forecast_ask": "컨센서스 답변 요청", "research": "리서치 생성 접수"}
+        rows.extend((MARK_OK, str(current.get("actions", {}).get(key, 0)), "오늘 " + label)
+                    for key, label in labels.items())
+        rows.append((MARK_WARN if periods["today"]["errors"] else MARK_OK,
+                     str(periods["today"]["errors"]), "오늘 집계 대상 서버 오류"))
+        pages = current.get("pages", {})
+        page_labels = {"/": "홈", "/forecast": "컨센서스", "/search": "검색", "/portfolio": "내 자산",
+                       "/research": "리서치", "/about": "소개", "/privacy": "개인정보", "/terms": "약관"}
+        popular = ", ".join(f"{page_labels.get(path, '기타')} {count}회" for path, count in
+                            sorted(pages.items(), key=lambda item: item[1], reverse=True)[:3])
+        notes = ["한국 시간 · 최근 기간은 오늘 포함 · 약 30초마다 갱신",
+                 "집계 시작: " + str(data["started_at"])[:16].replace("T", " "),
+                 "신규는 집계 이후 처음 확인한 계정(탈퇴 계정 제외). 이전 로그인 이력은 알 수 없습니다.",
+                 "활성은 로그인 후 화면·기능을 사용한 계정. 운영자도 포함합니다.",
+                 "조회는 방문자 수가 아닙니다. 알려진 봇을 제외하지만 자동 요청이 포함될 수 있습니다."]
+        if popular:
+            notes.append("오늘 많이 본 화면: " + popular)
+        if stale:
+            notes.insert(0, "집계가 지연되었습니다. 아래 값은 마지막 저장 시점 기준입니다.")
+        return title + "\n" + status_table(rows) + _notes(notes)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return title + "\n" + MARK_NONE + " 통계 자료 없음 또는 기록 오류 · 웹 서비스와 저장소를 확인하세요."
 
 
 async def cmd_web(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
         return
-    text = await asyncio.to_thread(build_web_status)
+    text = await asyncio.to_thread(build_activity_status if context.args and context.args[0] == "stats" else build_web_status)
     await message.reply_text(text, parse_mode="HTML")

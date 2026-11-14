@@ -20,6 +20,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
+from services.web.activity import record_account
 from services.web.core.clock import now
 from services.web.core.storage import FileLockTimeout, file_lock
 
@@ -63,11 +64,13 @@ class Accounts:
             raise ValueError("Invalid subject")
         key = hmac.new(self.identity_key.encode(), subject.encode(), hashlib.sha256).hexdigest()
         token = secrets.token_urlsafe(32)
-        with self._lock:
-            self._prune()
-            if len(self._sessions) >= 4096:
-                raise HTTPException(503, "로그인 이용량이 많습니다. 잠시 뒤 다시 시도하세요.")
-            self._sessions[hashlib.sha256(token.encode()).hexdigest()] = (key, now().timestamp() + SESSION_SECONDS)
+        with account_lock(self.root, key, timeout=1):
+            with self._lock:
+                self._prune()
+                if len(self._sessions) >= 4096:
+                    raise HTTPException(503, "로그인 이용량이 많습니다. 잠시 뒤 다시 시도하세요.")
+                record_account(self.root / key, login=True)
+                self._sessions[hashlib.sha256(token.encode()).hexdigest()] = (key, now().timestamp() + SESSION_SECONDS)
         return token
 
     def identify(self, request: Request) -> Account:

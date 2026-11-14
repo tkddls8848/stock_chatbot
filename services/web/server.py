@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 from typing import Any, Literal
 
+from starlette.concurrency import run_in_threadpool
+
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.exception_handlers import http_exception_handler
@@ -31,9 +33,10 @@ from services.web.pages.privacy import PRIVACY_HTML
 from services.web.pages.search import SEARCH_HTML
 from services.web.pages.errors import ERROR_HTML
 from services.web.core.config import PUBLIC_DIR
-from services.web.core.storage import read_json_object
+from services.web.core.storage import FileLockTimeout, read_json_object
 from services.web.core import config
 from services.web.accounts import Accounts
+from services.web.activity import Activity
 from services.web.newsletter.routes import build_newsletter_router, build_unsubscribe_router
 from services.web.polymarket.repository import PolymarketRepository, make_etag
 from services.web.portfolio.routes import build_router
@@ -118,9 +121,11 @@ def build_accounts() -> Accounts:
 
 def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts | None = None,
               research_router: APIRouter | None = None, ask_router: APIRouter | None = None) -> FastAPI:
-    app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None)
-    search_repository = NewsSearch(PUBLIC_DIR)
     accounts = accounts or build_accounts()
+    activity = Activity(accounts.root.parent / "web", accounts.root)
+    app = FastAPI(title="Stock Chatbot", docs_url=None, redoc_url=None, openapi_url=None, lifespan=activity.lifespan)
+    app.state.activity = activity
+    search_repository = NewsSearch(PUBLIC_DIR)
     app.include_router(accounts.router())
     app.include_router(portfolio_router or build_router(accounts=accounts))
     app.include_router(build_newsletter_router(accounts))
@@ -139,6 +144,10 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
             # 경로와 예외 종류만 남긴다 — 그것도 없으면 어느 화면이 왜 깨졌는지 모른다.
             logger.error("웹 요청 처리 실패 path=%s error=%s", request.url.path, type(exc).__name__)
             response = _error_response(request, 500)
+        try:
+            await run_in_threadpool(activity.observe, request, response, accounts)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, FileLockTimeout):
+            logger.error("웹 활동 통계 기록 실패")
         response.headers.update(_SECURITY_HEADERS)
         response.headers.setdefault(
             "Content-Security-Policy", _PAGE_CSP.get(request.url.path, _DEFAULT_CSP)

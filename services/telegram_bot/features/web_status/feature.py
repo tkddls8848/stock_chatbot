@@ -6,7 +6,7 @@ from services.telegram_bot.features.web_status.handlers import cmd_web
 FEATURE = FeatureSpec(
     key="web_status",
     label="웹 상태",
-    commands=(CommandSpec("web", "웹 산출물 갱신 상태", cmd_web),),
+    commands=(CommandSpec("web", "웹 상태·이용 통계", cmd_web, usage="[stats]"),),
     # 하단 메뉴의 "🛠 웹 관리"는 리서치·시장 감성·웹 상태를 한 화면에 모은 허브를 연다
     # (handlers/menus.py의 web_admin_menu).
     menus=(MenuSpec("🛠 웹 관리", "nav:web", 2, "🛠 웹 관리", 2),),

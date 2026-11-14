@@ -67,7 +67,7 @@ def web_admin_menu(registry) -> InlineKeyboardMarkup:
         first.append(("📊 시장 감성 갱신", "nav:market"))
     if first:
         rows.append(first)
-    last = [("🌐 웹 상태", "nav:web:status")]
+    last = [("🌐 웹 상태·통계", "nav:web:status")]
     if registry.is_enabled("shorts"):
         last.append(("🎬 쇼츠", "nav:shorts"))
     rows.append(last)

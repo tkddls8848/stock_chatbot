@@ -164,6 +164,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `users/<계정키>/newsletter.json` | 웹(구독 API와 뉴스레터 one-shot, 계정 잠금) | 해당 계정의 웹 요청, 뉴스레터 one-shot |
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
+| `web/activity.json`·`web/activity_summary.json` | 웹 | 웹. 봇은 식별값 없는 `activity_summary.json`만 읽는다 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
 | `public/shorts/ko.json` | 쇼츠(게시 직후 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
 
@@ -596,7 +597,15 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   매일 쌓여 로컬 디스크를 채운다. 반복 회피(`Settings.repeat_days`)가 읽는 기간보다는
   짧게 지우지 않는다. `state/`는 건드리지 않는다.
   모든 모듈의 설정은 저장소 루트 `.env` 하나에서 관리한다. 하위 폴더에 `.env`를 두지 않는다.
-- **`/web`은 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
+- **웹 이용 통계는 웹이 기록하고 텔레그램 `/web`·`/web stats`가 숫자 요약만 읽는다**(2026-11-14).
+  최초·최근 로그인 시각과 최근 30일 활동일은 `users/<계정키>/activity.json`에 두며 계정 잠금·내보내기·탈퇴 삭제를
+  따른다. 기존 계정의 최초 로그인일은 추측하지 않는다. 공개 화면별 조회·고정 기능별 성공 요청·서버 오류는
+  `web/activity.json`에 일별 30일만 보관한다. IP·이메일·쿼리·입력·추적 쿠키를 저장하지 않는다. 알려진 봇은 제외하지만
+  조회는 사람 수가 아니다. 웹 단일 worker가 30초마다 원자적으로 저장하고 종료 때도 저장한다(강제 종료 시 최대 30초
+  요청 집계 유실 가능). 계정 수·기간별 활성/신규·조회 요약은 `web/activity_summary.json`에 함께 쓴다.
+  **봇이 읽는 것은 이 숫자 요약뿐**이고 웹 개인 파일은 읽지 않는다. 통계를 공개 HTTP로 노출하지 않는다.
+  집계 2분 지연·손상·누락은 관리 패널에서 표시하고 신규·활성은 현재 남은 계정 기준, 최근 기간은 오늘 포함이다.
+- **`/web`의 서비스 상태는 공개 웹의 GET API를 HTTP로 읽는다**(shorts와 같은 방식). 봇은 웹
   코드를 import하지 않는다. 웹이 죽었으면 그 사실이 가장 먼저 보인다.
   **상태 패널은 앱 기록이 아니라 지금 도는 시스템을 검수한다**(운영자 지적 2026-10-08). 자산 진단의 외부
   자료(금감원·한국은행·국토부)는 마지막 조언 기록(`storage/portfolio/advice/latest.json`)을 읽지 않고 `/web`을 열 때

@@ -187,7 +187,7 @@ def test_generated_help_includes_command_usage_and_code_examples():
 
     assert "/market — 시장 감성 지금 갱신" in text
     assert "/research show|set|clear|run" in text
-    assert "/web — 웹 산출물 갱신 상태" in text
+    assert "/web [stats] — 웹 상태·이용 통계" in text
     assert "/briefing [morning|intraday|evening]" in text
     assert "/score" not in text
     assert "KR:KOSPI:005930" in text

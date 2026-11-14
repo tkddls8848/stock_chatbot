@@ -152,7 +152,7 @@ def test_delete_revokes_all_sessions_without_affecting_other_accounts(setup):
     assert a.get("/api/portfolio/assets").status_code == 401
     assert b.get("/api/portfolio/assets").json()["assets"][0]["name"] == "b"
     a.cookies.set(COOKIE, accounts.issue("subject-a"))
-    assert a.get("/api/account/export").json() == {}
+    assert set(a.get("/api/account/export").json()) == {"activity.json"}
 
 
 def test_delete_waits_for_inflight_mutation_and_logout_revokes_replay(setup):
