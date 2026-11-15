@@ -676,6 +676,12 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   곱해진다** — 20 B짜리 필드 하나가 0.42 MiB다. 목록·순위·필터·정렬이 읽지
   않는 값은 detail로 내린다(detail은 byte-addressed라 한 행만 seek한다).
   추가 전에 `services/web/tests/polymarket_manifest_size_probe.py`로 여유를 먼저 잰다.
+  **예외로 둔 선택 필드가 하나 있다: `day_change`**(2026-11-15). 원 출처가 market마다 주는
+  `oneDayPriceChange`를 대표 확률과 같은 선택지에서 옮긴 24시간 변화다(이지선다는 예/아니오 시장의 '예',
+  배타적 다지선다는 1위, 중복선택은 참여 규모 최대 칸). 값이 없으면 키를 넣지 않는다 — 가격을 읽은 약 15,500건 ×
+  약 22 B ≈ 0.33 MiB. 순서가 뒤집힌 예/아니오와 이름 붙은 두 선택지는 방향을 장담할 수 없어 None이다. 7일 변화
+  (`week_change`)는 detail의 market에만 둔다. 이 값이 없을 때 쇼츠 후보 점수의 변화 항(가중 0.2)은 트렌드가 조명한
+  몇십 건에만 값이 있어 2026-11-12~14 후보 22~30개 중 0~1개만 읽혔다.
 - **두 one-shot은 봇의 학습 CPU 집계 밖이다. 대신 자기 예산을 스스로 지킨다.**
   별도 프로세스라 `burst_phase`·`is_burst_active`가 닿지 않는다. 유닛의
   `Nice=10`·`CPUWeight=20`은 **경쟁이 있을 때만** 양보시켜서, 새벽에 봇이

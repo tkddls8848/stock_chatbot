@@ -31,9 +31,11 @@ sys.path.insert(0, str(BASE_DIR))
 from services.web.polymarket.dashboard.models import normalize_event  # noqa: E402
 from services.web.polymarket.dashboard.storage import MAX_MANIFEST_BYTES  # noqa: E402
 
-# 현재 코드가 compact에 두는 키. 빈 event 하나를 정규화해서 그대로 받아 온다.
+# 현재 코드가 compact에 두는 키. 선택 필드도 나오는 event로 정규화한다.
 COMPACT_KEYS = frozenset(
-    normalize_event({"id": "0", "markets": []}, identity="0", low_liquidity=0.0)[0]
+    normalize_event({"id": "0", "markets": [{
+        "outcomes": ["Yes", "No"], "outcomePrices": [0.5, 0.5], "oneDayPriceChange": 0,
+    }]}, identity="0", low_liquidity=0.0)[0]
 )
 
 
@@ -62,7 +64,8 @@ def measure(generation_dir: Path) -> dict[str, object]:
             for line in handle:
                 detail = json.loads(line)
                 # write_generation이 만드는 manifest 항목을 그대로 재현한다.
-                entry = {key: value for key, value in detail.items() if key in COMPACT_KEYS}
+                entry = {key: value for key, value in detail.items() if key in COMPACT_KEYS
+                         and (key != "day_change" or value is not None)}
                 entry["generation_id"] = detail.get("generation_id")
                 entry["detail_ref"] = {
                     "shard": shard.name,

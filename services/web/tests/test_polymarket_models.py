@@ -752,12 +752,11 @@ def test_the_measured_shapes_are_read_and_the_unreadable_ones_are_not():
     assert len(read) / len(population) == pytest.approx(5 / 7)
 
 
-def test_compact_gains_no_new_field():
+def test_compact_omits_unavailable_optional_change():
     """compact 한 필드는 event 수(실측 19,054)만큼 곱해져 16 MiB 상한을 민다.
 
-    이 변경은 compact에 필드를 더하지 않는다 — 두 라벨은 detail의 `markets`
-    안에만 있다. 늘어나는 것은 지금까지 `null`이던 `leader` 세 값이 채워지는
-    분량뿐이고, 2026-09-25 generation 전부에 채워 재면 11.61 MiB → 11.80 MiB다.
+    두 라벨은 detail의 `markets` 안에만 있고, 대표 변화가 없으면
+    선택 필드 `day_change`도 compact에서 생략한다.
     """
     compact, detail = _normalize(
         _event(
@@ -795,3 +794,81 @@ def test_compact_gains_no_new_field():
     }
     assert "yes_label" not in compact and "markets" not in compact
     assert {"yes_label", "no_label"} <= set(detail["markets"][0])
+
+
+def test_source_changes_are_rounded_and_binary_keeps_yes_direction():
+    market = {"outcomes": ["Yes", "No"], "outcomePrices": [.2, .8],
+              "oneDayPriceChange": "-0.01236", "oneWeekPriceChange": .12346}
+    compact, detail = normalize_event({"markets": [market]}, identity="e", low_liquidity=0)
+    assert compact.get("day_change") == detail.get("day_change") == -.0124
+    assert detail["markets"][0].get("week_change") == .1235
+    assert "week_change" not in compact
+    market["oneDayPriceChange"] = 0
+    compact, _ = normalize_event({"markets": [market]}, identity="e", low_liquidity=0)
+    assert compact.get("day_change") == 0
+
+
+def test_ambiguous_change_direction_is_not_published():
+    for outcomes in (["No", "Yes"], ["Up", "Down"], ["Team A", "Team B"]):
+        compact, detail = normalize_event({"markets": [{
+            "outcomes": outcomes, "outcomePrices": [.4, .6],
+            "oneDayPriceChange": .1, "oneWeekPriceChange": .2,
+        }]}, identity="e", low_liquidity=0)
+        assert "day_change" not in compact and detail.get("day_change") is None
+        if outcomes == ["No", "Yes"]:
+            assert detail["markets"][0].get("day_change") is None
+            assert detail["markets"][0].get("week_change") is None
+
+
+def test_source_changes_require_valid_prices_and_bounded_numbers():
+    for value, prices in [(None, [.4, .6]), ("bad", [.4, .6]), (float("nan"), [.4, .6]),
+                          (float("inf"), [.4, .6]), (1.01, [.4, .6]), (-1.01, [.4, .6]),
+                          (.1, [.4, .9]), (1, [.4, .6]), (-1, [.4, .6])]:
+        compact, detail = normalize_event({"markets": [{
+            "outcomes": ["Yes", "No"], "outcomePrices": prices,
+            "oneDayPriceChange": value, "oneWeekPriceChange": value,
+        }]}, identity="e", low_liquidity=0)
+        expected = value if value in (1, -1) else None
+        assert detail["markets"][0].get("day_change") == expected
+        assert detail["markets"][0].get("week_change") == expected
+        assert detail.get("day_change") == expected
+        assert ("day_change" in compact) == (expected is not None)
+
+
+def test_exclusive_change_uses_active_priced_leader():
+    markets = [
+        {"id": name, "groupItemTitle": name, "active": active, "closed": closed,
+         "outcomes": ["Yes", "No"], "outcomePrices": prices, "oneDayPriceChange": change}
+        for name, active, closed, prices, change in [
+            ("runner", True, False, [.3, .7], .02),
+            ("leader", True, False, [.7, .3], -.03),
+            ("closed", True, True, [1, 0], .9),
+            ("inactive", False, False, [.9, .1], .8),
+            ("invalid", True, False, [1, 1], .7),
+        ]
+    ]
+    compact, detail = normalize_event({"negRisk": True, "markets": markets}, identity="e", low_liquidity=0)
+    assert compact.get("day_change") == detail.get("day_change") == -.03
+    markets[1]["oneDayPriceChange"] = None
+    compact, detail = normalize_event({"negRisk": True, "markets": markets}, identity="e", low_liquidity=0)
+    assert "day_change" not in compact and detail.get("day_change") is None
+
+
+def test_independent_change_uses_volume_then_id():
+    markets = [
+        {"id": name, "active": active, "closed": closed, "volume24hr": volume,
+         "outcomes": ["Yes", "No"], "outcomePrices": prices, "oneDayPriceChange": change}
+        for name, active, closed, volume, prices, change in [
+            ("b", True, False, 200, [.2, .8], .02),
+            ("a", True, False, 200, [.3, .7], -.03),
+            ("likely", True, False, 100, [.9, .1], .04),
+            ("closed", True, True, 1000, [1, 0], .9),
+            ("inactive", False, False, 1000, [.9, .1], .8),
+            ("invalid", True, False, 1000, [1, 1], .7),
+        ]
+    ]
+    compact, detail = normalize_event({"negRisk": False, "markets": markets}, identity="e", low_liquidity=0)
+    assert compact.get("day_change") == detail.get("day_change") == -.03
+    markets[1]["oneDayPriceChange"] = None
+    compact, detail = normalize_event({"negRisk": False, "markets": markets}, identity="e", low_liquidity=0)
+    assert "day_change" not in compact and detail.get("day_change") is None

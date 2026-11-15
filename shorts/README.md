@@ -4,8 +4,9 @@
 홈페이지의 분야 요약문은 영상 원재료로 사용하지 않습니다.
 
 - `/api/forecast/summary`: 수집 세대와 신선도 검증
-- `/api/forecast/events?status=ok&sort=volume24hr&order=desc&page_size=100&page=N`: 정상 상태 이벤트 전체 목록
-- `/api/forecast/trending`: 관측된 확률 변동 보조 지표
+- `/api/forecast/events?status=ok&sort=volume24hr&order=desc&page_size=100&page=N`: 정상 상태 이벤트 전체 목록.
+  후보 점수의 확률 변화는 각 행의 `day_change`(원 출처가 주는 대표 선택지의 24시간 변화, 없으면 읽지 못한 것)다
+- `/api/forecast/trending`: 다지선다 1위 교체(`leader_changed`) 보조 지표
 - `/api/forecast/events/{id}`: 최종 선정 이벤트의 실제 질문·개별 베팅 가격·설명
 
 공개 HTTP API만 읽습니다. 페이지·상세의 generation이 다르거나 원자료가 지연되면 제작을 중단합니다.

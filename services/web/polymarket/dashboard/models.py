@@ -54,6 +54,7 @@ def _binary_prices(market: dict[str, Any]) -> dict[str, Any]:
     prices = _array(market.get("outcomePrices"))
     result: dict[str, Any] = {
         "valid": False,
+        "first": None,
         "yes_probability": None,
         "no_probability": None,
         "yes_label": None,
@@ -91,6 +92,7 @@ def _binary_prices(market: dict[str, Any]) -> dict[str, Any]:
     result.update(
         {
             "valid": True,
+            "first": first,
             "yes_probability": round(normalized[first], 8),
             "no_probability": round(normalized[1 - first], 8),
             "yes_label": yes_label,
@@ -102,7 +104,16 @@ def _binary_prices(market: dict[str, Any]) -> dict[str, Any]:
 
 def _market_detail(market: dict[str, Any]) -> dict[str, Any]:
     prices = _binary_prices(market)
+    changes = {}
+    for field, source in (("day_change", "oneDayPriceChange"), ("week_change", "oneWeekPriceChange")):
+        value = _number(market.get(source))
+        changes[field] = (
+            round(value, 4)
+            if prices["valid"] and prices["first"] == 0 and value is not None and abs(value) <= 1
+            else None
+        )
     return {
+        **changes,
         "id": str(market.get("id") or market.get("conditionId") or ""),
         "question": str(market.get("question") or market.get("groupItemTitle") or ""),
         "outcome_label": str(market.get("groupItemTitle") or market.get("question") or ""),
@@ -252,6 +263,27 @@ def _consensus(event_type: str, markets: list[dict[str, Any]]) -> dict[str, Any]
     return result
 
 
+def _day_change(event_type: str, markets: list[dict[str, Any]], consensus: dict[str, Any]) -> float | None:
+    """목록의 대표 확률과 같은 선택지의 원 출처 24시간 변화."""
+    if consensus["price_status"] != "ok":
+        return None
+    if event_type == "binary":
+        market = markets[0]
+        return market.get("day_change") if market["yes_label"] == "Yes" and market["no_label"] == "No" else None
+    priced = [market for market in markets if _open_child(market) and market["price_valid"]]
+    if event_type == "exclusive_multi":
+        leader = next((market for market in priced
+                       if (market["outcome_label"] or market["question"] or market["id"]) == consensus["leader"]), None)
+        return leader.get("day_change") if leader else None
+    if event_type == "independent_multi":
+        ranked = sorted(
+            (market for market in priced if market["volume24hr"] is not None),
+            key=lambda market: (-market["volume24hr"], market["id"]),
+        )
+        return ranked[0].get("day_change") if ranked else None
+    return None
+
+
 def title_probability(event: dict[str, Any]) -> float | None:
     """binary event에서 **제목이 사실로 판명될 확률**을 돌려준다.
 
@@ -343,6 +375,8 @@ def normalize_event(
     # detail로 내린다 — detail은 byte-addressed라 한 행만 seek해서 읽는다.
     # 필드를 여기 추가하기 전에 tests/polymarket_manifest_size_probe.py로
     # 16 MiB 상한(docs/polymarket-dashboard.md 7-4)에 여유가 있는지 먼저 잰다.
+    # day_change는 쇼츠 후보 점수가 읽는 대표 확률의 24시간 변화다. 없는 값은 생략한다.
+    # 열린 약 19,400건 중 가격 유효 약 15,500건 × 약 22 B ≈ 0.33 MiB 추가 추정(7일은 detail만).
     common = {
         "id": identity,
         "title": str(event.get("title") or event.get("question") or "제목 없음"),
@@ -364,11 +398,15 @@ def normalize_event(
         "leader_probability": consensus["leader_probability"],
         "leader_margin": consensus["leader_margin"],
     }
+    day_change = _day_change(event_type, markets, consensus)
     compact = dict(common)
+    if day_change is not None:
+        compact["day_change"] = day_change
     # detail 전용. 어느 것도 목록 화면이 읽지 않는다 — slug는 상세의 Polymarket
     # 링크(eventUrl)가, 나머지는 상세 본문과 수집 집계가 쓴다.
     detail = {
         **common,
+        "day_change": day_change,
         "slug": str(event.get("slug") or ""),
         "category_reason": taxonomy["category_reason"],
         "system_tags": taxonomy["system_tags"],

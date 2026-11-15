@@ -32,16 +32,26 @@ def test_bad_low_activity_or_out_of_scope_events_are_excluded(issue_source, even
 
 
 def test_changed_leader_does_not_become_probability_movement(issue_source):
-    snapshot = replace(issue_source[0], trending={"spotlight": [{"id": "e1", "leader_changed": True, "basis_change": .4}]})
+    snapshot = replace(
+        issue_source[0], events=({**issue_source[0].events[0], "day_change": .08},),
+        trending={"spotlight": [{"id": "e1", "leader_changed": True, "basis_change": .4}],
+                  "volume_movers": [{"id": "e1", "leader_changed": False}]},
+    )
     candidate = shortlist(snapshot)[0][0]
     assert candidate["change"] is None and candidate["leader_changed"]
 
 
-def test_actual_movement_affects_ranking_and_has_reference(issue_source):
-    snapshot = replace(issue_source[0], trending={"basis_at": "earlier", "spotlight": [{"id": "e1", "basis_change": .08}]})
+def test_source_day_movement_affects_ranking(issue_source):
+    snapshot = replace(
+        issue_source[0], events=({**issue_source[0].events[0], "day_change": .08},),
+        trending={"spotlight": [{"id": "e1", "basis_change": -.4}]},
+    )
     moving = shortlist(snapshot)[0][0]
     assert moving["score"] > shortlist(issue_source[0])[0][0]["score"]
-    assert moving["change"] == .08 and moving["change_basis_at"] == "earlier"
+    assert moving["change"] == .08
+    without_trend, audit = shortlist(replace(snapshot, trending={}))
+    assert without_trend[0]["change"] == .08
+    assert "원 출처" in audit["movement_coverage"] and "24시간" in audit["movement_coverage"]
 
 
 def test_independent_probabilities_are_not_normalized(issue_source):

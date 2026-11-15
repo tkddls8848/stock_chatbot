@@ -63,9 +63,9 @@ def _topic(title: str) -> str:
 
 def shortlist(snapshot: Snapshot) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     reference = datetime.fromisoformat(snapshot.summary["generated_at"])
-    moves = {
-        str(row["id"]): row for key in ("spotlight", "volume_movers", "new_entries")
-        for row in snapshot.trending.get(key, []) if isinstance(row, dict) and row.get("id")
+    changed_leaders = {
+        str(row["id"]) for key in ("spotlight", "volume_movers", "new_entries")
+        for row in snapshot.trending.get(key, []) if isinstance(row, dict) and row.get("id") and row.get("leader_changed")
     }
     groups: dict[str, list[dict[str, Any]]] = {key: [] for key in SECTORS}
     excluded: Counter[str] = Counter()
@@ -96,15 +96,15 @@ def shortlist(snapshot: Snapshot) -> tuple[list[dict[str, Any]], dict[str, Any]]
         if (number(event.get("leader_probability")) or 0) >= .98:
             excluded["near_certain"] += 1
             continue
-        move = moves.get(str(event["id"]), {})
-        change = number(move.get("basis_change")) if not move.get("leader_changed") else None
+        leader_changed = str(event["id"]) in changed_leaders
+        change = number(event.get("day_change")) if not leader_changed else None
         groups[key].append({
             "id": str(event["id"]), "title": str(event["title"])[:300],
             "sector": key, "sector_label": SECTORS[key], "event_type": event["event_type"],
             "volume24hr": volume, "liquidity": liquidity, "end_date": event["end_date"],
             "leader": event.get("leader"), "leader_probability": number(event.get("leader_probability")),
-            "change": change, "change_basis_at": snapshot.trending.get("basis_at") if move else None,
-            "leader_changed": bool(move.get("leader_changed")),
+            "change": change,
+            "leader_changed": leader_changed,
             "topic_key": _topic(str(event["title"])),
             "days_to_end": max(0, (deadline - reference).total_seconds() / 86400),
         })
@@ -135,7 +135,7 @@ def shortlist(snapshot: Snapshot) -> tuple[list[dict[str, Any]], dict[str, Any]]
     return candidates, {
         "scanned": len(snapshot.events), "excluded": dict(excluded),
         "eligible_by_sector": eligible, "shortlisted": len(candidates),
-        "movement_coverage": "공개 trending에 있는 동일 세대 이벤트만; 미관측은 변동 없음이 아님",
+        "movement_coverage": "변화는 원 출처가 주는 대표 선택지 확률의 24시간 변화; 값이 없으면 읽지 못한 것이지 변화 없음이 아님",
         "interest_proxy": "24시간 참여 규모·유동성; 고유 참여자 수나 검색량을 뜻하지 않음",
     }
 
