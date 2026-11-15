@@ -1,6 +1,7 @@
 """그날 움직인 베팅을 골라 조명하는 독립 one-shot.
 
-마지막으로 승격된 generation(`current.json`)과 **자기가 남긴 스냅숏**만 읽는다.
+마지막으로 승격된 generation(`current.json`)과 **자기가 남긴 스냅숏**을 읽는다.
+조기 이동 알림은 공개 `news.json`과 검색 주석도 읽어 관련 뉴스가 적은 질문을 고른다.
 순회하지 않고 `current.json`·`generations/`를 쓰지도 않으며, LLM도 부르지 않는다
 (Neurons 0). 실패해도 확률 숫자와 화면은 그대로다.
 
@@ -21,13 +22,22 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from services.web.core.clock import now, today
+from services.web.core.clock import ensure_jst, now, today
 from services.web.core.config import (
     POLYMARKET_MIN_HOURS_TO_END,
+    POLYMARKET_QUIET_MOVE_MIN,
+    POLYMARKET_QUIET_MIN_VOLUME,
+    POLYMARKET_QUIET_MIN_LIQUIDITY,
+    POLYMARKET_QUIET_EXCLUDED_CATEGORIES,
+    POLYMARKET_QUIET_NEWS_HOURS,
+    POLYMARKET_QUIET_NEWS_MAX,
+    POLYMARKET_QUIET_NEWS_MAX_AGE_HOURS,
+    POLYMARKET_QUIET_LIMIT,
     POLYMARKET_TRENDING_CANDIDATE_LIMIT,
     POLYMARKET_TRENDING_EXCLUDED_CATEGORIES,
     POLYMARKET_TRENDING_FILE,
@@ -212,6 +222,93 @@ def spotlight(
     return selected
 
 
+# 주제 식별력이 없는 주석어. 이 말 하나로 무관한 경제 기사를 관련 뉴스로 세지 않는다.
+QUIET_GENERIC_KEYWORDS = frozenset({
+    "전망", "가격", "가격 전망", "연간", "결과", "시장", "경제", "예측", "확률", "올해", "내년",
+})
+# 질문 틀·기간·가격 일반어는 사건을 식별하지 못한다. 숫자는 토큰화에서 제외한다.
+QUIET_ENGLISH_STOPWORDS = frozenset("""
+    will before after announce announced announcement price prices market markets
+    what when where which that this with from have been there than then more most
+    would could should does into about their they them these those some only also
+    another other first next last least many much any each during until since
+    above below between over under reach happen year annual outcome result prediction
+    january february march april june july august september october november december
+""".split())
+
+
+_KOREAN_PARTICLE = (r"(?:이|가|은|는|을|를|의|에|에서|에게|와|과|와의|과의|도|로|으로|만|까지|부터|보다|처럼|이나|나|측)?")
+
+
+def related_news_count(event, annotation, documents):
+    """한국어 구체어 하나 또는 서로 다른 영문 주제어 둘. 기사당 한 번만 센다."""
+    keywords = [word.strip().lower() for word in annotation.get("keywords", [])
+                if isinstance(word, str) and len(word.strip()) >= 2
+                and word.strip().lower() not in QUIET_GENERIC_KEYWORDS]
+    words = {word for word in re.findall(r"\b[a-z]{4,}\b", event.get("title", "").lower())
+             if word not in QUIET_ENGLISH_STOPWORDS}
+    # 한국어는 조사가 낱말에 붙는다("연준이"·"비트코인은"). 뒤 경계를 그대로 요구하면 거의 모든 제목을 놓치고,
+    # 앞 경계만 보면 "대만족"이 "대만"에 걸린다. 그래서 흔한 조사 하나까지만 허용하고 그 뒤는 낱말 경계다.
+    return sum(
+        any(re.search(r"(?<!\w)" + re.escape(word) + _KOREAN_PARTICLE + r"(?!\w)", doc.get("title", "").lower())
+            for word in keywords)
+        or len(words & set(re.findall(r"\b[a-z]+\b", doc.get("text", "").lower()))) >= 2
+        for doc in documents
+    )
+
+
+def quiet_moves(events, annotations, news):
+    """뉴스 신선도를 먼저 확인하고, 기존 트렌드 순위와 독립적으로 경보 후보를 고른다."""
+    meta = {"news_hours": POLYMARKET_QUIET_NEWS_HOURS, "move_min": POLYMARKET_QUIET_MOVE_MIN,
+            "news_max": POLYMARKET_QUIET_NEWS_MAX, "news_generated_at": news.get("generated_at")}
+    result = {"quiet_moves": [], "quiet_moves_state": "news_missing", "quiet_moves_meta": meta}
+    try:
+        generated = ensure_jst(datetime.fromisoformat(news["generated_at"]))
+    except (KeyError, TypeError, ValueError):
+        return result
+    current = now()
+    if current - generated > timedelta(hours=POLYMARKET_QUIET_NEWS_MAX_AGE_HOURS):
+        result["quiet_moves_state"] = "news_stale"
+        return result
+    if not isinstance(news.get("documents"), list):
+        return result
+    documents = []
+    for doc in news["documents"]:
+        if not isinstance(doc, dict) or doc.get("kind") != "news":
+            continue
+        try:
+            published = ensure_jst(datetime.fromisoformat(doc["published_at"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if current - timedelta(hours=POLYMARKET_QUIET_NEWS_HOURS) <= published <= current:
+            documents.append(doc)
+    selected = candidates(events, min_volume=POLYMARKET_QUIET_MIN_VOLUME,
+                          min_liquidity=POLYMARKET_QUIET_MIN_LIQUIDITY, limit=len(events),
+                          excluded_categories=POLYMARKET_QUIET_EXCLUDED_CATEGORIES)
+    rows = []
+    for event in selected:
+        change = _number(event.get("day_change"))
+        if change is None or not abs(change) >= POLYMARKET_QUIET_MOVE_MIN:
+            continue
+        annotation = annotations.get(str(event["id"])) or {}
+        count = related_news_count(event, annotation, documents)
+        if count > POLYMARKET_QUIET_NEWS_MAX:
+            continue
+        probability = title_probability(event)
+        if probability is None:
+            probability = _number(event.get("leader_probability"))
+        if probability is None:
+            # 중복선택은 대표 확률이 없고 day_change가 어느 칸의 변화인지 목록만으로 말할 수 없다.
+            continue
+        row = {key: event.get(key) for key in (
+            "id", "title", "category_label", "event_type", "leader", "day_change", "volume24hr", "end_date")}
+        row.update(summary=annotation.get("summary"), news_count=count, probability=probability)
+        rows.append(row)
+    rows.sort(key=lambda row: (abs(row["day_change"]), row["volume24hr"]), reverse=True)
+    result.update(quiet_moves=rows[:POLYMARKET_QUIET_LIMIT], quiet_moves_state="ok")
+    return result
+
+
 def build(
     *,
     root: Path = POLYMARKET_WEB_DIR,
@@ -301,6 +398,17 @@ def build(
             "events": current_snapshot,
         },
     }
+    payload.update(quiet_moves=[], quiet_moves_state="failed", quiet_moves_meta={
+        "news_hours": POLYMARKET_QUIET_NEWS_HOURS, "move_min": POLYMARKET_QUIET_MOVE_MIN,
+        "news_max": POLYMARKET_QUIET_NEWS_MAX, "news_generated_at": None,
+    })
+    try:
+        news = read_json_object(root.parent / "news.json")
+        payload["quiet_moves_meta"]["news_generated_at"] = news.get("generated_at")
+        annotations = read_json_object(root / "search_index.json").get("events", {})
+        payload.update(quiet_moves(events, annotations, news))
+    except Exception:
+        logger.exception("컨센서스 조기 이동 계산 실패")
     write_json_atomic(target, payload)
     return payload
 

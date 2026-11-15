@@ -130,6 +130,23 @@ POLYMARKET_TRENDING_MOVE_FLOOR = 0.02
 # 신규 진입·거래량 급증 목록의 길이. 조명이 주인공이고 이 둘은 곁들이다.
 POLYMARKET_TRENDING_LIST_LIMIT = 5
 
+# 운영자 결정(2026-11-15): 뉴스가 적은 질문의 24시간 5%p 이상 이동을 알린다.
+POLYMARKET_QUIET_MOVE_MIN = 0.05
+# 작은 참여로 흔들린 질문을 경보로 올리지 않을 하루 참여 규모 하한.
+POLYMARKET_QUIET_MIN_VOLUME = 25_000.0
+# 참여 규모와 별도로 얇은 잔액을 거르는 운영자 지정 하한.
+POLYMARKET_QUIET_MIN_LIQUIDITY = 10_000.0
+# 경기·날씨·가상자산·문화는 이번 운영자 알림 대상 밖이다. 복합에도 적용.
+POLYMARKET_QUIET_EXCLUDED_CATEGORIES = frozenset({"sports", "weather_climate", "crypto", "culture"})
+# 원 출처 day_change와 같은 24시간 창에서 뉴스 노출을 센다.
+POLYMARKET_QUIET_NEWS_HOURS = 24
+# 관련 기사 셋부터는 이미 뉴스가 붙은 질문으로 본다(운영자 지정).
+POLYMARKET_QUIET_NEWS_MAX = 2
+# 뉴스 갱신의 최장 간격 7시간에 2시간 여유. 오래된 뉴스로 거짓 경보를 내지 않는다.
+POLYMARKET_QUIET_NEWS_MAX_AGE_HOURS = 9
+# 한 메시지에서 훑을 수 있도록 운영자가 정한 최대 질문 수.
+POLYMARKET_QUIET_LIMIT = 5
+
 # ── 섹터 줄글 브리프 ───────────────────────────────────────────────────────
 # 경제·금융과 지정학에 한정해 컨센서스를 줄글로 정리한다. refresh가 성공한 뒤
 # 별도 one-shot이 돌며, 봇 프로세스와 무관하다. 계획서는

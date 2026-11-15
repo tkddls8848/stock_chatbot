@@ -60,6 +60,7 @@ FEATURES_ENABLED = frozenset(
         "web_status",
         "shorts",
         "view_check",
+        "consensus_alert",
     }
 )
 

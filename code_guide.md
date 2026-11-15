@@ -656,6 +656,14 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   CLOB 백필은 전부 제거했다(2026-09-01). `market_sentiment`는 이제 감성과
   이상 두 화면만 가진다. 되살리려면 git에서 꺼내는 별도 변경이며, 그것은
   "지금 열린 것만 본다"는 제품 결정을 되돌리는 일이다.
+  **예외: 운영자 전용 알림 `consensus_alert`**(운영자 지시 2026-11-15, worldmonitor의 prediction_leads_news 방식). 명령·메뉴 없이
+  매시간 25분 웹 `/api/forecast/trending`을 HTTP로 읽어, 새 수집분의 `quiet_moves`(관련 뉴스가 적은데 24시간 5%p 이상 움직인
+  질문)를 운영자 채팅(`TELEGRAM_CHAT_ID`)에 한 메시지로 보낸다. 같은 질문은 24시간 안에 다시 보내지 않고, 변화가 지난번보다 5%p
+  더 커졌을 때만 다시 보낸다(`storage/bot/consensus_alert/state.json`, 7일 지난 기록은 지운다). 고르는 일은 웹 트렌드 one-shot이
+  LLM 없이 한다 — 원 출처 `day_change` |5%p| 이상, 24시간 참여 2.5만 달러·잔액 1만 달러 이상, 마감 72시간 밖, 경기·날씨·가상자산·문화
+  제외, 대표 확률이 있는 질문(중복선택 제외). 관련 뉴스는 최근 24시간 `news.json` 기사 중 검색 주석의 구체어(일반어 목록 제외, 흔한
+  조사 하나까지 허용)가 한국어 제목에 있거나, 질문 원문의 영문 주제어 둘 이상이 원문 제목에 있는 것이고 2건 이하만 남겨 5개까지다.
+  `news.json`이 9시간보다 낡았으면 고르지 않는다(`quiet_moves_state: news_stale`) — 거짓 경보가 실제 경보를 가린다.
 - **화면·주소·영상에 출처 서비스 이름(Polymarket·폴리마켓)을 쓰지 않는다.** 한국은
   공식적으로 이 서비스 접근을 막고 있다. 사용자가 보는 이름은 **"집단 예측 컨센서스"**이고
   주소는 `/forecast`·`/api/forecast/*`다(예전 `/polymarket`은 넘겨주지 않고 404다).

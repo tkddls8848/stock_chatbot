@@ -15,6 +15,7 @@
 | `research` | 저장된 주제로 예약 리서치, 관심종목 자동 적용(`/research`는 주제·지금 실행). 웹 개인 리서치의 입력 묶음(`public/research_inputs.json`)을 4시간마다 굽는다 |
 | `briefing` | 모닝·마감 브리핑 |
 | `system_admin` | 도움말·기능 상태·소스 상태 |
+| `consensus_alert` | 뉴스보다 먼저 움직인 컨센서스를 매시간 25분 운영자 채팅에 알린다(LLM 없음·24시간 중복 방지) |
 | `web_status` | 공개 웹 산출물의 갱신 상태(`/web`) — 웹 API를 HTTP로 읽는다 |
 | `shorts` | 쇼츠 운영(`/shorts`): 상태·지금 제작·미리보기·자연어 수정·검수 완료(YouTube 업로드)·업로드 재시도. 쇼츠 CLI를 하위 프로세스로 부른다 |
 | `view_check` | 운영자 개인용 뷰 검증(`/view`): 내 시장 뷰를 예측 컨센서스에 대조하고 ETF·ETN·관심종목 포지션 아이디어를 낸다. 컨센서스는 웹 공개 API를 HTTP로 읽는다 |

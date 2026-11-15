@@ -21,6 +21,7 @@ EXPECTED_FEATURES = {
     "web_status",
     "shorts",
     "view_check",
+    "consensus_alert",
 }
 
 
