@@ -28,12 +28,17 @@ def latest_root(settings: Settings) -> Path | None:
 
 
 def current_status(settings: Settings, *, root: Path | None = None) -> dict[str, Any]:
+    from .accuracy import summary
+    saved = read_json(settings.output_dir / "state" / "accuracy.json")
+    accuracy = ({k: v for k, v in summary(saved["records"]).items() if k != "buckets"}
+                if "records" in saved else None)
     root = root or latest_root(settings)
     if root is None:
-        return {"state": "empty", "output_dir": str(settings.output_dir), "uploaded": False, "url": None}
+        return {"state": "empty", "accuracy": accuracy, "output_dir": str(settings.output_dir), "uploaded": False, "url": None}
     selection = read_json(root / "selection.json")
     payload: dict[str, Any] = {
         "state": "ok",
+        "accuracy": accuracy,
         "date": root.name,
         "root": str(root),
         "selection_status": selection.get("status"),

@@ -110,3 +110,6 @@ def test_cli_review_pending_carries_unnotified_failures(tmp_path):
     assert ack.returncode == 0, ack.stderr
     assert json.loads(_cli(tmp_path, "--review-pending").stdout)["failures"] == []
     assert _cli(tmp_path, "--scheduled", "--force").returncode != 0
+    assert _cli(tmp_path, "--accuracy", "--status").returncode != 0
+    result = _cli(tmp_path, "--accuracy")
+    assert result.returncode == 0 and json.loads(result.stdout)["settled"] == 0

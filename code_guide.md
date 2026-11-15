@@ -167,6 +167,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `web/activity.json`·`web/activity_summary.json` | 웹 | 웹. 봇은 식별값 없는 `activity_summary.json`만 읽는다 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
 | `public/shorts/ko.json` | 쇼츠(게시 직후 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
+| `public/shorts/accuracy.json` | 쇼츠(결과 30건 이상일 때만, 질문 원문 없는 적중 요약) | 웹 첫 화면 "오늘의 영상" 아래 한 줄(`/api/shorts/accuracy`) |
 
 옛 `data/`는 없다. 서버 이전은 코드가 아니라 절차다 — `data/webpub`→`storage/public`,
 `data/<feature>`→`storage/bot/<feature>`로 한 번 옮긴다(`infra/server-ops.md`).
@@ -532,6 +533,16 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/ko.json`(날짜·영상 ID·제목)을
   쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
   `/`의 CSP만 그 출처의 `frame-src`를 연다.
+  **영상에서 다룬 컨센서스는 결과로 채점한다**(운영자 지시 2026-11-15, worldmonitor의 정산·Brier 방식). `accuracy.collect`가
+  게시된 날의 게시 revision 장면(`consensus`·`watch`)에서 개별 질문마다 **처음 다룬 날 화면에 보인 쪽의 확률**을
+  `storage/shorts/state/accuracy.json`에 옮긴다 — 날짜 폴더는 14일 뒤 지워지므로 `prune_old_days`가 지우기 전에 먼저 부르고,
+  옮기지 못하면 그날 정리를 건너뛴다. 추적 코너처럼 매일 다시 보여도 한 번만 센다. `accuracy.settle`은 매일 예약 제작 뒤
+  (`--accuracy`로 지금) 미정산 기록을 원 출처 `markets?id=…`로 50개씩, 한 번에 200개까지 확인한다. 끝난 시장의 가격이 정확히 0/1이면
+  결과, 반반 정산·닫힌 지 14일 넘게 0/1이 아님·14일 동안 응답에 없음은 무효다. "~까지 일어날까"는 마감 전에 끝나기도 해서 마감일과
+  상관없이 확인한다. 실패해도 제작 결과·시도 횟수에 영향을 주지 않는다. 운영자 `/shorts` 상태에 결과·무효·대기·우세 쪽 적중률·
+  Brier가 한 줄로 붙고, **결과가 30건 이상일 때만**(`MIN_PUBLIC_SETTLED`, 표본이 적으면 우연이 크다) 질문 원문 없는 요약을
+  `storage/public/shorts/accuracy.json`에 써서 웹 첫 화면 "오늘의 영상" 아래 한 줄(`/api/shorts/accuracy`)로 보인다.
+  2026-11-15 백필 시험: 게시 13일치에서 질문 65개, 정산 0건.
   **쇼츠 TTS는 ElevenLabs Jian을 우선 사용한다**(운영자 결정 2026-11-08). 루트 `.env`의
   `ELEVENLABS_API_KEY`만 읽으며 `.env.example`에는 빈 예시만 둔다. 모델은 `eleven_multilingual_v2`,
   음성은 `KNy9usSxeZXzNA3l10Jy`, 기본 속도 1.12·안정성 0.75·유사도 0.85·style 0·speaker boost 끔이다(값과 사유는 `shorts` `config.py`).

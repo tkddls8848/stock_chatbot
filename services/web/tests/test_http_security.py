@@ -233,3 +233,32 @@ def test_shorts_api_exposes_only_well_formed_latest_videos(client, tmp_path):
         "ko": {"date": "2026-10-08", "video_id": "q5Vqf1hBOrQ", "title": "시장 컨센서스"}}
     (tmp_path / "shorts" / "ko.json").write_text('{"video_id":"x\' onload=\'"}', encoding="utf-8")
     assert client.get("/api/shorts").json() == {"ko": None}
+
+
+def test_shorts_accuracy_serves_only_valid_anonymous_summaries(client, tmp_path):
+    import copy
+    import json
+
+    path = tmp_path / 'shorts' / 'accuracy.json'
+    route = '/api/shorts/accuracy'
+    assert client.get(route).status_code == 404
+    payload = {'updated_at': '2026-11-15T12:00:00+09:00', 'settled': 30, 'void': 2,
+               'brier': .16, 'favored_hit_rate': .8,
+               'buckets': [{'label': label, 'count': 30 if i == 3 else 0, 'realized': 24 if i == 3 else 0}
+                           for i, label in enumerate(('50% 미만', '50~60%', '60~70%', '70~80%', '80~90%', '90~100%'))]}
+    path.parent.mkdir()
+    path.write_text(json.dumps({**payload, 'records': {'private': 'hidden'}}))
+    response = client.get(route)
+    assert response.status_code == 200 and response.json() == payload
+    assert response.headers['cache-control'] == 'no-cache'
+    assert client.head(route).status_code == 200 and client.head(route).content == b''
+    bad_bucket = copy.deepcopy(payload['buckets'])
+    bad_bucket[3]['realized'] = 31
+    for patch in ({'settled': 29}, {'void': -1}, {'brier': float('nan')}, {'brier': True},
+                  {'favored_hit_rate': 1.1}, {'buckets': {}}, {'buckets': bad_bucket}, {'settled': 31}):
+        path.write_text(json.dumps({**payload, **patch}))
+        assert client.get(route).status_code == 404
+        assert client.head(route).status_code == 404
+    page = client.get('/').text
+    assert "fetch('/api/shorts/accuracy')" in page and 'esc(d.settled)' in page
+    assert 'esc((d.favored_hit_rate*100).toFixed(1))' in page

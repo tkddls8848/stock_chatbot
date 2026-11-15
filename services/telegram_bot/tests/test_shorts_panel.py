@@ -64,6 +64,15 @@ def test_status_escapes_titles_and_shows_the_next_schedule():
     message, _ = _run([], FakeRunner())
     text = message.texts[0]
     assert "검수 대기" in text and "제목 &lt;b&gt;" in text and "다음 예약 제작" in text
+    from services.telegram_bot.features.shorts.handlers import status_text
+    accuracy = {"settled": 29, "void": 2, "pending": 4, "favored_hit_rate": .8, "brier": .1234}
+    text = status_text({**STATUS, "accuracy": accuracy}, busy=False)
+    assert "컨센서스 적중: 결과 29건(무효 2·대기 4) · 우세 쪽 적중 80% · Brier 0.123 · 30건부터 웹 공개" in text
+    accuracy["settled"] = 30
+    assert "30건부터 웹 공개" not in status_text({**STATUS, "accuracy": accuracy}, busy=False)
+    accuracy.update(brier=None, favored_hit_rate=None)
+    assert "우세 쪽 적중 - · Brier -" in status_text({**STATUS, "accuracy": accuracy}, busy=False)
+
 
 
 TRACK = {"updated_on": "2026-11-10", "pins": [], "tracked": [

@@ -16,7 +16,7 @@ from .review import ReviewError, read_script
 
 
 _GATES = (
-    "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
+    "accuracy", "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
     "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
     "youtube_prune", "failure_ack", "scheduled", "watch", "track", "track_pin", "track_auto",
 )
@@ -33,6 +33,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765, help="브라우저 패널 포트, 기본값 8765")
     parser.add_argument("--interactive", action="store_true", help="영상 생성 후 대화형 검수·편집 시작")
     # 텔레그램 관리 패널(/shorts)이 하위 프로세스로 부르는 비대화형 명령. stdout에 JSON 한 줄.
+    parser.add_argument("--accuracy", action="store_true", help="게시 질문 결과 정산과 요약 JSON")
     parser.add_argument("--status", action="store_true", help="최근 제작일의 제작·검수 상태 JSON")
     parser.add_argument("--edit", metavar="TEXT", help="최근 제작일의 현재 수정본을 자연어로 고치고 다시 렌더")
     parser.add_argument("--complete", action="store_true", help="최근 제작일의 현재 수정본을 검수 완료로 기록")
@@ -59,7 +60,7 @@ def main() -> None:
         parser.error("--review-token은 --edit와 함께 씁니다")
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
-        parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth, --youtube-prune는 한 번에 하나만 씁니다")
+        parser.error("--accuracy, --plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth, --youtube-prune는 한 번에 하나만 씁니다")
     if chosen and (args.date or args.force):
         parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
     if args.interactive and chosen and chosen != ["plan"]:
@@ -71,6 +72,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = Settings.from_env()
     try:
+        if args.accuracy:
+            from .accuracy import update
+            print(json.dumps(update(settings), ensure_ascii=False))
+            return
         if any((args.review_pending, args.review_ack, args.review_pause, args.review_approve, args.review_tick,
                 args.failure_ack)):
             from . import approval, attempts
@@ -170,9 +175,16 @@ def _produce_today(settings: Settings, *, production_date: date | None = None, f
 
     # 새로 렌더하기 전에 보관 기간이 지난 제작일 폴더부터 비워 디스크 여유를 만든다.
     prune_old_days(settings, datetime.now(settings.timezone).date())
-    payload = asdict(produce_daily(settings, production_date=production_date, force=force))
-    payload["approval"] = _queue_review(payload, settings)
-    return payload
+    try:
+        payload = asdict(produce_daily(settings, production_date=production_date, force=force))
+        payload["approval"] = _queue_review(payload, settings)
+        return payload
+    finally:
+        try:
+            from .accuracy import update
+            update(settings)
+        except Exception:
+            logging.getLogger(__name__).warning("컨센서스 결과 정산 실패: 다음 실행에서 다시 확인합니다")
 
 
 def _queue_review(payload: dict, settings: Settings) -> dict | None:

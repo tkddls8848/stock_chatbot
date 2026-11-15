@@ -78,6 +78,14 @@ def status_text(status: dict[str, Any], *, busy: bool) -> str:
                 lines.append(f"제목: {html.escape(str(title))}")
             if status.get("duration_seconds"):
                 lines.append(f"길이: {float(status['duration_seconds']):.0f}초")
+    accuracy = status.get("accuracy")
+    if accuracy:
+        hit = _share(accuracy["favored_hit_rate"]) if accuracy.get("favored_hit_rate") is not None else "-"
+        brier = f"{accuracy['brier']:.3f}" if accuracy.get("brier") is not None else "-"
+        lines.append(
+            f"컨센서스 적중: 결과 {accuracy['settled']}건(무효 {accuracy['void']}·대기 {accuracy['pending']})"
+            f" · 우세 쪽 적중 {hit} · Brier {brier}"
+            + (" · 30건부터 웹 공개" if accuracy["settled"] < 30 else ""))
     approval = status.get("approval") or {}
     if approval:
         states = {"pending": "원고 검토 대기", "paused": "자동 승인 보류", "approved": "승인 완료"}

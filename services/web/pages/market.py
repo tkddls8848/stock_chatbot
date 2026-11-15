@@ -90,6 +90,7 @@ _MARKET_MAIN = (
  재생하면 YouTube 플레이어가 열립니다.</p>
  <div class='mk-vids' id='vids'></div>
 </section>
+<p class="d" id="shorts-accuracy" hidden></p>
 """
 )
 
@@ -143,6 +144,12 @@ fetch('/api/shorts').then(r=>r.json()).then(d=>{
   if(!vids.length)return;
   document.getElementById('vids').innerHTML=vids.join('');
   document.getElementById('shorts').hidden=false;
+}).catch(()=>{});
+fetch('/api/shorts/accuracy').then(r=>r.ok?r.json():null).then(d=>{
+  if(!d||d.favored_hit_rate===null)return;
+  const line=document.getElementById('shorts-accuracy');
+  line.innerHTML='영상에서 다룬 질문 중 결과가 나온 '+esc(d.settled)+'건: 컨센서스가 더 높게 본 쪽이 실제로 일어난 비율 '+esc((d.favored_hit_rate*100).toFixed(1))+'%';
+  line.hidden=false;
 }).catch(()=>{});
 fetch('/api/market').then(r=>r.json()).then(d=>{
   const markets=d.markets||{},base=baseline(markets);

@@ -112,6 +112,34 @@ def _read_json(name: str) -> dict[str, Any]:
     return read_json_object(PUBLIC_DIR / name)
 
 
+def _valid_shorts_accuracy(row: dict) -> bool:
+    def count(value):
+        return type(value) is int and value >= 0
+
+    def share(value):
+        return type(value) in (int, float) and 0 <= value <= 1
+
+    if (not {"updated_at", "settled", "void", "brier", "favored_hit_rate", "buckets"} <= row.keys()
+            or not isinstance(row.get("updated_at"), str) or not row["updated_at"]
+            or not count(row.get("settled")) or row["settled"] < 30
+            or not count(row.get("void")) or not share(row.get("brier"))
+            or (row.get("favored_hit_rate") is not None and not share(row["favored_hit_rate"]))):
+        return False
+    labels = ("50% 미만", "50~60%", "60~70%", "70~80%", "80~90%", "90~100%")
+    buckets = row.get("buckets")
+    if not isinstance(buckets, list) or len(buckets) != len(labels):
+        return False
+    for bucket, label in zip(buckets, labels):
+        if (not isinstance(bucket, dict) or set(bucket) != {"label", "count", "realized"}
+                or bucket["label"] != label or not count(bucket["count"])
+                or not count(bucket["realized"]) or bucket["realized"] > bucket["count"]):
+            return False
+    favored = sum(b["count"] for b in buckets[1:])
+    hit = sum(b["realized"] for b in buckets[1:]) / favored if favored else None
+    return (sum(b["count"] for b in buckets) == row["settled"]
+            and row.get("favored_hit_rate") == hit)
+
+
 def build_accounts() -> Accounts:
     return Accounts(config.USERS_DIR, client_id=config.GOOGLE_CLIENT_ID,
                     client_secret=config.GOOGLE_CLIENT_SECRET, identity_key=config.ACCOUNT_IDENTITY_KEY,
@@ -248,6 +276,15 @@ def build_app(portfolio_router: APIRouter | None = None, *, accounts: Accounts |
         video = str(row.get("video_id") or "")
         return {"ko": {key: str(row.get(key) or "") for key in ("date", "video_id", "title")}
                 if re.fullmatch(r"[\w-]{6,20}", video) else None}
+
+    @app.api_route("/api/shorts/accuracy", methods=["GET", "HEAD"])
+    def shorts_accuracy() -> Response:
+        row = _read_json("shorts/accuracy.json")
+        if not _valid_shorts_accuracy(row):
+            raise HTTPException(status_code=404, detail="자료 없음")
+        return JSONResponse({key: row[key] for key in (
+            "updated_at", "settled", "void", "brier", "favored_hit_rate", "buckets")},
+            headers={"Cache-Control": "no-cache"})
 
     def polymarket_json(
         request: Request,

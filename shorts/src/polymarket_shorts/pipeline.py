@@ -100,6 +100,14 @@ def prune_old_days(settings: Settings, today: date) -> list[Path]:
     폴더(`state/` 등)는 건드리지 않는다. 지우지 못한 폴더는 경고만 남긴다 — 정리
     실패가 제작을 막지 않는다.
     """
+    # 날짜 폴더를 지우기 전에 게시 당시 확률을 영속 상태로 옮긴다.
+    # 보존 실패 때는 이번 삭제만 건너뛰고 제작은 계속한다.
+    try:
+        from .accuracy import collect
+        collect(settings)
+    except Exception:
+        logger.warning("컨센서스 기록 보존 실패: 날짜 폴더 정리를 건너뜁니다")
+        return []
     cutoff = today - timedelta(days=max(RETENTION_DAYS, settings.repeat_days + 1) - 1)
     removed = []
     folders = sorted(settings.output_dir.iterdir()) if settings.output_dir.is_dir() else []
