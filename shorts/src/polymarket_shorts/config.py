@@ -100,6 +100,8 @@ class Settings:
     google_client_secret: str = field(default="", repr=False)
     youtube_refresh_token: str = field(default="", repr=False)
     youtube_privacy: str = "public"
+    # 운영자 지시 2026-11-15: 쇼츠는 최신 30개를 유지한다.
+    youtube_keep_shorts: int = 30
     youtube_category_id: str = "25"
     # 텔레그램에 원고를 전달한 뒤 검토 시간 동안 응답이 없으면 승인·업로드한다.
     auto_publish: bool = True

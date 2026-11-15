@@ -17,6 +17,7 @@ from polymarket_shorts.status import current_status
 
 _real_shorts_problem = youtube._shorts_problem
 _real_comment = youtube._comment
+_real_prune = youtube.prune
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,7 @@ def _shorts_ok(monkeypatch):
     """가짜 영상 파일은 ffprobe로 읽을 수 없다. 쇼츠 조건 검사는 따로 시험한다."""
     monkeypatch.setattr(youtube, "_shorts_problem", lambda video, settings: None)
     monkeypatch.setattr(youtube, "_comment", lambda *args: {"status": "posted"})
+    monkeypatch.setattr(youtube, "prune", Mock(return_value={"status": "skipped"}))
 
 
 @pytest.fixture
@@ -67,7 +69,7 @@ def test_upload_resumes_and_deduplicates(prepared, monkeypatch):
                 response(308, Range="bytes=0-3"), response(201, {"id": "video_1"}))
     result = youtube.upload(root, settings)
     assert result == {"status": "uploaded", "video_id": "video_1", "url": "https://www.youtube.com/shorts/video_1",
-                      "comment": {"status": "posted"}}
+                      "comment": {"status": "posted"}, "pruned": {"status": "skipped"}}
     assert mock.call_args_list[-1].kwargs["data"] == b"456789"
     assert mock.call_args_list[-1].kwargs["headers"]["Content-Range"] == "bytes 4-9/10"
     metadata = mock.call_args_list[1].kwargs["json"]
@@ -77,6 +79,7 @@ def test_upload_resumes_and_deduplicates(prepared, monkeypatch):
                                   "containsSyntheticMedia": True}
     assert youtube.upload(root, settings)["status"] == "already_uploaded"
     assert mock.call_count == 4
+    youtube.prune.assert_called_once_with(settings, keep_id="video_1")
     status = current_status(settings)
     assert status["uploaded"] is True and status["url"] == result["url"]
     saved = json.loads((root / "upload.json").read_text(encoding="utf-8"))
@@ -447,3 +450,104 @@ def test_comment_wrong_account_does_not_post(prepared, monkeypatch):
                 owner_responses()[1])
     assert youtube.upload(root, settings)["comment"]["status"] == "failed"
     assert mock.call_count == 3
+
+
+def prune_channels():
+    return response(payload={"items": [{"id": "owner", "contentDetails": {
+        "relatedPlaylists": {"uploads": "uploads"}}}]})
+
+
+def prune_item(index, title=None):
+    from datetime import datetime, timedelta, timezone
+    from polymarket_shorts.pipeline import video_title
+    stamp = (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=index)).isoformat()
+    return {"snippet": {"title": title or video_title(stamp[:10]), "publishedAt": stamp},
+            "contentDetails": {"videoId": str(index), "videoPublishedAt": stamp}}
+
+
+def test_prune_oldest_pipeline_videos_with_twenty_deletion_cap(prepared, monkeypatch):
+    _, settings = prepared
+    items = [prune_item(i) for i in range(55)]
+    # keep_id가 가장 오래된 경우에도 보호한다. 다른 제목은 개수에서도 뺀다.
+    items += [prune_item(99, "다른 영상")]
+    del items[1]["contentDetails"]["videoPublishedAt"]
+    items[2]["snippet"]["publishedAt"] = "2099-01-01T00:00:00Z"
+    replies = [comment_credentials(), prune_channels(),
+               response(payload={"items": list(reversed(items[25:])), "nextPageToken": "page2"}),
+               response(payload={"items": list(reversed(items[:25]))})]
+    for i in range(1, 21):
+        replies.extend([response(payload={"items": [{"snippet": {
+            "channelId": "owner", "title": items[i]["snippet"]["title"]}}]}), response(204)])
+    mock = http(monkeypatch, *replies)
+    result = _real_prune(settings, keep_id="0")
+    assert result["status"] == "pruned" and result["kept"] == 35
+    assert result["deleted"] == list(map(str, range(1, 21)))
+    assert mock.call_args_list[3].kwargs["params"]["pageToken"] == "page2"
+    saved = json.loads((settings.output_dir / "state" / "pruned.json").read_text())
+    assert [row["video_id"] for row in saved["deleted"]] == result["deleted"]
+    assert all(set(row) == {"video_id", "title", "published_at", "deleted_at"} for row in saved["deleted"])
+    # 상한을 넘지 않는 초과분은 정확히 30개가 남도록 정리한다.
+    mock = http(monkeypatch, comment_credentials(), prune_channels(),
+                response(payload={"items": items[:31]}),
+                response(payload={"items": [{"snippet": {"channelId": "owner",
+                                                          "title": items[1]["snippet"]["title"]}}]}), response(204))
+    assert _real_prune(settings, keep_id="0")["kept"] == 30
+    assert len(json.loads((settings.output_dir / "state" / "pruned.json").read_text())["deleted"]) == 21
+
+
+def test_prune_requires_permission_and_visible_keep_id(prepared, monkeypatch):
+    _, settings = prepared
+    for replies, reason in [([comment_credentials("")], "권한"),
+                            ([comment_credentials(), prune_channels(),
+                              response(payload={"items": [prune_item(i) for i in range(31)]})], "아직")]:
+        mock = http(monkeypatch, *replies)
+        result = _real_prune(settings, keep_id="missing")
+        assert result["status"] == "skipped" and reason in result["reason"]
+        assert result["deleted"] == []
+        assert all(call.args[0] != "DELETE" for call in mock.call_args_list)
+    assert not (settings.output_dir / "state" / "pruned.json").exists()
+
+
+def test_prune_revalidates_ownership_and_continues_after_delete_failure(prepared, monkeypatch):
+    _, settings = prepared
+    items = [prune_item(i) for i in range(36)]
+    replies = [comment_credentials(), prune_channels(), response(payload={"items": items})]
+    for i in range(6):
+        replies.append(response(payload={"items": [{"snippet": {
+            "channelId": "other" if i == 0 else "owner",
+            "title": "바뀐 제목" if i == 1 else items[i]["snippet"]["title"]}}]}))
+        if i >= 2:
+            replies.append(response({2: 403, 3: 404, 4: 204, 5: 204}[i]))
+    mock = http(monkeypatch, *replies)
+    result = _real_prune(settings, keep_id="35")
+    assert result["status"] == "failed" and result["deleted"] == ["3", "4", "5"]
+    assert result["kept"] == 33 and "1개 삭제 실패" in result["reason"]
+    assert [call.kwargs["params"]["id"] for call in mock.call_args_list if call.args[0] == "DELETE"] == ["2", "3", "4", "5"]
+    mock = http(monkeypatch, comment_credentials(), prune_channels(), response(payload={"items": items}),
+                response(payload={"items": [{"snippet": {"channelId": "owner",
+                                                          "title": items[0]["snippet"]["title"]}}]}), response(204))
+    monkeypatch.setattr(youtube, "write_json", Mock(side_effect=OSError("secret")))
+    result = _real_prune(settings, keep_id="35")
+    assert result["status"] == "failed" and result["deleted"] == ["0"]
+    assert "secret" not in str(result) and mock.call_count == 5
+
+
+def test_cli_prune_uses_latest_published_and_excludes_other_modes(prepared, monkeypatch, capsys):
+    from polymarket_shorts import cli
+    _, settings = prepared
+    monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
+    for day, video in (("2026-10-01", "old"), ("2026-10-02", "latest")):
+        write_json(settings.output_dir / day / "upload.json", {
+            "revisions": {"r": {"video_id": video, "uploaded_at": day}}})
+    public = settings.public_dir / "shorts" / "ko.json"
+    before = public.read_bytes() if public.exists() else None
+    monkeypatch.setattr(cli.argparse._sys, "argv", ["shorts", "--youtube-prune"])
+    cli.main()
+    assert json.loads(capsys.readouterr().out) == {"status": "skipped"}
+    youtube.prune.assert_called_once_with(settings, keep_id="latest")
+    assert (public.read_bytes() if public.exists() else None) == before
+    for mode in ("--upload", "--status", "--youtube-auth", "--review-tick"):
+        monkeypatch.setattr(cli.argparse._sys, "argv", ["shorts", "--youtube-prune", mode])
+        with pytest.raises(SystemExit) as exc:
+            cli.main()
+        assert exc.value.code == 2

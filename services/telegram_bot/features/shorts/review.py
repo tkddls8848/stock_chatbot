@@ -79,6 +79,11 @@ def upload_text(result: dict) -> str:
             text += "\n운영자 설명 댓글 게시 완료"
         elif comment:
             text += "\n댓글 미완료: " + str(comment.get("reason") or "댓글 기록을 확인하세요")
+        pruned = result.get("pruned") or {}
+        if pruned.get("status") == "pruned" and pruned.get("deleted"):
+            text += f"\n오래된 쇼츠 {len(pruned['deleted'])}개 삭제(채널 쇼츠 {pruned['kept']}개 유지)"
+        elif pruned:
+            text += "\n쇼츠 정리 보류: " + str(pruned.get("reason") or "정리 기록을 확인하세요")
         return text
     reasons = {
         "not_reviewed": "현재 수정본을 먼저 검수 완료하세요.",

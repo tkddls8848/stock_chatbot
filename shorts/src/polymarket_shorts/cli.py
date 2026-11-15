@@ -18,7 +18,7 @@ from .review import ReviewError, read_script
 _GATES = (
     "plan", "review", "workflow", "browser", "status", "edit", "complete", "upload", "youtube_auth",
     "review_pending", "review_ack", "review_pause", "review_approve", "review_tick",
-    "failure_ack", "scheduled", "watch", "track", "track_pin", "track_auto",
+    "youtube_prune", "failure_ack", "scheduled", "watch", "track", "track_pin", "track_auto",
 )
 
 
@@ -37,6 +37,7 @@ def main() -> None:
     parser.add_argument("--edit", metavar="TEXT", help="최근 제작일의 현재 수정본을 자연어로 고치고 다시 렌더")
     parser.add_argument("--complete", action="store_true", help="최근 제작일의 현재 수정본을 검수 완료로 기록")
     parser.add_argument("--upload", nargs="?", const="latest", metavar="DIR", help="검수 완료된 현재 수정본 업로드")
+    parser.add_argument("--youtube-prune", action="store_true", help="최신 게시본을 보존하고 오래된 쇼츠 정리")
     parser.add_argument("--youtube-auth", action="store_true", help="운영자 PC에서 최초 YouTube 승인")
     parser.add_argument("--review-pending", action="store_true", help="시나리오 검토 목록 JSON")
     parser.add_argument("--review-ack", metavar="TOKEN", help="원고 전달 성공 후 검토 시간 시작")
@@ -58,7 +59,7 @@ def main() -> None:
         parser.error("--review-token은 --edit와 함께 씁니다")
     chosen = [name for name in _GATES if getattr(args, name)]
     if len(chosen) > 1:
-        parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth는 한 번에 하나만 씁니다")
+        parser.error("--plan, --review, --workflow, --browser, --status, --edit, --complete, --upload, --youtube-auth, --youtube-prune는 한 번에 하나만 씁니다")
     if chosen and (args.date or args.force):
         parser.error(f"--{chosen[0]}은 --date, --force와 함께 쓸 수 없습니다")
     if args.interactive and chosen and chosen != ["plan"]:
@@ -105,6 +106,13 @@ def main() -> None:
             except watch.WatchError as exc:
                 raise SystemExit(str(exc)) from exc
             print(json.dumps(corner.status(settings), ensure_ascii=False))
+            return
+        if args.youtube_prune:
+            from .youtube import latest_published, prune
+            latest = latest_published(settings.output_dir)
+            result = prune(settings, keep_id=latest["video_id"]) if latest else {
+                "status": "skipped", "deleted": [], "kept": None, "reason": "게시된 쇼츠 기록이 없습니다"}
+            print(json.dumps(result, ensure_ascii=False))
             return
         if args.youtube_auth:
             from .youtube import authorize

@@ -4,6 +4,7 @@ from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta
 import json
 import logging
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -356,6 +357,9 @@ def video_title(date_text: str) -> str:
     그날 다룬 이슈는 설명에 적는다. 자연어 편집으로도 바꾸지 않는다.
     """
     return f"{date_text} 시장 컨센서스"
+
+
+VIDEO_TITLE_PATTERN = re.compile(re.escape(video_title("DATE")).replace("DATE", r"\d{4}-\d{2}-\d{2}"))
 
 
 def info_time(stamp: str) -> str:

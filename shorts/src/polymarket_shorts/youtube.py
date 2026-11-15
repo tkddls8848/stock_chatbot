@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
@@ -254,12 +255,14 @@ def upload(root: Path, settings: Settings, *, workflow_locked: bool = False) -> 
                 return {**empty, "status": "no_credentials"}
             video_id = _send(target / "upload.json", history, identifier, metadata, video, settings)
             comment = _comment(target / "upload.json", history, identifier, metadata, settings)
+            pruned = prune(settings, keep_id=video_id)
         try:
             publish_latest(root.parent, settings)
         except OSError:
             # 게시는 이미 끝났다. 웹 첫 화면은 다음 게시 때 따라잡는다.
             logger.warning("오늘의 영상 공개 파일을 쓰지 못했습니다", exc_info=True)
-        return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id), "comment": comment}
+        return {"status": "uploaded", "video_id": video_id, "url": shorts_url(video_id), "comment": comment,
+                "pruned": pruned}
 
 
 def _send(path: Path, history: dict, identifier: str, metadata: dict, video: Path, settings: Settings) -> str:
@@ -339,12 +342,115 @@ def _comment(path: Path, history: dict, identifier: str, metadata: dict, setting
     return result
 
 
+# 버그로 대량 삭제되는 것을 막는 상한
+MAX_PRUNE_DELETIONS = 20
+
+
+def prune(settings: Settings, *, keep_id: str) -> dict:
+    """정리 실패는 이미 끝난 업로드를 실패로 바꾸지 않는다."""
+    result = {"status": "skipped", "deleted": [], "kept": None, "reason": ""}
+    try:
+        with operation_lock(settings.output_dir / "state", ".prune.lock"):
+            _prune(settings, keep_id, result)
+    except Exception:
+        # 예외 문자열에도 자격값·응답 본문이 있을 수 있으므로 고정 문구만 반환한다.
+        result.update(status="failed", reason="쇼츠 정리 중 오류가 발생했습니다. 다음 게시 때 다시 시도합니다")
+    return result
+
+
+def _prune(settings: Settings, keep_id: str, result: dict) -> None:
+    from .pipeline import VIDEO_TITLE_PATTERN
+
+    credentials = _token(settings, grant_type="refresh_token", refresh_token=settings.youtube_refresh_token)
+    if COMMENT_SCOPE not in credentials.get("scope", "").split():
+        result["reason"] = "오래된 쇼츠를 지울 권한이 없습니다. --youtube-auth를 다시 승인하세요"
+        return
+    token = credentials.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise ReviewError("YouTube 액세스 토큰 발급 실패")
+    headers = {"Authorization": f"Bearer {token}"}
+    channels = _json(_request("GET", API_URL + "/channels", headers=headers,
+                             params={"part": "contentDetails", "mine": "true"}))["items"]
+    if len(channels) != 1:
+        raise ReviewError("운영자 채널을 확인하지 못했습니다")
+    channel = channels[0]
+    params = {"part": "snippet,contentDetails", "maxResults": 50,
+              "playlistId": channel["contentDetails"]["relatedPlaylists"]["uploads"]}
+    videos = {}
+    while True:
+        page = _json(_request("GET", API_URL + "/playlistItems", headers=headers, params=dict(params)))
+        for item in page["items"]:
+            snippet, details = item["snippet"], item["contentDetails"]
+            if VIDEO_TITLE_PATTERN.fullmatch(snippet.get("title", "")):
+                videos[details["videoId"]] = {
+                    "video_id": details["videoId"], "title": snippet["title"],
+                    "published_at": details.get("videoPublishedAt") or snippet["publishedAt"],
+                }
+        if not page.get("nextPageToken"):
+            break
+        params["pageToken"] = page["nextPageToken"]
+    result["kept"] = len(videos)
+    if keep_id not in videos:
+        result["reason"] = "방금 올린 영상이 아직 채널 목록에 없어 다음 게시 때 정리합니다"
+        return
+    if settings.youtube_keep_shorts < 1:
+        raise ReviewError("쇼츠 보존 개수는 1 이상이어야 합니다")
+    excess = len(videos) - settings.youtube_keep_shorts
+    if excess <= 0:
+        result["reason"] = "보존 개수 이하이므로 정리할 쇼츠가 없습니다"
+        return
+    candidates = sorted((row for key, row in videos.items() if key != keep_id),
+                        key=lambda row: datetime.fromisoformat(row["published_at"].replace("Z", "+00:00")))
+    path = settings.output_dir / "state" / "pruned.json"
+    history = _read(path)
+    deleted = history.setdefault("deleted", [])
+    failures, skipped = [], []
+    for row in candidates[:min(excess, MAX_PRUNE_DELETIONS)]:
+        video_id = row["video_id"]
+        try:
+            items = _json(_request("GET", API_URL + "/videos", headers=headers,
+                                   params={"part": "snippet", "id": video_id}))["items"]
+            if (len(items) != 1 or items[0].get("snippet", {}).get("channelId") != channel["id"]
+                    or not VIDEO_TITLE_PATTERN.fullmatch(items[0]["snippet"].get("title", ""))):
+                skipped.append(video_id)
+                continue
+            response = _request("DELETE", API_URL + "/videos", headers=headers, params={"id": video_id})
+            if response.status_code not in (204, 404):
+                failures.append(video_id)
+                continue
+        except Exception:
+            failures.append(video_id)
+            continue
+        result["deleted"].append(video_id)
+        result["kept"] -= 1
+        deleted.append({**row, "deleted_at": now().isoformat()})
+        # 저장 실패는 밖에서 실패로 돌리고 더 삭제하지 않는다.
+        write_json(path, history)
+    result["status"] = "failed" if failures else ("pruned" if result["deleted"] else "skipped")
+    reasons = []
+    if failures:
+        reasons.append(f"영상 {len(failures)}개 삭제 실패")
+    if skipped:
+        reasons.append(f"영상 {len(skipped)}개 소유 채널·제목 재확인 불일치")
+    if result["kept"] > settings.youtube_keep_shorts:
+        reasons.append("남은 초과분은 다음 실행에서 정리합니다")
+    result["reason"] = "; ".join(reasons)
+
+
 def publish_latest(base: Path, settings: Settings) -> dict | None:
     """공개 웹 첫 화면의 "오늘의 영상"이 읽는 최신 게시본을 `storage/public/shorts/ko.json`에 쓴다.
 
     웹은 `storage/shorts/`를 읽지 않으므로(공개 라우트는 `storage/public/`만) 쇼츠가 공개할 것만 따로 쓴다.
     `base`는 제작일 폴더들이 있는 `storage/shorts/`이고, 가장 최근 날짜의 마지막 게시본을 고른다.
     """
+    payload = latest_published(base)
+    if payload:
+        write_json(settings.public_dir / "shorts" / "ko.json", payload)
+    return payload
+
+
+def latest_published(base: Path) -> dict | None:
+    """웹 공개와 수동 정리가 함께 쓰는 최신 제작일의 마지막 게시본."""
     if not base.is_dir():
         return None
     for day in sorted((p for p in base.iterdir() if p.is_dir() and _DAY.fullmatch(p.name)), reverse=True):
@@ -364,7 +470,6 @@ def publish_latest(base: Path, settings: Settings) -> dict | None:
         payload = {"date": day.name, "video_id": entry["video_id"],
                    "url": shorts_url(entry["video_id"]), "title": title if isinstance(title, str) else "",
                    "uploaded_at": entry.get("uploaded_at") or ""}
-        write_json(settings.public_dir / "shorts" / "ko.json", payload)
         return payload
     return None
 

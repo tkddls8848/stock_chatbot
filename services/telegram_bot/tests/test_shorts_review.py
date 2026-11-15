@@ -226,3 +226,9 @@ def test_upload_text_reports_comment_separately():
     assert "댓글 미완료: 댓글 권한 승인 필요" in review.upload_text(result)
     result["comment"] = {"status": "posted"}
     assert "운영자 설명 댓글 게시 완료" in review.upload_text(result)
+
+    result["pruned"] = {"status": "pruned", "deleted": ["old"], "kept": 30}
+    assert "오래된 쇼츠 1개 삭제(채널 쇼츠 30개 유지)" in review.upload_text(result)
+    for status in ("skipped", "failed"):
+        result["pruned"] = {"status": status, "reason": "정리 사유"}
+        assert "쇼츠 정리 보류: 정리 사유" in review.upload_text(result)

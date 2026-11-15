@@ -521,6 +521,13 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   따로 남기며, `/shorts upload` 재실행은 영상을 다시 올리지 않고 실패한 댓글만 재시도한다. 댓글 POST의 응답을 잃으면
   중복 방지를 위해 자동 재전송하지 않고 확인 필요로 남긴다. 기존 업로드 전용 토큰은 댓글 권한이 없으므로
   `--youtube-auth`로 `youtube.force-ssl` 권한을 함께 다시 승인해야 한다.
+  **채널의 쇼츠는 최신 30개만 남긴다**(운영자 지시 2026-11-15: "항상 30개를 유지하고 가장 오래전에 올린 쇼츠는 삭제",
+  `Settings.youtube_keep_shorts`). 새로 올린 직후 `youtube.prune`이 채널 업로드 목록을 읽어, 게시 제목 형식("yyyy-mm-dd 시장
+  컨센서스", `pipeline.VIDEO_TITLE_PATTERN`)인 영상만 세고 30개를 넘는 만큼 가장 오래된 것부터 지운다. 다른 제목의 영상은
+  세지도 지우지도 않고, 방금 올린 영상은 지우지 않는다. 지우기 직전에 영상마다 소유 채널·제목을 다시 확인하고, 한 번에 20개까지만
+  지운다(버그로 대량 삭제되는 것을 막는 상한 — 넘는 분은 다음 게시 때). 방금 올린 영상이 채널 목록에 아직 없으면(반영 지연) 그날은
+  건너뛴다. 지운 영상은 `storage/shorts/state/pruned.json`에 남고 결과는 업로드 안내에 한 줄로 붙는다. 권한을 새로 받은 직후처럼
+  당장 맞출 때는 CLI `--youtube-prune`. 삭제도 `youtube.force-ssl` 권한이 있어야 하며, 없으면 지우지 않고 사유만 남긴다.
   **웹 첫 화면은 "오늘의 영상"으로 최신 게시본 하나를 붙인다**(운영자 요청 2026-10-09). 웹은
   `storage/shorts/`를 읽지 않으므로 쇼츠가 YouTube 게시 직후 `storage/public/shorts/ko.json`(날짜·영상 ID·제목)을
   쓰고(`youtube.publish_latest`), 웹은 `/api/shorts`로 그 파일만 내보낸다. 오늘 영상이 아직 없으면 가장 최근 영상을 날짜와 함께 보인다. 플레이어는 youtube-nocookie 프레임이고
