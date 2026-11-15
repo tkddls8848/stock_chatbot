@@ -92,22 +92,124 @@ check "Telegram 롱폴링 연결 있음" bash -c \
 say "디스크"
 sudo du -sh "$APP_DIR/storage" 2>/dev/null
 
-say "공개 산출물 신선도 (9시간 이내, 경고 전용)"
-# 실제 웹 설정을 읽어 STORAGE_DIR 재정의도 따른다. 산출물 부재·지연은
-# 서비스 점검의 실패 코드와 구분한다. 주석은 예산 때문에 지연될 수 있다.
+say "공개 산출물 신선도·건수 (경고 전용)"
+# 실제 웹 설정을 읽어 STORAGE_DIR 재정의도 따른다. 산출물 부재·지연은 서비스 점검의 실패 코드와 구분한다.
+# 파일 나이만 보면 "작업이 멈춤"·"돌았지만 실패/예산 초과로 건너뜀"·"돌았는데 건수가 비정상적으로 적음"이 모두
+# "N시간 전"으로만 보인다(2026-11-15, worldmonitor의 seed-meta·minRecordCount 방식을 따름). 그래서 각 파일 안의
+# 생성 시각·상태·건수를 읽는다. 하한은 정상 실측의 절반 안팎이다 — 늘 뜨는 경고는 진짜 경고를 가린다.
 if freshness=$(cd "$APP_DIR" && "$APP_DIR/venv/bin/python" - <<'PY'
-from services.web.core.clock import now
-from services.web.core.config import POLYMARKET_WEB_DIR
+from datetime import datetime
+import json
 
-stamp = now().timestamp()
-for name in ("current.json", "trending.json", "sector_brief.json", "search_index.json"):
+from services.web.core.clock import now
+from services.web.core.config import POLYMARKET_WEB_DIR, PUBLIC_DIR
+
+current_time = now()
+
+
+def load(path):
     try:
-        age = stamp - (POLYMARKET_WEB_DIR / name).stat().st_mtime
-    except OSError:
-        print(f"warn {name} — 산출물 없음/읽기 실패")
-        continue
-    state = "ok" if 0 <= age <= 9 * 3600 else "warn"
-    print(f"{state} {name} — 갱신 {age / 3600:.1f}시간 전")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def hours_since(value):
+    try:
+        stamp = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return None if stamp.tzinfo is None else (current_time - stamp).total_seconds() / 3600
+
+
+def report(ok, text):
+    print(f"{'ok' if ok else 'warn'} {text}")
+
+
+def fresh(label, payload, key, limit_hours):
+    """생성 시각이 limit_hours 안인지. 파일 mtime이 아니라 쓰는 쪽이 적은 시각을 본다."""
+    if payload is None:
+        report(False, f"{label} — 산출물 없음/읽기 실패")
+        return False
+    age = hours_since(payload.get(key))
+    if age is None:
+        report(False, f"{label} — 생성 시각({key}) 없음")
+        return False
+    report(0 <= age <= limit_hours, f"{label} — 생성 {age:.1f}시간 전(기준 {limit_hours}시간)")
+    return True
+
+
+# 예측 컨센서스 순회(4시간마다). 시도 시각과 성공 시각을 나눠 "작업 멈춤"과 "작업은 도는데 실패"를 가른다.
+status = load(POLYMARKET_WEB_DIR / "status.json")
+if status is None:
+    report(False, "컨센서스 순회 상태 — status.json 없음/읽기 실패")
+else:
+    attempt = hours_since(status.get("last_attempt_at"))
+    report(attempt is not None and attempt <= 4.5,
+           f"컨센서스 순회 작업 — 마지막 시도 {'?' if attempt is None else f'{attempt:.1f}'}시간 전(기준 4.5시간)")
+    result = status.get("last_result")
+    if result == "success":
+        report(True, "컨센서스 마지막 순회 성공")
+    elif result == "skipped_budget":
+        report(False, "컨센서스 마지막 순회 — 하루 예산 초과로 건너뜀")
+    else:
+        report(False, f"컨센서스 마지막 순회 실패 — {str(status.get('error') or result)[:80]}")
+
+current = load(POLYMARKET_WEB_DIR / "current.json")
+if fresh("current.json", current, "generated_at", 9):
+    events = current.get("events") if isinstance(current.get("events"), list) else []
+    # 정상 실측 18,900~21,900건(2026-09~11). 절반 아래면 순회가 일부만 담고 승격된 것이다.
+    report(len(events) >= 10000 and current.get("coverage_status") == "complete",
+           f"current.json — 열린 질문 {len(events):,}건, 수집 {current.get('coverage_status')}")
+
+trending = load(POLYMARKET_WEB_DIR / "trending.json")
+if fresh("trending.json", trending, "generated_at", 9):
+    same = current is not None and trending.get("generation_id") == current.get("generation_id")
+    report(same and trending.get("state") in {"ok", "warming_up"},
+           f"trending.json — 상태 {trending.get('state')}, 후보 {trending.get('candidate_count')}건"
+           + ("" if same else ", 현재 수집분과 세대가 다름"))
+
+brief = load(POLYMARKET_WEB_DIR / "sector_brief.json")
+if fresh("sector_brief.json", brief, "generated_at", 9):
+    # partial은 해설이 실패한 분야만 직전 단락을 두는 설계된 대체 동작이라 건수만 보인다. 전부 실패해야 경고다.
+    report(brief.get("state") in {"ok", "partial"},
+           f"sector_brief.json — 상태 {brief.get('state')} {brief.get('group_counts')}")
+
+# 검색 주석은 하루 Neurons 예산 안에서만 달린다. 예산 소진으로 건너뛴 주기는 정상 동작이라 경고하지 않고
+# 주석 비율만 보인다. 작업이 멈췄거나 실패했을 때만 경고한다.
+annotate = load(POLYMARKET_WEB_DIR / "annotate_status.json")
+if annotate is None:
+    report(False, "검색 주석 — annotate_status.json 없음/읽기 실패")
+else:
+    attempt = hours_since(annotate.get("last_attempt_at"))
+    result = annotate.get("last_result")
+    report(attempt is not None and attempt <= 9
+           and result in {"ok", "up_to_date", "skipped_budget", "stopped_budget"},
+           f"검색 주석 — {annotate.get('annotated')}/{annotate.get('total')}건, 마지막 {result}"
+           f"({'?' if attempt is None else f'{attempt:.1f}'}시간 전)")
+
+# 봇이 굽는 공개 산출물. 뉴스·보고서는 03·08·15·20시라 최대 간격 7시간, 지켜볼 뉴스·시장은 매시간이다.
+news = load(PUBLIC_DIR / "news.json")
+if fresh("news.json", news, "generated_at", 9):
+    recent = [doc for doc in news.get("documents") or []
+              if isinstance(doc, dict) and doc.get("kind") == "news"
+              and (hours_since(doc.get("published_at")) or 99) <= 24]
+    # 정상 실측 하루 60~115건(2026-10-17~11-15).
+    report(len(recent) >= 20, f"news.json — 최근 24시간 뉴스 {len(recent)}건(기준 20건)")
+
+market = load(PUBLIC_DIR / "market.json")
+if fresh("market.json", market, "generated_at", 3):
+    report(len(market.get("markets") or []) >= 5, f"market.json — 시장 {len(market.get('markets') or [])}개")
+
+watch_news = load(PUBLIC_DIR / "watch_news.json")
+if fresh("watch_news.json", watch_news, "generated_at", 3):
+    report(len(watch_news.get("items") or []) >= 300, f"watch_news.json — {len(watch_news.get('items') or [])}건(72시간)")
+
+fresh("research_inputs.json", load(PUBLIC_DIR / "research_inputs.json"), "generated_at", 9)
+
+# 쇼츠는 하루 한 편(20시 제작 → 검수 → 게시)이라 이틀이 넘으면 하루를 건너뛴 것이다.
+fresh("오늘의 영상(shorts/ko.json)", load(PUBLIC_DIR / "shorts" / "ko.json"), "uploaded_at", 48)
 PY
 ); then
     while IFS=' ' read -r state label; do
