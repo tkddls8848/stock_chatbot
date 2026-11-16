@@ -249,7 +249,7 @@ def test_digest_orders_markets_and_escapes(tmp_path):
     # 시장 순서는 검색·화면과 같은 MARKETS 순서다. 자료 없는 시장(CN·HK·JP)은 빠진다.
     assert text.index("■ 미국") < text.index("■ 한국") < text.index("■ 유럽")
     assert "■ 일본" not in text and "이틀 전" not in text
-    assert "새것" in text and "옛것" not in text  # 최신 보고서 한 편만
+    assert "새것" not in text and "첫 문단" not in text  # 보고서 전문은 싣지 않는다
     assert "논조 +0.31" in text and "논조 -0.22" in text  # 마지막 날의 값
     assert "<b>인하</b>" not in html and "&lt;b&gt;인하" in html
     assert "코스피 &lt;반등&gt;" in html and "href='https://example.com/a?x=1&amp;y=2'" in html
@@ -286,7 +286,7 @@ def test_send_once_per_day_to_active_subscribers(tmp_path):
     mailer = FakeMailer()
 
     counts = run(users_dir=users, public_dir=public, identity_key=KEY, mailer=mailer, moment=NOW)
-    assert counts == {"sent": 2, "skipped": 2, "failed": 0, "busy": 0, "result": "done"}
+    assert counts == {"sent": 2, "skipped": 2, "failed": 0, "busy": 0, "briefing": "fallback", "result": "done"}
     assert sorted(m["To"] for m in mailer.sent) == ["a@example.com", "b@example.com"]
     first = next(m for m in mailer.sent if m["To"] == "a@example.com")
     link = unsubscribe_url("https://nunchi.live", KEY, "a" * 64, "a@example.com")
@@ -461,3 +461,8 @@ def test_broken_asset_file_still_gets_the_market_digest(tmp_path):
     counts = run(users_dir=users, public_dir=public, identity_key=KEY, mailer=mailer, moment=NOW)
     assert counts["sent"] == 1 and "내 자산 소식" not in mailer.sent[0].get_body(("plain",)).get_content()
     assert SubscriptionStore(users / ("a" * 64) / "newsletter.json").read()["alerts_sent"] == []
+
+
+@pytest.fixture(autouse=True)
+def mock_newsletter_briefing(monkeypatch):
+    monkeypatch.setattr("services.web.newsletter.send.get_briefing", lambda *a, **kw: {"briefing": None})

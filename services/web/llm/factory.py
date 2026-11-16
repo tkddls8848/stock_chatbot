@@ -48,7 +48,7 @@ from services.web.llm.terminology import read_prompt
 logger = logging.getLogger(__name__)
 
 
-def build_backend(purpose: str, *, model: str, timeout: int) -> LLMBackend:
+def build_backend(purpose: str, *, model: str, timeout: int, max_attempts: int = CLOUDFLARE_MAX_ATTEMPTS) -> LLMBackend:
     """Cloudflare 백엔드를 만들고 재시도·회로 차단으로 감싼다."""
     backend = CloudflareWorkersAIBackend(
         account_id=CLOUDFLARE_ACCOUNT_ID,
@@ -60,7 +60,7 @@ def build_backend(purpose: str, *, model: str, timeout: int) -> LLMBackend:
     logger.info("[LLM] purpose=%s provider=cloudflare model=%s", purpose, model)
     return ResilientBackend(
         backend=backend,
-        max_attempts=CLOUDFLARE_MAX_ATTEMPTS,
+        max_attempts=max_attempts,
         failure_threshold=CLOUDFLARE_FAILURE_THRESHOLD,
         cooldown_seconds=CLOUDFLARE_FAILURE_COOLDOWN_SECONDS,
     )

@@ -14,6 +14,8 @@ systemd timer(`stock-chatbot-newsletter.timer`, 매일 08:30 한국 시간)가 �
 
 from __future__ import annotations
 
+import argparse
+import json
 import logging
 import re
 import smtplib
@@ -23,8 +25,9 @@ from pathlib import Path
 
 from services.web.accounts import account_lock
 from services.web.core import config
-from services.web.core.clock import now
-from services.web.core.storage import FileLockTimeout
+from services.web.core.clock import ensure_jst, now
+from services.web.core.storage import FileLockTimeout, write_text_atomic
+from services.web.newsletter.briefing import get_briefing
 from services.web.newsletter.digest import build_digest, personal_section, render, subject
 from services.web.newsletter.mailer import Mailer, build_mailer, compose
 from services.web.newsletter.subscription import SubscriptionError, SubscriptionStore, unsubscribe_url
@@ -44,9 +47,9 @@ def _subscribers(users_dir: Path) -> list[Path]:
 
 def run(*, users_dir: Path, public_dir: Path, mailer: Mailer, identity_key: str,
         moment: datetime | None = None, lock_timeout: float = 10.0) -> dict[str, int | str]:
-    moment = moment or now()
+    moment = ensure_jst(moment or now())
     day = moment.date().isoformat()
-    counts: dict[str, int | str] = {"sent": 0, "skipped": 0, "failed": 0, "busy": 0}
+    counts: dict[str, int | str] = {"sent": 0, "skipped": 0, "failed": 0, "busy": 0, "briefing": "skipped"}
 
     def due(folder: Path) -> bool:
         record = SubscriptionStore(folder / "newsletter.json").read()
@@ -61,15 +64,17 @@ def run(*, users_dir: Path, public_dir: Path, mailer: Mailer, identity_key: str,
             else:
                 counts["skipped"] += 1
         except SubscriptionError:
-            pending.append(folder)  # 잠금 안에서 다시 읽고 실패로 센다
+            counts["failed"] += 1  # 확인된 발송 대상이 없으면 LLM도 부르지 않는다
     if not pending:
         return {**counts, "result": "done"}
     # 해지 링크에 서명할 키가 없으면 보내지 않는다. 끌 수 없는 편지를 보내지 않는다.
     if not mailer.configured or len(identity_key) < 32:
         return {**counts, "failed": len(pending), "result": "not_configured"}
+    record = get_briefing(public_dir, moment)
+    counts["briefing"] = "ok" if record.get("briefing") else "fallback"
     digest = build_digest(public_dir, moment, window_hours=config.NEWSLETTER_WINDOW_HOURS,
                           max_market_age_hours=config.NEWSLETTER_MAX_MARKET_AGE_HOURS,
-                          headlines=config.NEWSLETTER_HEADLINES_PER_MARKET)
+                          headlines=config.NEWSLETTER_HEADLINES_PER_MARKET, briefing=record.get("briefing"))
     if digest is None:
         return {**counts, "result": "no_fresh_data"}
 
@@ -125,8 +130,33 @@ def run(*, users_dir: Path, public_dir: Path, mailer: Mailer, identity_key: str,
     return {**counts, "result": "done"}
 
 
-def main() -> int:
+def preview(*, public_dir: Path, moment: datetime) -> dict:
+    record = get_briefing(public_dir, moment)
+    digest = build_digest(public_dir, moment, window_hours=config.NEWSLETTER_WINDOW_HOURS,
+                          max_market_age_hours=config.NEWSLETTER_MAX_MARKET_AGE_HOURS,
+                          headlines=config.NEWSLETTER_HEADLINES_PER_MARKET, briefing=record.get("briefing"))
+    if digest is None:
+        title = f"{moment.month}월 {moment.day}일 시장 요약"
+        digest = {"subject": f"[눈치] {title}", "title": title, "briefing": None,
+                  "sections": [], "tones": [], "video": None}
+    text, html = render(digest, site=config.AUTH_ORIGIN,
+                        unsubscribe_url="https://example.com/newsletter/unsubscribe")
+    write_text_atomic(config.NEWSLETTER_DIR / "preview.html", html)
+    write_text_atomic(config.NEWSLETTER_DIR / "preview.txt", text)
+    return {"subject": digest["subject"], "text_chars": len(text), "html_chars": len(html),
+            "neurons": record.get("usage", {}).get("neurons"),
+            "briefing": "ok" if record.get("briefing") else "fallback"}
+
+
+def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    parser = argparse.ArgumentParser(description="매일 아침 뉴스레터")
+    parser.add_argument("--preview", action="store_true", help="메일 없이 미리보기 저장")
+    if parser.parse_args(argv).preview:
+        summary = preview(public_dir=config.PUBLIC_DIR, moment=now())
+        print(json.dumps(summary, ensure_ascii=False))
+        logger.info("[NEWSLETTER] briefing=%s preview=ok", summary["briefing"])
+        return 0
     counts = run(users_dir=config.USERS_DIR, public_dir=config.PUBLIC_DIR, mailer=build_mailer(),
                  identity_key=config.ACCOUNT_IDENTITY_KEY)
     logger.info("[NEWSLETTER] %s", " ".join(f"{k}={v}" for k, v in counts.items()))

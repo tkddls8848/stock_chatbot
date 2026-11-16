@@ -352,3 +352,11 @@ NEWSLETTER_CODES_PER_DAY = 5
 NEWSLETTER_WINDOW_HOURS = 24
 NEWSLETTER_MAX_MARKET_AGE_HOURS = 36
 NEWSLETTER_HEADLINES_PER_MARKET = 3
+
+NEWSLETTER_DIR = STORAGE_DIR / "web" / "newsletter"
+# 뉴스레터 브리핑 모델. 2026-11-16 같은 입력(9,449자) 실측: qwen3-30b는 두 번 모두 형식을 어기고(기사 번호 4~5개,
+# 관찰점을 문자열로) 시장별 나열에 그쳤다(2회 114 Neurons). deepseek-v4-flash(생각 끔)는 첫 시도에 통과하고 사건 단위로
+# 묶었다(1회 128~346 Neurons·10초·출력 약 900토큰). 하루 한 통이라 품질 쪽을 고른다.
+NEWSLETTER_MODEL = "@cf/deepseek-ai/deepseek-v4-flash-0731"
+NEWSLETTER_MAX_TOKENS = 4096
+NEWSLETTER_PROMPT_FILE = PROMPT_DIR / "newsletter_briefing_ko.txt"
