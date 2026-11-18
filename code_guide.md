@@ -664,6 +664,13 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   제외, 대표 확률이 있는 질문(중복선택 제외). 관련 뉴스는 최근 24시간 `news.json` 기사 중 검색 주석의 구체어(일반어 목록 제외, 흔한
   조사 하나까지 허용)가 한국어 제목에 있거나, 질문 원문의 영문 주제어 둘 이상이 원문 제목에 있는 것이고 2건 이하만 남겨 5개까지다.
   `news.json`이 9시간보다 낡았으면 고르지 않는다(`quiet_moves_state: news_stale`) — 거짓 경보가 실제 경보를 가린다.
+  **운영자 전용 유료 API 알림 `billing_alert`**(운영자 결정 2026-11-18). 명령·메뉴 없이 매일 18:30 JST와
+  봇 기동 직후 ElevenLabs 잔량·Cloudflare Workers AI 초과 요금을 독립적으로 확인해 운영자 채팅에 한 메시지로 보낸다.
+  쇼츠 예약 제작 20:00 전에 충전하도록 ElevenLabs는 3편 × 1,100자 = 3,300자 미만이면 알린다(키가 없으면 건너뛴다).
+  Cloudflare는 Workers Paid $5/월이며, UTC 날짜별 Neurons를 합쳐 하루 무료 10,000을 뺀 초과분에 $0.011/1,000을
+  곱한 이번 달 추정치가 $1 이상이면 알린다 — 실제 청구 주기는 달력 월과 다를 수 있다. ElevenLabs는 같은 리셋 주기,
+  Cloudflare는 같은 UTC 달력 월에 한 번만 보내고, 조회 실패도 서비스마다 JST 하루 한 번 알린다(GraphQL은 권한 부족도 HTTP 200의 `errors`로 와서 권한 안내를 붙인다). 전송 성공 뒤에만
+  `storage/bot/billing_alert/state.json`에 기록한다. 필요한 권한은 ElevenLabs `user_read`, Cloudflare `Account Analytics Read`다.
 - **화면·주소·영상에 출처 서비스 이름(Polymarket·폴리마켓)을 쓰지 않는다.** 한국은
   공식적으로 이 서비스 접근을 막고 있다. 사용자가 보는 이름은 **"집단 예측 컨센서스"**이고
   주소는 `/forecast`·`/api/forecast/*`다(예전 `/polymarket`은 넘겨주지 않고 404다).

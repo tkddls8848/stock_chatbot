@@ -22,6 +22,7 @@ EXPECTED_FEATURES = {
     "shorts",
     "view_check",
     "consensus_alert",
+    "billing_alert",
 }
 
 

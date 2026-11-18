@@ -1,5 +1,6 @@
 """기능 카탈로그의 단일 조립 지점."""
 
+from services.telegram_bot.features.billing_alert.feature import FEATURE as BILLING_ALERT
 from services.telegram_bot.features.briefing.feature import FEATURE as BRIEFING
 from services.telegram_bot.features.consensus_alert.feature import FEATURE as CONSENSUS_ALERT
 from services.telegram_bot.features.instruments.feature import FEATURE as INSTRUMENTS
@@ -26,6 +27,7 @@ ALL_FEATURES = (
     BRIEFING,          # 모닝·마감 브리핑
     SYSTEM_ADMIN,      # 시작·도움말·시스템 제어
     CONSENSUS_ALERT,   # 운영자 전용 조기 이동 알림
+    BILLING_ALERT,     # 운영자 전용 유료 API 잔량·요금 알림
     WEB_STATUS,        # 웹 산출물 갱신 상태(관리 패널)
     SHORTS,            # 쇼츠 운영(관리 패널) — 쇼츠 CLI를 하위 프로세스로
     VIEW_CHECK,        # 운영자 개인용 뷰 검증(/view) — 컨센서스는 웹 공개 API로 읽는다

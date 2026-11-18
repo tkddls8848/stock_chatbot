@@ -61,6 +61,7 @@ FEATURES_ENABLED = frozenset(
         "shorts",
         "view_check",
         "consensus_alert",
+        "billing_alert",
     }
 )
 
@@ -120,6 +121,16 @@ PROMPT_DIR        = Path(__file__).resolve().parents[1] / "prompts"
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
 CLOUDFLARE_WORKER_AI_API_TOKEN = os.environ.get("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip()
 CLOUDFLARE_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
+
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+# 운영자 결정(2026-11-18): 쇼츠 3편 × max_script_chars 1,100자 전에 충전한다.
+BILLING_ELEVENLABS_MIN_CREDITS = 3_300
+# 운영자는 Workers Paid $5/월. AI 무료분 하루 1만 Neurons, 초과 $0.011/1k.
+# 운영자 결정(2026-11-18): UTC 달력 월 초과 요금 추정 $1부터 알린다.
+BILLING_CLOUDFLARE_FREE_NEURONS_PER_DAY = 10_000
+BILLING_CLOUDFLARE_USD_PER_1K_NEURONS = 0.011
+BILLING_CLOUDFLARE_ALERT_USD = 1.0
+
 # 분석은 모두 같은 모델을 쓴다 — `qwen3-30b-a3b`는 이름과 달리 MoE(활성 3B)라
 # 단가가 3B 모델과 같다(입력 $0.0509/M, 출력 $0.335/M).
 # 값 자체는 env로 남긴다. 임계값과 달리 모델 이름은 Cloudflare가 폐기·개명하면
