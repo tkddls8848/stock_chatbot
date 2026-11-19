@@ -34,6 +34,10 @@ class SourceError(RuntimeError):
     pass
 
 
+class GenerationChanged(SourceError):
+    """읽던 수집분이 교체되어 스냅숏부터 다시 읽어야 한다."""
+
+
 @dataclass(frozen=True)
 class Snapshot:
     summary: dict[str, Any]
@@ -90,7 +94,7 @@ class PolymarketWebClient:
                 "page_size": PAGE_SIZE, "page": page,
             }))
             if str(payload.get("generation_id")) != generation:
-                raise SourceError("목록 조회 중 generation이 바뀌었습니다")
+                raise GenerationChanged("목록 조회 중 generation이 바뀌었습니다")
             count = payload.get("total")
             if type(count) is not int or count < 0 or (total is not None and total != count):
                 raise SourceError("이벤트 총수가 잘못됐거나 변경됐습니다")
@@ -106,9 +110,10 @@ class PolymarketWebClient:
                 if not isinstance(event, dict):
                     raise SourceError("잘못된 이벤트 행입니다")
                 identity = str(event.get("id") or "")
-                if (not identity or identity in seen or event.get("data_status") != "ok"
-                        or str(event.get("generation_id")) != generation):
-                    raise SourceError("이벤트가 중복됐거나 generation·상태가 다릅니다")
+                if str(event.get("generation_id")) != generation:
+                    raise GenerationChanged("이벤트 목록 행의 generation이 바뀌었습니다")
+                if not identity or identity in seen or event.get("data_status") != "ok":
+                    raise SourceError("이벤트가 중복됐거나 상태가 다릅니다")
                 seen.add(identity)
                 events.append(event)
             if page == page_count:
@@ -128,13 +133,15 @@ class PolymarketWebClient:
             raise SourceError("상세 조회 예산을 넘었습니다")
         self.requests[key] += 1
         result = self._get("api/forecast/events/" + quote(event_id, safe=""))
-        if str(result.get("generation_id")) != generation_id or str(result.get("id")) != event_id:
-            raise SourceError("상세 조회 중 generation 또는 이벤트 ID가 바뀌었습니다")
+        if str(result.get("generation_id")) != generation_id:
+            raise GenerationChanged("상세 조회 중 generation이 바뀌었습니다")
+        if str(result.get("id")) != event_id:
+            raise SourceError("상세 조회 중 이벤트 ID가 바뀌었습니다")
         return result
 
     def confirm(self, generation_id: str) -> None:
         if str(self._summary()["generation_id"]) != generation_id:
-            raise SourceError("원고 생성 전에 generation이 바뀌었습니다")
+            raise GenerationChanged("원고 생성 전에 generation이 바뀌었습니다")
 
     def market_news(self) -> list[dict[str, Any]]:
         """봇이 모아 공개 웹에 구운 시장 뉴스(보고서가 근거로 고른 기사)를 최근 며칠치 읽는다.

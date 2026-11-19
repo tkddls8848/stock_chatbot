@@ -8,10 +8,11 @@ import re
 from pathlib import Path
 import shutil
 import tempfile
+from time import sleep
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .client import PolymarketWebClient, PriceHistory, SourceError
+from .client import GenerationChanged, PolymarketWebClient, PriceHistory, SourceError
 from .config import Settings
 from .core.storage import read_json
 from .corner import build as build_corner
@@ -129,14 +130,46 @@ def prune_old_days(settings: Settings, today: date) -> list[Path]:
     return removed
 
 
-def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:
-    """선정·원고 단계마다 모델을 한 번씩 부르고, 원고 검증에서 빠진 이슈가 있으면 한 번 더 골라 채운다.
+# 20시 순회 승격과 제작이 겹쳐 하루 두 번뿐인 예약 시도를 소진했다(2026-11-18).
+# 같은 시도 안에서 60초 간격으로 두 번만 새 수집분을 읽는다. 웹 장애는 재시도하지 않는다.
+GENERATION_RETRIES = 2
+GENERATION_RETRY_SECONDS = 60
 
-    제작 판단의 원자료는 렌더 전에 보존한다.
-    """
+
+def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | None:
+    """선정·상세·원고 채우기를 같은 수집분으로 마치고, 세대 변경만 처음부터 재시도한다."""
+    retries: list[dict] = []
+    calls = 0
+    for attempt in range(GENERATION_RETRIES + 1):
+        audit: dict = {"llm_calls": calls, "generation_retries": list(retries)}
+        try:
+            return _prepare_daily(settings, today, day_dir, audit)
+        except GenerationChanged as exc:
+            audit.update({"status": "failed", "error": str(exc)})
+            if attempt == GENERATION_RETRIES:
+                raise
+            retries.append({"generation_id": audit.get("generation_id"), "error": str(exc),
+                            "llm_calls": audit["llm_calls"] - calls,
+                            "requests": audit.get("requests", {})})
+            calls = audit["llm_calls"]
+            audit.update({"status": "generation_retry", "generation_retries": list(retries)})
+            write_json(day_dir / "selection.json", audit)
+            logger.warning("수집분 변경, %d초 뒤 스냅숏부터 재시도(%d/%d): %s",
+                           GENERATION_RETRY_SECONDS, attempt + 1, GENERATION_RETRIES, exc)
+            sleep(GENERATION_RETRY_SECONDS)
+        except Exception as exc:
+            audit.update({"status": "failed", "error": str(exc)})
+            raise
+        finally:
+            write_json(day_dir / "selection.json", audit)
+
+
+def _prepare_daily(settings: Settings, today: date, day_dir: Path, audit: dict) -> Scenario | None:
+    """제작 판단의 원자료는 렌더 전에 보존한다."""
     client = PolymarketWebClient(settings.web_url)
     snapshot = client.snapshot()
-    candidates, audit = shortlist(snapshot)
+    candidates, screening = shortlist(snapshot)
+    audit.update(screening)
     # 오래 지켜볼 판의 기록은 영상이 나오지 않는 날에도 쌓여야 흐름이 끊기지 않는다. 그래서 선정 전에 쓰고,
     # 실패해도 제작을 멈추지 않되 감사 기록에 남긴다.
     audit["watch"] = refresh_watch(settings, today, snapshot, client, PriceHistory())
@@ -156,7 +189,7 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
     ]
     candidates = fresh
     audit.update({"generation_id": snapshot.generation_id, "generated_at": snapshot.summary["generated_at"],
-                  "candidates": candidates, "selected": [], "rejected": [], "llm_calls": 0})
+                  "candidates": candidates, "selected": [], "rejected": []})
     day_dir.mkdir(parents=True, exist_ok=True)
     # 실패한 단계와 이미 지출한 조회도 다시 확인할 수 있도록 단계마다 원자적으로 저장한다.
     def save():
@@ -208,13 +241,29 @@ def prepare_daily(settings: Settings, today: date, day_dir: Path) -> Scenario | 
         # 추적 코너가 서는 날은 새 이슈를 덜 고른다(추적 둘이면 둘, 하나면 셋). 추이선이 그려지는 시간과 장면 사이
         # 쉼까지 치면 추적 장면 하나가 새 이슈 하나만큼 길어, 추적 둘에 새 이슈 셋을 넣은 시험 영상이 203초였다
         # (2026-11-10, 목표 150초·쇼츠 한도 180초).
-        selected = select_issues(candidates, settings, rejected=audit["rejected"],
-                                 maximum=max(1, settings.max_groups - 1 - len(tracked)) if tracked else None)
+        maximum = max(1, settings.max_groups - 1 - len(tracked)) if tracked else None
+        selected = select_issues(candidates, settings, rejected=audit["rejected"], maximum=maximum)
         audit["selected"] = selected
         save()
         # 우리가 모은 시장 뉴스는 선정이 끝난 뒤 한 번만 읽는다 — 고를 이슈가 없으면 읽을 이유가 없다.
         pool = client.market_news() if selected else []
         issues = gather(selected)
+        if not issues:
+            tried = {str(row["id"]) for row in (*audit["selected"], *audit["rejected"])}
+            reserve = [row for row in candidates if str(row["id"]) not in tried]
+            record = audit["reselect"] = {"reserve": len(reserve), "selected": [], "produced": 0}
+            if reserve:
+                audit["llm_calls"] += 1
+                save()
+                extra = select_issues(reserve, settings, rejected=audit["rejected"], maximum=maximum)
+                record["selected"] = [row["id"] for row in extra]
+                audit["selected"] = audit["selected"] + extra
+                save()
+                # 첫 선정이 전부 탈락했으면 gather가 쓸 시장 뉴스도 아직 읽지 않았다.
+                if extra and not selected:
+                    pool = client.market_news()
+                issues = gather(extra)
+                record["produced"] = len(issues)
         if not issues:
             audit["status"] = "no_suitable_issues"
             save()
@@ -295,6 +344,8 @@ def _backfill(issues: list[dict], scripts: list[dict], missing: int, candidates:
         if not added:
             return issues, scripts
         added, more = write(added, len(issues) + len(added) + share)
+    except GenerationChanged:
+        raise
     except (HighlightError, LLMError, SourceError) as exc:
         record["error"] = str(exc)
         logger.warning("빈자리 채우기 실패, 통과한 이슈로 만든다: %s", exc)

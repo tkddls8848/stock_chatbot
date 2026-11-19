@@ -255,3 +255,106 @@ def test_failed_backfill_keeps_the_issues_that_passed(monkeypatch):
     # 채운 이슈가 다시 검증에서 빠지면 그대로 통과한 것만 남는다.
     (issues, _), audit, _, _ = _backfill_case(monkeypatch, lambda rows: [rows[1]])
     assert [issue["id"] for issue in issues] == ["a"] and audit["backfill"]["produced"] == 0
+
+
+def _recovery_case(tmp_path, monkeypatch, issue_source, *, empty_twice=False, failure=None, stage="detail"):
+    import json
+    from polymarket_shorts import pipeline, highlights
+    from polymarket_shorts.client import PolymarketWebClient, Snapshot
+
+    snapshot, candidate, detail, _, script = issue_source
+    candidates = [{**candidate, "id": identity} for identity in ("e1", "e2", "e3")]
+    state = {"snapshots": 0, "selected": [], "maximum": [], "pool": 0, "sleeps": [], "failed": False}
+
+    def fail_once(where):
+        if failure and stage == where and not state["failed"]:
+            state["failed"] = True
+            raise failure
+
+    class Client(PolymarketWebClient):
+        def snapshot(self):
+            state["snapshots"] += 1
+            fail_once("snapshot")
+            generation = f'g{state["snapshots"]}'
+            return Snapshot({**snapshot.summary, "generation_id": generation}, snapshot.events, {})
+        def _get(self, path):
+            fail_once("detail")
+            return {**detail, "id": path.rsplit("/", 1)[-1], "generation_id": f'g{state["snapshots"]}'}
+        def confirm(self, generation):
+            fail_once("confirm")
+            assert generation == f'g{state["snapshots"]}'
+        def news(self, *args, **kwargs):
+            return []
+        def market_news(self):
+            state["pool"] += 1
+            return [{"title": "연준 금리", "text": "Fed decision", "published_at": snapshot.summary["generated_at"]}]
+
+    def select(rows, settings, *, rejected, maximum):
+        state["selected"].append([row["id"] for row in rows])
+        state["maximum"].append(maximum)
+        identity = rows[0]["id"]
+        bad = not failure and (len(state["selected"]) == 1 or empty_twice)
+        return highlights.validate_selection({"selected": [{
+            "id": identity, "source_title": candidate["title"], "topic": "unrelated oil" if bad else "Fed Decision",
+            "relevance": 3, "timeliness": 2, "keywords": ["연준"], "reason": candidate["selection"]["reason"],
+        }]}, rows, maximum or settings.max_groups, rejected=rejected)
+
+    def write(issues, *args, **kwargs):
+        assert all(issue["market_news"] for issue in issues)
+        return [{**script, "id": issue["id"]} for issue in issues]
+
+    monkeypatch.setattr(pipeline, "PolymarketWebClient", Client)
+    monkeypatch.setattr(pipeline, "shortlist", lambda snapshot: (candidates, {}))
+    monkeypatch.setattr(pipeline, "refresh_watch", lambda *args: {})
+    monkeypatch.setattr(pipeline, "_corner", lambda *args: [])
+    monkeypatch.setattr(pipeline, "select_issues", select)
+    monkeypatch.setattr(pipeline, "write_issues", write)
+    monkeypatch.setattr(pipeline, "sleep", state["sleeps"].append)
+    settings = replace(Settings.from_env(), output_dir=tmp_path, visuals_enabled=False)
+
+    def run():
+        return pipeline.prepare_daily(settings, date(2026, 9, 23), tmp_path)
+    def audit():
+        return json.loads((tmp_path / "selection.json").read_text())
+    return run, audit, state
+
+
+def test_all_rejected_selection_reselects_and_loads_market_news(tmp_path, monkeypatch, issue_source):
+    run, audit, state = _recovery_case(tmp_path, monkeypatch, issue_source)
+    scenario = run()
+    assert scenario.scenes[1].event_id == "e2"
+    assert state["selected"] == [["e1", "e2", "e3"], ["e2", "e3"]]
+    assert state["maximum"] == [None, None] and state["pool"] == 1
+    assert audit()["llm_calls"] == 3
+    assert audit()["reselect"] == {"reserve": 2, "selected": ["e2"], "produced": 1}
+    assert audit()["rejected"][0]["id"] == "e1"
+
+
+def test_empty_reselection_stops_without_a_third_selection(tmp_path, monkeypatch, issue_source):
+    run, audit, state = _recovery_case(tmp_path, monkeypatch, issue_source, empty_twice=True)
+    assert run() is None
+    assert audit()["status"] == "no_suitable_issues" and audit()["llm_calls"] == 2
+    assert audit()["reselect"] == {"reserve": 2, "selected": [], "produced": 0}
+    assert len(state["selected"]) == 2 and state["pool"] == 0
+    assert not (tmp_path / "scenario.json").exists()
+
+
+def test_generation_change_restarts_snapshot_including_gather(tmp_path, monkeypatch, issue_source):
+    from polymarket_shorts.client import GenerationChanged
+    for stage in ("snapshot", "detail", "confirm"):
+        run, audit, state = _recovery_case(tmp_path / stage, monkeypatch, issue_source,
+                                          failure=GenerationChanged("generation이 바뀌었습니다"), stage=stage)
+        assert run().generation_id == "g2"
+        assert state["snapshots"] == 2 and state["sleeps"] == [60]
+        assert audit()["status"] == "script_ready" and len(audit()["generation_retries"]) == 1
+        assert audit()["llm_calls"] == (2 if stage == "snapshot" else 3)
+
+
+def test_other_source_error_does_not_retry(tmp_path, monkeypatch, issue_source):
+    from polymarket_shorts.client import SourceError
+    for stage in ("snapshot", "detail"):
+        run, _, state = _recovery_case(tmp_path / stage, monkeypatch, issue_source,
+                                      failure=SourceError("웹 API를 읽지 못했습니다"), stage=stage)
+        with pytest.raises(SourceError, match="웹 API"):
+            run()
+        assert state["snapshots"] == 1 and state["sleeps"] == []
