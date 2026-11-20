@@ -44,7 +44,7 @@ def test_env_holds_only_secrets_and_tuning_stays_in_code(monkeypatch):
     monkeypatch.setenv("SHORTS_AUTO_PUBLISH", "false")
     monkeypatch.setenv("SHORTS_YOUTUBE_REFRESH_TOKEN", "refresh-secret")
     settings = config.Settings.from_env()
-    assert settings.editor_model == "@cf/deepseek-ai/deepseek-v4-flash-0731"
+    assert settings.editor_model == "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
     assert settings.auto_publish is True and settings.youtube_privacy == "public"
     assert settings.youtube_refresh_token == "refresh-secret" and "refresh-secret" not in repr(settings)
 

@@ -84,11 +84,13 @@ class Settings:
     # 질문마다 그리는 그림과, 그 그림에 사람·글자가 없는지 보는 검사 모델(Cloudflare Workers AI, `media.py`).
     # 그림 모델은 2026-11-10 실측으로 골랐다 — 같은 묘사 넷에 flux-1-schnell은 둘에 가짜 글자를 그렸고 이 모델은 없었다.
     image_model: str = "@cf/black-forest-labs/flux-2-klein-4b"
-    vision_model: str = "@cf/llava-hf/llava-1.5-7b-hf"
+    # llava-1.5는 2026-11-20 폐기됐다(410). gemma-4(생각 끔)가 글자 넣은 그림을 "yes", 깨끗한 그림을 "no"로 1.3초에 가렸다.
+    vision_model: str = "@cf/google/gemma-4-26b-a4b-it"
     editor_account_id: str = ""
     editor_api_token: str = field(default="", repr=False)
     # 이슈 선별·원고·자연어 편집 모델(Cloudflare Workers AI).
-    editor_model: str = "@cf/deepseek-ai/deepseek-v4-flash-0731"
+    # deepseek-v4-flash-0731은 2026-11-20 폐기됐다(410). 후속 v4.1-flash로 그날 후보로 원고까지 30초·호출 2번에 통과했다.
+    editor_model: str = "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
     # 추론 모델(deepseek-v4 등)의 reasoning_effort. "none"이면 생각 단계를 끈다 — 켜 두면
     # 생각이 토큰 상한과 시간을 먹어 원고가 잘린다(실측 2026-09-28). 비우면 보내지 않는다.
     editor_reasoning_effort: str = "none"

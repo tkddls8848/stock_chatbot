@@ -131,12 +131,14 @@ BILLING_CLOUDFLARE_FREE_NEURONS_PER_DAY = 10_000
 BILLING_CLOUDFLARE_USD_PER_1K_NEURONS = 0.011
 BILLING_CLOUDFLARE_ALERT_USD = 1.0
 
-# 분석은 모두 같은 모델을 쓴다 — `qwen3-30b-a3b`는 이름과 달리 MoE(활성 3B)라
-# 단가가 3B 모델과 같다(입력 $0.0509/M, 출력 $0.335/M).
+# 분석은 모두 같은 모델을 쓴다.
+# 2026-11-20 Cloudflare가 qwen3-30b-a3b-fp8·deepseek-v4-flash-0731을 폐기했다(410). 같은 날 실측으로 deepseek-v4.1-flash를
+# 골랐다 — JSON 스모크 4/4·48초. gpt-oss-20b는 3/4·186초, gemma-4-26b는 구조화 출력이 토큰 상한까지 이어졌고,
+# glm-4.7-flash는 5분 안에 답하지 않았다. 단가는 입력 $0.30/M·출력 $1.20/M로 qwen3보다 비싸다.
 # 값 자체는 env로 남긴다. 임계값과 달리 모델 이름은 Cloudflare가 폐기·개명하면
 # 외부 사정으로 무효가 되므로, 코드 배포 없이 고칠 수 있어야 한다.
 CLOUDFLARE_MODEL = os.environ.get(
-    "CLOUDFLARE_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8"
+    "CLOUDFLARE_MODEL", "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
 ).strip()
 CLOUDFLARE_MAX_ATTEMPTS = 2
 CLOUDFLARE_FAILURE_THRESHOLD = 3

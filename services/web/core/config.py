@@ -41,7 +41,7 @@ CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
 CLOUDFLARE_WORKER_AI_API_TOKEN = os.environ.get("CLOUDFLARE_WORKER_AI_API_TOKEN", "").strip()
 CLOUDFLARE_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
 CLOUDFLARE_MODEL = os.environ.get(
-    "CLOUDFLARE_MODEL", "@cf/qwen/qwen3-30b-a3b-fp8"
+    "CLOUDFLARE_MODEL", "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
 ).strip()
 CLOUDFLARE_MAX_ATTEMPTS = 2
 CLOUDFLARE_FAILURE_THRESHOLD = 3
@@ -357,6 +357,9 @@ NEWSLETTER_DIR = STORAGE_DIR / "web" / "newsletter"
 # 뉴스레터 브리핑 모델. 2026-11-16 같은 입력(9,449자) 실측: qwen3-30b는 두 번 모두 형식을 어기고(기사 번호 4~5개,
 # 관찰점을 문자열로) 시장별 나열에 그쳤다(2회 114 Neurons). deepseek-v4-flash(생각 끔)는 첫 시도에 통과하고 사건 단위로
 # 묶었다(1회 128~346 Neurons·10초·출력 약 900토큰). 하루 한 통이라 품질 쪽을 고른다.
-NEWSLETTER_MODEL = "@cf/deepseek-ai/deepseek-v4-flash-0731"
+# 2026-11-20 Cloudflare가 qwen3-30b-a3b-fp8·deepseek-v4-flash-0731을 폐기했다(410). 같은 날 실측으로 deepseek-v4.1-flash를
+# 골랐다 — JSON 스모크 4/4·48초. gpt-oss-20b는 3/4·186초, gemma-4-26b는 구조화 출력이 토큰 상한까지 이어졌고,
+# glm-4.7-flash는 5분 안에 답하지 않았다. 단가는 입력 $0.30/M·출력 $1.20/M로 qwen3보다 비싸다.
+NEWSLETTER_MODEL = "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
 NEWSLETTER_MAX_TOKENS = 4096
 NEWSLETTER_PROMPT_FILE = PROMPT_DIR / "newsletter_briefing_ko.txt"

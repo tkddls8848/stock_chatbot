@@ -183,12 +183,12 @@ def test_models_are_asked_in_their_own_request_shapes(settings, monkeypatch):
         def raise_for_status(self):
             pass
         def json(self):
-            return {"result": self.result}
+            return self.result
 
     def post(url, **kwargs):
         sent.append((url, kwargs))
-        return Reply({"image": base64.b64encode(buffer.getvalue()).decode()} if "files" in kwargs
-                     else {"description": " Yes, there is"})
+        return Reply({"result": {"image": base64.b64encode(buffer.getvalue()).decode()}} if "files" in kwargs
+                     else {"choices": [{"message": {"content": " Yes, there is"}}]})
     monkeypatch.undo()  # conftest가 막아 둔 요청 함수를 되돌리고, 그 아래의 requests.post만 바꾼다.
     monkeypatch.setattr(media.requests, "post", post)
 
@@ -201,7 +201,11 @@ def test_models_are_asked_in_their_own_request_shapes(settings, monkeypatch):
     assert drawing["headers"] == {"Authorization": "Bearer token"}
     assert drawing["files"]["width"] == (None, "1248") and drawing["files"]["height"] == (None, "400")
     assert "a globe" in drawing["files"]["prompt"][1] and "no text" in drawing["files"]["prompt"][1]
-    assert sent[1][0].endswith(settings.vision_model) and "yes or no" in sent[1][1]["json"]["prompt"]
+    asked = sent[1][1]["json"]
+    assert sent[1][0].endswith("/ai/v1/chat/completions") and asked["model"] == settings.vision_model
+    assert asked["chat_template_kwargs"]["enable_thinking"] is False  # 생각을 켜면 짧은 답 대신 상한까지 생각한다.
+    text, picture = asked["messages"][0]["content"]
+    assert "yes or no" in text["text"] and picture["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_the_tracked_script_keeps_its_picture_description(tmp_path, monkeypatch):

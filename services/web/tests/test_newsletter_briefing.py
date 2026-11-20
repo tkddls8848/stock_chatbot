@@ -175,7 +175,7 @@ def test_foreign_only_news_still_generates_before_fallback(tmp_path, data, monke
 def test_deepseek_backend_turns_thinking_off_and_qwen_does_not():
     from services.web.llm.backends import CloudflareWorkersAIBackend
 
-    for model, expected in (("@cf/deepseek-ai/deepseek-v4-flash-0731", True), ("@cf/qwen/qwen3-30b-a3b-fp8", False)):
+    for model, expected in (("@cf/deepseek-ai/deepseek-v4.1-flash-1017", True), ("@cf/google/gemma-4-26b-a4b-it", True), ("@cf/qwen/qwen3-30b-a3b-fp8", False)):
         session = Mock()
         session.post.return_value.status_code = 200
         session.post.return_value.json.return_value = {

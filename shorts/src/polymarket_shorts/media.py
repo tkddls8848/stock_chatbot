@@ -107,11 +107,21 @@ def _flagged(image: Image.Image, settings: Settings) -> list[str]:
     small.thumbnail((768, 768))
     buffer = io.BytesIO()
     small.save(buffer, format="JPEG", quality=85)
+    image = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
     found = []
     for name, question in _CHECKS:
-        result = _run(settings.vision_model, settings,
-                      json={"image": list(buffer.getvalue()), "prompt": question, "max_tokens": 8})
-        if not str(result["description"]).strip().lower().startswith("no"):
+        # gemma-4는 채팅 형식으로 그림을 받고, 생각을 꺼야 짧은 답이 바로 온다(2026-11-20 실측).
+        response = requests.post(
+            f"https://api.cloudflare.com/client/v4/accounts/{settings.editor_account_id}/ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {settings.editor_api_token}"}, timeout=_TIMEOUT,
+            json={"model": settings.vision_model, "max_tokens": 8,
+                  "chat_template_kwargs": {"thinking": False, "enable_thinking": False},
+                  "messages": [{"role": "user", "content": [
+                      {"type": "text", "text": question}, {"type": "image_url", "image_url": {"url": image}}]}]},
+        )
+        response.raise_for_status()
+        answer = response.json()["choices"][0]["message"]["content"]
+        if not str(answer).strip().lower().startswith("no"):
             found.append(name)
     return found
 

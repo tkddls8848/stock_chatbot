@@ -58,6 +58,9 @@ def chat_json(settings: Settings, *, system: str, user: str, max_tokens: int) ->
         )
         response.raise_for_status()
         choice = response.json()["choices"][0]
+    except requests.HTTPError as exc:
+        # 2026-11-20 모델 폐기(410)가 "envelope 검증 실패"로만 남아 원인을 바로 못 봤다. 상태와 Cloudflare 오류 문구만 싣는다.
+        raise LLMError(f"API 호출 실패 HTTP {exc.response.status_code}: {_cloudflare_message(exc.response)}") from None
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
         raise LLMError("API 호출 또는 응답 envelope 검증에 실패했습니다") from None
     if choice.get("finish_reason") != "stop":
@@ -69,3 +72,10 @@ def chat_json(settings: Settings, *, system: str, user: str, max_tokens: int) ->
     if not isinstance(payload, dict):
         raise LLMError("응답 본문이 JSON 객체가 아닙니다")
     return payload
+
+
+def _cloudflare_message(response: requests.Response) -> str:
+    try:
+        return str(response.json()["errors"][0]["message"])[:200]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return "응답 본문 없음"

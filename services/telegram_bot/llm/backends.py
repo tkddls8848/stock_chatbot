@@ -169,6 +169,9 @@ class CloudflareWorkersAIBackend:
         # 떨어진다. chat_template_kwargs의 enable_thinking=false는 content를
         # 아예 비우므로 대안이 되지 못한다.
         self._suppress_thinking = "qwen3" in model.lower()
+        # gemma-4·DeepSeek v4는 채팅 템플릿 인자로 생각을 끈다. 켜 두면 생각이 max_tokens를 다 먹어 content가 빈다
+        # (gemma-4-26b 실측 2026-11-20: reasoning 3,000자대·finish_reason=length).
+        self._disable_thinking = any(name in model.lower() for name in ("gemma-4", "deepseek"))
         # 마지막 호출이 응답에 담아 온 사용량. 응답을 받지 못한 호출은 None이다.
         # 뷰 검증(`/view`)이 한 번에 쓴 Neurons를 결과에 적으려고 읽는다.
         self.last_usage: TokenUsage | None = None
@@ -211,6 +214,8 @@ class CloudflareWorkersAIBackend:
         }
         if response_format is not None:
             payload["response_format"] = response_format
+        if self._disable_thinking:
+            payload["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
         headers = {
             "Authorization": f"Bearer {self._api_token}",
             "Content-Type": "application/json",

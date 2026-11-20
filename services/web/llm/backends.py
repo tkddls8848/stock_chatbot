@@ -168,7 +168,7 @@ class CloudflareWorkersAIBackend:
         self._suppress_thinking = "qwen3" in model.lower()
         # DeepSeek v4는 `reasoning_effort: "none"`을 무시하고 생각을 계속한다. 채팅 템플릿 인자로 꺼야 꺼진다
         # (쇼츠 `llm.py`와 같은 실측, 2026-09-28). 웹에서는 뉴스레터 브리핑만 이 모델을 쓴다.
-        self._disable_thinking = "deepseek" in model.lower()
+        self._disable_thinking = any(name in model.lower() for name in ("gemma-4", "deepseek"))
         # 마지막 호출이 응답에 담아 온 사용량. 응답을 받지 못한 호출은 None이다.
         # 공개 웹의 검색 주석 one-shot이 하루 Neurons 예산을 실측으로 센다.
         self.last_usage: TokenUsage | None = None
