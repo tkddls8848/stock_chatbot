@@ -130,6 +130,8 @@ BILLING_ELEVENLABS_MIN_CREDITS = 3_300
 BILLING_CLOUDFLARE_FREE_NEURONS_PER_DAY = 10_000
 BILLING_CLOUDFLARE_USD_PER_1K_NEURONS = 0.011
 BILLING_CLOUDFLARE_ALERT_USD = 1.0
+# 2026-11-20 모델 폐기로 예고 없이 멈춘 것처럼 보였다. 교체할 시간을 미리 준다.
+BILLING_MODEL_DEPRECATION_NOTICE_DAYS = 14
 
 # 분석은 모두 같은 모델을 쓴다.
 # 2026-11-20 Cloudflare가 qwen3-30b-a3b-fp8·deepseek-v4-flash-0731을 폐기했다(410). 같은 날 실측으로 deepseek-v4.1-flash를

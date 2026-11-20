@@ -679,6 +679,8 @@ callback, persistent label을 한 곳에서 등록하고 `FEATURES_ENABLED` 기�
   곱한 이번 달 추정치가 $1 이상이면 알린다 — 실제 청구 주기는 달력 월과 다를 수 있다. ElevenLabs는 같은 리셋 주기,
   Cloudflare는 같은 UTC 달력 월에 한 번만 보내고, 조회 실패도 서비스마다 JST 하루 한 번 알린다(GraphQL은 권한 부족도 HTTP 200의 `errors`로 와서 권한 안내를 붙인다). 전송 성공 뒤에만
   `storage/bot/billing_alert/state.json`에 기록한다. 필요한 권한은 ElevenLabs `user_read`, Cloudflare `Account Analytics Read`다.
+  운영자 지시(2026-11-20, "근본적 원인을 파악해서 해결하라")에 따라 UTC 최근 7일 실제 사용 모델(`modelId`)과 모델 목록의 `planned_deprecation_date`를 대조해 JST 기준 14일 이내·이미 지난 폐기일을 같은 메시지로 알린다.
+  모델마다 같은 폐기일은 전송 성공 뒤 `models_notified`에 기록해 한 번만 알리고 날짜가 바뀌면 다시 알리며, 모델 목록 조회 실패도 JST 하루 한 번 알린다(401/403에는 Workers AI 읽기 권한 안내).
 - **화면·주소·영상에 출처 서비스 이름(Polymarket·폴리마켓)을 쓰지 않는다.** 한국은
   공식적으로 이 서비스 접근을 막고 있다. 사용자가 보는 이름은 **"집단 예측 컨센서스"**이고
   주소는 `/forecast`·`/api/forecast/*`다(예전 `/polymarket`은 넘겨주지 않고 404다).
