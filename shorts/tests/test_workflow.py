@@ -27,7 +27,7 @@ def draft(tmp_path):
 
 def patch(**kwargs):
     return {"summary": "두 번째 장면을 쉽게 수정", "changes": [{"scene": 2, "narration": "쉬운 멘트"}],
-            "metadata": {}, "scene_order": [1, 2, 3], "tts_rate": "+0%", **kwargs}
+            "metadata": {}, "scene_order": [1, 2, 3], "tts_rate": "+10%", **kwargs}
 
 
 

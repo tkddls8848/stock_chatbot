@@ -57,6 +57,10 @@ _GUARD_SECONDS = 0.12
 # 잘라 붙인 자리의 짧은 페이드. 이음매에서 파형이 튀지 않게 한다.
 _FADE_SECONDS = 0.02
 _SAMPLE_RATE = 24000
+# 음성 속도 상한. ElevenLabs API는 1.2배까지이고, 그 위(운영자 지시 2026-11-21: 전체 10% 빠르게 → 1.232)는
+# `_retime`이 맡는다. 편집 지시(tts_rate +50%)가 끝없이 빨라지지 않게 전체 상한을 둔다.
+_ELEVENLABS_MAX_SPEED = 1.2
+_MAX_SPEED = 1.35
 
 
 class TTSError(RuntimeError):
@@ -101,18 +105,25 @@ def synthesize(
     if settings is not None and settings.elevenlabs_api_key:
         try:
             # 기존 편집 속도는 기본 Jian 속도에 대한 상대 조정이다. SunHi는 종전 값을 쓴다.
-            speed = max(0.7, min(1.2, settings.elevenlabs_speed * (1 + int(rate.rstrip("%")) / 100)))
+            speed = max(0.7, min(_MAX_SPEED, settings.elevenlabs_speed * (1 + int(rate.rstrip("%")) / 100)))
+            # ElevenLabs는 1.2배까지만 받는다. 넘는 몫은 받은 음성을 FFmpeg atempo로 마저 빠르게 한다(음높이 유지).
+            api_speed = min(_ELEVENLABS_MAX_SPEED, speed)
+            tempo = speed / api_speed
             audio, aligned = elevenlabs_tts.generate(
                 spoken_text(script), api_key=settings.elevenlabs_api_key,
                 voice=settings.elevenlabs_voice, model=settings.elevenlabs_model,
-                speed=speed, stability=settings.elevenlabs_stability,
+                speed=api_speed, stability=settings.elevenlabs_stability,
                 similarity=settings.elevenlabs_similarity,
             )
+            if tempo > 1.001:
+                aligned = [(start / tempo, end / tempo, text) for start, end, text in aligned]
             scenes = _split_by_scene(narrations, [Word(*word) for word in aligned])
             # 실패한 응답은 기존 음성에 덮어쓰지 않는다. 디코딩만 검사하고 원본 MP3를 보존한다.
             with tempfile.TemporaryDirectory(prefix=".tts-", dir=audio_path.parent) as work:
                 candidate = Path(work) / "narration.mp3"
                 candidate.write_bytes(audio)
+                if tempo > 1.001:
+                    candidate = _retime(candidate, tempo, ffmpeg_bin)
                 samples = _decode(candidate, ffmpeg_bin)
                 if not samples or len(samples) / _SAMPLE_RATE + 0.25 < aligned[-1][1]:
                     raise elevenlabs_tts.ElevenTTSError("truncated_audio")
@@ -298,6 +309,22 @@ def _decode(audio_path: Path, ffmpeg_bin: str) -> array:
     samples = array("h")
     samples.frombytes(result.stdout[: len(result.stdout) // 2 * 2])
     return samples
+
+
+def _retime(audio_path: Path, tempo: float, ffmpeg_bin: str) -> Path:
+    """음높이를 그대로 두고 `tempo`배 빠르게 한 MP3를 같은 폴더에 만들어 돌려준다."""
+    target = audio_path.with_name(f"tempo-{audio_path.name}")
+    try:
+        result = subprocess.run(
+            [ffmpeg_bin, "-v", "error", "-y", "-i", str(audio_path), "-filter:a", f"atempo={tempo:.4f}",
+             "-c:a", "libmp3lame", "-b:a", "96k", str(target)],
+            capture_output=True, check=False,
+        )
+    except OSError as exc:
+        raise TTSError(f"FFmpeg를 실행하지 못했습니다: {exc}") from exc
+    if result.returncode:
+        raise TTSError(f"음성 속도를 조정하지 못했습니다: {result.stderr[-300:]!r}")
+    return target
 
 
 def _encode(samples: array, audio_path: Path, ffmpeg_bin: str) -> None:

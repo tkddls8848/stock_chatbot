@@ -70,7 +70,9 @@ class Settings:
     # 이슈 장면 수 상한. 화면·대사 구성이 5개까지만 맞춰져 있다.
     max_groups: int = 5
     tts_voice: str = "ko-KR-SunHiNeural"
-    tts_rate: str = "+0%"
+    # 기본 속도에 대한 상대 조정이다 — ElevenLabs는 elevenlabs_speed에 곱하고, SunHi(대체 음성)는 그대로 쓴다.
+    # 운영자 지시 2026-11-21: 전체 10% 빠르게(Jian 1.12 → 1.232).
+    tts_rate: str = "+10%"
     elevenlabs_api_key: str = field(default="", repr=False)
     elevenlabs_voice: str = "KNy9usSxeZXzNA3l10Jy"  # Jian
     elevenlabs_model: str = "eleven_multilingual_v2"
