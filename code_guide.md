@@ -927,6 +927,8 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
 - 번역·분석·브리핑은 Cloudflare Workers AI만 사용한다. 비밀값은 `.env`에만 두고
   로그나 예외에 포함하지 않는다.
 - LLM JSON은 필수 필드를 엄격히 검사하고 현재 응답 envelope만 처리한다.
+  봇·웹 백엔드는 이름에 `gemma-4`가 든 모델의 `json_schema` 요청을 시스템 프롬프트 끝의 스키마와
+  `json_object`로 변환한다(OpenAI·Cloudflare 스키마 봉투 모두 처리하며, 응답 검증은 호출부가 유지한다).
 - **모델 프롬프트는 그 모듈의 `llm/terminology.py`(`read_prompt`·`with_terminology`)를 거쳐 읽는다.**
   앞에 `prompts/terminology_ko.txt`의 경제·정치 용어 기준(liquidity → 유동성, Treasury yields →
   미 국채 금리 같은 한국 경제 매체 표기)이 붙는다(운영자 지시 2026-10-02). 프롬프트 파일을 직접

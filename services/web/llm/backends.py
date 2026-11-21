@@ -169,6 +169,9 @@ class CloudflareWorkersAIBackend:
         # DeepSeek v4는 `reasoning_effort: "none"`을 무시하고 생각을 계속한다. 채팅 템플릿 인자로 꺼야 꺼진다
         # (쇼츠 `llm.py`와 같은 실측, 2026-09-28). 웹에서는 뉴스레터 브리핑만 이 모델을 쓴다.
         self._disable_thinking = any(name in model.lower() for name in ("gemma-4", "deepseek"))
+        # 운영자 실측(2026-11-20, 생각 끔): Gemma-4의 json_schema는 3/3 max_tokens까지
+        # 이어져 truncated. 스키마 프롬프트 + json_object는 3/3 준수, 약 17 Neurons(DeepSeek 30).
+        self._schema_in_prompt = "gemma-4" in model.lower()
         # 마지막 호출이 응답에 담아 온 사용량. 응답을 받지 못한 호출은 None이다.
         # 공개 웹의 검색 주석 one-shot이 하루 Neurons 예산을 실측으로 센다.
         self.last_usage: TokenUsage | None = None
@@ -199,6 +202,19 @@ class CloudflareWorkersAIBackend:
         self.last_usage = None
         if self._suppress_thinking:
             system_prompt = f"{system_prompt}\n/no_think"
+        # Gemma-4만 json_schema를 시스템 프롬프트 + json_object로 변환한다.
+        if (
+            self._schema_in_prompt
+            and response_format is not None
+            and response_format.get("type") == "json_schema"
+        ):
+            schema = response_format["json_schema"]
+            schema = schema.get("schema", schema)
+            system_prompt += (
+                "\n\n반드시 다음 JSON 형식으로만 답한다: "
+                + json.dumps(schema, ensure_ascii=False)
+            )
+            response_format = {"type": "json_object"}
         payload = {
             "model": self.model,
             "messages": [
