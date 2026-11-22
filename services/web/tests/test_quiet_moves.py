@@ -52,8 +52,11 @@ def test_related_news_requires_specific_whole_words():
 
 
 def test_news_freshness_and_missing_fail_closed(tmp_path):
+    fresh = news()
+    fresh["generated_at"] = (t.now() - timedelta(hours=24)).isoformat()
+    assert t.quiet_moves([event()], {}, fresh)["quiet_moves_state"] == "ok"
     stale = news()
-    stale["generated_at"] = (t.now() - timedelta(hours=9, seconds=1)).isoformat()
+    stale["generated_at"] = (t.now() - timedelta(hours=26, seconds=1)).isoformat()
     assert t.quiet_moves([event()], {}, stale)["quiet_moves_state"] == "news_stale"
     assert t.quiet_moves([event()], {}, stale)["quiet_moves"] == []
     assert t.quiet_moves([event()], {}, {})["quiet_moves_state"] == "news_missing"

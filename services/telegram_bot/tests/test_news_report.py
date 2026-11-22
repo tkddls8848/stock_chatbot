@@ -716,7 +716,7 @@ def test_a_failed_analysis_is_held_for_the_next_window(tmp_path):
 
 def test_a_failed_analysis_still_shows_headlines_at_the_hold_ceiling(tmp_path):
     """상한까지 왔는데도 분석이 안 되면 그 시간의 뉴스를 통째로 잃지 않는다."""
-    memory = _memory(tmp_path, US=_published_entry(hours_ago=13))
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=48))
     app, queue, tracker, _ = _send_app(
         tmp_path,
         analyzer=_analyzer(tmp_path, error=RuntimeError("cloudflare down")),
@@ -795,7 +795,7 @@ def test_the_hold_ceiling_publishes_a_thin_window(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(news_report, "NEWS_REPORT_MIN_ARTICLES", 8)
     analyzer = _analyzer(tmp_path, _payload())
-    memory = _memory(tmp_path, US=_published_entry(hours_ago=13))
+    memory = _memory(tmp_path, US=_published_entry(hours_ago=48))
     app, queue, tracker = _gate_app(
         tmp_path, items=[_item(0)], analyzer=analyzer, memory=memory
     )
@@ -810,7 +810,7 @@ def test_the_model_can_hold_a_window_that_adds_nothing(tmp_path):
     """같은 국면이 이어지기만 하는 구간은 보내지 않는다. 침묵도 출력이다."""
     payload = {"publish": False, "hold_reason": "직전 판단이 그대로다",
                "analysis": "", "highlights": [], "evaluations": []}
-    memory = _memory(tmp_path, CN=_published_entry(hours_ago=3))
+    memory = _memory(tmp_path, CN=_published_entry(hours_ago=24))
     app, queue, tracker = _gate_app(
         tmp_path,
         items=[_item(0, market="CN"), _item(1, market="CN")],
@@ -1098,7 +1098,7 @@ def test_publishing_clears_the_hold_streak(tmp_path):
     assert memory.held_hours("US") < 1
 
 
-def test_jobs_collect_hourly_and_report_around_korean_and_us_sessions_utc_plus_9():
+def test_jobs_collect_hourly_and_report_daily_at_18_utc_plus_9():
     scheduler = _RecordingScheduler()
 
     news_feature._install_jobs(scheduler, object())
@@ -1107,8 +1107,8 @@ def test_jobs_collect_hourly_and_report_around_korean_and_us_sessions_utc_plus_9
     assert jobs["news_collection"]["trigger"] == "interval"
     assert jobs["news_collection"]["minutes"] == 60
     assert jobs["market_situation_report"]["trigger"] == "cron"
-    # 한국장·미국장 개장 전후(운영자 결정 2026-10-06).
-    assert jobs["market_situation_report"]["hour"] == "3,8,15,20"
+    # 비용 대응으로 매일 18시 한 번(운영자 결정 2026-11-22).
+    assert jobs["market_situation_report"]["hour"] == "18"
     assert jobs["market_situation_report"]["minute"] == 0
     assert jobs["market_situation_report"]["timezone"] is JST
 
@@ -1881,42 +1881,41 @@ def test_korean_title_detection(title, korean):
     assert _is_korean_title(title) is korean
 
 
-# ── 검토 시각(한국장·미국장 개장 전후) ─────────────────
+# ── 검토 시각(매일 18시 UTC +9) ─────────────────
 
 @pytest.mark.parametrize(("moment", "expected"), [
-    (datetime(2026, 10, 6, 8, 0, 5, tzinfo=JST), datetime(2026, 10, 6, 3, tzinfo=JST)),
-    (datetime(2026, 10, 6, 15, 0, 2, tzinfo=JST), datetime(2026, 10, 6, 8, tzinfo=JST)),
-    (datetime(2026, 10, 6, 20, 0, 1, tzinfo=JST), datetime(2026, 10, 6, 15, tzinfo=JST)),
-    # 자정을 넘는 7시간 구간이다.
-    (datetime(2026, 10, 7, 3, 0, 4, tzinfo=JST), datetime(2026, 10, 6, 20, tzinfo=JST)),
-    # 수동 실행은 바로 앞의 검토 시각에서 시작한다.
-    (datetime(2026, 10, 6, 12, 30, tzinfo=JST), datetime(2026, 10, 6, 8, tzinfo=JST)),
+    (datetime(2026, 11, 22, 18, tzinfo=JST), datetime(2026, 11, 21, 18, tzinfo=JST)),
+    (datetime(2026, 11, 22, 18, 0, 5, tzinfo=JST), datetime(2026, 11, 21, 18, tzinfo=JST)),
+    (datetime(2026, 12, 1, 18, 0, 2, tzinfo=JST), datetime(2026, 11, 30, 18, tzinfo=JST)),
+    # 자정과 수동 실행도 바로 앞 검토 시각을 찾는다.
+    (datetime(2026, 11, 23, 0, tzinfo=JST), datetime(2026, 11, 22, 18, tzinfo=JST)),
+    (datetime(2026, 11, 22, 12, 30, tzinfo=JST), datetime(2026, 11, 21, 18, tzinfo=JST)),
 ])
-def test_previous_slot_follows_the_uneven_session_schedule(moment, expected):
+def test_previous_slot_follows_the_daily_session_schedule(moment, expected):
     assert news_report._previous_slot(moment) == expected
 
 
 @pytest.mark.parametrize(("moment", "expected"), [
-    (datetime(2026, 10, 6, 8, 0, 3, tzinfo=JST), "한국장 개장 전"),
-    (datetime(2026, 10, 6, 15, 0, 3, tzinfo=JST), "한국장 마감 전후"),
-    (datetime(2026, 10, 6, 20, 0, 3, tzinfo=JST), "미국장 개장 전"),
-    (datetime(2026, 10, 7, 3, 0, 3, tzinfo=JST), "미국장 개장 후"),
-    (datetime(2026, 10, 6, 12, 0, tzinfo=JST), ""),      # 수동 실행
-    (datetime(2026, 10, 6, 8, 40, tzinfo=JST), ""),      # 검토 시각의 수동 재실행
+    (datetime(2026, 11, 22, 18, 0, 3, tzinfo=JST), "한국장 마감 뒤·미국장 개장 전"),
+    (datetime(2026, 11, 22, 3, tzinfo=JST), ""),
+    (datetime(2026, 11, 22, 8, tzinfo=JST), ""),
+    (datetime(2026, 11, 22, 15, tzinfo=JST), ""),
+    (datetime(2026, 11, 22, 20, tzinfo=JST), ""),
+    (datetime(2026, 11, 22, 18, 40, tzinfo=JST), ""),  # 수동 재실행
 ])
 def test_session_label_names_only_scheduled_runs(moment, expected):
     assert news_report._session_label(moment) == expected
 
 
 def test_report_header_and_model_input_carry_the_session(tmp_path, monkeypatch):
-    monkeypatch.setattr(news_report, "now", lambda: datetime(2026, 10, 6, 8, 0, 4, tzinfo=JST))
+    monkeypatch.setattr(news_report, "now", lambda: datetime(2026, 11, 22, 18, 0, 4, tzinfo=JST))
     analyzer = _analyzer(tmp_path, _payload())
     app, _, _, _ = _send_app(tmp_path, analyzer=analyzer)
 
     asyncio.run(send_news_report(app))
 
-    assert "10-06 08:00 UTC +9 · 한국장 개장 전 · 시장 1곳" in app.bot.messages[0]
-    assert analyzer._backend.calls[0]["session"] == "한국장 개장 전"
+    assert "11-22 18:00 UTC +9 · 한국장 마감 뒤·미국장 개장 전 · 시장 1곳" in app.bot.messages[0]
+    assert analyzer._backend.calls[0]["session"] == "한국장 마감 뒤·미국장 개장 전"
 
 
 def test_low_impact_highlights_are_logged_but_not_published(tmp_path):

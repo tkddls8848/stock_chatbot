@@ -142,8 +142,9 @@ POLYMARKET_QUIET_EXCLUDED_CATEGORIES = frozenset({"sports", "weather_climate", "
 POLYMARKET_QUIET_NEWS_HOURS = 24
 # 관련 기사 셋부터는 이미 뉴스가 붙은 질문으로 본다(운영자 지정).
 POLYMARKET_QUIET_NEWS_MAX = 2
-# 뉴스 갱신의 최장 간격 7시간에 2시간 여유. 오래된 뉴스로 거짓 경보를 내지 않는다.
-POLYMARKET_QUIET_NEWS_MAX_AGE_HOURS = 9
+# 2026-11-22 비용 대응으로 보고서가 매일 18시로 변경: 갱신 간격 24시간 + 여유 2시간.
+# 웹이 자체 소유하는 신선도 기준이다. 오래된 뉴스로 거짓 경보를 내지 않는다.
+POLYMARKET_QUIET_NEWS_MAX_AGE_HOURS = 26
 # 한 메시지에서 훑을 수 있도록 운영자가 정한 최대 질문 수.
 POLYMARKET_QUIET_LIMIT = 5
 

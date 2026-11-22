@@ -189,14 +189,16 @@ else:
            f"검색 주석 — {annotate.get('annotated')}/{annotate.get('total')}건, 마지막 {result}"
            f"({'?' if attempt is None else f'{attempt:.1f}'}시간 전)")
 
-# 봇이 굽는 공개 산출물. 뉴스·보고서는 03·08·15·20시라 최대 간격 7시간, 지켜볼 뉴스·시장은 매시간이다.
+# 봇이 굽는 공개 산출물. 2026-11-22 비용 대응: 뉴스·보고서는 매일 18시,
+# 신선도는 24시간 + 여유 2시간이다. 지켜볼 뉴스·시장의 기준은 유지한다.
 news = load(PUBLIC_DIR / "news.json")
-if fresh("news.json", news, "generated_at", 9):
+if fresh("news.json", news, "generated_at", 26):
     recent = [doc for doc in news.get("documents") or []
               if isinstance(doc, dict) and doc.get("kind") == "news"
-              and (hours_since(doc.get("published_at")) or 99) <= 24]
-    # 정상 실측 하루 60~115건(2026-10-17~11-15).
-    report(len(recent) >= 20, f"news.json — 최근 24시간 뉴스 {len(recent)}건(기준 20건)")
+              and (age := hours_since(doc.get("published_at"))) is not None and age <= 48]
+    # 2026-11-22: 하루 4→1회에 맞춰 경고 하한도 20/4 = 5건.
+    # 기사 발행 시각 기준이므로 일일 보고 직전에도 직전 보고의 하루 재료를 세도록 48시간을 본다.
+    report(len(recent) >= 5, f"news.json — 최근 48시간 뉴스 {len(recent)}건(기준 5건)")
 
 market = load(PUBLIC_DIR / "market.json")
 if fresh("market.json", market, "generated_at", 3):
