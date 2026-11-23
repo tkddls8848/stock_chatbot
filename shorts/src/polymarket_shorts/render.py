@@ -133,6 +133,7 @@ _CHROME = {"yes": "예", "no": "아니오", "site": "nunchi.live", "brand_tag": 
            "footer_options": "막대는 표시한 답의 확률 · 집단 예측 컨센서스 · 투자 조언 아님",
            "footer_trend": "선은 표시한 답의 확률 추이 · 집단 예측 컨센서스 · 투자 조언 아님",
            "days_ago": "{n}일 전보다",
+           "yesterday": "어제보다",
            "footer": "집단 예측 컨센서스 · 투자 조언 아님"}
 _LEADING_NUMBER = re.compile(r"^\s*(\d{1,2})\s*[·.]\s*")
 
@@ -516,7 +517,7 @@ def _compact(value: str) -> str:
 
 # ── 추적 코너 화면 ─────────────────────────────────────
 # 매일 이어 보는 질문은 막대 하나가 아니라 지난 30일 추이선으로 보인다(운영자 결정 2026-11-09, `corner.py`). 카드 위에는
-# 오늘 확률과 선의 첫날 대비 변화를, 아래에는 선을 둔다. 어제 대비는 칩 한 칸이다 — 하루 등락이 아니라 흐름이 내용이다.
+# 오늘 확률과 어제 대비 %p 변화를(2026-11-23부터. 그 전엔 선의 첫날 대비), 아래에는 선을 둔다.
 WATCH_TITLE_BOTTOM = 530                # 카드가 길어 제목 칸을 조금 줄인다
 WATCH_CARD_TOP = 630
 WATCH_PLOT = (890, 1066)                # 추이선이 놓이는 세로 범위
@@ -611,13 +612,17 @@ def _watch_card(image, scene: Scene, font_path: Path, accent: str, *, shown: int
     draw.text((left, number_y), percent, font=number, fill=accent, stroke_width=1, stroke_fill=accent)
     draw.text((left + draw.textlength(percent, font=number) + 18, number_y + 60), _CHROME["yes"],
               font=_font(bold, 32), fill=_COLORS["muted"])
-    # 선의 첫날 대비 변화. 오르내림에 좋고 나쁨이 없어 색은 하나이고 방향은 세모로 보인다.
-    first = round(scene.trend[0][1] * 100, 1)
-    delta = round(round(scene.trend[-1][1] * 100, 1) - first, 1)
+    # 직전 기록(보통 어제) 대비 %p 변화(운영자 지시 2026-11-23: 30일 전 대비 대신 어제 대비). 30일 흐름은 추이선과
+    # 칩이 보인다. 오르내림에 좋고 나쁨이 없어 색은 하나이고 방향은 세모로 보인다. 기록이 하루뿐이면 쓰지 않는다.
+    if len(scene.trend) < 2:
+        return
+    previous_day, previous = scene.trend[-2]
+    delta = round(round(scene.trend[-1][1] * 100, 1) - round(previous * 100, 1), 1)
     mark = "▲" if delta > 0 else "▼" if delta < 0 else "–"
     moved = f"{mark} {f'{abs(delta):.1f}'.rstrip('0').rstrip('.')}%p"
     moved_font, small = _font(bold, 50), _font(font_path, 26)
-    since = _CHROME["days_ago"].format(n=(end - start).days)
+    gap = (end - date.fromisoformat(previous_day)).days
+    since = _CHROME["yesterday"] if gap == 1 else _CHROME["days_ago"].format(n=gap)
     draw.text((right - draw.textlength(since, font=small), number_y + 14), since, font=small, fill=_COLORS["muted"])
     draw.text((right - draw.textlength(moved, font=moved_font), number_y + 52), moved, font=moved_font,
               fill=_COLORS["ink"])

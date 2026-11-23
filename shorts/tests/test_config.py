@@ -58,4 +58,4 @@ def test_elevenlabs_secret_and_fixed_voice_settings(monkeypatch):
     assert settings.elevenlabs_speed == 1.12
     assert settings.elevenlabs_stability == 0.75
     assert settings.elevenlabs_similarity == 0.85
-    assert settings.tts_voice == "ko-KR-SunHiNeural" and settings.tts_rate == "+10%"
+    assert settings.tts_voice == "ko-KR-SunHiNeural" and settings.tts_rate == "+5%"
