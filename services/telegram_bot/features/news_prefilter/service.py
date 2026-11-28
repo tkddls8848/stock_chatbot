@@ -23,6 +23,7 @@ from services.telegram_bot.core.clock import now
 from services.telegram_bot.core.storage import write_json_atomic
 from services.telegram_bot.core.workers import ShutdownThreadPool, check_shutdown
 from services.telegram_bot.features.news_prefilter.cpu_usage import CpuUsage
+from services.telegram_bot.features.news_prefilter.host_cpu import HostCpuBudget, HostCpuVerdict
 from services.telegram_bot.features.news_prefilter.learning import (
     PENDING_CANDIDATE_LIMIT as _PENDING_CANDIDATE_LIMIT,
     ObservationLearner,
@@ -197,8 +198,13 @@ class NewsPrefilter:
         reported_event_cooldown_hours: int,
         recap_bucket_hours: int,
         recap_max_age_hours: int,
+        host_cpu: HostCpuBudget | None = None,
+        embed_dir: Path | None = None,
     ):
         self.mode = mode
+        # 임베딩 one-shot(embed_job.py)이 쓰는 자리. 봇은 상태 화면용으로 읽기만 한다.
+        self._embed_dir = embed_dir
+        self._host_cpu = host_cpu
         self._event_file = event_file
         self._observation_file = observation_file
         self._model_file = model_file
@@ -238,7 +244,7 @@ class NewsPrefilter:
         self._cycle_claimed: set[str] = set()
         self._matcher = StockEntityMatcher(stock_db.get_candidate_universe())
         logger.info(
-            "[PREFILTER] %s 모드 · 사건 %d건 · 종목명 패턴 %d개 · 단일 worker 학습 · 일일 CPU 상한 없음",
+            "[PREFILTER] %s 모드 · 사건 %d건 · 종목명 패턴 %d개 · 단일 worker 학습 · 호스트 CPU 이동 평균 조절",
             self.mode,
             len(self._events),
             self._matcher.pattern_count,
@@ -286,6 +292,9 @@ class NewsPrefilter:
 
     def cpu_status(self) -> dict[str, float | str]:
         return self._cpu_usage.status()
+
+    def check_host_cpu(self) -> HostCpuVerdict | None:
+        return self._host_cpu.check() if self._host_cpu is not None else None
 
     @staticmethod
     def _candidate_id(source: str, article_id: str) -> str:
@@ -787,6 +796,18 @@ class NewsPrefilter:
             "model_label_count": model.get("label_count"),
             "model_prevalence": model.get("validation_prevalence"),
             "cpu": self.cpu_status(),
+            "host_cpu": self._host_cpu.status() if self._host_cpu is not None else None,
+            "embedding": self._embedding_status(),
+        }
+
+    def _embedding_status(self) -> dict[str, Any] | None:
+        if self._embed_dir is None:
+            return None
+        status = self._load_json(self._embed_dir / "status.json", default=None)
+        shadow = self._load_json(self._embed_dir / "shadow.json", default=None)
+        return {
+            "status": status if isinstance(status, dict) else None,
+            "shadow": shadow if isinstance(shadow, dict) else None,
         }
 
     async def report(self) -> dict[str, Any]:

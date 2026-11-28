@@ -24,7 +24,11 @@ class ObservationLearner:
         observation_file: Path,
         retention_days: int,
         file_lock: threading.RLock,
+        *,
+        compact: bool = True,
     ):
+        # 관측 파일의 쓰는 쪽은 봇이다. 임베딩 one-shot은 compact=False로 읽기만 한다.
+        self._compact = compact
         self._observation_file = observation_file
         self._observation_retention_days = max(1, retention_days)
         self._file_lock = file_lock
@@ -115,7 +119,7 @@ class ObservationLearner:
         있으면 된다. 파일 전체를 dict 두 개에 담으면 보존 기간이 찬 시점에
         1GB 인스턴스가 감당할 수 없는 크기가 된다.
         """
-        if self._compact_observations_if_needed():
+        if self._compact and self._compact_observations_if_needed():
             self._reset_sample_state()
         if not self._observation_file.exists():
             self._reset_sample_state()

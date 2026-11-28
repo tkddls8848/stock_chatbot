@@ -235,7 +235,25 @@ journalctl -u stock-chatbot --since '30 minutes ago' --no-pager | rg PREFILTER
 
 `search_complete`는 현재 자료의 32회 검증 완료로 정상 대기다. 새 보고서 평가가
 생기면 다시 학습한다. `burst`·`urgent`·`load`는 다른 작업에 양보한 상태다.
+`credit`은 버스트 크레딧 잔고 하한 추정이 30% 아래라 다시 쌓일 때까지 쉬는 중이고(호스트
+재부팅 직후 약 7시간도 이 상태다), `steal`은 직전 1분 steal이 2%를 넘은 것 — 크레딧 소진 징후다
+(로그에 `[PREFILTER] steal` 경고). `steal`이 반복되면 Lightsail 콘솔의 버스트 용량 그래프를 보고
+`NEWS_PREFILTER_BURST_FLOOR_PERCENT`를 올린다.
 일일 CPU 상한은 없으며, 실제 사용량과 학습 완료 trial을 함께 확인한다.
+
+**임베딩 one-shot**(`stock-chatbot-prefilter-embed.timer`, 매시간 25분)은 `/system prefilter` 맨 아래
+"임베딩 one-shot"과 아래로 본다. 결과 `credit`·`memory_low`는 모델을 올리지 않고 끝난 정상 대기다.
+`model_missing`이면 `install-shared-host.sh`를 다시 돌린다(모델을 `models/bge-m3`에 sha256 고정으로 받는다).
+섀도 군집 표본을 보고 문턱을 정하기 전에는 판정이 바뀌지 않는다.
+
+```bash
+systemctl list-timers stock-chatbot-prefilter-embed.timer --no-pager
+journalctl -u stock-chatbot-prefilter-embed --since today --no-pager | grep PREFILTER-EMBED | tail -3
+cat storage/bot/news_prefilter/embedding/status.json
+```
+
+서버의 `requirements.lock.txt`(미추적)가 있으면 설치 스크립트는 그것만 따른다. 임베딩 의존성
+`onnxruntime==1.32.0`·`tokenizers==0.23.3`이 그 파일에 있어야 한다 — 없으면 one-shot이 import에서 실패한다.
 
 효과는 최근 7일의 반복 차단, 최신순 밖 발견 후보의 후속 평가, 점수 AUC,
 검증 AP로 점검한다. 관측 라벨 500건·음성 50건·7일 전에는 개선을 단정하지 않는다.

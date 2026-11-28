@@ -33,7 +33,7 @@
 - **저장소 루트가 import root다.** 모든 명령을 루트에서 돌린다. 내부 import는
   `from services.telegram_bot.core...`, `from services.telegram_bot.news...`, `from services.web.polymarket...`
   형식이다.
-- 진입점은 일곱이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
+- 진입점은 여덟이고 전부 루트에서 `-m`으로 부른다. 스크립트 경로로 부르면
   `sys.path[0]`이 하위 폴더가 되어 `ModuleNotFoundError: services`가 난다.
   | 프로세스 | 명령 |
   |---|---|
@@ -44,6 +44,7 @@
   | 폴리마켓 트렌드 one-shot | `python -m services.web.polymarket.trending` |
   | 폴리마켓 검색 주석 one-shot | `python -m services.web.polymarket.annotate` |
   | 뉴스레터 발송 one-shot | `python -m services.web.newsletter.send` |
+  | 사전선별 임베딩 one-shot | `python -m services.telegram_bot.features.news_prefilter.embed_job` |
 - **텔레그램 봇 폴더를 `telegram`으로 이름 붙이지 않는다.** `python-telegram-bot`이
   제공하는 최상위 모듈이 정확히 `telegram`이라, import root에 같은 이름을 두면
   19개 파일의 `from telegram import Update`가 전부 이 폴더를 집는다.
@@ -164,6 +165,7 @@ storage/               공유 저장소(NAS). 봇·웹·one-shot·쇼츠가 같�
 | `users/<계정키>/newsletter.json` | 웹(구독 API와 뉴스레터 one-shot, 계정 잠금) | 해당 계정의 웹 요청, 뉴스레터 one-shot |
 | `portfolio/watchlist.json` | 운영자 봇(잠금) | 운영자 봇 |
 | `bot/<feature>/` | 봇 | 봇 |
+| `bot/news_prefilter/embedding/` | 사전선별 임베딩 one-shot(봇 도메인, 매시간 timer) | 봇 `/system prefilter`. one-shot은 사건 메모리·관측·`host_cpu.json`을 읽기만 한다 |
 | `web/activity.json`·`web/activity_summary.json` | 웹 | 웹. 봇은 식별값 없는 `activity_summary.json`만 읽는다 |
 | `shorts/` | 쇼츠 | 쇼츠, 봇 `/shorts` |
 | `public/shorts/ko.json` | 쇼츠(게시 직후 최신 게시본) | 웹 첫 화면 "오늘의 영상"(`/api/shorts`) |
@@ -906,8 +908,23 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   1분마다 최대 30 CPU초를 사용하고, 2초 조각 사이마다 리서치·보고서 우선 작업(burst)·호스트 부하를
   확인한다. trial이 조각보다 길어도 학습 진행을 보존해 다음 조각에서 잇는다.
   후보 적재·보존 정리·벡터화도 학습 CPU로 집계한다. 일일 사용량은 제한이 아닌
-  관측값이다. CPU를 채우는 것이 목표가 아니므로 같은 자료는 최대 32 trial 후
-  쉬고 새 라벨이 들어오면 다시 검증한다.
+  관측값이다. 같은 자료는 최대 32 trial 후 쉬고 새 라벨이 들어오면 다시 검증한다.
+- **쌓이다 버려지는 버스트 크레딧은 주기적으로 몰아 써서 사전선별에 새 정보를 더한다**(운영자 지시 2026-11-28 —
+  계속 조금씩이 아니라 쌓인 잔고를 주기적으로 쓴다). `medium_3_0`의 기준선은 vCPU당 20%인데 호스트는 2% 안팎을
+  써서 하루 약 9 CPU-시간이 버려졌다. 다만 **CPU를 채우는 것 자체는 목표가 아니다** — 같은 라벨에 trial만 늘리면
+  검증일에 과적합할 뿐이라, 쓰는 곳은 Neurons 없이 신호를 만드는 일(임베딩 군집·특징, 여러 날 검증)이다.
+  상한은 크레딧 조절기다(`host_cpu.py`): `/proc/stat` 24시간 기록으로 잔고 하한을 추정해
+  `NEWS_PREFILTER_BURST_FLOOR_PERCENT`(30%) 아래면, 또는 직전 1분 steal이 `NEWS_PREFILTER_HOST_STEAL_LIMIT`(2%)를
+  넘으면 배경 작업이 멈춘다. 크레딧이 바닥나면 기준선으로 묶여 웹·보고서가 함께 느려지므로 0까지 쓰지 않는다.
+  로컬 모델의 판정을 라벨로 쓰지 않는다(미평가는 음성이 아니다). **임베딩 모델을 봇 프로세스에 올리지 않는다** —
+  봇 유닛은 `MemoryMax=1G`이고 하위 프로세스도 같은 cgroup이다. 자기 cgroup을 가진 one-shot
+  (`embed_job.py`, `stock-chatbot-prefilter-embed.timer` 매시간 25분, `MemoryMax=1536M`)이 띄우고 내린다.
+  모델은 `bge-m3` int8이다 — `multilingual-e5-small`은 같은 사건(0.85~0.88)과 다른 사건(0.78~0.82)의
+  코사인 간격이 0.03뿐이라 오병합한다(실측 2026-11-28). 임베딩 군집은 **아직 판정에 쓰지 않는 섀도**이고,
+  매일 v1(해시)·v2(임베딩) 비교도 판단 자료일 뿐 모델 파일을 바꾸지 않는다. 바꾸는 것은 운영자 검토 뒤다.
+  학습의 하이퍼파라미터는 holdout이 아니라 학습 구간 안의 walk-forward 내부 검증(마지막 3일) 평균으로
+  고르고, holdout은 저장 판정에만 쓴다(최대 256 trial, 64 trial 동안 개선이 없으면 멈춘다).
+  계획서 `services/telegram_bot/docs/prefilter-burst-credit.md`.
 - **모델 학습은 라벨 120건·3일 이상에서 시간 분할로 시작한다.** 마지막 날짜들은
   검증용으로 남긴다. 학습에 양성·음성 각각 10건, 검증에 각각 5건 이상이 필요하다.
   새 모델은 같은 검증 자료에서 기존 모델과 기저 비율보다 나을 때만 저장한다.
@@ -988,7 +1005,7 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   지우지 않는다. 공유 호스트와의 경계·계약 값과 앱 설치는 `infra/host-contract.md`에만 있다.
   나머지는 **계획서**이고 항목이 끝나면 지운다 — 완료 기록은 git 이력이 맡는다.
   계획서는 주제를 소유한 도메인의 `docs/` 안에 둔다.
-  현재 계획서는 여덟이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
+  현재 계획서는 아홉이다: `services/web/docs/launch-readiness.md`(상용 출시 준비 기준과 기준선), `services/telegram_bot/docs/actor-potus.md`(세력 행동 추정, 미 대통령
   게시물 추적), `services/web/docs/polymarket-dashboard.md`(폴리마켓 현재 전량을 공개 웹
   대시보드로),
   `services/web/docs/polymarket-sector-brief.md`(경제·금융·지정학 줄글 컨센서스와 주기 간
@@ -996,7 +1013,8 @@ Cloudflare 자격증명을 강제해, 줄글 브리프를 쓰지도 않는 순�
   한국어 자연어 배팅 검색), `services/web/docs/polymarket-consensus-qa.md`(자연어 질문에
   지금의 컨센서스로 답하는 질의응답), `services/telegram_bot/docs/consensus-view-advisor.md`(운영자 개인용: 컨센서스로
   뷰를 검증하고 포지션으로 옮기는 어드바이저, 텔레그램 `/view`), `shorts/docs/watch-topics.md`(쇼츠가 오래 지켜볼 큰 판을 골라 흐름을
-  이어 보이는 코너). 웹 계획서 중 뒤 넷은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
+  이어 보이는 코너), `services/telegram_bot/docs/prefilter-burst-credit.md`(버리는 버스트 크레딧으로
+  사전선별의 사건 군집·학습을 강화). 웹 계획서 중 뒤 넷은 대시보드가 전제이지만 파일을 나눴다 — 대시보드
   계획서가 먼저 끝나 지워져도 나머지 계획은 남아야 한다.
   **계획서를 새로 파는 것은 주제가 기존 계획서와 독립일 때뿐이고, 다 끝나면 파일째
   지운다.** 종류를 섞지 않는다: 절차서에 할 일을

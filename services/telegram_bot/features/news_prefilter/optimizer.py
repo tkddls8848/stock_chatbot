@@ -27,7 +27,17 @@ FEATURE_NAMES = (
 )
 HASH_BUCKETS = 2048
 MODEL_DIMENSIONS = len(FEATURE_NAMES) + HASH_BUCKETS
-MAX_SEARCH_TRIALS = 32
+# 하이퍼파라미터 탐색 상한. 라벨은 하루 한 번(18시 보고서) 들어오므로 새 자료마다 한 번 몰아 쓴다
+# (버스트 크레딧 조절기가 상한이다). 내부 검증 평균이 PLATEAU_TRIALS 동안 오르지 않으면 먼저 멈춘다 —
+# 같은 라벨에 trial만 늘리면 검증에 과적합할 뿐이다.
+MAX_SEARCH_TRIALS = 256
+PLATEAU_TRIALS = 64
+# 학습 구간의 마지막 며칠을 하루씩 돌려 가며 내부 검증한다(walk-forward). 하이퍼파라미터는 이 평균으로
+# 고르고, 저장 여부는 그와 별개인 바깥 holdout(마지막 날짜들)으로 판정한다.
+INNER_FOLDS = 3
+_LEARNING_RATES = (0.01, 0.02, 0.035, 0.05, 0.08)
+_REGULARIZATIONS = (1e-6, 1e-5, 5e-5, 1e-4, 5e-4)
+_EPOCHS = (4, 6, 8, 12)
 MIN_TRAINING_LABELS = 120
 MIN_TRAINING_DAYS = 3
 _TEXT_RE = re.compile(r"\s+")
@@ -150,21 +160,19 @@ def _incumbent_average_precision(
     return _average_precision(test_labels, scores)
 
 
-def _fit_trial(
+def _fit(
     train_vectors: list[tuple[tuple[int, float], ...]],
     train_labels: list[int],
-    test_vectors: list[tuple[tuple[int, float], ...]],
-    test_labels: list[int],
-    rng: random.Random,
-) -> Generator[None, None, tuple[float, float, list[float]]]:
+    params: tuple[float, float, int],
+    seed: int,
+) -> Generator[None, None, tuple[float, list[float]]]:
+    learning_rate, regularization, epochs = params
     weights = [0.0] * MODEL_DIMENSIONS
     intercept = 0.0
-    learning_rate = rng.choice((0.02, 0.035, 0.05))
-    regularization = rng.choice((1e-5, 5e-5, 1e-4))
     positive_weight = max(1.0, (len(train_labels) - sum(train_labels)) / max(1, sum(train_labels)))
-
+    rng = random.Random(seed)
     indices = list(range(len(train_labels)))
-    for _ in range(rng.choice((4, 6, 8))):
+    for _ in range(epochs):
         rng.shuffle(indices)
         for position, index in enumerate(indices):
             if position % 8 == 0:
@@ -180,12 +188,58 @@ def _fit_trial(
                     error * value - regularization * weight
                 )
         learning_rate *= 0.85
+    return intercept, weights
 
-    scores = [
-        _sigmoid(intercept + sum(weights[i] * value for i, value in vector))
-        for vector in test_vectors
-    ]
-    return _average_precision(test_labels, scores), intercept, weights
+
+def _score(intercept: float, weights: list[float], vectors) -> list[float]:
+    return [_sigmoid(intercept + sum(weights[i] * value for i, value in vector)) for vector in vectors]
+
+
+def _fit_trial(
+    folds: list[tuple[list[int], list[int]]],
+    vectors: list[tuple[tuple[int, float], ...]],
+    labels: list[int],
+    train_indices: list[int],
+    test_indices: list[int],
+    rng: random.Random,
+) -> Generator[None, None, tuple[float, float, float, list[float]]]:
+    """하이퍼파라미터 하나: 내부 접기마다 학습·검증한 평균 AP, 학습 구간 전체로 다시 학습한 holdout AP."""
+    params = (rng.choice(_LEARNING_RATES), rng.choice(_REGULARIZATIONS), rng.choice(_EPOCHS))
+    seed = rng.getrandbits(32)
+    inner_scores = []
+    for fold_train, fold_test in folds:
+        intercept, weights = yield from _fit(
+            [vectors[i] for i in fold_train], [labels[i] for i in fold_train], params, seed,
+        )
+        inner_scores.append(_average_precision(
+            [labels[i] for i in fold_test], _score(intercept, weights, [vectors[i] for i in fold_test]),
+        ))
+    intercept, weights = yield from _fit(
+        [vectors[i] for i in train_indices], [labels[i] for i in train_indices], params, seed,
+    )
+    holdout = _average_precision(
+        [labels[i] for i in test_indices], _score(intercept, weights, [vectors[i] for i in test_indices]),
+    )
+    inner = sum(inner_scores) / len(inner_scores) if inner_scores else holdout
+    return inner, holdout, intercept, weights
+
+
+def _has_both(labels: list[int], minimum: int) -> bool:
+    positives = sum(labels)
+    return positives >= minimum and len(labels) - positives >= minimum
+
+
+def inner_folds(train: list[int], sample_days: list[str], labels: list[int]):
+    """학습 구간 마지막 INNER_FOLDS일을 하루씩 검증으로 돌린다. 양성·음성이 모자란 접기는 뺀다."""
+    train_days = sorted({sample_days[i] for i in train})
+    folds = []
+    for day in train_days[-INNER_FOLDS:]:
+        fold_train = [i for i in train if sample_days[i] < day]
+        fold_test = [i for i in train if sample_days[i] == day]
+        if (_has_both([labels[i] for i in fold_train], 10)
+                and _has_both([labels[i] for i in fold_test], 3)):
+            folds.append((fold_train, fold_test))
+    return folds
 
 
 def optimize_for_cpu_budget(
@@ -195,10 +249,12 @@ def optimize_for_cpu_budget(
     *,
     state: dict[str, Any] | None = None,
 ) -> OptimizationResult:
-    """한 trial도 CPU 조각 사이에서 이어 학습한다. 자료당 최대 32회 검증한다.
+    """한 trial도 CPU 조각 사이에서 이어 학습한다. 자료당 최대 MAX_SEARCH_TRIALS회 검증한다.
 
-    마지막 날짜는 학습에서 제외한다. 이는 모델 선택용 검증이며, 실제 수집
-    개선의 증거는 active 탐색 기사가 후속 보고서에서 받은 평가로 따로 본다.
+    마지막 날짜들(holdout)은 학습·하이퍼파라미터 선택 모두에서 뺀다. 선택은 학습 구간 안의
+    walk-forward 내부 검증 평균으로 하고, holdout은 저장 여부만 판정한다 — 256 trial 중 최고를
+    holdout 하루로 고르면 그날 표본에 맞춘 모델이 뽑힌다. 실제 수집 개선의 증거는 active 탐색
+    기사가 후속 보고서에서 받은 평가로 따로 본다.
     """
     _lower_current_thread_priority()
     started = time.thread_time()
@@ -215,41 +271,47 @@ def optimize_for_cpu_budget(
     if state.get("fingerprint") != fingerprint:
         state.clear()
         test_days = set(days[-max(1, len(days) // 5):])
-        train = [sample for sample in samples if sample.day not in test_days]
-        test = [sample for sample in samples if sample.day in test_days]
+        sample_days = [sample.day for sample in samples]
+        labels = [sample.label for sample in samples]
+        train = [i for i, day in enumerate(sample_days) if day not in test_days]
+        test = [i for i, day in enumerate(sample_days) if day in test_days]
         # 양성이 대부분인 보고서 근거만으로 만든 모델을 승격시키지 않는다.
-        if (min(sum(s.label == label for s in train) for label in (0, 1)) < 10
-                or min(sum(s.label == label for s in test) for label in (0, 1)) < 5):
+        if not _has_both([labels[i] for i in train], 10) or not _has_both([labels[i] for i in test], 5):
             return OptimizationResult(time.thread_time() - started, 0, len(samples), None,
                                       "invalid_time_split")
-        train_vectors = [_vector(sample.title, sample.features) for sample in train]
-        test_vectors = [_vector(sample.title, sample.features) for sample in test]
-        train_labels = [sample.label for sample in train]
-        test_labels = [sample.label for sample in test]
+        vectors = [_vector(sample.title, sample.features) for sample in samples]
+        test_labels = [labels[i] for i in test]
         base = sum(test_labels) / len(test_labels)
-        incumbent = _incumbent_average_precision(current_model, test_vectors, test_labels)
+        incumbent = _incumbent_average_precision(current_model, [vectors[i] for i in test], test_labels)
+        folds = inner_folds(train, sample_days, labels)
         state.update(
-            fingerprint=fingerprint, train_vectors=train_vectors, test_vectors=test_vectors,
-            train_labels=train_labels, test_labels=test_labels,
-            rng=random.Random(fingerprint), trials=0, best_ap=max(base, incumbent),
+            fingerprint=fingerprint, vectors=vectors, labels=labels, train=train, test=test,
+            folds=folds, rng=random.Random(fingerprint), trials=0, since_improvement=0,
+            best_inner=-1.0, best_ap=max(base, incumbent),
             test_days=sorted(test_days), train_days=sorted(set(days) - test_days),
             prevalence=base,
         )
     trials = 0
     best_model = None
-    while time.thread_time() < deadline and state["trials"] < MAX_SEARCH_TRIALS:
+    while (time.thread_time() < deadline and state["trials"] < MAX_SEARCH_TRIALS
+           and state["since_improvement"] < PLATEAU_TRIALS):
         if "trial" not in state:
             state["trial"] = _fit_trial(
-                state["train_vectors"], state["train_labels"],
-                state["test_vectors"], state["test_labels"], state["rng"],
+                state["folds"], state["vectors"], state["labels"],
+                state["train"], state["test"], state["rng"],
             )
         try:
             next(state["trial"])
         except StopIteration as completed:
             del state["trial"]
-            validation_ap, intercept, weights = completed.value
+            inner_ap, validation_ap, intercept, weights = completed.value
             trials += 1
             state["trials"] += 1
+            if inner_ap <= state["best_inner"]:
+                state["since_improvement"] += 1
+                continue
+            state["best_inner"] = inner_ap
+            state["since_improvement"] = 0
             if validation_ap <= state["best_ap"]:
                 continue
             state["best_ap"] = validation_ap
@@ -258,9 +320,12 @@ def optimize_for_cpu_budget(
                 "hash_buckets": HASH_BUCKETS, "intercept": round(intercept, 8),
                 "weights": [round(weight, 8) for weight in weights],
                 "validation_ap": round(validation_ap, 6),
+                "inner_validation_ap": round(inner_ap, 6),
+                "inner_folds": len(state["folds"]),
                 "validation_prevalence": round(state["prevalence"], 6),
                 "label_count": len(samples), "train_days": state["train_days"],
                 "test_days": state["test_days"],
             }
-    reason = "search_complete" if state["trials"] >= MAX_SEARCH_TRIALS else ""
+    done = state["trials"] >= MAX_SEARCH_TRIALS or state["since_improvement"] >= PLATEAU_TRIALS
+    reason = "search_complete" if done else ""
     return OptimizationResult(time.thread_time() - started, trials, len(samples), best_model, reason)

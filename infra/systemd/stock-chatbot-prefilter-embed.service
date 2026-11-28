@@ -1,0 +1,23 @@
+[Unit]
+Description=News prefilter embedding one-shot (bge-m3, burst-credit governed)
+# 봇 유닛은 MemoryMax=1G라 1GB짜리 모델을 봇 안(하위 프로세스 포함)에 올릴 수 없다. 자기 cgroup으로
+# 띄웠다 내린다 — 상주 메모리 0. 크레딧 잔고 하한·가용 메모리가 모자라면 모델을 올리지 않고 0으로 끝난다.
+# code_guide.md 「사전선별」, services/telegram_bot/docs/prefilter-burst-credit.md.
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/stock-chatbot
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+ExecStart=/srv/stock-chatbot/venv/bin/python -m services.telegram_bot.features.news_prefilter.embed_job
+Nice=10
+CPUWeight=20
+# 실측 최대 RSS 1.05GB(모델) + 봇 코드 import. 넘으면 이 프로세스만 죽고 봇·웹은 그대로다.
+MemoryMax=1536M
+# 첫 실행은 사건 메모리·라벨 제목을 처음부터 임베딩한다(수십 분). 그 뒤는 매시간 1~2분이다.
+TimeoutStartSec=90min
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

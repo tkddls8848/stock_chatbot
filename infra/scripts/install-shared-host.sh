@@ -65,6 +65,23 @@ else
   sudo -u "$APP_USER" "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
 fi
 
+# 사전선별 임베딩 모델(bge-m3 ONNX int8). 데이터가 아니라 백업하지 않으므로 storage/ 밖에 둔다.
+# revision과 sha256을 고정한다 — 같은 이름으로 다른 파일이 올라와도 조용히 바뀌지 않는다.
+EMBED_MODEL_DIR="$APP_DIR/models/bge-m3"
+EMBED_MODEL_URL="https://huggingface.co/Xenova/bge-m3/resolve/4de13258303883538bd53b696b452bf8099f0858"
+embed_sums="0826f8c1ab9edf1801db86c61919d4d108e8bfc0b809ec823ad366882ff0b77d  model.onnx
+6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790  tokenizer.json"
+if ! (cd "$EMBED_MODEL_DIR" 2>/dev/null && echo "$embed_sums" | sha256sum --check --status --strict); then
+  sudo -u "$APP_USER" install -d -m 0750 "$APP_DIR/models" "$EMBED_MODEL_DIR"
+  embed_download="$(sudo -u "$APP_USER" mktemp -d "$APP_DIR/models/.download.XXXXXX")"
+  sudo -u "$APP_USER" curl --fail --location --retry 3 -sS -o "$embed_download/model.onnx" "$EMBED_MODEL_URL/onnx/model_quantized.onnx"
+  sudo -u "$APP_USER" curl --fail --location --retry 3 -sS -o "$embed_download/tokenizer.json" "$EMBED_MODEL_URL/tokenizer.json"
+  (cd "$embed_download" && echo "$embed_sums" | sha256sum --check --strict) || die "임베딩 모델 sha256 불일치"
+  sudo -u "$APP_USER" mv -f "$embed_download/model.onnx" "$embed_download/tokenizer.json" "$EMBED_MODEL_DIR/"
+  rmdir "$embed_download"
+  ok "임베딩 모델 설치(bge-m3 int8)"
+fi
+
 # 최초 설치와 재설치를 구분한다. 재설치는 이미 켜 둔 서비스를 끄지 않는다.
 if [ -f /etc/systemd/system/stock-chatbot.service ]; then
   FIRST_INSTALL=0
@@ -82,6 +99,8 @@ for unit in \
   stock-chatbot-polymarket-annotate.service \
   stock-chatbot-newsletter.service \
   stock-chatbot-newsletter.timer \
+  stock-chatbot-prefilter-embed.service \
+  stock-chatbot-prefilter-embed.timer \
   polymarket-shorts.service \
   polymarket-shorts.timer; do
   install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "/etc/systemd/system/$unit"
@@ -122,6 +141,11 @@ fi
 # 그래서 설정 여부와 무관하게 켠다 — 설정이 비면 구독 API가 503이라 구독자가 생기지 않는다.
 systemctl enable --now stock-chatbot-newsletter.timer >/dev/null
 ok "뉴스레터 timer 켜짐(매일 08:30 한국 시간)"
+
+# 사전선별 임베딩은 매시간 one-shot이다. 크레딧 잔고·가용 메모리가 모자라면 모델을 올리지 않고 끝나므로
+# 조건과 무관하게 켠다. 봇이 처음 배포되면 잔고 하한 추정이 30%에 닿는 약 7시간 뒤부터 실제로 돈다.
+systemctl enable --now stock-chatbot-prefilter-embed.timer >/dev/null
+ok "사전선별 임베딩 timer 켜짐(매시간 25분)"
 
 # 프로세스마다 자기 설정을 따로 읽는다. 한쪽이 깨져도 다른 쪽은 뜨지만,
 # 설치 직후에는 둘 다 import되는지 확인한다.

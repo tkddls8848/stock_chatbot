@@ -15,3 +15,7 @@ fastapi
 uvicorn
 
 google-auth>=2.40,<3
+
+# 사전선별 임베딩 one-shot(embed_job.py)만 쓴다. 봇 프로세스는 import하지 않는다.
+onnxruntime==1.32.0
+tokenizers==0.23.3

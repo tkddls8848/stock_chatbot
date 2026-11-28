@@ -720,3 +720,25 @@ def test_a_recap_older_than_the_age_limit_does_not_represent_the_window(tmp_path
 
     assert _rank_kr(service, [_recap(0, "코스피, 0.58% 상승 출발…코스닥 900선 재진입", "00:05:00")], "c0") == []
     assert [row for row in _observations(tmp_path) if row["type"] == "cycle"][-1]["gated_recap"] == 1
+
+
+def test_optimizer_selects_by_inner_walk_forward_and_stops_on_plateau(monkeypatch):
+    """하이퍼파라미터는 학습 구간 안의 접기로 고르고, holdout은 저장 판정에만 쓴다."""
+    from services.telegram_bot.features.news_prefilter import optimizer
+
+    monkeypatch.setattr(optimizer, "PLATEAU_TRIALS", 2)
+    samples = [
+        TrainingSample(
+            day=f"2026-09-{1 + i // 40:02d}",
+            title="earnings surprise" if i % 2 else "routine update",
+            features={name: float(i % 2) for name in FEATURE_NAMES}, label=i % 2,
+        ) for i in range(240)
+    ]
+    state = {}
+    result = optimize_for_cpu_budget(samples, None, 60.0, state=state)
+    # 6일: holdout 1일, 학습 5일 중 마지막 3일이 내부 접기
+    assert len(state["folds"]) == 3
+    assert all(max(samples[i].day for i in train) < samples[test[0]].day for train, test in state["folds"])
+    assert result.reason == "search_complete"
+    assert state["trials"] < optimizer.MAX_SEARCH_TRIALS     # 개선 정체로 먼저 멈췄다
+    assert result.model is not None and result.model["inner_folds"] == 3

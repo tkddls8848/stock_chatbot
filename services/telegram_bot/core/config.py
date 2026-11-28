@@ -113,6 +113,11 @@ NEWS_PREFILTER_EVENT_FILE = DATA_DIR / "news_prefilter" / "event_memory.json"
 NEWS_PREFILTER_OBSERVATION_FILE = DATA_DIR / "news_prefilter" / "observations.jsonl"
 NEWS_PREFILTER_MODEL_FILE = DATA_DIR / "news_prefilter" / "model.json"
 NEWS_PREFILTER_CPU_STATE_FILE = DATA_DIR / "news_prefilter" / "cpu_budget.json"
+NEWS_PREFILTER_HOST_CPU_FILE = DATA_DIR / "news_prefilter" / "host_cpu.json"
+# 임베딩 one-shot(`python -m services.telegram_bot.features.news_prefilter.embed_job`)이 쓰는 자리.
+# 봇은 읽기만 한다. 모델 파일은 데이터가 아니라 백업하지 않으므로 storage/ 밖에 둔다(infra가 내려받는다).
+NEWS_PREFILTER_EMBED_DIR = DATA_DIR / "news_prefilter" / "embedding"
+NEWS_PREFILTER_EMBED_MODEL_DIR = BASE_DIR / "models" / "bge-m3"
 RUNTIME_LOCK_FILE = DATA_DIR / "runtime" / "bot.lock"
 PROMPT_DIR        = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -308,6 +313,22 @@ NEWS_PREFILTER_MAINTENANCE_INTERVAL_MINUTES = 1
 NEWS_PREFILTER_MAINTENANCE_MAX_SECONDS = 30.0
 NEWS_PREFILTER_MAINTENANCE_CHUNK_SECONDS = 2.0
 NEWS_PREFILTER_MAX_LOAD_AVERAGE = 1.5
+# 버스트 크레딧 조절기(운영자 지시 2026-11-28 — 쌓이다 버려지는 크레딧을 주기적으로 몰아 쓴다).
+# medium_3_0 기준선은 vCPU당 20%다. /proc/stat 24시간 기록으로 잔고 하한을 추정해 30% 위면 배경 작업이
+# 전속력으로 돌고, 닿으면 다시 쌓일 때까지 멈춘다. 남기는 30%(약 2.9 vCPU-시간)는 보고서·리서치·웹의
+# 순간 부하 몫이다. 직전 1분 steal이 2%를 넘으면 크레딧 소진 징후로 보고 양보한다.
+NEWS_PREFILTER_BURST_BASELINE = 0.20
+NEWS_PREFILTER_BURST_FLOOR_PERCENT = 30.0
+NEWS_PREFILTER_HOST_STEAL_LIMIT = 0.02
+# 임베딩 one-shot(bge-m3 int8, 실측 RSS 최대 1.05GB). 봇 유닛은 MemoryMax=1G라 봇 안에 올리지 않고
+# 자기 cgroup의 one-shot이 매시간 띄웠다 내린다. 시작할 때 MemAvailable이 이보다 작으면 모델을 올리지 않는다.
+NEWS_PREFILTER_EMBED_MIN_AVAILABLE_MB = 1300
+# 섀도 군집: simhash가 따로 둔 사건 쌍 중 임베딩 코사인이 이 값 이상인 것을 운영자 검토용으로 남긴다.
+# 판정에는 아직 쓰지 않는다. 실측(2026-11-28) 같은 사건 다국어 0.78~0.84, 다른 사건 0.40~0.60.
+NEWS_PREFILTER_EMBED_SHADOW_MIN_SIMILARITY = 0.70
+# 매일 큰 몰아 쓰기(라벨 제목 재임베딩·v2 오프라인 비교)는 이 시각(한국 시간) 이후 첫 실행에서 한 번 한다.
+# 18시 보고서 라벨이 들어온 뒤의 새벽이다 — 쇼츠(20시)와 메모리가 겹치지 않는다.
+NEWS_PREFILTER_EMBED_DAILY_HOUR = 3
 
 
 # 원문 1차 소스를 시장마다 하나씩 둔다. 통신사·규제기관 발표는 매체가 받아쓰기

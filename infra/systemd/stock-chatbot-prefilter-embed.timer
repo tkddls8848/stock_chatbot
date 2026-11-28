@@ -1,0 +1,14 @@
+[Unit]
+Description=News prefilter embedding every hour (burst-credit governed)
+
+[Timer]
+# 매시간 25분. 매일 몰아 쓰기(라벨 재임베딩·v1/v2 비교)는 03시 이후 첫 실행이 한다(config
+# NEWS_PREFILTER_EMBED_DAILY_HOUR) — 18시 보고서 라벨 뒤의 새벽이고 쇼츠(20시)와 메모리가 겹치지 않는다.
+# oneshot이라 앞 실행이 아직 돌고 있으면 이번 시각은 건너뛴다.
+OnCalendar=*-*-* *:25:00 Asia/Seoul
+AccuracySec=1min
+Persistent=false
+Unit=stock-chatbot-prefilter-embed.service
+
+[Install]
+WantedBy=timers.target

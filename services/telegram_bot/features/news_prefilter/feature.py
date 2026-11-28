@@ -10,9 +10,14 @@ from services.telegram_bot.core.clock import now
 from services.telegram_bot.core.config import (
     NEWS_REPORT_QUEUE_PER_SOURCE_LIMIT,
     NEWS_PREFILTER_CPU_STATE_FILE,
+    NEWS_PREFILTER_EMBED_DIR,
     NEWS_PREFILTER_EVENT_FILE,
     NEWS_PREFILTER_EVENT_WINDOW_HOURS,
     NEWS_PREFILTER_EXPLORATION_SLOTS,
+    NEWS_PREFILTER_BURST_BASELINE,
+    NEWS_PREFILTER_BURST_FLOOR_PERCENT,
+    NEWS_PREFILTER_HOST_CPU_FILE,
+    NEWS_PREFILTER_HOST_STEAL_LIMIT,
     NEWS_PREFILTER_MAINTENANCE_CHUNK_SECONDS,
     NEWS_PREFILTER_MAINTENANCE_INTERVAL_MINUTES,
     NEWS_PREFILTER_MAINTENANCE_MAX_SECONDS,
@@ -29,6 +34,7 @@ from services.telegram_bot.core.config import (
 )
 from services.telegram_bot.core.workers import is_burst_active
 from services.telegram_bot.features.base import FeatureSpec, StatusReportSpec
+from services.telegram_bot.features.news_prefilter.host_cpu import HostCpuBudget
 from services.telegram_bot.features.news_prefilter.report import render_prefilter_status
 from services.telegram_bot.features.news_prefilter.service import NewsPrefilter
 
@@ -52,6 +58,13 @@ def _install_services(app) -> None:
         reported_event_cooldown_hours=NEWS_PREFILTER_REPORTED_EVENT_COOLDOWN_HOURS,
         recap_bucket_hours=NEWS_PREFILTER_RECAP_BUCKET_HOURS,
         recap_max_age_hours=NEWS_PREFILTER_RECAP_MAX_AGE_HOURS,
+        host_cpu=HostCpuBudget(
+            NEWS_PREFILTER_HOST_CPU_FILE,
+            baseline=NEWS_PREFILTER_BURST_BASELINE,
+            floor_percent=NEWS_PREFILTER_BURST_FLOOR_PERCENT,
+            steal_limit=NEWS_PREFILTER_HOST_STEAL_LIMIT,
+        ),
+        embed_dir=NEWS_PREFILTER_EMBED_DIR,
     )
 
 
@@ -73,6 +86,13 @@ async def run_prefilter_maintenance(app) -> None:
     if is_burst_active():
         service.record_maintenance(reason="burst", cpu_seconds=0, trials=0, labels=0)
         logger.info("[PREFILTER] 버스트 우선 작업 진행 중 · 보정 양보")
+        return
+    # 예약 실행마다 한 번 잰다. 조각 사이에 다시 재면 1분 창의 steal이 0초 구간이 된다.
+    host = service.check_host_cpu()
+    if host is not None and host.reason:
+        if host.reason == "steal":
+            logger.warning("[PREFILTER] steal %.1f%% — 크레딧 소진 징후 · 보정 양보", (host.steal or 0) * 100)
+        service.record_maintenance(reason=host.reason, cpu_seconds=0, trials=0, labels=0)
         return
     slice_limit = NEWS_PREFILTER_MAINTENANCE_MAX_SECONDS
     slice_used = 0.0
@@ -142,6 +162,8 @@ FEATURE = FeatureSpec(
         "storage/bot/news_prefilter/observations.jsonl",
         "storage/bot/news_prefilter/model.json",
         "storage/bot/news_prefilter/cpu_budget.json",
+        "storage/bot/news_prefilter/host_cpu.json",
+        "storage/bot/news_prefilter/embedding/",
     ),
 )
 

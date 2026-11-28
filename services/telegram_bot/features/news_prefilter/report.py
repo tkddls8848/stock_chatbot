@@ -5,6 +5,9 @@ dict 모양과 `SHADOW_CAVEATS`를 알고 그렸는데, 그러면 사전선별�
 바꿀 때마다 남의 기능 파일을 함께 고쳐야 했다.
 """
 
+from html import escape
+
+from services.telegram_bot.features.news_prefilter.optimizer import MAX_SEARCH_TRIALS
 from services.telegram_bot.features.news_prefilter.service import SHADOW_CAVEATS
 
 
@@ -31,6 +34,67 @@ def _verdict_lines(report: dict) -> list[str]:
     if ap is not None and base is not None and float(base) < 1:
         gain = (float(ap) - float(base)) / (1 - float(base))
         lines.append(f"  검증 AP 개선 여지 중 {gain:.0%} 달성 (선택 편향이 남은 모델 선택용 검증)")
+    return lines
+
+
+def _host_cpu_line(host: dict | None) -> str:
+    if not host or host.get("balance_percent") is None:
+        return "  버스트 크레딧: 측정 대기(또는 /proc/stat 없음)"
+    usage, steal = host.get("usage"), host.get("steal")
+    return (
+        f"  버스트 크레딧 잔고(하한 추정) {float(host['balance_percent']):.0f}%"
+        f" / 하한 {float(host['floor_percent']):.0f}% · 기록 {host['window_hours']}h"
+        + (f" · 호스트 CPU {float(usage):.0%}" if usage is not None else "")
+        + (f" · steal {float(steal):.1%}" if steal is not None else "")
+    )
+
+
+_EMBED_RESULTS = {
+    "ok": "완료",
+    "credit": "크레딧 잔고 하한 아래 — 모델을 올리지 않음",
+    "steal": "steal 상승 — 중단",
+    "memory_low": "가용 메모리 부족 — 모델을 올리지 않음",
+    "model_missing": "모델 파일 없음(infra 설치 확인)",
+}
+
+
+def _embedding_lines(embedding: dict | None) -> list[str]:
+    if not embedding:
+        return []
+    status, shadow = embedding.get("status"), embedding.get("shadow")
+    lines = ["", "<b>임베딩 one-shot (bge-m3, 매시간)</b>"]
+    if not status:
+        lines.append("  아직 실행 기록이 없습니다(timer·모델 설치 확인).")
+        return lines
+    hourly = status.get("hourly") or {}
+    lines.append(
+        f"  최근 {status.get('at', '?')} · {_EMBED_RESULTS.get(status.get('result'), status.get('result'))}"
+        f" · CPU {status.get('cpu_seconds', 0)}s · RSS {status.get('max_rss_mb', '?')}MB"
+    )
+    if hourly:
+        lines.append(f"  사건 벡터 {hourly.get('events', 0):,}건 · 이번 {hourly.get('embedded', 0):,}건 임베딩")
+    if shadow and shadow.get("days"):
+        totals: dict[str, int] = {}
+        for counts in shadow["days"].values():
+            for key, value in counts.items():
+                totals[key] = totals.get(key, 0) + int(value)
+        new = totals.pop("new", 0)
+        thresholds = " · ".join(f"≥{key} {value:,}" for key, value in sorted(totals.items()))
+        lines.append(f"  섀도 군집(판정 미사용, 7일): 새 사건 {new:,} 중 simhash가 놓친 가까운 쌍 {thresholds}")
+        for pair in (shadow.get("pairs") or [])[:3]:
+            lines.append(
+                f"    {pair['similarity']:.2f} · {escape(str(pair['new'])[:50])} ≈ {escape(str(pair['earlier'])[:50])}"
+            )
+    daily = status.get("daily") or {}
+    comparison = daily.get("comparison")
+    if comparison:
+        lines.append(
+            f"  매일 비교 {status.get('daily_date', '')}: v1(해시) AP {comparison['v1_ap']}"
+            f" · v2(임베딩) AP {comparison['v2_ap']} · 기저 {comparison['prevalence']}"
+            f" (holdout {', '.join(comparison['test_days'])}, 라벨 {comparison['labels']})"
+        )
+    elif status.get("daily_date"):
+        lines.append(f"  매일 비교 {status['daily_date']}: 라벨·날짜가 모자라 비교하지 않음")
     return lines
 
 
@@ -112,6 +176,7 @@ def format_prefilter_report(report: dict) -> str:
             "<b>CPU 사용</b>",
             f"  오늘 학습 {used_hours:.2f}h (UTC {cpu['utc_day']}) · 일일 상한 없음",
             f"  참고: 봇 foreground 전체 {foreground_hours:.2f}h",
+            _host_cpu_line(report.get("host_cpu")),
             "",
             "<b>섀도가 답하지 못하는 것</b>",
         ]
@@ -120,11 +185,13 @@ def format_prefilter_report(report: dict) -> str:
     reasons = {
         "insufficient_labels": "학습 라벨 120건·3일 대기",
         "invalid_time_split": "시간 분할 후 양성·음성 부족 (학습 각 10건, 검증 각 5건)",
-        "search_complete": "현재 자료 32회 검증 완료, 새 라벨 대기",
+        "search_complete": "현재 자료 탐색 완료(상한 또는 개선 정체), 새 라벨 대기",
         "slice_complete": "이번 CPU 조각 완료, 다음 주기에 이어 학습",
         "burst": "리서치·보고서 우선 작업에 양보",
         "load": "호스트 부하로 양보",
         "no_work": "수행할 작업 없음",
+        "credit": "버스트 크레딧 잔고가 하한에 닿아 다시 쌓일 때까지 대기",
+        "steal": "steal 상승(크레딧 소진 징후)으로 양보",
     }
     if maintenance:
         reason = reasons.get(maintenance["reason"], maintenance["reason"])
@@ -132,11 +199,12 @@ def format_prefilter_report(report: dict) -> str:
         lines[-2:-2] = [
             f"  최근 보정: {reason}",
             f"  {maintenance['cpu_seconds']:.2f}s · 이번 완료 {maintenance['trials']}회 · "
-            f"자료당 {maintenance.get('search_trials', 0)}/32회 · {maintenance['at']}",
+            f"자료당 {maintenance.get('search_trials', 0)}/{MAX_SEARCH_TRIALS}회 · {maintenance['at']}",
         ]
     else:
         lines[-2:-2] = ["  보정 상태: 기동 후 첫 예약 실행 대기"]
     lines.extend(f"  • {caveat}" for caveat in SHADOW_CAVEATS)
+    lines.extend(_embedding_lines(report.get("embedding")))
     return "\n".join(lines)
 
 

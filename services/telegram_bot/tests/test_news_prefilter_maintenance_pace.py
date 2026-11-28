@@ -69,6 +69,9 @@ def test_maintenance_is_driven_by_work_not_old_daily_or_foreground_caps(monkeypa
         def record_maintenance(self, **status):
             self.status = status
 
+        def check_host_cpu(self):
+            return None
+
     async def idle(*_args, **_kwargs):
         return True
 
@@ -79,3 +82,29 @@ def test_maintenance_is_driven_by_work_not_old_daily_or_foreground_caps(monkeypa
     assert service.calls == 3
     assert service.status["reason"] == "search_complete"
     assert service.used == 20003
+
+
+def test_prefilter_yields_when_host_cpu_average_reaches_target(monkeypatch):
+    from types import SimpleNamespace
+    from services.telegram_bot.features.news_prefilter.host_cpu import HostCpuVerdict
+
+    class Service:
+        optimized = False
+
+        def account_foreground_cpu(self):
+            return 0.0
+
+        def check_host_cpu(self):
+            return HostCpuVerdict(reason="credit", balance_percent=25.0, usage=0.9, steal=0.0, window_hours=24)
+
+        def record_maintenance(self, **status):
+            self.status = status
+
+        async def optimize_chunk(self, _seconds):
+            self.optimized = True
+
+    monkeypatch.setattr(prefilter_feature, "is_burst_active", lambda: False)
+    service = Service()
+    asyncio.run(prefilter_feature.run_prefilter_maintenance(SimpleNamespace(bot_data={"news_prefilter": service})))
+    assert not service.optimized
+    assert service.status["reason"] == "credit"
