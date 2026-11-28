@@ -200,8 +200,10 @@ if fresh("news.json", news, "generated_at", 26):
     # 기사 발행 시각 기준이므로 일일 보고 직전에도 직전 보고의 하루 재료를 세도록 48시간을 본다.
     report(len(recent) >= 5, f"news.json — 최근 48시간 뉴스 {len(recent)}건(기준 5건)")
 
+# 시장 감성은 07:40·13:40·19:40 JST에만 굽는다(MARKET_SENTIMENT_SCHEDULE_HOURS). 가장 긴 간격은 밤사이
+# 19:40→07:40의 12시간이라 기준은 12시간 + 여유 2시간이다. 예전 3시간은 낮에도 6시간 간격이라 늘 경고였다.
 market = load(PUBLIC_DIR / "market.json")
-if fresh("market.json", market, "generated_at", 3):
+if fresh("market.json", market, "generated_at", 14):
     report(len(market.get("markets") or []) >= 5, f"market.json — 시장 {len(market.get('markets') or [])}개")
 
 watch_news = load(PUBLIC_DIR / "watch_news.json")
